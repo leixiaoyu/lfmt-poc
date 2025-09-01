@@ -23,7 +23,10 @@ coverage/
 # Build outputs
 build/
 dist/
-lib/
+# Note: Don't ignore lib/ directories as CDK projects use lib/ for source code
+# Only ignore compiled JavaScript lib directories in specific contexts
+node_modules/**/lib/
+frontend/lib/
 *.tsbuildinfo
 
 # Environment variables and secrets
