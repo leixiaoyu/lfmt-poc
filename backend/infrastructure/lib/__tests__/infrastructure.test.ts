@@ -338,6 +338,11 @@ describe('LFMT Infrastructure Stack', () => {
         LogGroupName: '/aws/stepfunctions/lfmt-test', 
         RetentionInDays: 30
       });
+
+      template.hasResourceProperties('AWS::Logs::LogGroup', {
+        LogGroupName: '/aws/security/lfmt-test',
+        RetentionInDays: 90
+      });
     });
   });
 
@@ -366,7 +371,7 @@ describe('LFMT Infrastructure Stack', () => {
       template.resourceCountIs('AWS::Cognito::UserPool', 1);
       template.resourceCountIs('AWS::Cognito::UserPoolClient', 1);
       template.resourceCountIs('AWS::ApiGateway::RestApi', 1);
-      template.resourceCountIs('AWS::Logs::LogGroup', 3);   // API, Lambda, Step Functions
+      template.resourceCountIs('AWS::Logs::LogGroup', 4);   // API, Lambda, Step Functions, Security Audit
       // CDK creates additional service roles, so check we have at least our expected roles
       const roleCount = Object.keys(template.findResources('AWS::IAM::Role')).length;
       expect(roleCount).toBeGreaterThanOrEqual(2);
