@@ -1,0 +1,51 @@
+{
+  "name": "lfmt-poc",
+  "version": "1.0.0",
+  "description": "Long-Form Translation Service POC - AWS serverless translation platform for 65K-400K word documents",
+  "private": true,
+  "scripts": {
+    "setup": "npm run setup:hooks && npm run install:all",
+    "setup:hooks": "./scripts/setup-git-hooks.sh",
+    "install:all": "npm run install:shared && npm run install:infra",
+    "install:shared": "cd shared-types && npm install --cache=/tmp/npm-cache",
+    "install:infra": "cd backend/infrastructure && npm install --cache=/tmp/npm-cache",
+    "test:all": "npm run test:shared && npm run test:infra",
+    "test:shared": "cd shared-types && npm test",
+    "test:infra": "cd backend/infrastructure && npm test",
+    "build:all": "npm run build:shared && npm run build:infra",
+    "build:shared": "cd shared-types && npm run build",
+    "build:infra": "cd backend/infrastructure && npm run build",
+    "validate": "npm run build:all && npm run test:all && npm run security:check",
+    "security:check": "./scripts/security-check.sh",
+    "lint:all": "npm run lint:shared && npm run lint:infra",
+    "lint:shared": "cd shared-types && npm run lint || echo 'Linting not configured for shared-types'",
+    "lint:infra": "cd backend/infrastructure && npm run lint || echo 'Linting not configured for infrastructure'",
+    "deploy:dev": "cd backend/infrastructure && npm run build && npx cdk deploy --context environment=dev",
+    "deploy:staging": "cd backend/infrastructure && npm run build && npx cdk deploy --context environment=staging",
+    "synth": "cd backend/infrastructure && npm run build && npx cdk synth --context environment=dev"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/leixiaoyu/lfmt-poc.git"
+  },
+  "keywords": [
+    "translation",
+    "aws",
+    "serverless",
+    "claude",
+    "typescript",
+    "cdk"
+  ],
+  "author": "LFMT Team",
+  "license": "UNLICENSED",
+  "workspaces": [
+    "shared-types",
+    "backend/infrastructure"
+  ],
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=8.0.0"
+  },
+  "devDependencies": {},
+  "dependencies": {}
+}
