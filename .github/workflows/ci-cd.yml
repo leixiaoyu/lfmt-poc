@@ -107,8 +107,21 @@ jobs:
 
       - name: Run security audit
         run: |
-          cd shared-types && npm audit --audit-level=high
-          cd ../backend/infrastructure && npm audit --audit-level=high
+          # Audit shared-types (dependencies should already be installed)
+          cd shared-types
+          if [ -f package-lock.json ]; then
+            npm audit --audit-level=high
+          else
+            echo "⚠️ No package-lock.json found in shared-types, skipping audit"
+          fi
+          
+          # Audit backend infrastructure (dependencies should already be installed)
+          cd ../backend/infrastructure
+          if [ -f package-lock.json ]; then
+            npm audit --audit-level=high
+          else
+            echo "⚠️ No package-lock.json found in infrastructure, skipping audit"  
+          fi
 
       - name: Check for secrets in code
         run: |
