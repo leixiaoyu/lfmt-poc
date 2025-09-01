@@ -1,0 +1,32 @@
+{
+  "name": "@lfmt/infrastructure",
+  "version": "1.0.0", 
+  "description": "AWS CDK Infrastructure for LFMT POC",
+  "main": "lib/index.js",
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc -w",
+    "test": "jest",
+    "cdk": "cdk",
+    "deploy": "cdk deploy",
+    "destroy": "cdk destroy",
+    "diff": "cdk diff",
+    "synth": "cdk synth",
+    "lint": "eslint lib/**/*.ts"
+  },
+  "devDependencies": {
+    "@types/jest": "^29.5.0",
+    "@types/node": "^18.15.0",
+    "jest": "^29.5.0",
+    "ts-jest": "^29.1.0",
+    "typescript": "^5.0.0",
+    "eslint": "^8.0.0",
+    "@typescript-eslint/eslint-plugin": "^6.0.0",
+    "@typescript-eslint/parser": "^6.0.0"
+  },
+  "dependencies": {
+    "aws-cdk-lib": "^2.100.0",
+    "constructs": "^10.3.0",
+    "@lfmt/shared-types": "file:../../shared-types"
+  }
+}

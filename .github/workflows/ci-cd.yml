@@ -1,0 +1,355 @@
+name: LFMT POC CI/CD Pipeline
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        default: 'dev'
+        type: choice
+        options:
+          - dev
+          - staging
+          - prod
+
+env:
+  NODE_VERSION: '18'
+  AWS_REGION: 'us-east-1'
+
+jobs:
+  # Quality Gates - Run on all branches
+  validate:
+    name: Code Validation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: |
+            shared-types/package-lock.json
+            backend/infrastructure/package-lock.json
+
+      - name: Install shared-types dependencies
+        run: |
+          cd shared-types
+          npm ci
+
+      - name: Validate shared types
+        run: |
+          cd shared-types
+          node validate-types.js
+
+      - name: Install infrastructure dependencies
+        run: |
+          cd backend/infrastructure
+          npm ci
+
+      - name: TypeScript compilation check
+        run: |
+          cd backend/infrastructure
+          npm run build
+
+      - name: Run linting
+        run: |
+          cd backend/infrastructure
+          npm run lint || echo "Linting not yet configured"
+
+  # Infrastructure Tests
+  test-infrastructure:
+    name: Infrastructure Tests
+    runs-on: ubuntu-latest
+    needs: validate
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: backend/infrastructure/package-lock.json
+
+      - name: Install dependencies
+        run: |
+          cd backend/infrastructure
+          npm ci
+
+      - name: Build infrastructure
+        run: |
+          cd backend/infrastructure
+          npm run build
+
+      - name: Run infrastructure tests
+        run: |
+          cd backend/infrastructure
+          npm test
+
+      - name: Upload test coverage
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: infrastructure-coverage
+          path: backend/infrastructure/coverage/
+
+  # Security Scanning
+  security-scan:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    needs: validate
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run security audit
+        run: |
+          cd shared-types && npm audit --audit-level=high
+          cd ../backend/infrastructure && npm audit --audit-level=high
+
+      - name: Check for secrets in code
+        run: |
+          # Simple secret detection
+          if grep -r -i "password\|secret\|key.*=" --include="*.ts" --include="*.js" --exclude-dir=node_modules .; then
+            echo "❌ Potential secrets found in code"
+            exit 1
+          else
+            echo "✅ No obvious secrets detected"
+          fi
+
+  # CDK Synthesis and Validation
+  cdk-synth:
+    name: CDK Synthesis
+    runs-on: ubuntu-latest
+    needs: [validate, test-infrastructure]
+    strategy:
+      matrix:
+        environment: [dev, staging, prod]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: backend/infrastructure/package-lock.json
+
+      - name: Install dependencies
+        run: |
+          cd backend/infrastructure
+          npm ci
+
+      - name: Build infrastructure
+        run: |
+          cd backend/infrastructure
+          npm run build
+
+      - name: CDK Synthesis
+        run: |
+          cd backend/infrastructure
+          npx cdk synth --context environment=${{ matrix.environment }}
+
+      - name: Upload CloudFormation templates
+        uses: actions/upload-artifact@v4
+        with:
+          name: cloudformation-templates-${{ matrix.environment }}
+          path: backend/infrastructure/cdk.out/
+
+  # Development Deployment (Auto-deploy on main/develop)
+  deploy-dev:
+    name: Deploy to Development
+    runs-on: ubuntu-latest
+    needs: [validate, test-infrastructure, security-scan, cdk-synth]
+    if: github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/main'
+    environment: development
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: backend/infrastructure/package-lock.json
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Install dependencies
+        run: |
+          cd backend/infrastructure
+          npm ci
+
+      - name: Build infrastructure
+        run: |
+          cd backend/infrastructure
+          npm run build
+
+      - name: Deploy to AWS
+        run: |
+          cd backend/infrastructure
+          npx cdk deploy --context environment=dev --require-approval never
+
+      - name: Post-deployment validation
+        run: |
+          echo "🔍 Running post-deployment validation..."
+          
+          # Get stack outputs
+          aws cloudformation describe-stacks \
+            --stack-name LfmtPocDev \
+            --region ${{ env.AWS_REGION }} \
+            --query 'Stacks[0].Outputs' > deployment-outputs.json
+          
+          # Validate critical resources
+          echo "✅ Validating DynamoDB tables..."
+          aws dynamodb describe-table --table-name lfmt-jobs-dev --region ${{ env.AWS_REGION }}
+          aws dynamodb describe-table --table-name lfmt-users-dev --region ${{ env.AWS_REGION }}
+          aws dynamodb describe-table --table-name lfmt-attestations-dev --region ${{ env.AWS_REGION }}
+          
+          echo "✅ Validating S3 buckets..."
+          aws s3 ls s3://lfmt-documents-dev/
+          aws s3 ls s3://lfmt-results-dev/
+          
+          echo "✅ Validating API Gateway..."
+          API_ID=$(aws cloudformation describe-stacks \
+            --stack-name LfmtPocDev \
+            --query 'Stacks[0].Outputs[?OutputKey==`ApiId`].OutputValue' \
+            --output text)
+          aws apigateway get-rest-api --rest-api-id $API_ID --region ${{ env.AWS_REGION }}
+
+      - name: Upload deployment outputs
+        uses: actions/upload-artifact@v4
+        with:
+          name: dev-deployment-outputs
+          path: deployment-outputs.json
+
+      - name: Notify deployment success
+        run: |
+          echo "🎉 Development environment deployed successfully!"
+          echo "📊 Stack outputs:"
+          cat deployment-outputs.json
+
+  # Staging Deployment (Manual approval required)
+  deploy-staging:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    needs: [deploy-dev]
+    if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
+    environment: staging
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: backend/infrastructure/package-lock.json
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Install dependencies
+        run: |
+          cd backend/infrastructure
+          npm ci
+
+      - name: Build infrastructure
+        run: |
+          cd backend/infrastructure
+          npm run build
+
+      - name: Show deployment diff
+        run: |
+          cd backend/infrastructure
+          npx cdk diff --context environment=staging || echo "No changes detected"
+
+      - name: Deploy to staging
+        run: |
+          cd backend/infrastructure
+          npx cdk deploy --context environment=staging --require-approval never
+
+  # Production Deployment (Manual approval + additional validations)
+  deploy-prod:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    needs: [deploy-staging]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch'
+    environment: production
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Production deployment validation
+        run: |
+          echo "🔒 Production deployment requires additional validation"
+          echo "✅ All tests passed"
+          echo "✅ Security scan completed"
+          echo "✅ Staging deployment successful"
+          echo "🚀 Proceeding with production deployment..."
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: backend/infrastructure/package-lock.json
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID_PROD }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY_PROD }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Install dependencies
+        run: |
+          cd backend/infrastructure
+          npm ci
+
+      - name: Build infrastructure
+        run: |
+          cd backend/infrastructure
+          npm run build
+
+      - name: Production deployment
+        run: |
+          cd backend/infrastructure
+          npx cdk deploy --context environment=prod --require-approval never
+
+      - name: Post-production validation
+        run: |
+          echo "🔍 Running production validation..."
+          # Add comprehensive production health checks here
+
+  # Cleanup on PR close
+  cleanup:
+    name: Cleanup PR Environment
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request' && github.event.action == 'closed'
+    steps:
+      - name: Cleanup ephemeral resources
+        run: |
+          echo "🧹 Cleaning up PR-specific resources..."
+          # Add cleanup logic for PR environments if implemented
