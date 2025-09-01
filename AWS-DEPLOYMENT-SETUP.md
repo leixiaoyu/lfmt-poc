@@ -73,16 +73,35 @@ aws iam put-user-policy \
     --policy-document file://cdk-bootstrap-ssm-policy.json
 ```
 
-## 🔧 **Solution 2: CDK Bootstrap (If Not Done)**
+## 🔧 **Solution 2: CDK Bootstrap (Required After SSM Fix)**
 
-If CDK bootstrap hasn't been run in your account/region:
+✅ **UPDATE**: SSM permissions have been applied successfully!  
+❌ **NEW ISSUE**: CDK environment not bootstrapped yet
+
+### Automated Bootstrap (Recommended)
 
 ```bash
-# Bootstrap CDK (run once per account/region)
+# Run the automated bootstrap script
+./scripts/bootstrap-cdk.sh
+```
+
+### Manual Bootstrap
+
+```bash
+# Navigate to infrastructure directory
+cd backend/infrastructure
+
+# Bootstrap CDK (one-time setup per account/region)
 npx cdk bootstrap aws://427262291085/us-east-1
 ```
 
-**Note**: This still requires the SSM permissions above to work properly.
+### What Bootstrap Creates:
+- CDK staging S3 bucket for deployment assets
+- IAM roles for CloudFormation operations
+- SSM parameter `/cdk-bootstrap/hnb659fds/version`
+- Required infrastructure for CDK deployments
+
+**Note**: Bootstrap is a one-time operation per AWS account/region combination.
 
 ## ⚡ **Solution 3: Enhanced Deployment User Policy**
 
