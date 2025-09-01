@@ -23,16 +23,20 @@
     "typeRoots": [
       "./node_modules/@types"
     ],
-    "outDir": "./lib",
+    "outDir": "./dist",
     "rootDir": "./lib",
     "resolveJsonModule": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true
   },
+  "include": [
+    "lib/**/*"
+  ],
   "exclude": [
     "node_modules",
     "cdk.out",
+    "dist",
     "**/*.d.ts"
   ]
 }
