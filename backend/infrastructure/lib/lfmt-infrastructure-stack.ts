@@ -76,7 +76,7 @@ export class LfmtInfrastructureStack extends Stack {
       sortKey: { name: 'userId', type: dynamodb.AttributeType.STRING },
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
       removalPolicy,
-      pointInTimeRecovery: true,
+      pointInTimeRecoverySpecification: { pointInTimeRecoveryEnabled: true },
       encryption: dynamodb.TableEncryption.AWS_MANAGED,
       stream: dynamodb.StreamViewType.NEW_AND_OLD_IMAGES,
     });
@@ -101,7 +101,7 @@ export class LfmtInfrastructureStack extends Stack {
       partitionKey: { name: 'userId', type: dynamodb.AttributeType.STRING },
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
       removalPolicy,
-      pointInTimeRecovery: true,
+      pointInTimeRecoverySpecification: { pointInTimeRecoveryEnabled: true },
       encryption: dynamodb.TableEncryption.AWS_MANAGED,
     });
 
@@ -118,7 +118,7 @@ export class LfmtInfrastructureStack extends Stack {
       sortKey: { name: 'userId', type: dynamodb.AttributeType.STRING },
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
       removalPolicy,
-      pointInTimeRecovery: true,
+      pointInTimeRecoverySpecification: { pointInTimeRecoveryEnabled: true },
       encryption: dynamodb.TableEncryption.AWS_MANAGED,
       // 7-year retention for legal compliance
       timeToLiveAttribute: 'ttl',
@@ -173,7 +173,7 @@ export class LfmtInfrastructureStack extends Stack {
       encryption: s3.BucketEncryption.S3_MANAGED,
       publicReadAccess: false,
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
-      // Intelligent tiering will be configured via lifecycle rules instead
+      // Intelligent tiering can be enabled via AWS console or CLI post-deployment
       lifecycleRules: [{
         id: 'ResultsCleanup',
         enabled: true,
