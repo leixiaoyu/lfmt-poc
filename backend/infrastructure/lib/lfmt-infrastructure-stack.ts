@@ -140,6 +140,18 @@ export class LfmtInfrastructureStack extends Stack {
   }
 
   private createS3Buckets(removalPolicy: RemovalPolicy) {
+    // Environment-specific CORS origins
+    const getAllowedOrigins = () => {
+      switch (this.node.tryGetContext('environment')) {
+        case 'prod':
+          return ['https://lfmt.yourcompany.com']; // Replace with actual production domain
+        case 'staging':
+          return ['https://staging.lfmt.yourcompany.com']; // Replace with actual staging domain
+        default:
+          return ['http://localhost:3000', 'https://localhost:3000']; // Development origins
+      }
+    };
+
     // Document Upload Bucket
     (this as any).documentBucket = new s3.Bucket(this, 'DocumentBucket', {
       bucketName: `lfmt-documents-${this.stackName.toLowerCase()}`,
@@ -151,8 +163,8 @@ export class LfmtInfrastructureStack extends Stack {
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
       cors: [{
         allowedMethods: [s3.HttpMethods.GET, s3.HttpMethods.PUT, s3.HttpMethods.POST],
-        allowedOrigins: ['*'], // Restrict in production
-        allowedHeaders: ['*'],
+        allowedOrigins: getAllowedOrigins(),
+        allowedHeaders: ['Content-Type', 'x-amz-date', 'Authorization', 'x-api-key', 'x-amz-security-token'],
         maxAge: 3000,
       }],
       lifecycleRules: [{
@@ -247,6 +259,18 @@ export class LfmtInfrastructureStack extends Stack {
   }
 
   private createApiGateway() {
+    // Environment-specific CORS origins
+    const getAllowedApiOrigins = () => {
+      switch (this.node.tryGetContext('environment')) {
+        case 'prod':
+          return ['https://lfmt.yourcompany.com']; // Replace with actual production domain
+        case 'staging':
+          return ['https://staging.lfmt.yourcompany.com']; // Replace with actual staging domain
+        default:
+          return ['http://localhost:3000', 'https://localhost:3000']; // Development origins
+      }
+    };
+
     // Create API Gateway - From Document 3 (API Gateway & Lambda Functions)
     (this as any).api = new apigateway.RestApi(this, 'LfmtApi', {
       restApiName: `lfmt-api-${this.stackName}`,
@@ -255,8 +279,8 @@ export class LfmtInfrastructureStack extends Stack {
         types: [apigateway.EndpointType.REGIONAL],
       },
       defaultCorsPreflightOptions: {
-        allowOrigins: apigateway.Cors.ALL_ORIGINS, // Restrict in production
-        allowMethods: apigateway.Cors.ALL_METHODS,
+        allowOrigins: getAllowedApiOrigins(),
+        allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
         allowHeaders: [
           'Content-Type',
           'X-Amz-Date',
@@ -264,6 +288,7 @@ export class LfmtInfrastructureStack extends Stack {
           'X-Api-Key',
           'X-Amz-Security-Token',
         ],
+        allowCredentials: true,
       },
       // Enable caching for polling endpoints
       deployOptions: {
@@ -271,8 +296,8 @@ export class LfmtInfrastructureStack extends Stack {
         cachingEnabled: true,
         cacheClusterEnabled: true,
         cacheClusterSize: '0.5',
-        throttlingRateLimit: 100,
-        throttlingBurstLimit: 200,
+        throttlingRateLimit: this.node.tryGetContext('environment') === 'prod' ? 1000 : 100,
+        throttlingBurstLimit: this.node.tryGetContext('environment') === 'prod' ? 2000 : 200,
         methodOptions: {
           '/*/*': {
             cachingEnabled: true,
@@ -302,25 +327,39 @@ export class LfmtInfrastructureStack extends Stack {
   }
 
   private createLogGroups(removalPolicy: RemovalPolicy) {
+    // Determine log retention based on environment
+    const logRetention = this.node.tryGetContext('environment') === 'prod' 
+      ? logs.RetentionDays.SIX_MONTHS 
+      : logs.RetentionDays.ONE_MONTH;
+
     // API Gateway Logs
     new logs.LogGroup(this, 'ApiGatewayLogs', {
       logGroupName: `/aws/apigateway/lfmt-api-${this.stackName}`,
       removalPolicy,
-      retention: logs.RetentionDays.ONE_MONTH,
+      retention: logRetention,
     });
 
     // Lambda Function Logs
     new logs.LogGroup(this, 'LambdaLogs', {
       logGroupName: `/aws/lambda/lfmt-${this.stackName}`,
       removalPolicy,
-      retention: logs.RetentionDays.ONE_MONTH,
+      retention: logRetention,
     });
 
     // Step Functions Logs
     new logs.LogGroup(this, 'StepFunctionsLogs', {
       logGroupName: `/aws/stepfunctions/lfmt-${this.stackName}`,
       removalPolicy,
-      retention: logs.RetentionDays.ONE_MONTH,
+      retention: logRetention,
+    });
+
+    // Security Audit Logs
+    new logs.LogGroup(this, 'SecurityAuditLogs', {
+      logGroupName: `/aws/security/lfmt-${this.stackName}`,
+      removalPolicy,
+      retention: this.node.tryGetContext('environment') === 'prod' 
+        ? logs.RetentionDays.ONE_YEAR 
+        : logs.RetentionDays.THREE_MONTHS,
     });
   }
 

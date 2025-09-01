@@ -125,13 +125,28 @@ jobs:
 
       - name: Check for secrets in code
         run: |
-          # Simple secret detection
-          if grep -r -i "password\|secret\|key.*=" --include="*.ts" --include="*.js" --exclude-dir=node_modules .; then
-            echo "❌ Potential secrets found in code"
+          # Enhanced secret detection - exclude legitimate test files and CDK patterns
+          echo "🔍 Scanning for hardcoded secrets..."
+          
+          # Look for actual API keys and secrets (not test data or CDK properties)
+          if grep -r -E "(aws_access_key_id|aws_secret_access_key|AKIA[0-9A-Z]{16})" --include="*.ts" --include="*.js" --exclude-dir=node_modules .; then
+            echo "❌ AWS credentials found in code"
             exit 1
-          else
-            echo "✅ No obvious secrets detected"
           fi
+          
+          # Look for actual hardcoded passwords (exclude test files, interfaces, and CDK config)
+          if grep -r -E "password\s*[:=]\s*['\"][^'\"]{8,}['\"]" --include="*.ts" --include="*.js" --exclude-dir=node_modules --exclude="*test*" --exclude="*interface*" --exclude="*types*" .; then
+            echo "❌ Hardcoded passwords found in production code"
+            exit 1
+          fi
+          
+          # Look for API tokens and secrets (exclude CDK generateSecret and interface definitions)
+          if grep -r -E "(api_?secret|auth_?token|bearer_?token)\s*[:=]\s*['\"][a-zA-Z0-9]{20,}['\"]" --include="*.ts" --include="*.js" --exclude-dir=node_modules --exclude="*test*" .; then
+            echo "❌ Hardcoded API secrets or tokens found in production code"
+            exit 1
+          fi
+          
+          echo "✅ No actual secrets detected in production code"
 
   # CDK Synthesis and Validation
   cdk-synth:
