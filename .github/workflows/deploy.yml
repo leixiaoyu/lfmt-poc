@@ -1,0 +1,225 @@
+name: Deploy LFMT Infrastructure
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'backend/**'
+      - 'shared-types/**'
+      - '.github/workflows/deploy.yml'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy'
+        required: true
+        default: 'dev'
+        type: choice
+        options:
+          - dev
+          - staging
+          - prod
+
+env:
+  AWS_REGION: us-east-1
+  NODE_VERSION: '18'
+
+jobs:
+  test:
+    name: Run Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: backend/functions/package-lock.json
+
+      - name: Install function dependencies
+        working-directory: backend/functions
+        run: npm ci
+
+      - name: Run function tests
+        working-directory: backend/functions
+        run: npm test
+
+      - name: Check test coverage
+        working-directory: backend/functions
+        run: npm run test:coverage
+
+  build-infrastructure:
+    name: Build Infrastructure
+    runs-on: ubuntu-latest
+    needs: test
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: backend/infrastructure/package-lock.json
+
+      - name: Install infrastructure dependencies
+        working-directory: backend/infrastructure
+        run: npm ci
+
+      - name: Build infrastructure
+        working-directory: backend/infrastructure
+        run: npm run build
+
+      - name: CDK Synth (validate CloudFormation)
+        working-directory: backend/infrastructure
+        run: npx cdk synth --context environment=${{ github.event.inputs.environment || 'dev' }}
+
+  deploy-dev:
+    name: Deploy to Development
+    runs-on: ubuntu-latest
+    needs: [test, build-infrastructure]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    environment:
+      name: development
+      url: https://dev.lfmt.yourcompany.com
+
+    permissions:
+      id-token: write   # Required for OIDC authentication
+      contents: read    # Required to checkout code
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: backend/infrastructure/package-lock.json
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          role-session-name: GitHubActions-LFMT-Deploy
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Verify AWS identity
+        run: aws sts get-caller-identity
+
+      - name: Install infrastructure dependencies
+        working-directory: backend/infrastructure
+        run: npm ci
+
+      - name: CDK Bootstrap (if needed)
+        working-directory: backend/infrastructure
+        run: |
+          if ! aws cloudformation describe-stacks --stack-name CDKToolkit --region ${{ env.AWS_REGION }} 2>/dev/null; then
+            echo "CDKToolkit not found, bootstrapping..."
+            npx cdk bootstrap aws://427262291085/${{ env.AWS_REGION }}
+          else
+            echo "CDKToolkit already exists, skipping bootstrap"
+          fi
+
+      - name: CDK Deploy to Dev
+        working-directory: backend/infrastructure
+        run: npx cdk deploy --context environment=dev --require-approval never
+
+      - name: Get API URL
+        id: get-url
+        run: |
+          API_URL=$(aws cloudformation describe-stacks \
+            --stack-name lfmt-dev \
+            --query "Stacks[0].Outputs[?OutputKey=='ApiUrl'].OutputValue" \
+            --output text \
+            --region ${{ env.AWS_REGION }})
+          echo "api_url=$API_URL" >> $GITHUB_OUTPUT
+          echo "API URL: $API_URL"
+
+      - name: Test API Health
+        run: |
+          curl -f ${{ steps.get-url.outputs.api_url }}/v1/auth || echo "API not yet ready, may need warm-up"
+
+  deploy-staging:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    needs: [test, build-infrastructure]
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'staging'
+    environment:
+      name: staging
+      url: https://staging.lfmt.yourcompany.com
+
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          role-session-name: GitHubActions-LFMT-Deploy-Staging
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Install infrastructure dependencies
+        working-directory: backend/infrastructure
+        run: npm ci
+
+      - name: CDK Deploy to Staging
+        working-directory: backend/infrastructure
+        run: npx cdk deploy --context environment=staging --require-approval never
+
+  deploy-prod:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    needs: [test, build-infrastructure]
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'prod'
+    environment:
+      name: production
+      url: https://lfmt.yourcompany.com
+
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          role-session-name: GitHubActions-LFMT-Deploy-Prod
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Install infrastructure dependencies
+        working-directory: backend/infrastructure
+        run: npm ci
+
+      - name: CDK Deploy to Production
+        working-directory: backend/infrastructure
+        run: npx cdk deploy --context environment=prod --require-approval never
+
+      - name: Notify deployment success
+        run: echo "Production deployment completed successfully!"
