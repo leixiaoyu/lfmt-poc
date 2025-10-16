@@ -491,7 +491,7 @@ export class LfmtInfrastructureStack extends Stack {
           image: lambda.Runtime.NODEJS_18_X.bundlingImage,
           command: [
             'bash', '-c',
-            'npm ci && npm run build && cp -r dist/* /asset-output/ && cp -r node_modules /asset-output/',
+            'npm install && npm run build && cp -r dist/* /asset-output/ && cp -r node_modules /asset-output/',
           ],
         },
       }),
@@ -512,7 +512,7 @@ export class LfmtInfrastructureStack extends Stack {
           image: lambda.Runtime.NODEJS_18_X.bundlingImage,
           command: [
             'bash', '-c',
-            'npm ci && npm run build && cp -r dist/* /asset-output/ && cp -r node_modules /asset-output/',
+            'npm install && npm run build && cp -r dist/* /asset-output/ && cp -r node_modules /asset-output/',
           ],
         },
       }),
@@ -533,7 +533,7 @@ export class LfmtInfrastructureStack extends Stack {
           image: lambda.Runtime.NODEJS_18_X.bundlingImage,
           command: [
             'bash', '-c',
-            'npm ci && npm run build && cp -r dist/* /asset-output/ && cp -r node_modules /asset-output/',
+            'npm install && npm run build && cp -r dist/* /asset-output/ && cp -r node_modules /asset-output/',
           ],
         },
       }),
@@ -554,7 +554,7 @@ export class LfmtInfrastructureStack extends Stack {
           image: lambda.Runtime.NODEJS_18_X.bundlingImage,
           command: [
             'bash', '-c',
-            'npm ci && npm run build && cp -r dist/* /asset-output/ && cp -r node_modules /asset-output/',
+            'npm install && npm run build && cp -r dist/* /asset-output/ && cp -r node_modules /asset-output/',
           ],
         },
       }),
