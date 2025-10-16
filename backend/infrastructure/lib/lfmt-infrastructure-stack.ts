@@ -24,6 +24,7 @@ export interface LfmtInfrastructureStackProps extends StackProps {
   environment: string;
   enableLogging: boolean;
   retainData: boolean;
+  skipLambdaBundling?: boolean;  // For testing purposes
 }
 
 export class LfmtInfrastructureStack extends Stack {
@@ -44,6 +45,9 @@ export class LfmtInfrastructureStack extends Stack {
 
   // IAM role for Lambda functions
   private lambdaRole?: iam.Role;
+
+  // API Gateway resources
+  private authResource?: apigateway.Resource;
 
   constructor(scope: Construct, id: string, props: LfmtInfrastructureStackProps) {
     super(scope, id, props);
@@ -323,8 +327,8 @@ export class LfmtInfrastructureStack extends Stack {
     });
 
     // Create API resources structure
-    const authResource = this.api.root.addResource('auth');
-    const jobsResource = this.api.root.addResource('jobs'); 
+    this.authResource = this.api.root.addResource('auth');
+    const jobsResource = this.api.root.addResource('jobs');
     const uploadResource = this.api.root.addResource('upload');
     const legalResource = this.api.root.addResource('legal');
     const claudeResource = this.api.root.addResource('claude');
@@ -481,20 +485,26 @@ export class LfmtInfrastructureStack extends Stack {
         : 'http://localhost:3000',
     };
 
+    // Determine code source based on context
+    const skipBundling = this.node.tryGetContext('skipLambdaBundling') === 'true';
+    const lambdaCode = skipBundling
+      ? lambda.Code.fromInline('exports.handler = async () => ({ statusCode: 200 });')
+      : lambda.Code.fromAsset('../functions', {
+          bundling: {
+            image: lambda.Runtime.NODEJS_18_X.bundlingImage,
+            command: [
+              'bash', '-c',
+              'npm config set cache /tmp/.npm && npm install --no-audit --no-fund && npm run build && cp -r dist/* /asset-output/ && cp -r node_modules /asset-output/',
+            ],
+          },
+        });
+
     // Register Lambda Function
     this.registerFunction = new lambda.Function(this, 'RegisterFunction', {
       functionName: `lfmt-register-${this.stackName}`,
       runtime: lambda.Runtime.NODEJS_18_X,
-      handler: 'auth/register.handler',
-      code: lambda.Code.fromAsset('../functions', {
-        bundling: {
-          image: lambda.Runtime.NODEJS_18_X.bundlingImage,
-          command: [
-            'bash', '-c',
-            'npm config set cache /tmp/.npm && npm install --no-audit --no-fund && npm run build && cp -r dist/* /asset-output/ && cp -r node_modules /asset-output/',
-          ],
-        },
-      }),
+      handler: skipBundling ? 'index.handler' : 'auth/register.handler',
+      code: lambdaCode,
       role: this.lambdaRole,
       environment: commonEnv,
       timeout: Duration.seconds(30),
@@ -506,16 +516,8 @@ export class LfmtInfrastructureStack extends Stack {
     this.loginFunction = new lambda.Function(this, 'LoginFunction', {
       functionName: `lfmt-login-${this.stackName}`,
       runtime: lambda.Runtime.NODEJS_18_X,
-      handler: 'auth/login.handler',
-      code: lambda.Code.fromAsset('../functions', {
-        bundling: {
-          image: lambda.Runtime.NODEJS_18_X.bundlingImage,
-          command: [
-            'bash', '-c',
-            'npm config set cache /tmp/.npm && npm install --no-audit --no-fund && npm run build && cp -r dist/* /asset-output/ && cp -r node_modules /asset-output/',
-          ],
-        },
-      }),
+      handler: skipBundling ? 'index.handler' : 'auth/login.handler',
+      code: lambdaCode,
       role: this.lambdaRole,
       environment: commonEnv,
       timeout: Duration.seconds(30),
@@ -527,16 +529,8 @@ export class LfmtInfrastructureStack extends Stack {
     this.refreshTokenFunction = new lambda.Function(this, 'RefreshTokenFunction', {
       functionName: `lfmt-refresh-token-${this.stackName}`,
       runtime: lambda.Runtime.NODEJS_18_X,
-      handler: 'auth/refreshToken.handler',
-      code: lambda.Code.fromAsset('../functions', {
-        bundling: {
-          image: lambda.Runtime.NODEJS_18_X.bundlingImage,
-          command: [
-            'bash', '-c',
-            'npm config set cache /tmp/.npm && npm install --no-audit --no-fund && npm run build && cp -r dist/* /asset-output/ && cp -r node_modules /asset-output/',
-          ],
-        },
-      }),
+      handler: skipBundling ? 'index.handler' : 'auth/refreshToken.handler',
+      code: lambdaCode,
       role: this.lambdaRole,
       environment: commonEnv,
       timeout: Duration.seconds(30),
@@ -548,16 +542,8 @@ export class LfmtInfrastructureStack extends Stack {
     this.resetPasswordFunction = new lambda.Function(this, 'ResetPasswordFunction', {
       functionName: `lfmt-reset-password-${this.stackName}`,
       runtime: lambda.Runtime.NODEJS_18_X,
-      handler: 'auth/resetPassword.handler',
-      code: lambda.Code.fromAsset('../functions', {
-        bundling: {
-          image: lambda.Runtime.NODEJS_18_X.bundlingImage,
-          command: [
-            'bash', '-c',
-            'npm config set cache /tmp/.npm && npm install --no-audit --no-fund && npm run build && cp -r dist/* /asset-output/ && cp -r node_modules /asset-output/',
-          ],
-        },
-      }),
+      handler: skipBundling ? 'index.handler' : 'auth/resetPassword.handler',
+      code: lambdaCode,
       role: this.lambdaRole,
       environment: commonEnv,
       timeout: Duration.seconds(30),
@@ -571,8 +557,12 @@ export class LfmtInfrastructureStack extends Stack {
       throw new Error('Lambda functions must be created before API endpoints');
     }
 
-    // Create /auth resource
-    const auth = this.api.root.addResource('auth');
+    if (!this.authResource) {
+      throw new Error('Auth resource must be created before API endpoints');
+    }
+
+    // Use existing /auth resource created in createApiGateway()
+    const auth = this.authResource;
 
     // POST /auth - Register
     auth.addMethod('POST', new apigateway.LambdaIntegration(this.registerFunction), {

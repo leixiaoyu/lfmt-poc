@@ -11,7 +11,11 @@ describe('LFMT Infrastructure Stack', () => {
   let template: Template;
 
   beforeAll(() => {
-    app = new App();
+    app = new App({
+      context: {
+        skipLambdaBundling: 'true',  // Skip Docker bundling for tests
+      },
+    });
     stack = new LfmtInfrastructureStack(app, 'TestStack', {
       stackName: 'test',
       environment: 'test',
