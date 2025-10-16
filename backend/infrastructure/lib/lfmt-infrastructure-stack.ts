@@ -36,6 +36,15 @@ export class LfmtInfrastructureStack extends Stack {
   public readonly resultsBucket: s3.Bucket;
   public readonly api: apigateway.RestApi;
 
+  // Lambda functions
+  private registerFunction?: lambda.Function;
+  private loginFunction?: lambda.Function;
+  private refreshTokenFunction?: lambda.Function;
+  private resetPasswordFunction?: lambda.Function;
+
+  // IAM role for Lambda functions
+  private lambdaRole?: iam.Role;
+
   constructor(scope: Construct, id: string, props: LfmtInfrastructureStackProps) {
     super(scope, id, props);
 
@@ -53,18 +62,24 @@ export class LfmtInfrastructureStack extends Stack {
     // 3. Cognito User Pool
     this.createCognitoUserPool(removalPolicy);
 
-    // 4. API Gateway
-    this.createApiGateway();
-
-    // 5. CloudWatch Log Groups
+    // 4. CloudWatch Log Groups
     if (enableLogging) {
       this.createLogGroups(removalPolicy);
     }
 
-    // 6. IAM Roles and Policies
+    // 5. IAM Roles and Policies
     this.createIamRoles();
 
-    // 7. Outputs
+    // 6. Lambda Functions
+    this.createLambdaFunctions();
+
+    // 7. API Gateway
+    this.createApiGateway();
+
+    // 8. API Gateway Endpoints
+    this.createApiEndpoints();
+
+    // 9. Outputs
     this.createOutputs();
   }
 
@@ -365,7 +380,7 @@ export class LfmtInfrastructureStack extends Stack {
 
   private createIamRoles() {
     // Lambda Execution Role with required permissions
-    const lambdaRole = new iam.Role(this, 'LambdaExecutionRole', {
+    this.lambdaRole = new iam.Role(this, 'LambdaExecutionRole', {
       assumedBy: new iam.ServicePrincipal('lambda.amazonaws.com'),
       managedPolicies: [
         iam.ManagedPolicy.fromAwsManagedPolicyName('service-role/AWSLambdaBasicExecutionRole'),
@@ -415,6 +430,10 @@ export class LfmtInfrastructureStack extends Stack {
             new iam.PolicyStatement({
               effect: iam.Effect.ALLOW,
               actions: [
+                'cognito-idp:SignUp',
+                'cognito-idp:InitiateAuth',
+                'cognito-idp:ForgotPassword',
+                'cognito-idp:ConfirmForgotPassword',
                 'cognito-idp:AdminCreateUser',
                 'cognito-idp:AdminSetUserPassword',
                 'cognito-idp:AdminGetUser',
@@ -441,6 +460,165 @@ export class LfmtInfrastructureStack extends Stack {
           ],
         }),
       },
+    });
+  }
+
+  private createLambdaFunctions() {
+    if (!this.lambdaRole) {
+      throw new Error('Lambda role must be created before Lambda functions');
+    }
+
+    // Common environment variables for all auth Lambda functions
+    const commonEnv = {
+      COGNITO_CLIENT_ID: this.userPoolClient.userPoolClientId,
+      COGNITO_USER_POOL_ID: this.userPool.userPoolId,
+      ENVIRONMENT: this.stackName,
+      JOBS_TABLE_NAME: this.jobsTable.tableName,
+      USERS_TABLE_NAME: this.usersTable.tableName,
+      ATTESTATIONS_TABLE_NAME: this.attestationsTable.tableName,
+      ALLOWED_ORIGIN: this.node.tryGetContext('environment') === 'prod'
+        ? 'https://lfmt.yourcompany.com'
+        : 'http://localhost:3000',
+    };
+
+    // Register Lambda Function
+    this.registerFunction = new lambda.Function(this, 'RegisterFunction', {
+      functionName: `lfmt-register-${this.stackName}`,
+      runtime: lambda.Runtime.NODEJS_18_X,
+      handler: 'auth/register.handler',
+      code: lambda.Code.fromAsset('../functions', {
+        bundling: {
+          image: lambda.Runtime.NODEJS_18_X.bundlingImage,
+          command: [
+            'bash', '-c',
+            'npm ci && npm run build && cp -r dist/* /asset-output/ && cp -r node_modules /asset-output/',
+          ],
+        },
+      }),
+      role: this.lambdaRole,
+      environment: commonEnv,
+      timeout: Duration.seconds(30),
+      memorySize: 256,
+      description: 'User registration with Cognito',
+    });
+
+    // Login Lambda Function
+    this.loginFunction = new lambda.Function(this, 'LoginFunction', {
+      functionName: `lfmt-login-${this.stackName}`,
+      runtime: lambda.Runtime.NODEJS_18_X,
+      handler: 'auth/login.handler',
+      code: lambda.Code.fromAsset('../functions', {
+        bundling: {
+          image: lambda.Runtime.NODEJS_18_X.bundlingImage,
+          command: [
+            'bash', '-c',
+            'npm ci && npm run build && cp -r dist/* /asset-output/ && cp -r node_modules /asset-output/',
+          ],
+        },
+      }),
+      role: this.lambdaRole,
+      environment: commonEnv,
+      timeout: Duration.seconds(30),
+      memorySize: 256,
+      description: 'User login with Cognito',
+    });
+
+    // Refresh Token Lambda Function
+    this.refreshTokenFunction = new lambda.Function(this, 'RefreshTokenFunction', {
+      functionName: `lfmt-refresh-token-${this.stackName}`,
+      runtime: lambda.Runtime.NODEJS_18_X,
+      handler: 'auth/refreshToken.handler',
+      code: lambda.Code.fromAsset('../functions', {
+        bundling: {
+          image: lambda.Runtime.NODEJS_18_X.bundlingImage,
+          command: [
+            'bash', '-c',
+            'npm ci && npm run build && cp -r dist/* /asset-output/ && cp -r node_modules /asset-output/',
+          ],
+        },
+      }),
+      role: this.lambdaRole,
+      environment: commonEnv,
+      timeout: Duration.seconds(30),
+      memorySize: 256,
+      description: 'Refresh JWT tokens',
+    });
+
+    // Reset Password Lambda Function
+    this.resetPasswordFunction = new lambda.Function(this, 'ResetPasswordFunction', {
+      functionName: `lfmt-reset-password-${this.stackName}`,
+      runtime: lambda.Runtime.NODEJS_18_X,
+      handler: 'auth/resetPassword.handler',
+      code: lambda.Code.fromAsset('../functions', {
+        bundling: {
+          image: lambda.Runtime.NODEJS_18_X.bundlingImage,
+          command: [
+            'bash', '-c',
+            'npm ci && npm run build && cp -r dist/* /asset-output/ && cp -r node_modules /asset-output/',
+          ],
+        },
+      }),
+      role: this.lambdaRole,
+      environment: commonEnv,
+      timeout: Duration.seconds(30),
+      memorySize: 256,
+      description: 'Password reset via email',
+    });
+  }
+
+  private createApiEndpoints() {
+    if (!this.registerFunction || !this.loginFunction || !this.refreshTokenFunction || !this.resetPasswordFunction) {
+      throw new Error('Lambda functions must be created before API endpoints');
+    }
+
+    // Create /auth resource
+    const auth = this.api.root.addResource('auth');
+
+    // POST /auth - Register
+    auth.addMethod('POST', new apigateway.LambdaIntegration(this.registerFunction), {
+      authorizationType: apigateway.AuthorizationType.NONE,
+      requestValidator: new apigateway.RequestValidator(this, 'RegisterRequestValidator', {
+        restApi: this.api,
+        requestValidatorName: 'register-validator',
+        validateRequestBody: true,
+        validateRequestParameters: false,
+      }),
+    });
+
+    // POST /auth/login - Login
+    const login = auth.addResource('login');
+    login.addMethod('POST', new apigateway.LambdaIntegration(this.loginFunction), {
+      authorizationType: apigateway.AuthorizationType.NONE,
+      requestValidator: new apigateway.RequestValidator(this, 'LoginRequestValidator', {
+        restApi: this.api,
+        requestValidatorName: 'login-validator',
+        validateRequestBody: true,
+        validateRequestParameters: false,
+      }),
+    });
+
+    // POST /auth/refresh - Refresh Token
+    const refresh = auth.addResource('refresh');
+    refresh.addMethod('POST', new apigateway.LambdaIntegration(this.refreshTokenFunction), {
+      authorizationType: apigateway.AuthorizationType.NONE,
+      requestValidator: new apigateway.RequestValidator(this, 'RefreshTokenRequestValidator', {
+        restApi: this.api,
+        requestValidatorName: 'refresh-token-validator',
+        validateRequestBody: true,
+        validateRequestParameters: false,
+      }),
+    });
+
+    // POST /auth/reset-password - Reset Password
+    const resetPassword = auth.addResource('reset-password');
+    resetPassword.addMethod('POST', new apigateway.LambdaIntegration(this.resetPasswordFunction), {
+      authorizationType: apigateway.AuthorizationType.NONE,
+      requestValidator: new apigateway.RequestValidator(this, 'ResetPasswordRequestValidator', {
+        restApi: this.api,
+        requestValidatorName: 'reset-password-validator',
+        validateRequestBody: true,
+        validateRequestParameters: false,
+      }),
     });
   }
 
