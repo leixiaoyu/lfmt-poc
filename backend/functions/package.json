@@ -1,0 +1,37 @@
+{
+  "name": "@lfmt/functions",
+  "version": "1.0.0",
+  "description": "Lambda functions for LFMT POC - Enhanced from Gemini POC",
+  "main": "index.js",
+  "scripts": {
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage",
+    "build": "tsc",
+    "lint": "eslint . --ext .ts"
+  },
+  "keywords": ["lambda", "serverless", "lfmt", "translation"],
+  "author": "LFMT Team",
+  "license": "UNLICENSED",
+  "dependencies": {
+    "@aws-sdk/client-cognito-identity-provider": "^3.525.0",
+    "@aws-sdk/client-dynamodb": "^3.525.0",
+    "@aws-sdk/lib-dynamodb": "^3.525.0",
+    "@aws-sdk/client-s3": "^3.525.0",
+    "@aws-sdk/s3-request-presigner": "^3.525.0",
+    "@aws-sdk/client-bedrock-runtime": "^3.525.0",
+    "@lfmt/shared-types": "file:../../shared-types"
+  },
+  "devDependencies": {
+    "@types/aws-lambda": "^8.10.138",
+    "@types/jest": "^29.5.14",
+    "@types/node": "^18.19.129",
+    "@typescript-eslint/eslint-plugin": "^6.0.0",
+    "@typescript-eslint/parser": "^6.0.0",
+    "aws-sdk-client-mock": "^3.0.0",
+    "eslint": "^8.0.0",
+    "jest": "^29.5.0",
+    "ts-jest": "^29.1.0",
+    "typescript": "^5.0.0"
+  }
+}
