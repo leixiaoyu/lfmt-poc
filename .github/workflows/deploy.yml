@@ -40,6 +40,10 @@ jobs:
           cache: 'npm'
           cache-dependency-path: backend/functions/package-lock.json
 
+      - name: Install shared-types dependencies
+        working-directory: shared-types
+        run: npm install
+
       - name: Install function dependencies
         working-directory: backend/functions
         run: npm ci
