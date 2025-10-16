@@ -55,7 +55,7 @@ export const handler = async (
       );
     }
 
-    const { email, password, given_name, family_name } = validationResult.data;
+    const { email, password, firstName, lastName } = validationResult.data;
 
     logger.info('Registering user with Cognito', {
       requestId,
@@ -63,6 +63,7 @@ export const handler = async (
     });
 
     // Register user with Cognito
+    // Map frontend field names (firstName, lastName) to Cognito attributes (given_name, family_name)
     const command = new SignUpCommand({
       ClientId: COGNITO_CLIENT_ID,
       Username: email,
@@ -74,11 +75,11 @@ export const handler = async (
         },
         {
           Name: 'given_name',
-          Value: given_name,
+          Value: firstName,
         },
         {
           Name: 'family_name',
-          Value: family_name,
+          Value: lastName,
         },
       ],
     });

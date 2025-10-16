@@ -29,6 +29,11 @@ node_modules/**/lib/
 frontend/lib/
 *.tsbuildinfo
 
+# TypeScript compiled outputs (shared-types and functions)
+shared-types/src/**/*.js
+shared-types/src/**/*.js.map
+shared-types/src/**/*.d.ts.map
+
 # Environment variables and secrets
 .env
 .env.local

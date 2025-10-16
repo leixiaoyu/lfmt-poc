@@ -11,7 +11,7 @@ import {
   TooManyRequestsException,
   LimitExceededException,
 } from '@aws-sdk/client-cognito-identity-provider';
-import { resetPasswordRequestSchema } from '@lfmt/shared-types';
+import { forgotPasswordRequestSchema } from '@lfmt/shared-types';
 import { createSuccessResponse, createErrorResponse } from '../shared/api-response';
 import Logger from '../shared/logger';
 import { getRequiredEnv } from '../shared/env';
@@ -30,7 +30,7 @@ export const handler = async (
 
   try {
     const body = JSON.parse(event.body || '{}');
-    const validationResult = resetPasswordRequestSchema.safeParse(body);
+    const validationResult = forgotPasswordRequestSchema.safeParse(body);
 
     if (!validationResult.success) {
       logger.warn('Password reset validation failed', {

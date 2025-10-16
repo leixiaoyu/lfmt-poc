@@ -103,3 +103,21 @@ export const loginRequestSchema = z.object({
   rememberMe: z.boolean().optional(),
   mfaCode: z.string().optional()
 });
+
+export const refreshTokenRequestSchema = z.object({
+  refreshToken: z.string().min(1)
+});
+
+export const forgotPasswordRequestSchema = z.object({
+  email: z.string().email()
+});
+
+export const resetPasswordRequestSchema = z.object({
+  token: z.string().min(1),
+  email: z.string().email(),
+  newPassword: z.string().min(8),
+  confirmPassword: z.string()
+}).refine(data => data.newPassword === data.confirmPassword, {
+  message: "Passwords don't match",
+  path: ["confirmPassword"]
+});
