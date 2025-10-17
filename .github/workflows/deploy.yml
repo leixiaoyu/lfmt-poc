@@ -1,5 +1,6 @@
 name: Deploy LFMT Infrastructure
 
+# Automated CI/CD pipeline with secure OIDC authentication
 on:
   push:
     branches:
