@@ -82,7 +82,7 @@ jobs:
 
       - name: CDK Synth (validate CloudFormation)
         working-directory: backend/infrastructure
-        run: npx cdk synth --context environment=${{ github.event.inputs.environment || 'dev' }}
+        run: npx cdk synth --context environment=${{ github.event.inputs.environment || 'dev' }} --context skipLambdaBundling=true
 
   deploy-dev:
     name: Deploy to Development
