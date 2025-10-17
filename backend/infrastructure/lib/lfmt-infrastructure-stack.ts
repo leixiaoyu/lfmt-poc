@@ -494,7 +494,7 @@ export class LfmtInfrastructureStack extends Stack {
             image: lambda.Runtime.NODEJS_18_X.bundlingImage,
             command: [
               'bash', '-c',
-              'npm config set cache /tmp/.npm && npm install --cache /tmp/.npm --userconfig /tmp/.npmrc --no-audit --no-fund && npm run build && cp -r dist/* /asset-output/ && cp -r node_modules /asset-output/',
+              'export NPM_CONFIG_USERCONFIG=/tmp/.npmrc && export NPM_CONFIG_CACHE=/tmp/.npm && npm install --no-audit --no-fund && npm run build && cp -r dist/* /asset-output/ && cp -r node_modules /asset-output/',
             ],
           },
         });
