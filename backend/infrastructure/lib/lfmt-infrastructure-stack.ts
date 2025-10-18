@@ -209,13 +209,13 @@ export class LfmtInfrastructureStack extends Stack {
       lifecycleRules: [{
         id: 'ResultsCleanup',
         enabled: true,
-        expiration: Duration.days(30), // 30 days retention for results
+        expiration: Duration.days(90), // 90 days retention for results
         transitions: [{
           storageClass: s3.StorageClass.INFREQUENT_ACCESS,
-          transitionAfter: Duration.days(7),
+          transitionAfter: Duration.days(30), // AWS minimum for STANDARD_IA
         }, {
           storageClass: s3.StorageClass.GLACIER,
-          transitionAfter: Duration.days(14),
+          transitionAfter: Duration.days(60), // Transition to Glacier after 60 days
         }],
       }],
     });

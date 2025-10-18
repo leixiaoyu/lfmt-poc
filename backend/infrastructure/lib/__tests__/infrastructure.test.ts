@@ -177,7 +177,7 @@ describe('LFMT Infrastructure Stack', () => {
         }
       });
 
-      // Results bucket: 30 days retention with transitions
+      // Results bucket: 90 days retention with transitions at 30/60 days
       template.hasResourceProperties('AWS::S3::Bucket', {
         BucketName: 'lfmt-results-test',
         LifecycleConfiguration: {
@@ -185,15 +185,15 @@ describe('LFMT Infrastructure Stack', () => {
             Match.objectLike({
               Id: 'ResultsCleanup',
               Status: 'Enabled',
-              ExpirationInDays: 30,
+              ExpirationInDays: 90,
               Transitions: Match.arrayWith([
                 Match.objectLike({
                   StorageClass: 'STANDARD_IA',
-                  TransitionInDays: 7
+                  TransitionInDays: 30
                 }),
                 Match.objectLike({
                   StorageClass: 'GLACIER',
-                  TransitionInDays: 14
+                  TransitionInDays: 60
                 })
               ])
             })
