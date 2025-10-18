@@ -12,6 +12,7 @@ import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as apigateway from 'aws-cdk-lib/aws-apigateway';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
+import { NodejsFunction } from 'aws-cdk-lib/aws-lambda-nodejs';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as cognito from 'aws-cdk-lib/aws-cognito';
 import * as stepfunctions from 'aws-cdk-lib/aws-stepfunctions';
@@ -485,70 +486,80 @@ export class LfmtInfrastructureStack extends Stack {
         : 'http://localhost:3000',
     };
 
-    // Determine code source based on context
-    const skipBundling = this.node.tryGetContext('skipLambdaBundling') === 'true';
-    const lambdaCode = skipBundling
-      ? lambda.Code.fromInline('exports.handler = async () => ({ statusCode: 200 });')
-      : lambda.Code.fromAsset('../functions', {
-          bundling: {
-            image: lambda.Runtime.NODEJS_18_X.bundlingImage,
-            command: [
-              'bash', '-c',
-              'mkdir -p /tmp/.npm && npm config set cache /tmp/.npm --global && npm install --production && npm run build && cp -r dist/* /asset-output/ && cp -r node_modules /asset-output/',
-            ],
-          },
-        });
-
-    // Register Lambda Function
-    this.registerFunction = new lambda.Function(this, 'RegisterFunction', {
+    // Register Lambda Function - using NodejsFunction with local esbuild
+    this.registerFunction = new NodejsFunction(this, 'RegisterFunction', {
       functionName: `lfmt-register-${this.stackName}`,
+      entry: '../functions/auth/register.ts',
+      handler: 'handler',
       runtime: lambda.Runtime.NODEJS_18_X,
-      handler: skipBundling ? 'index.handler' : 'auth/register.handler',
-      code: lambdaCode,
       role: this.lambdaRole,
       environment: commonEnv,
       timeout: Duration.seconds(30),
       memorySize: 256,
       description: 'User registration with Cognito',
+      bundling: {
+        externalModules: ['aws-sdk', '@aws-sdk/*'],
+        minify: true,
+        sourceMap: true,
+        forceDockerBundling: false,  // Use local esbuild instead of Docker
+      },
     });
 
     // Login Lambda Function
-    this.loginFunction = new lambda.Function(this, 'LoginFunction', {
+    this.loginFunction = new NodejsFunction(this, 'LoginFunction', {
       functionName: `lfmt-login-${this.stackName}`,
+      entry: '../functions/auth/login.ts',
+      handler: 'handler',
       runtime: lambda.Runtime.NODEJS_18_X,
-      handler: skipBundling ? 'index.handler' : 'auth/login.handler',
-      code: lambdaCode,
       role: this.lambdaRole,
       environment: commonEnv,
       timeout: Duration.seconds(30),
       memorySize: 256,
       description: 'User login with Cognito',
+      bundling: {
+        externalModules: ['aws-sdk', '@aws-sdk/*'],
+        minify: true,
+        sourceMap: true,
+        forceDockerBundling: false,
+      },
     });
 
     // Refresh Token Lambda Function
-    this.refreshTokenFunction = new lambda.Function(this, 'RefreshTokenFunction', {
+    this.refreshTokenFunction = new NodejsFunction(this, 'RefreshTokenFunction', {
       functionName: `lfmt-refresh-token-${this.stackName}`,
+      entry: '../functions/auth/refreshToken.ts',
+      handler: 'handler',
       runtime: lambda.Runtime.NODEJS_18_X,
-      handler: skipBundling ? 'index.handler' : 'auth/refreshToken.handler',
-      code: lambdaCode,
       role: this.lambdaRole,
       environment: commonEnv,
       timeout: Duration.seconds(30),
       memorySize: 256,
       description: 'Refresh JWT tokens',
+      bundling: {
+        externalModules: ['aws-sdk', '@aws-sdk/*'],
+        minify: true,
+        sourceMap: true,
+        forceDockerBundling: false,
+      },
     });
 
     // Reset Password Lambda Function
-    this.resetPasswordFunction = new lambda.Function(this, 'ResetPasswordFunction', {
+    this.resetPasswordFunction = new NodejsFunction(this, 'ResetPasswordFunction', {
       functionName: `lfmt-reset-password-${this.stackName}`,
+      entry: '../functions/auth/resetPassword.ts',
+      handler: 'handler',
       runtime: lambda.Runtime.NODEJS_18_X,
-      handler: skipBundling ? 'index.handler' : 'auth/resetPassword.handler',
-      code: lambdaCode,
       role: this.lambdaRole,
       environment: commonEnv,
       timeout: Duration.seconds(30),
       memorySize: 256,
       description: 'Password reset via email',
+      bundling: {
+        externalModules: ['aws-sdk', '@aws-sdk/*'],
+        minify: true,
+        sourceMap: true,
+        forceDockerBundling: false,
+      },
     });
   }
 
