@@ -4,9 +4,12 @@
   "description": "Lambda functions for LFMT POC - Enhanced from Gemini POC",
   "main": "index.js",
   "scripts": {
-    "test": "jest",
-    "test:watch": "jest --watch",
-    "test:coverage": "jest --coverage",
+    "test": "jest --testPathIgnorePatterns=integration",
+    "test:unit": "jest --testPathIgnorePatterns=integration",
+    "test:integration": "jest --testPathPattern=integration --runInBand",
+    "test:all": "jest --runInBand",
+    "test:watch": "jest --watch --testPathIgnorePatterns=integration",
+    "test:coverage": "jest --coverage --testPathIgnorePatterns=integration",
     "build": "tsc",
     "lint": "eslint . --ext .ts"
   },
