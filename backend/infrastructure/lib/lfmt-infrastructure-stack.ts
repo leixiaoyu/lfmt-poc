@@ -262,6 +262,16 @@ export class LfmtInfrastructureStack extends Stack {
       },
     });
 
+    // Add User Pool Domain (required for Cognito sign-up flow)
+    // Create a simple hash from account ID to ensure uniqueness
+    const accountHash = Buffer.from(this.account).toString('base64').toLowerCase().replace(/[^a-z0-9]/g, '').substring(0, 8);
+    const userPoolDomain = new cognito.UserPoolDomain(this, 'UserPoolDomain', {
+      userPool: this.userPool,
+      cognitoDomain: {
+        domainPrefix: `lfmt-${this.stackName.toLowerCase()}-${accountHash}`,
+      },
+    });
+
     (this as any).userPoolClient = new cognito.UserPoolClient(this, 'UserPoolClient', {
       userPool: this.userPool,
       userPoolClientName: `lfmt-client-${this.stackName}`,
@@ -275,6 +285,12 @@ export class LfmtInfrastructureStack extends Stack {
       idTokenValidity: Duration.hours(1),
       refreshTokenValidity: Duration.days(30),
       preventUserExistenceErrors: true,
+    });
+
+    // Export the domain for reference
+    new CfnOutput(this, 'UserPoolDomainName', {
+      value: userPoolDomain.domainName,
+      description: 'Cognito User Pool Domain',
     });
   }
 

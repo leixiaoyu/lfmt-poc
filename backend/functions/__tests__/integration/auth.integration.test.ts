@@ -16,7 +16,7 @@ import { randomBytes } from 'crypto';
 
 // Configuration from environment or defaults
 const API_BASE_URL = process.env.API_URL || 'https://8brwlwf68h.execute-api.us-east-1.amazonaws.com/v1';
-const TEST_EMAIL_DOMAIN = '@integration-test.example.com';
+const TEST_EMAIL_DOMAIN = '@test.com';
 
 // Helper to generate unique test emails
 const generateTestEmail = (): string => {
