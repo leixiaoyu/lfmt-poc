@@ -37,13 +37,8 @@ export const handler = async (
   logger.info('Processing registration request', { requestId });
 
   try {
-    // Log raw event for debugging
-    logger.info('Raw event body', { requestId, body: event.body });
-
     // Parse and validate request body
     const body = JSON.parse(event.body || '{}');
-    logger.info('Parsed body', { requestId, bodyKeys: Object.keys(body) });
-
     const validationResult = registerRequestSchema.safeParse(body);
 
     if (!validationResult.success) {
