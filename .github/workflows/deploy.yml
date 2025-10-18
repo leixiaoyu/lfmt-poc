@@ -141,7 +141,7 @@ jobs:
         id: get-url
         run: |
           API_URL=$(aws cloudformation describe-stacks \
-            --stack-name lfmt-dev \
+            --stack-name LfmtPocDev \
             --query "Stacks[0].Outputs[?OutputKey=='ApiUrl'].OutputValue" \
             --output text \
             --region ${{ env.AWS_REGION }})
