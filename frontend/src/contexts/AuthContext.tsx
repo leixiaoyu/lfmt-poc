@@ -77,6 +77,10 @@ interface AuthContextState {
  */
 const AuthContext = createContext<AuthContextState | undefined>(undefined);
 
+// Export for testing purposes
+export { AuthContext };
+export type { AuthContextState as AuthContextType };
+
 /**
  * AuthProvider Props
  */
