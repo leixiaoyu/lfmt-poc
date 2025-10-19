@@ -74,7 +74,11 @@ function shouldMockRequest(config: InternalAxiosRequestConfig): boolean {
 async function mockRegister(config: InternalAxiosRequestConfig): Promise<AxiosResponse> {
   await sleep(MOCK_DELAY);
 
-  const data = JSON.parse(config.data) as RegisterRequest;
+  // Axios may have already parsed the data, or it might still be a string
+  const data = typeof config.data === 'string'
+    ? JSON.parse(config.data) as RegisterRequest
+    : config.data as RegisterRequest;
+
   const user = createMockUser(data);
   const authResponse = createMockAuthResponse(user);
 
@@ -95,7 +99,10 @@ async function mockRegister(config: InternalAxiosRequestConfig): Promise<AxiosRe
 async function mockLogin(config: InternalAxiosRequestConfig): Promise<AxiosResponse> {
   await sleep(MOCK_DELAY);
 
-  const data = JSON.parse(config.data) as LoginRequest;
+  const data = typeof config.data === 'string'
+    ? JSON.parse(config.data) as LoginRequest
+    : config.data as LoginRequest;
+
   const user = createMockUser(data);
   const authResponse = createMockAuthResponse(user);
 
@@ -186,7 +193,9 @@ async function mockGetCurrentUser(config: InternalAxiosRequestConfig): Promise<A
 async function mockRequestPasswordReset(config: InternalAxiosRequestConfig): Promise<AxiosResponse> {
   await sleep(MOCK_DELAY);
 
-  const data = JSON.parse(config.data) as { email: string };
+  const data = typeof config.data === 'string'
+    ? JSON.parse(config.data) as { email: string }
+    : config.data as { email: string };
 
   console.log('[MOCK API] Password reset requested for:', data.email);
 
