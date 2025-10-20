@@ -16,8 +16,20 @@ export default function RegisterPage() {
   const navigate = useNavigate();
   const { register } = useAuth();
 
-  const handleRegister = async (data: RegisterRequest) => {
-    await register(data);
+  const handleRegister = async (formData: {
+    email: string;
+    password: string;
+    confirmPassword: string;
+    firstName: string;
+    lastName: string;
+  }) => {
+    // Add required fields that aren't in the form (POC simplification)
+    const registrationData: RegisterRequest = {
+      ...formData,
+      acceptedTerms: true,
+      acceptedPrivacy: true,
+    };
+    await register(registrationData);
     navigate(ROUTES.DASHBOARD);
   };
 

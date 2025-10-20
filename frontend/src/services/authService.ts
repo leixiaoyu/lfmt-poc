@@ -42,8 +42,13 @@ export interface AuthResponse {
 export interface RegisterRequest {
   email: string;
   password: string;
+  confirmPassword: string;
   firstName: string;
   lastName: string;
+  organization?: string;
+  acceptedTerms: boolean;
+  acceptedPrivacy: boolean;
+  marketingConsent?: boolean;
 }
 
 /**

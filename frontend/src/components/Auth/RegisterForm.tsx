@@ -31,7 +31,6 @@ import {
 } from '@mui/material';
 import { Link as RouterLink } from 'react-router-dom';
 import { ROUTES } from '../../config/constants';
-import type { RegisterRequest } from '../../services/authService';
 
 /**
  * Registration form validation schema
@@ -65,6 +64,9 @@ const registerSchema = z.object({
   path: ['confirmPassword'],
 });
 
+/**
+ * RegisterForm data (collected by the form)
+ */
 type RegisterFormData = z.infer<typeof registerSchema>;
 
 /**
@@ -72,7 +74,7 @@ type RegisterFormData = z.infer<typeof registerSchema>;
  */
 export interface RegisterFormProps {
   /** Callback when form is submitted with valid data */
-  onSubmit: (data: RegisterRequest) => Promise<void>;
+  onSubmit: (data: RegisterFormData) => Promise<void>;
 }
 
 /**
@@ -119,10 +121,8 @@ export function RegisterForm({ onSubmit }: RegisterFormProps) {
       setIsSubmitting(true);
       setSubmitError(null);
 
-      // Remove confirmPassword before sending to API
-      const { confirmPassword: _, ...registrationData } = data;
-
-      await onSubmit(registrationData);
+      // Keep confirmPassword for backend validation
+      await onSubmit(data);
 
       // Clear form on successful registration
       reset();

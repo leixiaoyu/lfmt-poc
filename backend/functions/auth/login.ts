@@ -22,6 +22,19 @@ const cognitoClient = new CognitoIdentityProviderClient({});
 
 const COGNITO_CLIENT_ID = getRequiredEnv('COGNITO_CLIENT_ID');
 
+/**
+ * Decode JWT payload (without verification - for extracting claims only)
+ * In production, use a proper JWT library with signature verification
+ */
+function decodeJwtPayload(token: string): any {
+  const parts = token.split('.');
+  if (parts.length !== 3) {
+    throw new Error('Invalid JWT format');
+  }
+  const payload = Buffer.from(parts[1], 'base64').toString('utf8');
+  return JSON.parse(payload);
+}
+
 export const handler = async (
   event: APIGatewayProxyEvent
 ): Promise<APIGatewayProxyResult> => {
@@ -78,21 +91,30 @@ export const handler = async (
       );
     }
 
+    // Decode ID token to extract user claims
+    const idTokenPayload = decodeJwtPayload(response.AuthenticationResult.IdToken!);
+
+    // Build user object from ID token claims
+    const user = {
+      id: idTokenPayload.sub,
+      email: idTokenPayload.email,
+      firstName: idTokenPayload.given_name || '',
+      lastName: idTokenPayload.family_name || '',
+    };
+
     logger.info('User logged in successfully', {
       requestId,
       email: email.toLowerCase(),
+      userId: user.id,
     });
 
+    // Return response matching AuthResponse interface
     return createSuccessResponse(
       200,
       {
-        message: 'Login successful',
-        data: {
-          accessToken: response.AuthenticationResult.AccessToken,
-          refreshToken: response.AuthenticationResult.RefreshToken,
-          idToken: response.AuthenticationResult.IdToken,
-          expiresIn: response.AuthenticationResult.ExpiresIn,
-        },
+        user,
+        accessToken: response.AuthenticationResult.AccessToken,
+        refreshToken: response.AuthenticationResult.RefreshToken,
       },
       requestId
     );
