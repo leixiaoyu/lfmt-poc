@@ -75,11 +75,16 @@ describe('Auth Service', () => {
 
   describe('Login', () => {
     it('should return 200 and tokens if login is successful', async () => {
+      // Mock JWT token with user claims
+      const mockIdToken = Buffer.from(JSON.stringify({ header: 'value' })).toString('base64') + '.' +
+        Buffer.from(JSON.stringify({ sub: 'user-123', email: 'test@test.com', given_name: 'Test', family_name: 'User' })).toString('base64') + '.' +
+        Buffer.from(JSON.stringify({ signature: 'value' })).toString('base64');
+
       cognitoMock.on(InitiateAuthCommand).resolves({
         AuthenticationResult: {
           AccessToken: 'accesstoken',
           RefreshToken: 'refreshtoken',
-          IdToken: 'idtoken',
+          IdToken: mockIdToken,
           ExpiresIn: 3600,
         },
       });
@@ -90,9 +95,14 @@ describe('Auth Service', () => {
       const result = await loginHandler(event);
       const body = JSON.parse(result.body);
       expect(result.statusCode).toBe(200);
-      expect(body.data.accessToken).toBe('accesstoken');
-      expect(body.data.refreshToken).toBe('refreshtoken');
-      expect(body.data.idToken).toBe('idtoken');
+      expect(body.user).toEqual({
+        id: 'user-123',
+        email: 'test@test.com',
+        firstName: 'Test',
+        lastName: 'User',
+      });
+      expect(body.accessToken).toBe('accesstoken');
+      expect(body.refreshToken).toBe('refreshtoken');
     });
 
     it('should return 401 for incorrect credentials', async () => {

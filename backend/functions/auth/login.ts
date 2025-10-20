@@ -109,15 +109,21 @@ export const handler = async (
     });
 
     // Return response matching AuthResponse interface
-    return createSuccessResponse(
-      200,
-      {
+    return {
+      statusCode: 200,
+      headers: {
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': process.env.ALLOWED_ORIGIN || 'http://localhost:3000',
+        'Access-Control-Allow-Credentials': 'true',
+        'Access-Control-Allow-Headers': 'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,X-Request-ID',
+        'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS',
+      },
+      body: JSON.stringify({
         user,
         accessToken: response.AuthenticationResult.AccessToken,
         refreshToken: response.AuthenticationResult.RefreshToken,
-      },
-      requestId
-    );
+      }),
+    };
   } catch (error) {
     if (error instanceof NotAuthorizedException) {
       logger.warn('Login failed: invalid credentials', {
