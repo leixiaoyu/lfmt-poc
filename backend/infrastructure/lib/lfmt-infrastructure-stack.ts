@@ -323,6 +323,7 @@ export class LfmtInfrastructureStack extends Stack {
           'Authorization',
           'X-Api-Key',
           'X-Amz-Security-Token',
+          'X-Request-ID',
         ],
         allowCredentials: true,
       },
