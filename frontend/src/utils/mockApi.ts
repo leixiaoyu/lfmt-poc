@@ -298,21 +298,27 @@ export function installMockApi(client: AxiosInstance): void {
  */
 export function isMockApiEnabled(): boolean {
   // Enable mock API if:
-  // 1. VITE_MOCK_API environment variable is set to 'true', OR
-  // 2. We're in development mode AND no backend URL is configured
+  // 1. VITE_MOCK_API environment variable is explicitly set to 'true'
+  // 2. In development mode AND VITE_MOCK_API is not explicitly 'false' AND no real API URL is configured
 
   const mockApiEnv = import.meta.env.VITE_MOCK_API;
   const isDevelopment = import.meta.env.DEV;
 
+  // Explicitly enabled
   if (mockApiEnv === 'true') {
     return true;
+  }
+
+  // Explicitly disabled
+  if (mockApiEnv === 'false') {
+    return false;
   }
 
   // Auto-enable in development if no real API URL is set
   if (isDevelopment) {
     const apiUrl = import.meta.env.VITE_API_URL;
-    if (!apiUrl || apiUrl.includes('execute-api.us-east-1.amazonaws.com')) {
-      // If pointing to AWS or not set, enable mocks for local development
+    // Only enable mocks if no API URL is configured
+    if (!apiUrl || apiUrl === '/api') {
       return true;
     }
   }

@@ -591,8 +591,9 @@ export class LfmtInfrastructureStack extends Stack {
     // Use existing /auth resource created in createApiGateway()
     const auth = this.authResource;
 
-    // POST /auth - Register
-    auth.addMethod('POST', new apigateway.LambdaIntegration(this.registerFunction), {
+    // POST /auth/register - Register
+    const register = auth.addResource('register');
+    register.addMethod('POST', new apigateway.LambdaIntegration(this.registerFunction), {
       authorizationType: apigateway.AuthorizationType.NONE,
       requestValidator: new apigateway.RequestValidator(this, 'RegisterRequestValidator', {
         restApi: this.api,

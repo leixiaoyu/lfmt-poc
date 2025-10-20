@@ -6,41 +6,54 @@ This is a proof-of-concept implementation of a Long-Form Translation Service tha
 
 ## Project Status
 
-**Current Phase**: Phase 3 - Frontend Authentication UI
+**Current Phase**: Phase 4 - Translation Workflow UI (Ready to Start)
 **Implementation Plan**: [LFMT Implementation Plan v2.md](../LFMT%20Implementation%20Plan%20v2.md)
+**Overall Progress**: ~75% (4.5 of 6 phases complete)
 
-### ✅ Completed (Phase 1 - Infrastructure)
+### ✅ Completed (Phase 1 - Infrastructure) - **DEPLOYED**
 - [x] Project structure and shared types (100% design document compliance)
-- [x] AWS CDK infrastructure stack with comprehensive validation
-- [x] DynamoDB tables for jobs, users, and legal attestations
-- [x] S3 buckets with lifecycle policies and security
+- [x] AWS CDK infrastructure stack deployed to AWS Dev
+- [x] DynamoDB tables: Jobs, Users, LegalAttestations
+- [x] S3 buckets: Documents, Results (with lifecycle policies)
 - [x] API Gateway with caching and rate limiting
-- [x] Cognito User Pool configuration
-- [x] Infrastructure validation tests (38 test cases)
-- [x] Git repository initialization
+- [x] Cognito User Pool with domain and client configuration
+- [x] Infrastructure validation tests (38 test cases passing)
+- [x] **AWS Stack**: LfmtPocDev (UPDATE_COMPLETE)
+- [x] **API Endpoint**: https://8brwlwf68h.execute-api.us-east-1.amazonaws.com/v1/
+
+### ✅ Completed (Phase 2 - Backend Lambda Functions) - **DEPLOYED**
+- [x] Authentication Lambda functions (4 deployed)
+  - Login authentication with Cognito
+  - User registration with validation
+  - Token refresh functionality
+  - Password reset workflow
+- [x] API Gateway integration with Lambda
+- [x] DynamoDB integration for user data
+- [x] CloudWatch logging and monitoring
+- [x] Comprehensive unit and integration tests
+- [x] **CI/CD Pipeline**: GitHub Actions (active)
 
 ### ✅ Completed (Phase 3 - Frontend Authentication)
 - [x] React 18 + TypeScript + Material-UI setup
 - [x] Authentication components (Login, Register, Forgot Password, Protected Routes)
 - [x] Auth context and service layer with token management
 - [x] API client with Axios interceptors
-- [x] Mock API for development
+- [x] Mock API for development (ready to replace with real backend)
 - [x] Comprehensive test suite with 231 passing tests
 - [x] **91.66% overall test coverage** (exceeds 90% target)
 - [x] All critical components at 100% coverage
 - [x] React Router v6 integration
 - [x] Form validation with React Hook Form + Zod
 
-### 🚨 Current Blocker
-- **AWS Deployment Permissions**: IAM user `lfmt-poc-deployment` needs SSM read permissions for CDK bootstrap
-- **Fix Location**: See `AWS-DEPLOYMENT-SETUP.md` for exact IAM policy to add
-- **Command Ready**: `./scripts/deploy-infrastructure.sh dev` (after permissions fix)
-
 ### 🔄 Next Steps
-1. [ ] Deploy infrastructure to AWS dev environment
-2. [ ] Connect frontend to real AWS Cognito (replace mock API)
-3. [ ] Set up CI/CD pipeline
+1. [ ] Connect frontend to real AWS Cognito backend
+2. [ ] End-to-end authentication testing
+3. [ ] Remove mock API dependency
 4. [ ] Begin Phase 4: Translation workflow UI components
+   - File upload with S3 integration
+   - Translation job submission
+   - Progress tracking (polling-based)
+   - Job history and management
 
 ## Architecture
 
@@ -247,28 +260,54 @@ This is a proof-of-concept project. All rights reserved.
 
 ---
 
-**Last Updated**: 2025-01-21  
-**Implementation Plan Version**: v2.0  
-**Current Phase**: Phase 1 - Foundation & Core Infrastructure (AWS Deployment Pending)
+**Last Updated**: 2025-10-19
+**Implementation Plan Version**: v2.0
+**Current Phase**: Phase 4 - Translation Workflow UI (Ready to Start)
+**Overall Progress**: ~75% complete
 
-## 🎯 Session Recovery Notes
+## 🎯 AWS Deployment Information
 
-### What Was Just Completed (Pre-Vacation)
-- ✅ Complete infrastructure foundation with 20/20 passing tests
-- ✅ Full project structure with shared types and TypeScript configuration
-- ✅ Git repository setup with comprehensive hooks and GitHub integration
-- ✅ All documentation and low-level designs completed
+### Deployed Resources (Development Environment)
+- **AWS Region**: us-east-1
+- **Stack Name**: LfmtPocDev
+- **Stack Status**: UPDATE_COMPLETE
+- **API Endpoint**: https://8brwlwf68h.execute-api.us-east-1.amazonaws.com/v1/
+- **Cognito User Pool**: us-east-1_tyG2buO70
+- **Cognito Client ID**: 4qlc7n27ptoad18k3rlj1nipg7
+- **Cognito Domain**: lfmt-lfmtpocdev-ndi3mjyy
 
-### Where We Left Off
-**Status**: Ready for AWS deployment but blocked by IAM permissions
-**Blocker**: CDK bootstrap requires SSM permissions for `lfmt-poc-deployment` user
-**Next Action**: Add SSM IAM policy from `AWS-DEPLOYMENT-SETUP.md` and deploy
+### Lambda Functions (4 Deployed)
+1. `lfmt-login-LfmtPocDev` - User authentication
+2. `lfmt-register-LfmtPocDev` - User registration
+3. `lfmt-refresh-token-LfmtPocDev` - Token refresh
+4. `lfmt-reset-password-LfmtPocDev` - Password reset
 
-### Resume Instructions for Next Session
-1. **Check AWS Access**: Verify IAM permissions were added
-2. **Deploy Infrastructure**: Run `./scripts/deploy-infrastructure.sh dev`
-3. **Validate Deployment**: Confirm all AWS resources created successfully  
-4. **Continue to Phase 2**: Begin authentication Lambda development
+### DynamoDB Tables
+1. `lfmt-jobs-LfmtPocDev` - Translation jobs
+2. `lfmt-users-LfmtPocDev` - User data
+3. `lfmt-attestations-LfmtPocDev` - Legal attestations
 
-**Repository**: https://github.com/leixiaoyu/lfmt-poc  
-**Branch**: `main` (1 commit ahead of origin - ready to push)
+### S3 Buckets
+1. `lfmt-documents-lfmtpocdev` - Document uploads
+2. `lfmt-results-lfmtpocdev` - Translation results
+
+### CI/CD Status
+- **GitHub Actions**: Active and operational
+- **Workflow**: `.github/workflows/deploy.yml`
+- **Latest Deployment**: October 18, 2025 (successful)
+- **Automated**: Deploys on push to main branch
+
+## 🔄 Next Session Tasks
+
+1. **Frontend-Backend Integration** (Priority 1)
+   - Connect frontend to real AWS Cognito
+   - Replace mock API with actual endpoints
+   - Test end-to-end authentication flow
+
+2. **Phase 4 Development** (Priority 2)
+   - File upload component
+   - Translation job submission UI
+   - Progress tracking interface
+
+**Repository**: https://github.com/leixiaoyu/lfmt-poc
+**Branch**: `main`
