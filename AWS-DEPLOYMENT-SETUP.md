@@ -2,7 +2,7 @@
 
 ## 🚨 Current Issue
 
-**Error**: `AccessDeniedException: User: arn:aws:iam::427262291085:user/lfmt-poc-deployment is not authorized to perform: ssm:GetParameter`
+**Error**: `AccessDeniedException: User: arn:aws:iam::XXXXXXXXXXXX:user/lfmt-poc-deployment is not authorized to perform: ssm:GetParameter`
 
 **Root Cause**: The GitHub Actions IAM user lacks SSM permissions required for CDK bootstrap version verification.
 
@@ -24,7 +24,7 @@ Add the following IAM policy to the `lfmt-poc-deployment` user:
                 "ssm:GetParameters"
             ],
             "Resource": [
-                "arn:aws:ssm:us-east-1:427262291085:parameter/cdk-bootstrap/*"
+                "arn:aws:ssm:us-east-1:XXXXXXXXXXXX:parameter/cdk-bootstrap/*"
             ]
         }
     ]
@@ -59,7 +59,7 @@ cat > cdk-bootstrap-ssm-policy.json << 'EOF'
                 "ssm:GetParameters"
             ],
             "Resource": [
-                "arn:aws:ssm:us-east-1:427262291085:parameter/cdk-bootstrap/*"
+                "arn:aws:ssm:us-east-1:XXXXXXXXXXXX:parameter/cdk-bootstrap/*"
             ]
         }
     ]
@@ -92,7 +92,7 @@ aws iam put-user-policy \
 cd backend/infrastructure
 
 # Bootstrap CDK (one-time setup per account/region)
-npx cdk bootstrap aws://427262291085/us-east-1
+npx cdk bootstrap aws://XXXXXXXXXXXX/us-east-1
 ```
 
 ### What Bootstrap Creates:
@@ -180,7 +180,7 @@ For a more comprehensive approach, replace the existing deployment user policy w
 
 The recommended policy is scoped to:
 - Only CDK bootstrap SSM parameters
-- Specific AWS account (427262291085)
+- Specific AWS account (XXXXXXXXXXXX)
 - Follows principle of least privilege
 
 ## 📞 **Need Help?**

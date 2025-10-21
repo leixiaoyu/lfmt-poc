@@ -29,7 +29,7 @@ All functions bundled with esbuild and deployed successfully:
 | lfmt-reset-password-LfmtPocDev | nodejs18.x | 88.4 KB | Password reset |
 
 ### ✅ Cognito User Pool
-- **User Pool ID:** us-east-1_tyG2buO70
+- **User Pool ID:** us-east-1_XXXXXXXXX
 - **Client ID:** 4qlc7n27ptoad18k3rlj1nipg7
 - **Sign-in:** Email-based authentication
 - **Status:** Active
@@ -330,7 +330,7 @@ aws apigateway get-rest-api --rest-api-id 8brwlwf68h --region us-east-1
 **Check:** Cognito User Pool users
 ```bash
 aws cognito-idp list-users \
-  --user-pool-id us-east-1_tyG2buO70 \
+  --user-pool-id us-east-1_XXXXXXXXX \
   --region us-east-1
 ```
 

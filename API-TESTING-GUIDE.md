@@ -208,7 +208,7 @@ After registration, users must verify their email before logging in. Cognito sen
 ```bash
 # Verify user manually via AWS CLI
 aws cognito-idp admin-confirm-sign-up \
-  --user-pool-id us-east-1_tyG2buO70 \
+  --user-pool-id us-east-1_XXXXXXXXX \
   --username user@example.com \
   --region us-east-1
 ```
@@ -235,7 +235,7 @@ curl -X POST https://8brwlwf68h.execute-api.us-east-1.amazonaws.com/v1/auth \
 ### 2. Verify Email (Manual)
 ```bash
 aws cognito-idp admin-confirm-sign-up \
-  --user-pool-id us-east-1_tyG2buO70 \
+  --user-pool-id us-east-1_XXXXXXXXX \
   --username testuser123@example.com \
   --region us-east-1
 ```
@@ -305,14 +305,14 @@ aws logs tail /aws/lambda/lfmt-login-LfmtPocDev \
 ### Check Cognito Users
 ```bash
 aws cognito-idp list-users \
-  --user-pool-id us-east-1_tyG2buO70 \
+  --user-pool-id us-east-1_XXXXXXXXX \
   --region us-east-1
 ```
 
 ### Get User Details
 ```bash
 aws cognito-idp admin-get-user \
-  --user-pool-id us-east-1_tyG2buO70 \
+  --user-pool-id us-east-1_XXXXXXXXX \
   --username user@example.com \
   --region us-east-1
 ```

@@ -61,7 +61,7 @@ The LFMT POC project has successfully completed **Phase 1 (Infrastructure)**, **
 #### Deployment Status
 - **AWS Stack**: LfmtPocDev (UPDATE_COMPLETE)
 - **API Gateway**: https://8brwlwf68h.execute-api.us-east-1.amazonaws.com/v1/
-- **Cognito User Pool**: us-east-1_tyG2buO70
+- **Cognito User Pool**: us-east-1_XXXXXXXXX
 - **Deployed**: October 18, 2025
 - **CI/CD**: GitHub Actions (active)
 

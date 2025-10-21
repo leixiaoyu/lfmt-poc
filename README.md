@@ -272,7 +272,7 @@ This is a proof-of-concept project. All rights reserved.
 - **Stack Name**: LfmtPocDev
 - **Stack Status**: UPDATE_COMPLETE
 - **API Endpoint**: https://8brwlwf68h.execute-api.us-east-1.amazonaws.com/v1/
-- **Cognito User Pool**: us-east-1_tyG2buO70
+- **Cognito User Pool**: us-east-1_XXXXXXXXX
 - **Cognito Client ID**: 4qlc7n27ptoad18k3rlj1nipg7
 - **Cognito Domain**: lfmt-lfmtpocdev-ndi3mjyy
 

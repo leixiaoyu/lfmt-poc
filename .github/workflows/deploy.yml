@@ -128,7 +128,8 @@ jobs:
         run: |
           if ! aws cloudformation describe-stacks --stack-name CDKToolkit --region ${{ env.AWS_REGION }} 2>/dev/null; then
             echo "CDKToolkit not found, bootstrapping..."
-            npx cdk bootstrap aws://427262291085/${{ env.AWS_REGION }}
+            ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+            npx cdk bootstrap aws://${ACCOUNT_ID}/${{ env.AWS_REGION }}
           else
             echo "CDKToolkit already exists, skipping bootstrap"
           fi

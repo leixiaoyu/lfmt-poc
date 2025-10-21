@@ -166,4 +166,4 @@ stack-outputs.json
 # Local configuration overrides
 **/config/local.*
 **/config/dev.*
-**/config/prod.*
+**/config/prod.*frontend/.env.local

@@ -2,7 +2,7 @@
 
 **Security**: This guide uses AWS OIDC (OpenID Connect) authentication - the **most secure method** for GitHub Actions. No AWS access keys are stored in GitHub!
 
-**Your AWS Account**: `427262291085`
+**Your AWS Account**: `XXXXXXXXXXXX`
 **Your Region**: `us-east-1`
 **Monthly Budget**: $10
 
@@ -24,7 +24,7 @@ Once configured, this CI/CD pipeline will:
 ## 📋 Prerequisites
 
 - [x] GitHub repository created at: https://github.com/leixiaoyu/lfmt-poc
-- [x] AWS Account ID: `427262291085`
+- [x] AWS Account ID: `XXXXXXXXXXXX`
 - [x] AWS Region: `us-east-1`
 - [ ] AWS IAM permissions to create OIDC provider and roles
 
@@ -61,7 +61,7 @@ aws iam create-open-id-connect-provider \
 aws iam list-open-id-connect-providers
 ```
 
-You should see an ARN like: `arn:aws:iam::427262291085:oidc-provider/token.actions.githubusercontent.com`
+You should see an ARN like: `arn:aws:iam::XXXXXXXXXXXX:oidc-provider/token.actions.githubusercontent.com`
 
 ---
 
@@ -80,7 +80,7 @@ Save this as `github-actions-trust-policy.json`:
     {
       "Effect": "Allow",
       "Principal": {
-        "Federated": "arn:aws:iam::427262291085:oidc-provider/token.actions.githubusercontent.com"
+        "Federated": "arn:aws:iam::XXXXXXXXXXXX:oidc-provider/token.actions.githubusercontent.com"
       },
       "Action": "sts:AssumeRoleWithWebIdentity",
       "Condition": {
@@ -128,7 +128,7 @@ For a POC with budget=$10/month, AdministratorAccess is acceptable. For producti
 aws iam get-role --role-name GitHubActionsLFMTDeploy --query 'Role.Arn' --output text
 ```
 
-Should output: `arn:aws:iam::427262291085:role/GitHubActionsLFMTDeploy`
+Should output: `arn:aws:iam::XXXXXXXXXXXX:role/GitHubActionsLFMTDeploy`
 
 ---
 
@@ -143,7 +143,7 @@ Should output: `arn:aws:iam::427262291085:role/GitHubActionsLFMTDeploy`
 
 4. **Add the following secret**:
    - **Name**: `AWS_ROLE_ARN`
-   - **Value**: `arn:aws:iam::427262291085:role/GitHubActionsLFMTDeploy`
+   - **Value**: `arn:aws:iam::XXXXXXXXXXXX:role/GitHubActionsLFMTDeploy`
    - Click "Add secret"
 
 **That's it!** No AWS access keys, no secret access keys. Just the role ARN.
@@ -157,7 +157,7 @@ Protect yourself from unexpected costs:
 ```bash
 # Create a budget with email alerts
 aws budgets create-budget \
-  --account-id 427262291085 \
+  --account-id XXXXXXXXXXXX \
   --budget file://budget-config.json \
   --notifications-with-subscribers file://budget-notifications.json
 ```
