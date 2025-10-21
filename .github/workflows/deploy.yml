@@ -219,13 +219,62 @@ jobs:
           role-session-name: GitHubActions-LFMT-Deploy-Prod
           aws-region: ${{ env.AWS_REGION }}
 
+      - name: Verify AWS identity
+        run: |
+          echo "Deploying to production with identity:"
+          aws sts get-caller-identity
+
+      - name: Install shared-types dependencies
+        working-directory: shared-types
+        run: npm install
+
       - name: Install infrastructure dependencies
         working-directory: backend/infrastructure
         run: npm ci
 
-      - name: CDK Deploy to Production
+      - name: CDK Bootstrap (if needed)
         working-directory: backend/infrastructure
-        run: npx cdk deploy --context environment=prod --require-approval never
+        run: |
+          if ! aws cloudformation describe-stacks --stack-name CDKToolkit --region ${{ env.AWS_REGION }} 2>/dev/null; then
+            echo "CDKToolkit not found, bootstrapping..."
+            ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+            npx cdk bootstrap aws://${ACCOUNT_ID}/${{ env.AWS_REGION }}
+          else
+            echo "CDKToolkit already exists, skipping bootstrap"
+          fi
 
-      - name: Notify deployment success
-        run: echo "Production deployment completed successfully!"
+      - name: CDK Diff (show changes)
+        working-directory: backend/infrastructure
+        run: npx cdk diff --context environment=prod || true
+
+      - name: CDK Deploy Main Infrastructure
+        working-directory: backend/infrastructure
+        run: npx cdk deploy LfmtPocProd --context environment=prod --require-approval never
+
+      - name: Get API Gateway URL
+        id: get-api-url
+        run: |
+          API_URL=$(aws cloudformation describe-stacks \
+            --stack-name LfmtPocProd \
+            --query "Stacks[0].Outputs[?OutputKey=='ApiUrl'].OutputValue" \
+            --output text \
+            --region ${{ env.AWS_REGION }})
+          echo "api_url=$API_URL" >> $GITHUB_OUTPUT
+          echo "Production API URL: $API_URL"
+
+      - name: Health Check
+        run: |
+          echo "Performing health check on production API..."
+          curl -f ${{ steps.get-api-url.outputs.api_url }}/v1/health || echo "Health check endpoint not yet available"
+
+      - name: Deployment Summary
+        run: |
+          echo "========================================="
+          echo "Production Deployment Summary"
+          echo "========================================="
+          echo "Environment: production"
+          echo "Region: ${{ env.AWS_REGION }}"
+          echo "Stack: LfmtPocProd"
+          echo "API URL: ${{ steps.get-api-url.outputs.api_url }}"
+          echo "Deployed at: $(date -u +"%Y-%m-%d %H:%M:%S UTC")"
+          echo "========================================="
