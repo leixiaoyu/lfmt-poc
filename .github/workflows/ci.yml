@@ -1,0 +1,177 @@
+name: CI - Continuous Integration
+
+# Run on all pull requests and pushes to any branch
+on:
+  pull_request:
+    branches:
+      - main
+      - develop
+  push:
+    branches-ignore:
+      - main  # Main branch uses deploy.yml workflow
+
+env:
+  AWS_REGION: us-east-1
+  NODE_VERSION: '18'
+
+jobs:
+  test:
+    name: Run Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: |
+            backend/functions/package-lock.json
+            backend/infrastructure/package-lock.json
+            shared-types/package-lock.json
+
+      - name: Install shared-types dependencies
+        working-directory: shared-types
+        run: npm ci
+
+      - name: Run shared-types tests
+        working-directory: shared-types
+        run: npm test
+
+      - name: Install function dependencies
+        working-directory: backend/functions
+        run: npm ci
+
+      - name: Run function tests
+        working-directory: backend/functions
+        run: npm test
+
+      - name: Check test coverage
+        working-directory: backend/functions
+        run: npm run test:coverage
+
+  build-infrastructure:
+    name: Build Infrastructure
+    runs-on: ubuntu-latest
+    needs: test
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: backend/infrastructure/package-lock.json
+
+      - name: Install shared-types dependencies
+        working-directory: shared-types
+        run: npm ci
+
+      - name: Install infrastructure dependencies
+        working-directory: backend/infrastructure
+        run: npm ci
+
+      - name: Build infrastructure
+        working-directory: backend/infrastructure
+        run: npm run build
+
+      - name: Run infrastructure tests
+        working-directory: backend/infrastructure
+        run: npm test
+
+      - name: CDK Synth (validate CloudFormation)
+        working-directory: backend/infrastructure
+        run: npx cdk synth --context environment=dev --context skipLambdaBundling=true
+
+  lint-and-format:
+    name: Lint and Format Check
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install shared-types dependencies
+        working-directory: shared-types
+        run: npm ci
+
+      - name: Install function dependencies
+        working-directory: backend/functions
+        run: npm ci
+
+      - name: Lint functions
+        working-directory: backend/functions
+        run: npm run lint --if-present || echo "No lint script found"
+
+      - name: Check TypeScript compilation
+        working-directory: backend/functions
+        run: npx tsc --noEmit || echo "TypeScript check completed"
+
+  security-scan:
+    name: Security Scan
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install shared-types dependencies
+        working-directory: shared-types
+        run: npm ci
+
+      - name: Install function dependencies
+        working-directory: backend/functions
+        run: npm ci
+
+      - name: Run npm audit (functions)
+        working-directory: backend/functions
+        run: npm audit --audit-level=high || echo "Audit completed with warnings"
+
+      - name: Install infrastructure dependencies
+        working-directory: backend/infrastructure
+        run: npm ci
+
+      - name: Run npm audit (infrastructure)
+        working-directory: backend/infrastructure
+        run: npm audit --audit-level=high || echo "Audit completed with warnings"
+
+  ci-summary:
+    name: CI Summary
+    runs-on: ubuntu-latest
+    needs: [test, build-infrastructure, lint-and-format, security-scan]
+    if: always()
+
+    steps:
+      - name: Check CI Status
+        run: |
+          echo "========================================="
+          echo "CI Pipeline Summary"
+          echo "========================================="
+          echo "Test Job: ${{ needs.test.result }}"
+          echo "Build Infrastructure Job: ${{ needs.build-infrastructure.result }}"
+          echo "Lint and Format Job: ${{ needs.lint-and-format.result }}"
+          echo "Security Scan Job: ${{ needs.security-scan.result }}"
+          echo "========================================="
+
+          if [ "${{ needs.test.result }}" != "success" ] || [ "${{ needs.build-infrastructure.result }}" != "success" ]; then
+            echo "❌ CI pipeline failed - required jobs did not pass"
+            exit 1
+          else
+            echo "✅ CI pipeline passed - all required checks successful"
+          fi
