@@ -6,23 +6,29 @@ This is a proof-of-concept implementation of a Long-Form Translation Service tha
 
 ## Project Status
 
-**Current Phase**: Phase 4 - Translation Workflow UI (Ready to Start)
+**Current Phase**: Phase 4 - Document Upload Service (In Progress)
 **Implementation Plan**: [LFMT Implementation Plan v2.md](../LFMT%20Implementation%20Plan%20v2.md)
-**Overall Progress**: ~75% (4.5 of 6 phases complete)
+**Overall Progress**: ~20% (Infrastructure and Auth Complete, Translation Features Next)
 
-### ✅ Completed (Phase 1 - Infrastructure) - **DEPLOYED**
-- [x] Project structure and shared types (100% design document compliance)
-- [x] AWS CDK infrastructure stack deployed to AWS Dev
+### ✅ Completed Components
+
+#### Infrastructure & DevOps (100% Complete)
+- [x] AWS CDK infrastructure stack (Multi-environment: Dev, Staging, Prod)
 - [x] DynamoDB tables: Jobs, Users, LegalAttestations
 - [x] S3 buckets: Documents, Results (with lifecycle policies)
-- [x] API Gateway with caching and rate limiting
-- [x] Cognito User Pool with domain and client configuration
-- [x] Infrastructure validation tests (38 test cases passing)
-- [x] **AWS Stack**: LfmtPocDev (UPDATE_COMPLETE)
-- [x] **API Endpoint**: https://8brwlwf68h.execute-api.us-east-1.amazonaws.com/v1/
+- [x] API Gateway with CORS, caching, and rate limiting
+- [x] Cognito User Pool with MFA-ready configuration
+- [x] Infrastructure validation tests (20 test cases passing)
+- [x] **Production Stack**: LfmtPocProd (CREATE_COMPLETE)
+- [x] **Production API**: https://YOUR_API_ID.execute-api.us-east-1.amazonaws.com/v1/
+- [x] **CI/CD Pipeline**: GitHub Actions with comprehensive testing
+  - Automated testing (unit, integration, infrastructure)
+  - Automated deployment to dev on main branch push
+  - Manual workflow dispatch for staging/production
+  - Security scanning and dependency audits
 
-### ✅ Completed (Phase 2 - Backend Lambda Functions) - **DEPLOYED**
-- [x] Authentication Lambda functions (4 deployed)
+#### Backend Authentication (100% Complete)
+- [x] Authentication Lambda functions (4 deployed to production)
   - Login authentication with Cognito
   - User registration with validation
   - Token refresh functionality
@@ -31,29 +37,39 @@ This is a proof-of-concept implementation of a Long-Form Translation Service tha
 - [x] DynamoDB integration for user data
 - [x] CloudWatch logging and monitoring
 - [x] Comprehensive unit and integration tests
-- [x] **CI/CD Pipeline**: GitHub Actions (active)
+- [x] Production deployment verified
 
-### ✅ Completed (Phase 3 - Frontend Authentication)
+#### Frontend Authentication (100% Complete)
 - [x] React 18 + TypeScript + Material-UI setup
 - [x] Authentication components (Login, Register, Forgot Password, Protected Routes)
 - [x] Auth context and service layer with token management
 - [x] API client with Axios interceptors
-- [x] Mock API for development (ready to replace with real backend)
 - [x] Comprehensive test suite with 231 passing tests
 - [x] **91.66% overall test coverage** (exceeds 90% target)
 - [x] All critical components at 100% coverage
 - [x] React Router v6 integration
 - [x] Form validation with React Hook Form + Zod
+- [x] Production environment configuration ready
 
-### 🔄 Next Steps
-1. [ ] Connect frontend to real AWS Cognito backend
-2. [ ] End-to-end authentication testing
-3. [ ] Remove mock API dependency
-4. [ ] Begin Phase 4: Translation workflow UI components
-   - File upload with S3 integration
-   - Translation job submission
-   - Progress tracking (polling-based)
-   - Job history and management
+### 🔄 In Progress
+
+#### Phase 4: Document Upload Service (Starting)
+- [ ] S3 signed URL generation endpoint
+- [ ] File upload validation (size, type)
+- [ ] Job record creation in DynamoDB
+- [ ] Upload progress tracking
+- [ ] Frontend upload component
+
+### 📋 Upcoming Features
+
+#### Translation Core Features (Phase 5-6)
+- [ ] Document chunking service (3,500 tokens + 250 overlap)
+- [ ] Claude API integration
+- [ ] Translation processing pipeline
+- [ ] Legal attestation system
+- [ ] Job polling endpoint
+- [ ] Result download endpoint
+- [ ] Job history management
 
 ## Architecture
 
@@ -63,14 +79,14 @@ This is a proof-of-concept implementation of a Long-Form Translation Service tha
 - **Database**: DynamoDB with appropriate GSIs
 - **Storage**: S3 with intelligent tiering and lifecycle policies
 - **Authentication**: AWS Cognito with JWT tokens
-- **Translation Engine**: Claude Sonnet 4 API integration
+- **Translation Engine**: Claude Sonnet 4 API integration (planned)
 
 ### Key Features
-- **Intelligent Chunking**: 3,500-token chunks with 250-token overlap
-- **Adaptive Polling**: 15s → 30s → 60s intervals for progress tracking
-- **Legal Compliance**: 7-year attestation retention with audit trails
+- **Intelligent Chunking**: 3,500-token chunks with 250-token overlap (planned)
+- **Adaptive Polling**: 15s → 30s → 60s intervals for progress tracking (planned)
+- **Legal Compliance**: 7-year attestation retention with audit trails (planned)
 - **Cost Optimization**: <$50/month operational target for 1000 translations
-- **Security**: Encryption at rest/transit, IAM least-privilege access
+- **Security**: Encryption at rest/transit, IAM least-privilege access, OIDC authentication
 
 ## Quick Start
 
@@ -83,62 +99,102 @@ This is a proof-of-concept implementation of a Long-Form Translation Service tha
 ### Installation
 ```bash
 # Clone repository
-git clone <repository-url>
+git clone https://github.com/leixiaoyu/lfmt-poc
 cd lfmt-poc
 
 # Install shared types
 cd shared-types
 npm install
 
-# Install infrastructure dependencies  
+# Install infrastructure dependencies
 cd ../backend/infrastructure
 npm install
 
 # Build and test
 npm run build
 npm test
+
+# Install frontend dependencies
+cd ../../frontend
+npm install
+npm test
+```
+
+### Local Development
+```bash
+# Start frontend development server
+cd frontend
+npm run dev
+# Access at http://localhost:5173
+
+# Run frontend tests
+npm test
+
+# Run infrastructure tests
+cd backend/infrastructure
+npm test
 ```
 
 ### Deployment
+
+#### Manual Deployment
 ```bash
-# Deploy infrastructure (development)
-./scripts/deploy-infrastructure.sh dev
+# Deploy to development
+cd backend/infrastructure
+npx cdk deploy --context environment=dev
 
-# Deploy infrastructure (staging)  
-./scripts/deploy-infrastructure.sh staging
+# Deploy to staging
+npx cdk deploy --context environment=staging
 
-# Deploy infrastructure (production)
-./scripts/deploy-infrastructure.sh prod
+# Deploy to production
+npx cdk deploy --context environment=prod
 ```
+
+#### Automated Deployment (GitHub Actions)
+- **Development**: Automatic deployment on push to `main` branch
+- **Staging/Production**: Manual workflow dispatch from GitHub Actions UI
+
+For detailed deployment instructions, see [PRODUCTION-SETUP-CHECKLIST.md](PRODUCTION-SETUP-CHECKLIST.md)
 
 ## Project Structure
 ```
 lfmt-poc/
+├── .github/
+│   └── workflows/          # GitHub Actions CI/CD
+│       ├── ci.yml         # Pull request testing
+│       └── deploy.yml     # Multi-environment deployment
 ├── backend/
-│   ├── functions/           # Lambda functions
-│   ├── infrastructure/      # AWS CDK infrastructure
-│   ├── shared/             # Shared backend utilities
-│   ├── step-functions/      # Step Functions definitions
-│   └── tests/              # Backend integration tests
-├── frontend/               # React application
+│   ├── functions/         # Lambda functions
+│   │   └── auth/         # Authentication functions
+│   ├── infrastructure/    # AWS CDK infrastructure
+│   └── shared/           # Shared backend utilities
+├── frontend/              # React application
 │   ├── src/
-│   │   ├── components/     # React components
-│   │   ├── hooks/          # Custom React hooks
-│   │   ├── services/       # API clients
-│   │   └── types/          # TypeScript interfaces
-│   └── tests/              # Frontend tests
-├── shared-types/           # Shared TypeScript interfaces
-├── docs/                   # Documentation
-└── scripts/               # Deployment and utility scripts
+│   │   ├── components/   # React components
+│   │   ├── contexts/     # React contexts
+│   │   ├── hooks/        # Custom React hooks
+│   │   ├── pages/        # Page components
+│   │   ├── services/     # API clients
+│   │   └── types/        # TypeScript interfaces
+│   └── __tests__/        # Frontend tests
+├── shared-types/          # Shared TypeScript interfaces
+├── scripts/               # Deployment and utility scripts
+└── docs/                  # Documentation
 ```
 
 ## Development Guidelines
 
 ### Git Workflow
-- **Main Branch**: `main` - Production-ready code
-- **Development Branch**: `develop` - Integration branch
+- **Main Branch**: `main` - Production-ready code with branch protection
 - **Feature Branches**: `feature/description` - Individual features
-- **Hotfix Branches**: `hotfix/description` - Critical fixes
+- **Pull Requests**: Required for all changes to main
+- **CI/CD**: Automated testing on all PRs
+
+### Branch Protection Rules
+- Require pull request before merging
+- Require status checks to pass (Run Tests, Build Infrastructure)
+- Require conversation resolution
+- No direct pushes to main
 
 ### Commit Messages
 ```
@@ -149,47 +205,50 @@ lfmt-poc/
 <footer>
 ```
 
-**Types**: feat, fix, docs, style, refactor, test, chore  
-**Scopes**: auth, docs, api, ui, infra, deploy
+**Types**: feat, fix, docs, style, refactor, test, chore, ci
+**Scopes**: auth, docs, api, ui, infra, deploy, security
 
 ### Code Standards
 - TypeScript strict mode enabled
-- 95%+ test coverage required
+- 90%+ test coverage required
 - ESLint and Prettier configured
 - Pre-commit hooks for validation
+- Security-first development practices
 
 ## Testing
 
 ### Infrastructure Tests
 ```bash
 cd backend/infrastructure
-npm test
+npm test                    # Run all tests
+npm run test:coverage      # Coverage report
 ```
 
-### Shared Types Validation
+### Frontend Tests
 ```bash
-cd shared-types
-node validate-types.js
+cd frontend
+npm test                    # Run all tests
+npm run test:coverage      # Coverage report
+npm run test:ui            # Interactive test UI
 ```
 
-### Full Test Suite (when implemented)
-```bash
-# All tests
-npm run test
-
-# Coverage report
-npm run test:coverage
-
-# E2E tests
-npm run test:e2e
-```
+### CI/CD Pipeline Tests
+All pull requests automatically run:
+- Shared-types validation
+- Function unit tests with coverage
+- Infrastructure TypeScript compilation
+- Infrastructure tests
+- Linting and format checks
+- Security audits (npm audit)
 
 ## Documentation
 
-- **[Infrastructure Setup Guide](docs/infrastructure-setup.md)** - Complete AWS deployment guide
-- **[Implementation Plan v2](../LFMT%20Implementation%20Plan%20v2.md)** - Updated with CI/CD integration
-- **[Design Documents](../)** - All 10 low-level design documents
-- **[Technical Architecture](../Long-Form%20Translation%20Service%20-%20Technical%20Architecture%20Design%20v2.0.md)** - High-level architecture
+- **[Production Setup Checklist](PRODUCTION-SETUP-CHECKLIST.md)** - Complete production deployment guide
+- **[Production Deployment Guide](PRODUCTION-DEPLOYMENT-GUIDE.md)** - Detailed deployment procedures
+- **[Production Security](PRODUCTION-SECURITY-DEPLOYMENT.md)** - Optional security enhancements
+- **[Security Policy](SECURITY.md)** - Security practices and reporting
+- **[Implementation Plan v2](../LFMT%20Implementation%20Plan%20v2.md)** - Detailed implementation roadmap
+- **[Technical Architecture v2](../Long-Form%20Translation%20Service%20-%20Technical%20Architecture%20Design%20v2.0.md)** - High-level architecture
 
 ## Monitoring & Observability
 
@@ -199,10 +258,15 @@ npm run test:e2e
 - DynamoDB metrics (read/write capacity, throttles)
 - S3 storage utilization and costs
 
-### Alerts
+### Cost Monitoring
+- AWS Budget configured ($100/month for production)
+- CloudWatch alarms for cost thresholds
+- Resource tagging for cost allocation
+- Monthly cost reports
+
+### Alerts (Configured)
 - API Gateway error rate > 5%
 - Lambda function errors > 1%
-- Monthly costs > $60
 - DynamoDB throttling events
 
 ## Security
@@ -210,41 +274,71 @@ npm run test:e2e
 ### Data Protection
 - **Encryption**: AES-256 at rest, TLS 1.3 in transit
 - **Access Control**: IAM roles with least-privilege principles
-- **Authentication**: Cognito with strong password policies
-- **Secrets Management**: AWS Secrets Manager integration
+- **Authentication**: Cognito with strong password policies (min 8 chars, complexity requirements)
+- **Secrets Management**: AWS Secrets Manager integration (planned)
+- **OIDC**: GitHub Actions uses OIDC for secure AWS access (no static credentials)
+
+### Security Features
+- Branch protection on main branch
+- Required pull request reviews
+- Automated security scanning (npm audit)
+- Pre-push validation hooks
+- Secret scanning enabled
+- All production credentials redacted from documentation
 
 ### Compliance
-- Legal attestation system with 7-year retention
-- Audit trails for all user actions
+- Legal attestation system (planned)
+- Audit trails for all user actions (planned)
+- 7-year data retention for legal compliance (planned)
 - GDPR compliance considerations
-- Regular security scans and updates
 
 ## Cost Optimization
 
 ### Current Estimates (Monthly)
 - **Development**: ~$10-20/month
-- **Staging**: ~$15-30/month  
+- **Staging**: ~$15-30/month
 - **Production**: ~$30-50/month (target for 1000 translations)
 
 ### Optimization Features
 - DynamoDB on-demand billing
 - S3 intelligent tiering and lifecycle policies
 - Lambda ARM64 for 20% cost reduction
+- API Gateway caching to reduce Lambda invocations
 - Automated resource cleanup
+
+## Deployed Environments
+
+### Production Environment
+- **AWS Region**: us-east-1
+- **Stack Name**: LfmtPocProd
+- **Stack Status**: CREATE_COMPLETE
+- **API Endpoint**: https://YOUR_PROD_API_ID.execute-api.us-east-1.amazonaws.com/v1/
+- **Cognito User Pool**: us-east-1_XXXXXXXXX
+- **Cognito Client ID**: YOUR_CLIENT_ID
+- **Deployment Date**: 2025-10-21
+
+### Development Environment
+- **Stack Name**: LfmtPocDev
+- **API Endpoint**: https://YOUR_DEV_API_ID.execute-api.us-east-1.amazonaws.com/v1/
+- **Auto-deploys**: On push to main branch
+
+**Note**: Actual endpoint URLs and resource IDs are stored in local `.env.production` file (gitignored)
 
 ## Contributing
 
 1. Fork the repository
 2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Make your changes with appropriate tests
+3. Make your changes with appropriate tests (90%+ coverage required)
 4. Commit your changes (`git commit -m 'feat(scope): add amazing feature'`)
 5. Push to the branch (`git push origin feature/amazing-feature`)
 6. Open a Pull Request
+7. Ensure all CI/CD checks pass
+8. Request review from maintainers
 
 ## Support
 
 ### Getting Help
-- Check documentation in `docs/` directory
+- Check documentation in root directory
 - Review implementation plan for current status
 - Check CloudWatch logs for runtime issues
 - Verify AWS resource status in CloudFormation console
@@ -253,6 +347,7 @@ npm run test:e2e
 - **CDK Bootstrap Required**: Run `cdk bootstrap aws://ACCOUNT/REGION`
 - **Insufficient Permissions**: Ensure AWS credentials have required permissions
 - **Resource Conflicts**: Check for existing resources with same names
+- **PR Blocked**: Ensure all required status checks pass (see CI/CD pipeline)
 
 ## License
 
@@ -260,54 +355,39 @@ This is a proof-of-concept project. All rights reserved.
 
 ---
 
-**Last Updated**: 2025-10-19
+**Last Updated**: 2025-10-22
 **Implementation Plan Version**: v2.0
-**Current Phase**: Phase 4 - Translation Workflow UI (Ready to Start)
-**Overall Progress**: ~75% complete
-
-## 🎯 AWS Deployment Information
-
-### Deployed Resources (Development Environment)
-- **AWS Region**: us-east-1
-- **Stack Name**: LfmtPocDev
-- **Stack Status**: UPDATE_COMPLETE
-- **API Endpoint**: https://8brwlwf68h.execute-api.us-east-1.amazonaws.com/v1/
-- **Cognito User Pool**: us-east-1_XXXXXXXXX
-- **Cognito Client ID**: 4qlc7n27ptoad18k3rlj1nipg7
-- **Cognito Domain**: lfmt-lfmtpocdev-ndi3mjyy
-
-### Lambda Functions (4 Deployed)
-1. `lfmt-login-LfmtPocDev` - User authentication
-2. `lfmt-register-LfmtPocDev` - User registration
-3. `lfmt-refresh-token-LfmtPocDev` - Token refresh
-4. `lfmt-reset-password-LfmtPocDev` - Password reset
-
-### DynamoDB Tables
-1. `lfmt-jobs-LfmtPocDev` - Translation jobs
-2. `lfmt-users-LfmtPocDev` - User data
-3. `lfmt-attestations-LfmtPocDev` - Legal attestations
-
-### S3 Buckets
-1. `lfmt-documents-lfmtpocdev` - Document uploads
-2. `lfmt-results-lfmtpocdev` - Translation results
-
-### CI/CD Status
-- **GitHub Actions**: Active and operational
-- **Workflow**: `.github/workflows/deploy.yml`
-- **Latest Deployment**: October 18, 2025 (successful)
-- **Automated**: Deploys on push to main branch
-
-## 🔄 Next Session Tasks
-
-1. **Frontend-Backend Integration** (Priority 1)
-   - Connect frontend to real AWS Cognito
-   - Replace mock API with actual endpoints
-   - Test end-to-end authentication flow
-
-2. **Phase 4 Development** (Priority 2)
-   - File upload component
-   - Translation job submission UI
-   - Progress tracking interface
-
+**Current Phase**: Phase 4 - Document Upload Service (Starting)
+**Overall Progress**: ~20% complete
 **Repository**: https://github.com/leixiaoyu/lfmt-poc
 **Branch**: `main`
+
+## 🎯 Next Steps
+
+### Immediate Priorities (This Week)
+1. **Document Upload Service** (P0 - In Progress)
+   - Implement S3 signed URL generation endpoint
+   - Add file validation (size, type)
+   - Create job record in DynamoDB
+   - Build upload UI component
+
+2. **Document Chunking Service** (P1 - Next)
+   - Implement 3,500 token chunking algorithm
+   - Add token counting logic
+   - Handle txt file parsing
+   - Unit tests for edge cases
+
+### Short-term Goals (Next 2 Weeks)
+3. **Claude API Integration** (P1)
+   - Create Claude service wrapper
+   - Implement rate limiting
+   - Add exponential backoff
+   - Test with sample chunks
+
+4. **Translation Processing** (P2)
+   - Job creation endpoint
+   - Translation Lambda implementation
+   - Result assembly service
+   - Job polling endpoint
+
+For detailed implementation roadmap, see [PROGRESS.md](PROGRESS.md)
