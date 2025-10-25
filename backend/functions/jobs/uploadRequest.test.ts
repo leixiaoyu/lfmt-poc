@@ -31,12 +31,15 @@ const mockLoggerInfo = jest.fn();
 const mockLoggerWarn = jest.fn();
 const mockLoggerError = jest.fn();
 
+// Create a shared logger instance that will be returned by the Logger constructor
+const mockLoggerInstance = {
+  info: mockLoggerInfo,
+  warn: mockLoggerWarn,
+  error: mockLoggerError,
+};
+
 jest.mock('../shared/logger', () => {
-  return jest.fn().mockImplementation(() => ({
-    info: mockLoggerInfo,
-    warn: mockLoggerWarn,
-    error: mockLoggerError,
-  }));
+  return jest.fn().mockImplementation(() => mockLoggerInstance);
 });
 
 // Mock environment variables
