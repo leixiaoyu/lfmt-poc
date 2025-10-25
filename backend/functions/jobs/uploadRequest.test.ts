@@ -159,22 +159,22 @@ describe('uploadRequest Lambda Function - Comprehensive Coverage', () => {
       await handler(event);
 
       const putCall = dynamoMock.call(0).args[0];
-      const item = (putCall.input as PutItemCommandInput).Item;
+      const item = (putCall.input as PutItemCommandInput).Item!;
 
       // Verify all required fields in job record
       expect(item.jobId).toBeDefined();
       expect(item.userId).toBeDefined();
       expect(item.documentId).toBeDefined();
-      expect(item.filename.S).toBe('document.txt');
-      expect(item.status.S).toBe('PENDING_UPLOAD');
-      expect(item.fileSize.N).toBe('75000');
+      expect(item.filename!.S).toBe('document.txt');
+      expect(item.status!.S).toBe('PENDING_UPLOAD');
+      expect(item.fileSize!.N).toBe('75000');
       expect(item.createdAt).toBeDefined();
       expect(item.updatedAt).toBeDefined();
       expect(item.expiresAt).toBeDefined();
       expect(item.s3Key).toBeDefined();
       expect(item.metadata).toBeDefined();
-      expect(item.metadata.M.originalFilename.S).toBe('document.txt');
-      expect(item.metadata.M.uploadRequestId.S).toBe('test-request-123');
+      expect(item.metadata!.M!.originalFilename!.S).toBe('document.txt');
+      expect(item.metadata!.M!.uploadRequestId!.S).toBe('test-request-123');
     });
 
     it('should generate correct S3 key with user ID and file ID', async () => {
