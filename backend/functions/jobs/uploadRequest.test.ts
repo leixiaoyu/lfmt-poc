@@ -10,11 +10,16 @@
  * - Ensure proper error handling for external service failures
  */
 
+// Mock environment variables BEFORE importing handler
+process.env.DOCUMENT_BUCKET = 'test-document-bucket';
+process.env.JOBS_TABLE = 'test-jobs-table';
+
 import { APIGatewayProxyEvent, Context } from 'aws-lambda';
 import { mockClient } from 'aws-sdk-client-mock';
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { DynamoDBClient, PutItemCommand, PutItemCommandInput, ConditionalCheckFailedException } from '@aws-sdk/client-dynamodb';
 import { handler } from './uploadRequest';
+import Logger from '../shared/logger';
 
 // Mock AWS SDK clients
 const s3Mock = mockClient(S3Client);
@@ -26,25 +31,18 @@ jest.mock('@aws-sdk/s3-request-presigner', () => ({
   getSignedUrl: (...args: any[]) => mockGetSignedUrl(...args),
 }));
 
-// Mock Logger to verify logging calls
+// Mock Logger with inline function creation to avoid hoisting issues
 const mockLoggerInfo = jest.fn();
 const mockLoggerWarn = jest.fn();
 const mockLoggerError = jest.fn();
 
-// Create a shared logger instance that will be returned by the Logger constructor
-const mockLoggerInstance = {
-  info: mockLoggerInfo,
-  warn: mockLoggerWarn,
-  error: mockLoggerError,
-};
-
 jest.mock('../shared/logger', () => {
-  return jest.fn().mockImplementation(() => mockLoggerInstance);
+  return jest.fn().mockImplementation(() => ({
+    info: jest.fn(),
+    warn: jest.fn(),
+    error: jest.fn(),
+  }));
 });
-
-// Mock environment variables
-process.env.DOCUMENT_BUCKET = 'test-document-bucket';
-process.env.JOBS_TABLE = 'test-jobs-table';
 
 describe('uploadRequest Lambda Function - Comprehensive Coverage', () => {
   beforeEach(() => {
