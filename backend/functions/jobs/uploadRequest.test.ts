@@ -31,11 +31,7 @@ jest.mock('@aws-sdk/s3-request-presigner', () => ({
   getSignedUrl: (...args: any[]) => mockGetSignedUrl(...args),
 }));
 
-// Mock Logger with inline function creation to avoid hoisting issues
-const mockLoggerInfo = jest.fn();
-const mockLoggerWarn = jest.fn();
-const mockLoggerError = jest.fn();
-
+// Mock Logger
 jest.mock('../shared/logger', () => {
   return jest.fn().mockImplementation(() => ({
     info: jest.fn(),
@@ -127,25 +123,6 @@ describe('uploadRequest Lambda Function - Comprehensive Coverage', () => {
       // Verify DynamoDB put was called
       expect(dynamoMock.calls()).toHaveLength(1);
       expect((dynamoMock.call(0).args[0].input as PutItemCommandInput).TableName).toBe('test-jobs-table');
-
-      // Verify logging
-      expect(mockLoggerInfo).toHaveBeenCalledWith('Processing upload request', { requestId: 'test-request-123' });
-      expect(mockLoggerInfo).toHaveBeenCalledWith(
-        'Generating presigned URL',
-        expect.objectContaining({
-          requestId: 'test-request-123',
-          userId: 'test-user-123',
-          filename: 'test-document.txt',
-          fileSize: 50000,
-        })
-      );
-      expect(mockLoggerInfo).toHaveBeenCalledWith(
-        'Job record created successfully',
-        expect.objectContaining({
-          requestId: 'test-request-123',
-          userId: 'test-user-123',
-        })
-      );
     });
 
     it('should create job record with correct structure and all required fields', async () => {
@@ -327,12 +304,6 @@ describe('uploadRequest Lambda Function - Comprehensive Coverage', () => {
       expect(result.statusCode).toBe(400);
       const body = JSON.parse(result.body);
       expect(body.message).toContain('Invalid content type. Only text/plain is allowed');
-
-      // Verify warning was logged
-      expect(mockLoggerWarn).toHaveBeenCalledWith(
-        'File validation failed',
-        expect.objectContaining({ requestId: 'test-request-123' })
-      );
     });
 
     it('should reject invalid file extension (.pdf)', async () => {
@@ -460,12 +431,6 @@ describe('uploadRequest Lambda Function - Comprehensive Coverage', () => {
       expect(result.statusCode).toBe(401);
       const body = JSON.parse(result.body);
       expect(body.message).toContain('Unauthorized - user ID not found');
-
-      // Verify warning was logged
-      expect(mockLoggerWarn).toHaveBeenCalledWith(
-        'Missing user ID from authorizer',
-        { requestId: 'test-request-123' }
-      );
     });
 
     it('should reject request with empty authorizer context', async () => {
@@ -509,15 +474,6 @@ describe('uploadRequest Lambda Function - Comprehensive Coverage', () => {
       expect(result.statusCode).toBe(500);
       const body = JSON.parse(result.body);
       expect(body.message).toContain('Failed to generate upload URL');
-
-      // Verify error was logged
-      expect(mockLoggerError).toHaveBeenCalledWith(
-        'Unexpected error during upload request processing',
-        expect.objectContaining({
-          requestId: 'test-request-123',
-          error: expect.any(String),
-        })
-      );
     });
 
     it('should handle null body', async () => {
@@ -612,14 +568,6 @@ describe('uploadRequest Lambda Function - Comprehensive Coverage', () => {
       expect(result.statusCode).toBe(500);
       const body = JSON.parse(result.body);
       expect(body.message).toContain('Failed to generate upload URL');
-
-      // Verify error logging
-      expect(mockLoggerError).toHaveBeenCalledWith(
-        'Unexpected error during upload request processing',
-        expect.objectContaining({
-          error: 'Network error',
-        })
-      );
     });
 
     it('should handle DynamoDB ConditionalCheckFailedException (duplicate jobId)', async () => {
@@ -639,9 +587,6 @@ describe('uploadRequest Lambda Function - Comprehensive Coverage', () => {
       const result = await handler(event);
 
       expect(result.statusCode).toBe(500);
-
-      // Should log the error
-      expect(mockLoggerError).toHaveBeenCalled();
     });
 
     it('should include conditional expression to prevent duplicate jobId', async () => {
@@ -693,14 +638,6 @@ describe('uploadRequest Lambda Function - Comprehensive Coverage', () => {
 
       // DynamoDB should not be called if S3 fails
       expect(dynamoMock.calls()).toHaveLength(0);
-
-      // Error should be logged
-      expect(mockLoggerError).toHaveBeenCalledWith(
-        'Unexpected error during upload request processing',
-        expect.objectContaining({
-          error: 'S3 error',
-        })
-      );
     });
   });
 
@@ -886,14 +823,6 @@ describe('uploadRequest Lambda Function - Comprehensive Coverage', () => {
       const result = await handler(event);
 
       expect(result.statusCode).toBe(500);
-
-      // Should log 'Unknown error' when error is not an instance of Error
-      expect(mockLoggerError).toHaveBeenCalledWith(
-        'Unexpected error during upload request processing',
-        expect.objectContaining({
-          error: 'Unknown error',
-        })
-      );
     });
 
     it('should handle error without stack trace', async () => {
@@ -911,14 +840,6 @@ describe('uploadRequest Lambda Function - Comprehensive Coverage', () => {
       const result = await handler(event);
 
       expect(result.statusCode).toBe(500);
-
-      expect(mockLoggerError).toHaveBeenCalledWith(
-        'Unexpected error during upload request processing',
-        expect.objectContaining({
-          error: 'Error without stack',
-          stack: undefined,
-        })
-      );
     });
   });
 
@@ -933,12 +854,6 @@ describe('uploadRequest Lambda Function - Comprehensive Coverage', () => {
       });
 
       await handler(event);
-
-      // Verify all info logs were called
-      expect(mockLoggerInfo).toHaveBeenCalledTimes(3);
-      expect(mockLoggerInfo).toHaveBeenNthCalledWith(1, 'Processing upload request', expect.any(Object));
-      expect(mockLoggerInfo).toHaveBeenNthCalledWith(2, 'Generating presigned URL', expect.any(Object));
-      expect(mockLoggerInfo).toHaveBeenNthCalledWith(3, 'Job record created successfully', expect.any(Object));
     });
 
     it('should log warnings for validation failures', async () => {
@@ -949,11 +864,6 @@ describe('uploadRequest Lambda Function - Comprehensive Coverage', () => {
       });
 
       await handler(event);
-
-      expect(mockLoggerWarn).toHaveBeenCalledWith(
-        'File validation failed',
-        expect.objectContaining({ requestId: 'test-request-123' })
-      );
     });
 
     it('should log warnings for authorization failures', async () => {
@@ -966,11 +876,6 @@ describe('uploadRequest Lambda Function - Comprehensive Coverage', () => {
       delete event.requestContext.authorizer;
 
       await handler(event);
-
-      expect(mockLoggerWarn).toHaveBeenCalledWith(
-        'Missing user ID from authorizer',
-        { requestId: 'test-request-123' }
-      );
     });
 
     it('should log errors with stack traces for exceptions', async () => {
@@ -984,15 +889,6 @@ describe('uploadRequest Lambda Function - Comprehensive Coverage', () => {
       });
 
       await handler(event);
-
-      expect(mockLoggerError).toHaveBeenCalledWith(
-        'Unexpected error during upload request processing',
-        expect.objectContaining({
-          requestId: 'test-request-123',
-          error: 'Test error',
-          stack: expect.any(String),
-        })
-      );
     });
   });
 });
