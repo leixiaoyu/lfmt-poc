@@ -13,7 +13,7 @@
 import { APIGatewayProxyEvent, Context } from 'aws-lambda';
 import { mockClient } from 'aws-sdk-client-mock';
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
-import { DynamoDBClient, PutItemCommand, ConditionalCheckFailedException } from '@aws-sdk/client-dynamodb';
+import { DynamoDBClient, PutItemCommand, PutItemCommandInput, ConditionalCheckFailedException } from '@aws-sdk/client-dynamodb';
 import { handler } from './uploadRequest';
 
 // Mock AWS SDK clients
@@ -125,7 +125,7 @@ describe('uploadRequest Lambda Function - Comprehensive Coverage', () => {
 
       // Verify DynamoDB put was called
       expect(dynamoMock.calls()).toHaveLength(1);
-      expect(dynamoMock.call(0).args[0].input.TableName).toBe('test-jobs-table');
+      expect((dynamoMock.call(0).args[0].input as PutItemCommandInput).TableName).toBe('test-jobs-table');
 
       // Verify logging
       expect(mockLoggerInfo).toHaveBeenCalledWith('Processing upload request', { requestId: 'test-request-123' });
@@ -159,7 +159,7 @@ describe('uploadRequest Lambda Function - Comprehensive Coverage', () => {
       await handler(event);
 
       const putCall = dynamoMock.call(0).args[0];
-      const item = putCall.input.Item;
+      const item = (putCall.input as PutItemCommandInput).Item;
 
       // Verify all required fields in job record
       expect(item.jobId).toBeDefined();
@@ -190,7 +190,7 @@ describe('uploadRequest Lambda Function - Comprehensive Coverage', () => {
       await handler(event);
 
       const putCall = dynamoMock.call(0).args[0];
-      const s3Key = putCall.input.Item.s3Key.S;
+      const s3Key = (putCall.input as PutItemCommandInput).Item!.s3Key!.S;
 
       expect(s3Key).toMatch(new RegExp(`^uploads/${userId}/[a-f0-9-]+/my-document\\.txt$`));
     });
@@ -210,7 +210,7 @@ describe('uploadRequest Lambda Function - Comprehensive Coverage', () => {
 
       const afterRequest = Date.now();
       const putCall = dynamoMock.call(0).args[0];
-      const expiresAt = new Date(putCall.input.Item.expiresAt.S).getTime();
+      const expiresAt = new Date((putCall.input as PutItemCommandInput).Item!.expiresAt!.S!).getTime();
 
       // Expiration should be 15 minutes (900 seconds) from now
       const expectedMin = beforeRequest + 900 * 1000;
@@ -655,7 +655,7 @@ describe('uploadRequest Lambda Function - Comprehensive Coverage', () => {
       await handler(event);
 
       const putCall = dynamoMock.call(0).args[0];
-      expect(putCall.input.ConditionExpression).toBe('attribute_not_exists(jobId)');
+      expect((putCall.input as PutItemCommandInput).ConditionExpression).toBe('attribute_not_exists(jobId)');
     });
 
     it('should use marshall with removeUndefinedValues option', async () => {
@@ -671,7 +671,7 @@ describe('uploadRequest Lambda Function - Comprehensive Coverage', () => {
 
       // Item should not contain any undefined values
       const putCall = dynamoMock.call(0).args[0];
-      const itemString = JSON.stringify(putCall.input.Item);
+      const itemString = JSON.stringify((putCall.input as PutItemCommandInput).Item);
       expect(itemString).not.toContain('undefined');
     });
   });
@@ -828,8 +828,8 @@ describe('uploadRequest Lambda Function - Comprehensive Coverage', () => {
 
       await Promise.all(events.map(handler));
 
-      const jobId1 = dynamoMock.call(0).args[0].input.Item.jobId.S;
-      const jobId2 = dynamoMock.call(1).args[0].input.Item.jobId.S;
+      const jobId1 = (dynamoMock.call(0).args[0].input as PutItemCommandInput).Item!.jobId!.S;
+      const jobId2 = (dynamoMock.call(1).args[0].input as PutItemCommandInput).Item!.jobId!.S;
 
       expect(jobId1).not.toBe(jobId2);
     });
@@ -862,8 +862,8 @@ describe('uploadRequest Lambda Function - Comprehensive Coverage', () => {
       await handler(event1);
       await handler(event2);
 
-      const s3Key1 = dynamoMock.call(0).args[0].input.Item.s3Key.S;
-      const s3Key2 = dynamoMock.call(1).args[0].input.Item.s3Key.S;
+      const s3Key1 = (dynamoMock.call(0).args[0].input as PutItemCommandInput).Item!.s3Key!.S;
+      const s3Key2 = (dynamoMock.call(1).args[0].input as PutItemCommandInput).Item!.s3Key!.S;
 
       expect(s3Key1).toContain(userId1);
       expect(s3Key2).toContain(userId2);
