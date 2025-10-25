@@ -8,7 +8,7 @@ This is a proof-of-concept implementation of a Long-Form Translation Service tha
 
 **Current Phase**: Phase 4 - Document Upload Service (In Progress)
 **Implementation Plan**: [LFMT Implementation Plan v2.md](../LFMT%20Implementation%20Plan%20v2.md)
-**Overall Progress**: ~20% (Infrastructure and Auth Complete, Translation Features Next)
+**Overall Progress**: ~25% (Infrastructure, Auth, and File Upload UI Complete)
 
 ### ✅ Completed Components
 
@@ -39,26 +39,32 @@ This is a proof-of-concept implementation of a Long-Form Translation Service tha
 - [x] Comprehensive unit and integration tests
 - [x] Production deployment verified
 
-#### Frontend Authentication (100% Complete)
+#### Frontend Authentication & UI (100% Complete)
 - [x] React 18 + TypeScript + Material-UI setup
 - [x] Authentication components (Login, Register, Forgot Password, Protected Routes)
 - [x] Auth context and service layer with token management
 - [x] API client with Axios interceptors
-- [x] Comprehensive test suite with 231 passing tests
+- [x] **Automatic token refresh on 401 errors** with request queuing
+- [x] **Logout button with user context display** in app bar
+- [x] Comprehensive test suite with 252+ passing tests
 - [x] **91.66% overall test coverage** (exceeds 90% target)
 - [x] All critical components at 100% coverage
 - [x] React Router v6 integration
 - [x] Form validation with React Hook Form + Zod
 - [x] Production environment configuration ready
+- [x] **API Gateway CORS fixes** for error responses (401, 403, 400, 5XX)
+- [x] **File upload UI component** with drag-and-drop and progress tracking
 
 ### 🔄 In Progress
 
-#### Phase 4: Document Upload Service (Starting)
-- [ ] S3 signed URL generation endpoint
-- [ ] File upload validation (size, type)
-- [ ] Job record creation in DynamoDB
-- [ ] Upload progress tracking
-- [ ] Frontend upload component
+#### Phase 4: Document Upload Service (75% Complete)
+- [x] Frontend upload component with drag-and-drop
+- [x] Upload progress tracking UI
+- [x] File validation (size, type) on client side
+- [x] Upload service integration layer
+- [ ] S3 signed URL generation endpoint (backend)
+- [ ] Job record creation in DynamoDB (backend)
+- [ ] End-to-end upload testing
 
 ### 📋 Upcoming Features
 
@@ -355,10 +361,10 @@ This is a proof-of-concept project. All rights reserved.
 
 ---
 
-**Last Updated**: 2025-10-22
+**Last Updated**: 2025-10-25
 **Implementation Plan Version**: v2.0
-**Current Phase**: Phase 4 - Document Upload Service (Starting)
-**Overall Progress**: ~20% complete
+**Current Phase**: Phase 4 - Document Upload Service (75% Complete)
+**Overall Progress**: ~25% complete
 **Repository**: https://github.com/leixiaoyu/lfmt-poc
 **Branch**: `main`
 

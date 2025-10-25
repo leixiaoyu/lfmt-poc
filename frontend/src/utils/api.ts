@@ -89,30 +89,130 @@ function responseInterceptor(response: AxiosResponse): AxiosResponse {
 }
 
 /**
- * Response Error Interceptor
- * Standardizes errors and handles authentication failures
+ * Flag to prevent infinite refresh loops
  */
-async function responseErrorInterceptor(error: unknown): Promise<never> {
+let isRefreshing = false;
+let failedQueue: Array<{
+  resolve: (value: unknown) => void;
+  reject: (reason?: unknown) => void;
+}> = [];
+
+/**
+ * Process queued requests after token refresh
+ */
+function processQueue(error: unknown, token: string | null = null) {
+  failedQueue.forEach(prom => {
+    if (error) {
+      prom.reject(error);
+    } else {
+      prom.resolve(token);
+    }
+  });
+
+  failedQueue = [];
+}
+
+/**
+ * Response Error Interceptor
+ * Standardizes errors and handles authentication failures with automatic token refresh
+ */
+async function responseErrorInterceptor(error: unknown): Promise<unknown> {
   if (!axios.isAxiosError(error)) {
     return Promise.reject(error);
   }
 
   const axiosError = error as AxiosError<{ message?: string; errors?: string[] }>;
 
-  // Handle 401 Unauthorized - clear auth and redirect
-  if (axiosError.response?.status === 401) {
-    clearAuthToken();
+  // Handle 401 Unauthorized - attempt token refresh first
+  if (axiosError.response?.status === 401 && axiosError.config) {
+    const originalRequest = axiosError.config as InternalAxiosRequestConfig & { _retry?: boolean };
 
-    // In a real app, you might want to dispatch a Redux action or emit an event
-    // For now, we'll just clear the token and let the auth context handle redirects
+    // If we already tried to refresh, or this is a refresh request, don't retry
+    if (originalRequest._retry || originalRequest.url?.includes('/auth/refresh')) {
+      clearAuthToken();
 
-    const apiError: ApiError = {
-      message: ERROR_MESSAGES.SESSION_EXPIRED,
-      status: 401,
-      data: axiosError.response.data,
-    };
+      const apiError: ApiError = {
+        message: ERROR_MESSAGES.SESSION_EXPIRED,
+        status: 401,
+        data: axiosError.response.data,
+      };
 
-    return Promise.reject(apiError);
+      return Promise.reject(apiError);
+    }
+
+    // If already refreshing, queue this request
+    if (isRefreshing) {
+      return new Promise((resolve, reject) => {
+        failedQueue.push({ resolve, reject });
+      })
+        .then(token => {
+          if (originalRequest.headers) {
+            originalRequest.headers.Authorization = `Bearer ${token}`;
+          }
+          return axios(originalRequest);
+        })
+        .catch(err => {
+          return Promise.reject(err);
+        });
+    }
+
+    originalRequest._retry = true;
+    isRefreshing = true;
+
+    // Try to refresh the token
+    const refreshToken = localStorage.getItem(AUTH_CONFIG.REFRESH_TOKEN_KEY);
+
+    if (!refreshToken) {
+      clearAuthToken();
+      isRefreshing = false;
+
+      const apiError: ApiError = {
+        message: ERROR_MESSAGES.SESSION_EXPIRED,
+        status: 401,
+        data: axiosError.response.data,
+      };
+
+      return Promise.reject(apiError);
+    }
+
+    try {
+      // Call refresh endpoint
+      const response = await axios.post<{ accessToken: string; refreshToken: string }>(
+        `${API_CONFIG.BASE_URL}/auth/refresh`,
+        { refreshToken }
+      );
+
+      const { accessToken, refreshToken: newRefreshToken } = response.data;
+
+      // Update stored tokens
+      setAuthToken(accessToken);
+      localStorage.setItem(AUTH_CONFIG.REFRESH_TOKEN_KEY, newRefreshToken);
+
+      // Update authorization header for original request
+      if (originalRequest.headers) {
+        originalRequest.headers.Authorization = `Bearer ${accessToken}`;
+      }
+
+      // Process queued requests
+      processQueue(null, accessToken);
+      isRefreshing = false;
+
+      // Retry original request with new token
+      return axios(originalRequest);
+    } catch (refreshError) {
+      // Refresh failed - clear auth and reject all queued requests
+      processQueue(refreshError, null);
+      clearAuthToken();
+      isRefreshing = false;
+
+      const apiError: ApiError = {
+        message: ERROR_MESSAGES.SESSION_EXPIRED,
+        status: 401,
+        data: axiosError.response.data,
+      };
+
+      return Promise.reject(apiError);
+    }
   }
 
   // Handle 403 Forbidden
