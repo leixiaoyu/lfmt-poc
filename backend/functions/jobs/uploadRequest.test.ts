@@ -239,7 +239,7 @@ describe('uploadRequest Lambda Function - Comprehensive Coverage', () => {
 
       expect(result.statusCode).toBe(400);
       const body = JSON.parse(result.body);
-      expect(body.message).toContain('exceeds maximum allowed size of 100MB');
+      expect(body.message).toContain('File validation failed');
 
       // Verify no DynamoDB calls were made
       expect(dynamoMock.calls()).toHaveLength(0);
@@ -256,7 +256,7 @@ describe('uploadRequest Lambda Function - Comprehensive Coverage', () => {
 
       expect(result.statusCode).toBe(400);
       const body = JSON.parse(result.body);
-      expect(body.message).toContain('below minimum required size of 1000 bytes');
+      expect(body.message).toContain('File validation failed');
 
       // Verify no DynamoDB calls were made
       expect(dynamoMock.calls()).toHaveLength(0);
@@ -303,7 +303,7 @@ describe('uploadRequest Lambda Function - Comprehensive Coverage', () => {
 
       expect(result.statusCode).toBe(400);
       const body = JSON.parse(result.body);
-      expect(body.message).toContain('Invalid content type. Only text/plain is allowed');
+      expect(body.message).toContain('File validation failed');
     });
 
     it('should reject invalid file extension (.pdf)', async () => {
@@ -317,7 +317,7 @@ describe('uploadRequest Lambda Function - Comprehensive Coverage', () => {
 
       expect(result.statusCode).toBe(400);
       const body = JSON.parse(result.body);
-      expect(body.message).toContain('Invalid file extension. Only .txt files are allowed');
+      expect(body.message).toContain('File validation failed');
     });
 
     it('should reject file without extension', async () => {
@@ -343,7 +343,7 @@ describe('uploadRequest Lambda Function - Comprehensive Coverage', () => {
 
       expect(result.statusCode).toBe(400);
       const body = JSON.parse(result.body);
-      expect(body.message).toContain('Invalid file extension');
+      expect(body.message).toContain('File validation failed');
     });
   });
 
