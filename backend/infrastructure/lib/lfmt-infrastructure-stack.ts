@@ -10,6 +10,7 @@ import { Construct } from 'constructs';
 // AWS Service Imports - grouped by service
 import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import * as s3 from 'aws-cdk-lib/aws-s3';
+import * as s3n from 'aws-cdk-lib/aws-s3-notifications';
 import * as apigateway from 'aws-cdk-lib/aws-apigateway';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import { NodejsFunction } from 'aws-cdk-lib/aws-lambda-nodejs';
@@ -43,6 +44,9 @@ export class LfmtInfrastructureStack extends Stack {
   private loginFunction?: lambda.Function;
   private refreshTokenFunction?: lambda.Function;
   private resetPasswordFunction?: lambda.Function;
+  private getCurrentUserFunction?: lambda.Function;
+  private uploadRequestFunction?: lambda.Function;
+  private uploadCompleteFunction?: lambda.Function;
 
   // IAM role for Lambda functions
   private lambdaRole?: iam.Role;
@@ -490,14 +494,16 @@ export class LfmtInfrastructureStack extends Stack {
       throw new Error('Lambda role must be created before Lambda functions');
     }
 
-    // Common environment variables for all auth Lambda functions
+    // Common environment variables for all Lambda functions
     const commonEnv = {
       COGNITO_CLIENT_ID: this.userPoolClient.userPoolClientId,
       COGNITO_USER_POOL_ID: this.userPool.userPoolId,
       ENVIRONMENT: this.stackName,
+      JOBS_TABLE: this.jobsTable.tableName,
       JOBS_TABLE_NAME: this.jobsTable.tableName,
       USERS_TABLE_NAME: this.usersTable.tableName,
       ATTESTATIONS_TABLE_NAME: this.attestationsTable.tableName,
+      DOCUMENT_BUCKET: this.documentBucket.bucketName,
       ALLOWED_ORIGIN: this.node.tryGetContext('environment') === 'prod'
         ? 'https://lfmt.yourcompany.com'
         : 'http://localhost:3000',
@@ -578,10 +584,77 @@ export class LfmtInfrastructureStack extends Stack {
         forceDockerBundling: false,
       },
     });
+
+    // Get Current User Lambda Function
+    this.getCurrentUserFunction = new NodejsFunction(this, 'GetCurrentUserFunction', {
+      functionName: `lfmt-get-current-user-${this.stackName}`,
+      entry: '../functions/auth/getCurrentUser.ts',
+      handler: 'handler',
+      runtime: lambda.Runtime.NODEJS_18_X,
+      role: this.lambdaRole,
+      environment: commonEnv,
+      timeout: Duration.seconds(30),
+      memorySize: 256,
+      description: 'Get current user from access token',
+      bundling: {
+        externalModules: ['aws-sdk', '@aws-sdk/*'],
+        minify: true,
+        sourceMap: true,
+        forceDockerBundling: false,
+      },
+    });
+
+    // Upload Request Lambda Function
+    this.uploadRequestFunction = new NodejsFunction(this, 'UploadRequestFunction', {
+      functionName: `lfmt-upload-request-${this.stackName}`,
+      entry: '../functions/jobs/uploadRequest.ts',
+      handler: 'handler',
+      runtime: lambda.Runtime.NODEJS_18_X,
+      role: this.lambdaRole,
+      environment: commonEnv,
+      timeout: Duration.seconds(30),
+      memorySize: 512, // Increased memory for S3 operations
+      description: 'Generate presigned URLs for document uploads',
+      bundling: {
+        externalModules: ['aws-sdk', '@aws-sdk/*'],
+        minify: true,
+        sourceMap: true,
+        forceDockerBundling: false,
+      },
+    });
+
+    // Upload Complete Lambda Function (S3 event handler)
+    this.uploadCompleteFunction = new NodejsFunction(this, 'UploadCompleteFunction', {
+      functionName: `lfmt-upload-complete-${this.stackName}`,
+      entry: '../functions/jobs/uploadComplete.ts',
+      handler: 'handler',
+      runtime: lambda.Runtime.NODEJS_18_X,
+      role: this.lambdaRole,
+      environment: commonEnv,
+      timeout: Duration.seconds(60), // Longer timeout for validation and updates
+      memorySize: 512,
+      description: 'Process S3 upload completion events and update job status',
+      bundling: {
+        externalModules: ['aws-sdk', '@aws-sdk/*'],
+        minify: true,
+        sourceMap: true,
+        forceDockerBundling: false,
+      },
+    });
+
+    // Add S3 event notification for upload completion
+    this.documentBucket.addEventNotification(
+      s3.EventType.OBJECT_CREATED,
+      new s3n.LambdaDestination(this.uploadCompleteFunction),
+      {
+        prefix: 'uploads/',
+        suffix: '.txt',
+      }
+    );
   }
 
   private createApiEndpoints() {
-    if (!this.registerFunction || !this.loginFunction || !this.refreshTokenFunction || !this.resetPasswordFunction) {
+    if (!this.registerFunction || !this.loginFunction || !this.refreshTokenFunction || !this.resetPasswordFunction || !this.getCurrentUserFunction || !this.uploadRequestFunction) {
       throw new Error('Lambda functions must be created before API endpoints');
     }
 
@@ -638,6 +711,105 @@ export class LfmtInfrastructureStack extends Stack {
         validateRequestBody: true,
         validateRequestParameters: false,
       }),
+    });
+
+    // GET /auth/me - Get Current User (requires valid access token)
+    const me = auth.addResource('me');
+    me.addMethod('GET', new apigateway.LambdaIntegration(this.getCurrentUserFunction), {
+      authorizationType: apigateway.AuthorizationType.NONE,
+      requestValidator: new apigateway.RequestValidator(this, 'GetCurrentUserRequestValidator', {
+        restApi: this.api,
+        requestValidatorName: 'get-current-user-validator',
+        validateRequestBody: false,
+        validateRequestParameters: false,
+      }),
+    });
+
+    // POST /jobs/upload - Request Upload URL (requires authentication)
+    const jobsResource = this.api.root.resourceForPath('jobs');
+    const uploadResource = jobsResource.addResource('upload', {
+      defaultCorsPreflightOptions: {
+        allowOrigins: this.node.tryGetContext('environment') === 'prod'
+          ? ['https://lfmt.yourcompany.com']
+          : ['http://localhost:3000', 'https://localhost:3000'],
+        allowMethods: ['POST', 'OPTIONS'],
+        allowHeaders: [
+          'Content-Type',
+          'X-Amz-Date',
+          'Authorization',
+          'X-Api-Key',
+          'X-Amz-Security-Token',
+          'X-Request-ID',
+        ],
+        allowCredentials: true,
+      },
+    });
+
+    // Create Cognito authorizer for protected endpoints
+    const authorizer = new apigateway.CognitoUserPoolsAuthorizer(this, 'CognitoAuthorizer', {
+      cognitoUserPools: [this.userPool],
+      identitySource: 'method.request.header.Authorization',
+      authorizerName: 'cognito-authorizer',
+    });
+
+    uploadResource.addMethod('POST', new apigateway.LambdaIntegration(this.uploadRequestFunction), {
+      authorizationType: apigateway.AuthorizationType.COGNITO,
+      authorizer: authorizer,
+      requestValidator: new apigateway.RequestValidator(this, 'UploadRequestValidator', {
+        restApi: this.api,
+        requestValidatorName: 'upload-request-validator',
+        validateRequestBody: true,
+        validateRequestParameters: false,
+      }),
+    });
+
+    // Add Gateway Responses to include CORS headers on errors
+    const allowedOrigins = this.node.tryGetContext('environment') === 'prod'
+      ? 'https://lfmt.yourcompany.com'
+      : 'http://localhost:3000';
+
+    // Add CORS headers to 401 Unauthorized responses
+    this.api.addGatewayResponse('Unauthorized', {
+      type: apigateway.ResponseType.UNAUTHORIZED,
+      responseHeaders: {
+        'Access-Control-Allow-Origin': `'${allowedOrigins}'`,
+        'Access-Control-Allow-Headers': "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,X-Request-ID'",
+        'Access-Control-Allow-Methods': "'OPTIONS,GET,POST,PUT,DELETE'",
+        'Access-Control-Allow-Credentials': "'true'",
+      },
+    });
+
+    // Add CORS headers to 403 Forbidden responses
+    this.api.addGatewayResponse('AccessDenied', {
+      type: apigateway.ResponseType.ACCESS_DENIED,
+      responseHeaders: {
+        'Access-Control-Allow-Origin': `'${allowedOrigins}'`,
+        'Access-Control-Allow-Headers': "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,X-Request-ID'",
+        'Access-Control-Allow-Methods': "'OPTIONS,GET,POST,PUT,DELETE'",
+        'Access-Control-Allow-Credentials': "'true'",
+      },
+    });
+
+    // Add CORS headers to 400 Bad Request responses
+    this.api.addGatewayResponse('BadRequestBody', {
+      type: apigateway.ResponseType.BAD_REQUEST_BODY,
+      responseHeaders: {
+        'Access-Control-Allow-Origin': `'${allowedOrigins}'`,
+        'Access-Control-Allow-Headers': "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,X-Request-ID'",
+        'Access-Control-Allow-Methods': "'OPTIONS,GET,POST,PUT,DELETE'",
+        'Access-Control-Allow-Credentials': "'true'",
+      },
+    });
+
+    // Add CORS headers to 500 Internal Server Error responses
+    this.api.addGatewayResponse('DefaultServerError', {
+      type: apigateway.ResponseType.DEFAULT_5XX,
+      responseHeaders: {
+        'Access-Control-Allow-Origin': `'${allowedOrigins}'`,
+        'Access-Control-Allow-Headers': "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,X-Request-ID'",
+        'Access-Control-Allow-Methods': "'OPTIONS,GET,POST,PUT,DELETE'",
+        'Access-Control-Allow-Credentials': "'true'",
+      },
     });
   }
 
