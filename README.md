@@ -6,9 +6,9 @@ This is a proof-of-concept implementation of a Long-Form Translation Service tha
 
 ## Project Status
 
-**Current Phase**: Phase 4 - Document Upload Service (In Progress)
+**Current Phase**: Phase 5 - Document Chunking Service (Next)
 **Implementation Plan**: [LFMT Implementation Plan v2.md](../LFMT%20Implementation%20Plan%20v2.md)
-**Overall Progress**: ~25% (Infrastructure, Auth, and File Upload UI Complete)
+**Overall Progress**: ~30% (Infrastructure, Auth, and Document Upload Complete)
 
 ### ✅ Completed Components
 
@@ -55,16 +55,20 @@ This is a proof-of-concept implementation of a Long-Form Translation Service tha
 - [x] **API Gateway CORS fixes** for error responses (401, 403, 400, 5XX)
 - [x] **File upload UI component** with drag-and-drop and progress tracking
 
-### 🔄 In Progress
-
-#### Phase 4: Document Upload Service (75% Complete)
+#### Phase 4: Document Upload Service (100% Complete)
 - [x] Frontend upload component with drag-and-drop
 - [x] Upload progress tracking UI
-- [x] File validation (size, type) on client side
+- [x] File validation (size, type) on client and server side
 - [x] Upload service integration layer
-- [ ] S3 signed URL generation endpoint (backend)
-- [ ] Job record creation in DynamoDB (backend)
-- [ ] End-to-end upload testing
+- [x] **S3 signed URL generation endpoint (backend)** - Deployed to dev
+- [x] **Job record creation in DynamoDB (backend)** - Deployed with comprehensive validation
+- [x] **API Gateway endpoint POST /jobs/upload** - Live with Cognito auth
+- [x] **All 49 backend unit tests passing**
+- [x] **End-to-end upload flow verified** - Frontend to S3 via presigned URLs
+
+### 🔄 In Progress
+
+Currently working on: Phase 5 - Document Chunking Service
 
 ### 📋 Upcoming Features
 
@@ -361,36 +365,30 @@ This is a proof-of-concept project. All rights reserved.
 
 ---
 
-**Last Updated**: 2025-10-25
+**Last Updated**: 2025-10-26
 **Implementation Plan Version**: v2.0
-**Current Phase**: Phase 4 - Document Upload Service (75% Complete)
-**Overall Progress**: ~25% complete
+**Current Phase**: Phase 5 - Document Chunking Service (Next)
+**Overall Progress**: ~30% complete
 **Repository**: https://github.com/leixiaoyu/lfmt-poc
 **Branch**: `main`
 
 ## 🎯 Next Steps
 
 ### Immediate Priorities (This Week)
-1. **Document Upload Service** (P0 - In Progress)
-   - Implement S3 signed URL generation endpoint
-   - Add file validation (size, type)
-   - Create job record in DynamoDB
-   - Build upload UI component
-
-2. **Document Chunking Service** (P1 - Next)
+1. **Document Chunking Service** (P0 - Next)
    - Implement 3,500 token chunking algorithm
    - Add token counting logic
    - Handle txt file parsing
    - Unit tests for edge cases
 
 ### Short-term Goals (Next 2 Weeks)
-3. **Claude API Integration** (P1)
+2. **Claude API Integration** (P1)
    - Create Claude service wrapper
    - Implement rate limiting
    - Add exponential backoff
    - Test with sample chunks
 
-4. **Translation Processing** (P2)
+3. **Translation Processing** (P2)
    - Job creation endpoint
    - Translation Lambda implementation
    - Result assembly service
