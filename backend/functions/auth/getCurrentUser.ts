@@ -117,7 +117,8 @@ export const handler = async (
     return createSuccessResponse(
       200,
       {
-        user,
+        message: 'User retrieved successfully',
+        data: user,
       },
       requestId
     );

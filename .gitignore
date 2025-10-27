@@ -167,3 +167,4 @@ stack-outputs.json
 **/config/local.*
 **/config/dev.*
 **/config/prod.*frontend/.env.local
+AUTH-FUNCTIONS-COMPLETE.md
