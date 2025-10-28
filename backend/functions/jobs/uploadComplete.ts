@@ -10,7 +10,7 @@ import {
   UpdateItemCommand,
   GetItemCommand,
 } from '@aws-sdk/client-dynamodb';
-import { S3Client, HeadObjectCommand } from '@aws-sdk/client-s3';
+import { S3Client, HeadObjectCommand, CopyObjectCommand } from '@aws-sdk/client-s3';
 import { marshall, unmarshall } from '@aws-sdk/util-dynamodb';
 import Logger from '../shared/logger';
 import { getRequiredEnv } from '../shared/env';
@@ -191,8 +191,38 @@ export const handler = async (event: S3Event): Promise<void> => {
         size,
       });
 
-      // TODO: Trigger translation workflow (Step Functions)
-      // This will be implemented in the next phase
+      // Copy file from uploads/ to documents/ to trigger chunking
+      // The S3 event on documents/ prefix will automatically trigger chunkDocumentFunction
+      const sourceKey = key; // uploads/{userId}/{fileId}/{filename}
+      const destinationKey = `documents/${userId}/${fileId}/${filename}`;
+
+      logger.info('Copying file to documents/ prefix for chunking', {
+        sourceKey,
+        destinationKey,
+        bucket,
+      });
+
+      const copyCommand = new CopyObjectCommand({
+        Bucket: bucket,
+        CopySource: `${bucket}/${sourceKey}`,
+        Key: destinationKey,
+        Metadata: {
+          ...metadata,
+          // Preserve all metadata for chunking Lambda
+          userid: userId,
+          fileid: fileId,
+          jobid: jobId,
+        },
+        MetadataDirective: 'REPLACE', // Use our metadata instead of copying from source
+      });
+
+      await s3Client.send(copyCommand);
+
+      logger.info('File copied successfully, chunking will be triggered automatically', {
+        sourceKey,
+        destinationKey,
+        jobId,
+      });
     } catch (error) {
       logger.error('Error processing upload completion', {
         key,

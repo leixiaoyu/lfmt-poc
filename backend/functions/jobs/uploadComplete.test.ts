@@ -17,7 +17,7 @@ import {
   GetItemCommand,
   UpdateItemCommand,
 } from '@aws-sdk/client-dynamodb';
-import { S3Client, HeadObjectCommand } from '@aws-sdk/client-s3';
+import { S3Client, HeadObjectCommand, CopyObjectCommand } from '@aws-sdk/client-s3';
 import { marshall } from '@aws-sdk/util-dynamodb';
 
 // Mock logger - must be defined before jest.mock due to hoisting
@@ -170,6 +170,9 @@ describe('uploadComplete Lambda Function - Comprehensive Coverage', () => {
       // Mock DynamoDB UpdateItem response
       dynamoMock.on(UpdateItemCommand).resolves({});
 
+      // Mock S3 CopyObject response (for copying to documents/ prefix)
+      s3Mock.on(CopyObjectCommand).resolves({});
+
       await handler(event);
 
       // Verify S3 HeadObject was called
@@ -190,6 +193,22 @@ describe('uploadComplete Lambda Function - Comprehensive Coverage', () => {
       expect(updateCalls).toHaveLength(1);
       expect(updateCalls[0].args[0].input.TableName).toBe('test-jobs-table');
 
+      // Verify S3 CopyObject was called to trigger chunking
+      const copyCalls = s3Mock.commandCalls(CopyObjectCommand);
+      expect(copyCalls).toHaveLength(1);
+      expect(copyCalls[0].args[0].input).toEqual({
+        Bucket: 'test-bucket',
+        CopySource: `test-bucket/uploads/${userId}/${fileId}/${filename}`,
+        Key: `documents/${userId}/${fileId}/${filename}`,
+        Metadata: {
+          ...metadata,
+          userid: userId,
+          fileid: fileId,
+          jobid: jobId,
+        },
+        MetadataDirective: 'REPLACE',
+      });
+
       // Verify logging
       expect(mockLoggerInfo).toHaveBeenCalledWith(
         'Processing S3 upload completion event',
@@ -201,6 +220,14 @@ describe('uploadComplete Lambda Function - Comprehensive Coverage', () => {
         userId,
         size: fileSize,
       });
+      expect(mockLoggerInfo).toHaveBeenCalledWith(
+        'File copied successfully, chunking will be triggered automatically',
+        {
+          sourceKey: `uploads/${userId}/${fileId}/${filename}`,
+          destinationKey: `documents/${userId}/${fileId}/${filename}`,
+          jobId,
+        }
+      );
     });
 
     it('should update job record with correct status and timestamps', async () => {
@@ -232,6 +259,9 @@ describe('uploadComplete Lambda Function - Comprehensive Coverage', () => {
       });
 
       dynamoMock.on(UpdateItemCommand).resolves({});
+
+      // Mock S3 CopyObject response
+      s3Mock.on(CopyObjectCommand).resolves({});
 
       await handler(event);
 
