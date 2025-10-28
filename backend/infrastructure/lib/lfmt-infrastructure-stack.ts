@@ -47,6 +47,7 @@ export class LfmtInfrastructureStack extends Stack {
   private getCurrentUserFunction?: lambda.Function;
   private uploadRequestFunction?: lambda.Function;
   private uploadCompleteFunction?: lambda.Function;
+  private chunkDocumentFunction?: lambda.Function;
 
   // IAM role for Lambda functions
   private lambdaRole?: iam.Role;
@@ -642,12 +643,42 @@ export class LfmtInfrastructureStack extends Stack {
       },
     });
 
+    // Document Chunking Lambda Function (S3 event handler)
+    this.chunkDocumentFunction = new NodejsFunction(this, 'ChunkDocumentFunction', {
+      functionName: `lfmt-chunk-document-${this.stackName}`,
+      entry: '../functions/chunking/chunkDocument.ts',
+      handler: 'handler',
+      runtime: lambda.Runtime.NODEJS_18_X,
+      role: this.lambdaRole,
+      environment: commonEnv,
+      timeout: Duration.minutes(5), // 5 minutes for large document processing
+      memorySize: 1024, // 1GB for chunking large documents
+      description: 'Process uploaded documents and create chunks for translation',
+      bundling: {
+        externalModules: ['aws-sdk', '@aws-sdk/*'],
+        minify: true,
+        sourceMap: true,
+        forceDockerBundling: false,
+      },
+    });
+
     // Add S3 event notification for upload completion
     this.documentBucket.addEventNotification(
       s3.EventType.OBJECT_CREATED,
       new s3n.LambdaDestination(this.uploadCompleteFunction),
       {
         prefix: 'uploads/',
+        suffix: '.txt',
+      }
+    );
+
+    // Add S3 event notification for document chunking
+    // This triggers after uploadComplete moves files from uploads/ to documents/
+    this.documentBucket.addEventNotification(
+      s3.EventType.OBJECT_CREATED,
+      new s3n.LambdaDestination(this.chunkDocumentFunction),
+      {
+        prefix: 'documents/',
         suffix: '.txt',
       }
     );

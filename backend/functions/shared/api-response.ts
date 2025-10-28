@@ -19,6 +19,7 @@ export interface ApiSuccessResponse<T = any> {
   message?: string;
   data?: T;
   requestId?: string;
+  [key: string]: any; // Allow additional properties
 }
 
 /**

@@ -56,7 +56,41 @@ fi
 
 cd ..
 
-# 2. Test infrastructure
+# 2. Test backend functions
+print_status "⚙️  Testing backend functions..." "$YELLOW"
+cd backend/functions
+
+if [ ! -f "package.json" ]; then
+    print_status "❌ Error: backend/functions/package.json not found" "$RED"
+    exit 1
+fi
+
+if [ ! -d "node_modules" ]; then
+    print_status "⚠️  Installing function dependencies..." "$YELLOW"
+    npm install --cache=/tmp/npm-cache
+fi
+
+# Run function tests
+if npm test; then
+    print_status "✅ Backend function tests passed" "$GREEN"
+else
+    print_status "❌ Backend function tests failed" "$RED"
+    print_status "Fix the failing tests before pushing" "$RED"
+    exit 1
+fi
+
+# Check test coverage
+if npm run test:coverage > /dev/null 2>&1; then
+    print_status "✅ Test coverage check passed" "$GREEN"
+else
+    print_status "❌ Test coverage check failed" "$RED"
+    print_status "Ensure 90%+ test coverage" "$RED"
+    exit 1
+fi
+
+cd ../..
+
+# 3. Test infrastructure
 print_status "🏗️  Testing infrastructure..." "$YELLOW"
 cd backend/infrastructure
 
@@ -89,7 +123,7 @@ fi
 
 cd ../..
 
-# 3. Run security checks
+# 4. Run security checks
 print_status "🔒 Running security checks..." "$YELLOW"
 
 # Check for hardcoded AWS credentials
@@ -112,11 +146,13 @@ fi
 
 print_status "✅ Security checks passed" "$GREEN"
 
-# 4. Final validation
+# 5. Final validation
 print_status "🎯 Pre-push validation summary:" "$GREEN"
 echo ""
 print_status "  ✅ Shared-types tests passed" "$GREEN"
-print_status "  ✅ Infrastructure TypeScript compilation passed" "$GREEN"  
+print_status "  ✅ Backend function tests passed (203 tests)" "$GREEN"
+print_status "  ✅ Test coverage check passed (90%+ required)" "$GREEN"
+print_status "  ✅ Infrastructure TypeScript compilation passed" "$GREEN"
 print_status "  ✅ Infrastructure tests passed (20/20)" "$GREEN"
 print_status "  ✅ Security checks passed" "$GREEN"
 echo ""

@@ -1,0 +1,12 @@
+{
+  "BudgetName": "LFMT-Production-Monthly",
+  "BudgetLimit": {
+    "Amount": "100",
+    "Unit": "USD"
+  },
+  "TimeUnit": "MONTHLY",
+  "BudgetType": "COST",
+  "CostFilters": {
+    "TagKeyValue": ["user:Environment$production"]
+  }
+}
