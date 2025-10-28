@@ -73,6 +73,14 @@ jobs:
           cache: 'npm'
           cache-dependency-path: backend/infrastructure/package-lock.json
 
+      - name: Install shared-types dependencies
+        working-directory: shared-types
+        run: npm ci
+
+      - name: Install function dependencies
+        working-directory: backend/functions
+        run: npm ci
+
       - name: Install infrastructure dependencies
         working-directory: backend/infrastructure
         run: npm ci
@@ -118,6 +126,14 @@ jobs:
 
       - name: Verify AWS identity
         run: aws sts get-caller-identity
+
+      - name: Install shared-types dependencies
+        working-directory: shared-types
+        run: npm ci
+
+      - name: Install function dependencies
+        working-directory: backend/functions
+        run: npm ci
 
       - name: Install infrastructure dependencies
         working-directory: backend/infrastructure
@@ -182,6 +198,14 @@ jobs:
           role-session-name: GitHubActions-LFMT-Deploy-Staging
           aws-region: ${{ env.AWS_REGION }}
 
+      - name: Install shared-types dependencies
+        working-directory: shared-types
+        run: npm ci
+
+      - name: Install function dependencies
+        working-directory: backend/functions
+        run: npm ci
+
       - name: Install infrastructure dependencies
         working-directory: backend/infrastructure
         run: npm ci
@@ -226,7 +250,11 @@ jobs:
 
       - name: Install shared-types dependencies
         working-directory: shared-types
-        run: npm install
+        run: npm ci
+
+      - name: Install function dependencies
+        working-directory: backend/functions
+        run: npm ci
 
       - name: Install infrastructure dependencies
         working-directory: backend/infrastructure

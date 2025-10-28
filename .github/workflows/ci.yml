@@ -73,6 +73,10 @@ jobs:
         working-directory: shared-types
         run: npm ci
 
+      - name: Install function dependencies
+        working-directory: backend/functions
+        run: npm ci
+
       - name: Install infrastructure dependencies
         working-directory: backend/infrastructure
         run: npm ci
