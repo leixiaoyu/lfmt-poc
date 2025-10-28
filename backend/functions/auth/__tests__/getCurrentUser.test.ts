@@ -8,23 +8,20 @@
  * 4. Error handling works properly
  */
 
+// Set environment before importing handler
+process.env.ENVIRONMENT = 'test';
+
 import { APIGatewayProxyEvent } from 'aws-lambda';
 import { handler } from '../getCurrentUser';
-import * as CognitoClient from '@aws-sdk/client-cognito-identity-provider';
+import {
+  CognitoIdentityProviderClient,
+  GetUserCommand,
+  NotAuthorizedException,
+  UserNotFoundException,
+} from '@aws-sdk/client-cognito-identity-provider';
+import { mockClient } from 'aws-sdk-client-mock';
 
-// Mock the Cognito client
-jest.mock('@aws-sdk/client-cognito-identity-provider', () => ({
-  CognitoIdentityProviderClient: jest.fn(() => ({
-    send: jest.fn(),
-  })),
-  GetUserCommand: jest.fn(),
-  NotAuthorizedException: class NotAuthorizedException extends Error {
-    name = 'NotAuthorizedException';
-  },
-  UserNotFoundException: class UserNotFoundException extends Error {
-    name = 'UserNotFoundException';
-  },
-}));
+const cognitoMock = mockClient(CognitoIdentityProviderClient);
 
 // Mock logger
 jest.mock('../../shared/logger', () => {
@@ -36,15 +33,9 @@ jest.mock('../../shared/logger', () => {
 });
 
 describe('getCurrentUser Lambda Function', () => {
-  let mockCognitoSend: jest.Mock;
-
   beforeEach(() => {
-    jest.clearAllMocks();
-
-    // Get the mocked Cognito client instance
-    const CognitoClientConstructor = CognitoClient.CognitoIdentityProviderClient as unknown as jest.Mock;
-    const mockInstance = CognitoClientConstructor.mock.results[0]?.value || { send: jest.fn() };
-    mockCognitoSend = mockInstance.send as jest.Mock;
+    cognitoMock.reset();
+    delete process.env.ALLOWED_ORIGIN;
   });
 
   /**
@@ -54,7 +45,7 @@ describe('getCurrentUser Lambda Function', () => {
   describe('Response Format Validation', () => {
     it('should return a valid API Gateway response with statusCode as number', async () => {
       // Mock successful Cognito response
-      mockCognitoSend.mockResolvedValue({
+      cognitoMock.on(GetUserCommand).resolves({
         Username: 'test-user-id',
         UserAttributes: [
           { Name: 'email', Value: 'test@example.com' },
@@ -84,7 +75,7 @@ describe('getCurrentUser Lambda Function', () => {
     });
 
     it('should have statusCode as 200 for successful requests', async () => {
-      mockCognitoSend.mockResolvedValue({
+      cognitoMock.on(GetUserCommand).resolves({
         Username: 'test-user-id',
         UserAttributes: [
           { Name: 'email', Value: 'test@example.com' },
@@ -102,7 +93,7 @@ describe('getCurrentUser Lambda Function', () => {
     });
 
     it('should return parseable JSON body', async () => {
-      mockCognitoSend.mockResolvedValue({
+      cognitoMock.on(GetUserCommand).resolves({
         Username: 'user-123',
         UserAttributes: [
           { Name: 'email', Value: 'test@example.com' },
@@ -132,7 +123,7 @@ describe('getCurrentUser Lambda Function', () => {
    */
   describe('CORS Headers', () => {
     it('should include required CORS headers', async () => {
-      mockCognitoSend.mockResolvedValue({
+      cognitoMock.on(GetUserCommand).resolves({
         Username: 'test-user',
         UserAttributes: [{ Name: 'email', Value: 'test@example.com' }],
       });
@@ -152,7 +143,7 @@ describe('getCurrentUser Lambda Function', () => {
     it('should allow localhost origin for development', async () => {
       process.env.ALLOWED_ORIGIN = 'http://localhost:3000';
 
-      mockCognitoSend.mockResolvedValue({
+      cognitoMock.on(GetUserCommand).resolves({
         Username: 'test-user',
         UserAttributes: [{ Name: 'email', Value: 'test@example.com' }],
       });
@@ -172,7 +163,7 @@ describe('getCurrentUser Lambda Function', () => {
    */
   describe('Successful User Retrieval', () => {
     it('should return user data with all fields', async () => {
-      mockCognitoSend.mockResolvedValue({
+      cognitoMock.on(GetUserCommand).resolves({
         Username: 'user-123',
         UserAttributes: [
           { Name: 'email', Value: 'john.doe@example.com' },
@@ -197,7 +188,7 @@ describe('getCurrentUser Lambda Function', () => {
     });
 
     it('should handle users with missing optional fields', async () => {
-      mockCognitoSend.mockResolvedValue({
+      cognitoMock.on(GetUserCommand).resolves({
         Username: 'user-456',
         UserAttributes: [
           { Name: 'email', Value: 'minimal@example.com' },
@@ -248,8 +239,9 @@ describe('getCurrentUser Lambda Function', () => {
     });
 
     it('should return 401 when Cognito rejects the token', async () => {
-      const error = new CognitoClient.NotAuthorizedException('Invalid Access Token' as any);
-      mockCognitoSend.mockRejectedValue(error);
+      cognitoMock.on(GetUserCommand).rejects(
+        new NotAuthorizedException({ $metadata: {}, message: 'Invalid Access Token' })
+      );
 
       const event = createMockEvent({
         headers: { Authorization: 'Bearer expired-token' },
@@ -263,8 +255,9 @@ describe('getCurrentUser Lambda Function', () => {
     });
 
     it('should return 404 when user not found', async () => {
-      const error = new CognitoClient.UserNotFoundException('User does not exist' as any);
-      mockCognitoSend.mockRejectedValue(error);
+      cognitoMock.on(GetUserCommand).rejects(
+        new UserNotFoundException({ $metadata: {}, message: 'User does not exist' })
+      );
 
       const event = createMockEvent({
         headers: { Authorization: 'Bearer valid-token' },
@@ -278,7 +271,7 @@ describe('getCurrentUser Lambda Function', () => {
     });
 
     it('should return 500 for unexpected errors', async () => {
-      mockCognitoSend.mockRejectedValue(new Error('Database connection failed'));
+      cognitoMock.on(GetUserCommand).rejects(new Error('Database connection failed'));
 
       const event = createMockEvent({
         headers: { Authorization: 'Bearer valid-token' },
@@ -288,7 +281,7 @@ describe('getCurrentUser Lambda Function', () => {
 
       expect(response.statusCode).toBe(500);
       const body = JSON.parse(response.body);
-      expect(body.message).toContain('internal error');
+      expect(body.message).toContain('Failed to retrieve user information');
     });
   });
 
@@ -297,7 +290,7 @@ describe('getCurrentUser Lambda Function', () => {
    */
   describe('Request Validation', () => {
     it('should extract Bearer token correctly', async () => {
-      mockCognitoSend.mockResolvedValue({
+      cognitoMock.on(GetUserCommand).resolves({
         Username: 'user-123',
         UserAttributes: [{ Name: 'email', Value: 'test@example.com' }],
       });
@@ -308,17 +301,16 @@ describe('getCurrentUser Lambda Function', () => {
 
       await handler(event);
 
-      expect(mockCognitoSend).toHaveBeenCalledWith(
-        expect.objectContaining({
-          input: expect.objectContaining({
-            AccessToken: 'my-test-token',
-          }),
-        })
-      );
+      // Verify the GetUserCommand was called with the correct access token
+      const calls = cognitoMock.commandCalls(GetUserCommand);
+      expect(calls).toHaveLength(1);
+      expect(calls[0].args[0].input).toEqual({
+        AccessToken: 'my-test-token',
+      });
     });
 
     it('should be case-insensitive for Authorization header', async () => {
-      mockCognitoSend.mockResolvedValue({
+      cognitoMock.on(GetUserCommand).resolves({
         Username: 'user-123',
         UserAttributes: [{ Name: 'email', Value: 'test@example.com' }],
       });
