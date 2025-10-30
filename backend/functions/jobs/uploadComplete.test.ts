@@ -17,7 +17,7 @@ import {
   GetItemCommand,
   UpdateItemCommand,
 } from '@aws-sdk/client-dynamodb';
-import { S3Client, HeadObjectCommand } from '@aws-sdk/client-s3';
+import { S3Client, HeadObjectCommand, CopyObjectCommand } from '@aws-sdk/client-s3';
 import { marshall } from '@aws-sdk/util-dynamodb';
 
 // Mock logger - must be defined before jest.mock due to hoisting
@@ -170,6 +170,9 @@ describe('uploadComplete Lambda Function - Comprehensive Coverage', () => {
       // Mock DynamoDB UpdateItem response
       dynamoMock.on(UpdateItemCommand).resolves({});
 
+      // Mock S3 CopyObject response (for copying to documents/ prefix)
+      s3Mock.on(CopyObjectCommand).resolves({});
+
       await handler(event);
 
       // Verify S3 HeadObject was called
@@ -190,6 +193,22 @@ describe('uploadComplete Lambda Function - Comprehensive Coverage', () => {
       expect(updateCalls).toHaveLength(1);
       expect(updateCalls[0].args[0].input.TableName).toBe('test-jobs-table');
 
+      // Verify S3 CopyObject was called to trigger chunking
+      const copyCalls = s3Mock.commandCalls(CopyObjectCommand);
+      expect(copyCalls).toHaveLength(1);
+      expect(copyCalls[0].args[0].input).toEqual({
+        Bucket: 'test-bucket',
+        CopySource: `test-bucket/uploads/${userId}/${fileId}/${filename}`,
+        Key: `documents/${userId}/${fileId}/${filename}`,
+        Metadata: {
+          ...metadata,
+          userid: userId,
+          fileid: fileId,
+          jobid: jobId,
+        },
+        MetadataDirective: 'REPLACE',
+      });
+
       // Verify logging
       expect(mockLoggerInfo).toHaveBeenCalledWith(
         'Processing S3 upload completion event',
@@ -201,6 +220,14 @@ describe('uploadComplete Lambda Function - Comprehensive Coverage', () => {
         userId,
         size: fileSize,
       });
+      expect(mockLoggerInfo).toHaveBeenCalledWith(
+        'File copied successfully, chunking will be triggered automatically',
+        {
+          sourceKey: `uploads/${userId}/${fileId}/${filename}`,
+          destinationKey: `documents/${userId}/${fileId}/${filename}`,
+          jobId,
+        }
+      );
     });
 
     it('should update job record with correct status and timestamps', async () => {
@@ -232,6 +259,9 @@ describe('uploadComplete Lambda Function - Comprehensive Coverage', () => {
       });
 
       dynamoMock.on(UpdateItemCommand).resolves({});
+
+      // Mock S3 CopyObject response
+      s3Mock.on(CopyObjectCommand).resolves({});
 
       await handler(event);
 
@@ -967,6 +997,275 @@ describe('uploadComplete Lambda Function - Comprehensive Coverage', () => {
 
       // Verify processing completed successfully
       expect(dynamoMock.commandCalls(UpdateItemCommand)).toHaveLength(1);
+    });
+  });
+
+  /**
+   * S3 Copy Operation Error Scenarios
+   * Critical for 100% branch coverage
+   */
+  describe('S3 Copy Operation - Error Handling', () => {
+    it('should handle S3 CopyObject failure gracefully', async () => {
+      const userId = 'user-123';
+      const fileId = 'file-456';
+      const jobId = 'job-789';
+      const filename = 'test-document.txt';
+      const fileSize = 50000;
+
+      const event = createS3Event(
+        'test-bucket',
+        `uploads/${userId}/${fileId}/${filename}`,
+        fileSize
+      );
+
+      const metadata = createS3Metadata(userId, fileId, jobId, filename);
+      const jobRecord = createJobRecord(jobId, userId, fileId, filename, fileSize);
+
+      s3Mock.on(HeadObjectCommand).resolves({
+        ContentType: 'text/plain',
+        ContentLength: fileSize,
+        Metadata: metadata,
+      });
+
+      dynamoMock.on(GetItemCommand).resolves({
+        Item: marshall(jobRecord),
+      });
+
+      dynamoMock.on(UpdateItemCommand).resolves({});
+
+      // Mock S3 CopyObject to fail
+      s3Mock.on(CopyObjectCommand).rejects(new Error('S3 copy operation failed'));
+
+      await handler(event);
+
+      // Verify error was logged
+      expect(mockLoggerError).toHaveBeenCalledWith(
+        'Error processing upload completion',
+        expect.objectContaining({
+          key: `uploads/${userId}/${fileId}/${filename}`,
+          error: 'S3 copy operation failed',
+          stack: expect.any(String),
+        })
+      );
+
+      // Verify DynamoDB update still succeeded (eventual consistency)
+      expect(dynamoMock.commandCalls(UpdateItemCommand)).toHaveLength(1);
+    });
+
+    it('should handle S3 CopyObject AccessDenied error', async () => {
+      const userId = 'user-123';
+      const fileId = 'file-456';
+      const jobId = 'job-789';
+      const filename = 'test-document.txt';
+      const fileSize = 50000;
+
+      const event = createS3Event(
+        'test-bucket',
+        `uploads/${userId}/${fileId}/${filename}`,
+        fileSize
+      );
+
+      const metadata = createS3Metadata(userId, fileId, jobId, filename);
+      const jobRecord = createJobRecord(jobId, userId, fileId, filename, fileSize);
+
+      s3Mock.on(HeadObjectCommand).resolves({
+        ContentType: 'text/plain',
+        ContentLength: fileSize,
+        Metadata: metadata,
+      });
+
+      dynamoMock.on(GetItemCommand).resolves({
+        Item: marshall(jobRecord),
+      });
+
+      dynamoMock.on(UpdateItemCommand).resolves({});
+
+      // Mock S3 CopyObject to fail with AccessDenied
+      const accessDeniedError = new Error('Access Denied');
+      accessDeniedError.name = 'AccessDenied';
+      s3Mock.on(CopyObjectCommand).rejects(accessDeniedError);
+
+      await handler(event);
+
+      // Verify error was logged
+      expect(mockLoggerError).toHaveBeenCalledWith(
+        'Error processing upload completion',
+        expect.objectContaining({
+          error: 'Access Denied',
+        })
+      );
+    });
+
+    it('should handle S3 CopyObject NoSuchKey error (source file disappeared)', async () => {
+      const userId = 'user-123';
+      const fileId = 'file-456';
+      const jobId = 'job-789';
+      const filename = 'test-document.txt';
+      const fileSize = 50000;
+
+      const event = createS3Event(
+        'test-bucket',
+        `uploads/${userId}/${fileId}/${filename}`,
+        fileSize
+      );
+
+      const metadata = createS3Metadata(userId, fileId, jobId, filename);
+      const jobRecord = createJobRecord(jobId, userId, fileId, filename, fileSize);
+
+      s3Mock.on(HeadObjectCommand).resolves({
+        ContentType: 'text/plain',
+        ContentLength: fileSize,
+        Metadata: metadata,
+      });
+
+      dynamoMock.on(GetItemCommand).resolves({
+        Item: marshall(jobRecord),
+      });
+
+      dynamoMock.on(UpdateItemCommand).resolves({});
+
+      // Mock S3 CopyObject to fail with NoSuchKey
+      const noSuchKeyError = new Error('The specified key does not exist');
+      noSuchKeyError.name = 'NoSuchKey';
+      s3Mock.on(CopyObjectCommand).rejects(noSuchKeyError);
+
+      await handler(event);
+
+      // Verify error was logged
+      expect(mockLoggerError).toHaveBeenCalledWith(
+        'Error processing upload completion',
+        expect.objectContaining({
+          error: 'The specified key does not exist',
+        })
+      );
+    });
+
+    it('should handle S3 HeadObject returning undefined Metadata', async () => {
+      const userId = 'user-123';
+      const fileId = 'file-456';
+      const filename = 'test-document.txt';
+      const fileSize = 50000;
+
+      const event = createS3Event(
+        'test-bucket',
+        `uploads/${userId}/${fileId}/${filename}`,
+        fileSize
+      );
+
+      // S3 HeadObject returns undefined Metadata (edge case)
+      s3Mock.on(HeadObjectCommand).resolves({
+        ContentType: 'text/plain',
+        ContentLength: fileSize,
+        Metadata: undefined, // This tests the || {} fallback on line 60
+      });
+
+      await handler(event);
+
+      // Verify error about missing uploadRequestId
+      expect(mockLoggerError).toHaveBeenCalledWith(
+        'Missing uploadRequestId in S3 metadata',
+        expect.objectContaining({
+          metadata: {},
+        })
+      );
+    });
+  });
+
+  /**
+   * S3 Copy Operation - Metadata Preservation
+   */
+  describe('S3 Copy Operation - Metadata Preservation', () => {
+    it('should preserve all required metadata when copying to documents/', async () => {
+      const userId = 'user-abc-123';
+      const fileId = 'file-def-456';
+      const jobId = 'job-ghi-789';
+      const filename = 'important-document.txt';
+      const fileSize = 75000;
+
+      const event = createS3Event(
+        'test-bucket',
+        `uploads/${userId}/${fileId}/${filename}`,
+        fileSize
+      );
+
+      const metadata = {
+        userid: userId,
+        fileid: fileId,
+        jobid: jobId,
+        uploadrequestid: 'request-123',
+        originalfilename: filename,
+        contenttype: 'text/plain',
+      };
+
+      const jobRecord = createJobRecord(jobId, userId, fileId, filename, fileSize);
+
+      s3Mock.on(HeadObjectCommand).resolves({
+        ContentType: 'text/plain',
+        ContentLength: fileSize,
+        Metadata: metadata,
+      });
+
+      dynamoMock.on(GetItemCommand).resolves({
+        Item: marshall(jobRecord),
+      });
+
+      dynamoMock.on(UpdateItemCommand).resolves({});
+      s3Mock.on(CopyObjectCommand).resolves({});
+
+      await handler(event);
+
+      // Verify CopyObject was called with ALL metadata preserved
+      const copyCalls = s3Mock.commandCalls(CopyObjectCommand);
+      expect(copyCalls).toHaveLength(1);
+
+      const copyInput = copyCalls[0].args[0].input;
+      expect(copyInput.Metadata).toEqual({
+        ...metadata,
+        userid: userId,
+        fileid: fileId,
+        jobid: jobId,
+      });
+      expect(copyInput.MetadataDirective).toBe('REPLACE');
+    });
+
+    it('should use correct S3 keys for source and destination', async () => {
+      const userId = 'user-with-special-chars';
+      const fileId = 'file-with-uuid-1234-5678';
+      const jobId = 'job-789';
+      const filename = 'my-long-document-name-2025.txt';
+      const fileSize = 100000;
+
+      const event = createS3Event(
+        'production-bucket',
+        `uploads/${userId}/${fileId}/${filename}`,
+        fileSize
+      );
+
+      const metadata = createS3Metadata(userId, fileId, jobId, filename);
+      const jobRecord = createJobRecord(jobId, userId, fileId, filename, fileSize);
+
+      s3Mock.on(HeadObjectCommand).resolves({
+        ContentType: 'text/plain',
+        ContentLength: fileSize,
+        Metadata: metadata,
+      });
+
+      dynamoMock.on(GetItemCommand).resolves({
+        Item: marshall(jobRecord),
+      });
+
+      dynamoMock.on(UpdateItemCommand).resolves({});
+      s3Mock.on(CopyObjectCommand).resolves({});
+
+      await handler(event);
+
+      // Verify exact S3 copy parameters
+      const copyCalls = s3Mock.commandCalls(CopyObjectCommand);
+      const copyInput = copyCalls[0].args[0].input;
+
+      expect(copyInput.Bucket).toBe('production-bucket');
+      expect(copyInput.CopySource).toBe(`production-bucket/uploads/${userId}/${fileId}/${filename}`);
+      expect(copyInput.Key).toBe(`documents/${userId}/${fileId}/${filename}`);
     });
   });
 });
