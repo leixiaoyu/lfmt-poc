@@ -48,6 +48,9 @@ export class LfmtInfrastructureStack extends Stack {
   private uploadRequestFunction?: lambda.Function;
   private uploadCompleteFunction?: lambda.Function;
   private chunkDocumentFunction?: lambda.Function;
+  private translateChunkFunction?: lambda.Function;
+  private startTranslationFunction?: lambda.Function;
+  private getTranslationStatusFunction?: lambda.Function;
 
   // IAM role for Lambda functions
   private lambdaRole?: iam.Role;
@@ -470,6 +473,32 @@ export class LfmtInfrastructureStack extends Stack {
             }),
           ],
         }),
+        SecretsManagerAccess: new iam.PolicyDocument({
+          statements: [
+            new iam.PolicyStatement({
+              effect: iam.Effect.ALLOW,
+              actions: [
+                'secretsmanager:GetSecretValue',
+              ],
+              resources: [
+                `arn:aws:secretsmanager:${this.region}:${this.account}:secret:lfmt/gemini-api-key-*`,
+              ],
+            }),
+          ],
+        }),
+        LambdaInvokeAccess: new iam.PolicyDocument({
+          statements: [
+            new iam.PolicyStatement({
+              effect: iam.Effect.ALLOW,
+              actions: [
+                'lambda:InvokeFunction',
+              ],
+              resources: [
+                `arn:aws:lambda:${this.region}:${this.account}:function:lfmt-*`,
+              ],
+            }),
+          ],
+        }),
       },
     });
 
@@ -505,6 +534,8 @@ export class LfmtInfrastructureStack extends Stack {
       USERS_TABLE_NAME: this.usersTable.tableName,
       ATTESTATIONS_TABLE_NAME: this.attestationsTable.tableName,
       DOCUMENT_BUCKET: this.documentBucket.bucketName,
+      CHUNKS_BUCKET: this.documentBucket.bucketName, // Chunks stored in same bucket as documents
+      GEMINI_API_KEY_SECRET_NAME: `lfmt/gemini-api-key-${this.stackName}`,
       ALLOWED_ORIGIN: this.node.tryGetContext('environment') === 'prod'
         ? 'https://lfmt.yourcompany.com'
         : 'http://localhost:3000',
@@ -662,6 +693,69 @@ export class LfmtInfrastructureStack extends Stack {
       },
     });
 
+    // Translate Chunk Lambda Function (processes individual chunks)
+    this.translateChunkFunction = new NodejsFunction(this, 'TranslateChunkFunction', {
+      functionName: `lfmt-translate-chunk-${this.stackName}`,
+      entry: '../functions/translation/translateChunk.ts',
+      handler: 'handler',
+      runtime: lambda.Runtime.NODEJS_18_X,
+      role: this.lambdaRole,
+      environment: {
+        ...commonEnv,
+        TRANSLATE_CHUNK_FUNCTION_NAME: `lfmt-translate-chunk-${this.stackName}`, // Self-reference for recursive calls
+      },
+      timeout: Duration.minutes(2), // 2 minutes for Gemini API call with retries
+      memorySize: 512,
+      description: 'Translate individual document chunks using Gemini API',
+      bundling: {
+        externalModules: ['aws-sdk', '@aws-sdk/*'],
+        minify: true,
+        sourceMap: true,
+        forceDockerBundling: false,
+      },
+    });
+
+    // Start Translation Lambda Function (initiates translation process)
+    this.startTranslationFunction = new NodejsFunction(this, 'StartTranslationFunction', {
+      functionName: `lfmt-start-translation-${this.stackName}`,
+      entry: '../functions/jobs/startTranslation.ts',
+      handler: 'handler',
+      runtime: lambda.Runtime.NODEJS_18_X,
+      role: this.lambdaRole,
+      environment: {
+        ...commonEnv,
+        TRANSLATE_CHUNK_FUNCTION_NAME: `lfmt-translate-chunk-${this.stackName}`,
+      },
+      timeout: Duration.seconds(30),
+      memorySize: 256,
+      description: 'Start translation process for a chunked document',
+      bundling: {
+        externalModules: ['aws-sdk', '@aws-sdk/*'],
+        minify: true,
+        sourceMap: true,
+        forceDockerBundling: false,
+      },
+    });
+
+    // Get Translation Status Lambda Function (returns translation progress)
+    this.getTranslationStatusFunction = new NodejsFunction(this, 'GetTranslationStatusFunction', {
+      functionName: `lfmt-get-translation-status-${this.stackName}`,
+      entry: '../functions/jobs/getTranslationStatus.ts',
+      handler: 'handler',
+      runtime: lambda.Runtime.NODEJS_18_X,
+      role: this.lambdaRole,
+      environment: commonEnv,
+      timeout: Duration.seconds(30),
+      memorySize: 256,
+      description: 'Get translation status and progress for a job',
+      bundling: {
+        externalModules: ['aws-sdk', '@aws-sdk/*'],
+        minify: true,
+        sourceMap: true,
+        forceDockerBundling: false,
+      },
+    });
+
     // Add S3 event notification for upload completion
     this.documentBucket.addEventNotification(
       s3.EventType.OBJECT_CREATED,
@@ -685,7 +779,7 @@ export class LfmtInfrastructureStack extends Stack {
   }
 
   private createApiEndpoints() {
-    if (!this.registerFunction || !this.loginFunction || !this.refreshTokenFunction || !this.resetPasswordFunction || !this.getCurrentUserFunction || !this.uploadRequestFunction) {
+    if (!this.registerFunction || !this.loginFunction || !this.refreshTokenFunction || !this.resetPasswordFunction || !this.getCurrentUserFunction || !this.uploadRequestFunction || !this.startTranslationFunction || !this.getTranslationStatusFunction) {
       throw new Error('Lambda functions must be created before API endpoints');
     }
 
@@ -792,6 +886,61 @@ export class LfmtInfrastructureStack extends Stack {
         validateRequestBody: true,
         validateRequestParameters: false,
       }),
+    });
+
+    // POST /jobs/{jobId}/translate - Start Translation (requires authentication)
+    // Use existing /jobs/{jobId} resource created in createApiGateway()
+    const jobResource = jobsResource.resourceForPath('{jobId}');
+
+    const translateResource = jobResource.addResource('translate', {
+      defaultCorsPreflightOptions: {
+        allowOrigins: this.node.tryGetContext('environment') === 'prod'
+          ? ['https://lfmt.yourcompany.com']
+          : ['http://localhost:3000', 'https://localhost:3000'],
+        allowMethods: ['POST', 'OPTIONS'],
+        allowHeaders: [
+          'Content-Type',
+          'X-Amz-Date',
+          'Authorization',
+          'X-Api-Key',
+          'X-Amz-Security-Token',
+          'X-Request-ID',
+        ],
+        allowCredentials: true,
+      },
+    });
+    translateResource.addMethod('POST', new apigateway.LambdaIntegration(this.startTranslationFunction), {
+      authorizationType: apigateway.AuthorizationType.COGNITO,
+      authorizer: authorizer,
+      requestValidator: new apigateway.RequestValidator(this, 'StartTranslationValidator', {
+        restApi: this.api,
+        requestValidatorName: 'start-translation-validator',
+        validateRequestBody: true,
+        validateRequestParameters: false,
+      }),
+    });
+
+    // GET /jobs/{jobId}/translation-status - Get Translation Status (requires authentication)
+    const translationStatusResource = jobResource.addResource('translation-status', {
+      defaultCorsPreflightOptions: {
+        allowOrigins: this.node.tryGetContext('environment') === 'prod'
+          ? ['https://lfmt.yourcompany.com']
+          : ['http://localhost:3000', 'https://localhost:3000'],
+        allowMethods: ['GET', 'OPTIONS'],
+        allowHeaders: [
+          'Content-Type',
+          'X-Amz-Date',
+          'Authorization',
+          'X-Api-Key',
+          'X-Amz-Security-Token',
+          'X-Request-ID',
+        ],
+        allowCredentials: true,
+      },
+    });
+    translationStatusResource.addMethod('GET', new apigateway.LambdaIntegration(this.getTranslationStatusFunction), {
+      authorizationType: apigateway.AuthorizationType.COGNITO,
+      authorizer: authorizer,
     });
 
     // Add Gateway Responses to include CORS headers on errors
