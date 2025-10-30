@@ -25,9 +25,12 @@
     "@aws-sdk/client-bedrock-runtime": "^3.525.0",
     "@aws-sdk/client-cognito-identity-provider": "^3.525.0",
     "@aws-sdk/client-dynamodb": "^3.525.0",
+    "@aws-sdk/client-lambda": "^3.921.0",
     "@aws-sdk/client-s3": "^3.525.0",
+    "@aws-sdk/client-secrets-manager": "^3.920.0",
     "@aws-sdk/lib-dynamodb": "^3.525.0",
     "@aws-sdk/s3-request-presigner": "^3.525.0",
+    "@google/genai": "^1.28.0",
     "@lfmt/shared-types": "file:../../shared-types",
     "gpt-tokenizer": "^3.2.0"
   },
