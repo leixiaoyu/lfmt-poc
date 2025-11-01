@@ -123,30 +123,57 @@ fi
 
 cd ../..
 
-# 4. Run security checks
-print_status "🔒 Running security checks..." "$YELLOW"
+# 4. Test frontend
+print_status "⚛️  Testing frontend..." "$YELLOW"
+cd frontend
 
-# Check for hardcoded AWS credentials
-if grep -r -E "(aws_access_key_id|aws_secret_access_key|AKIA[0-9A-Z]{16})" --include="*.ts" --include="*.js" --exclude-dir=node_modules . 2>/dev/null; then
-    print_status "❌ AWS credentials found in code" "$RED"
+if [ ! -f "package.json" ]; then
+    print_status "❌ Error: frontend/package.json not found" "$RED"
     exit 1
 fi
 
-# Check for hardcoded passwords in production code
-if grep -r -E "password\s*[:=]\s*['\"][^'\"]{8,}['\"]" --include="*.ts" --include="*.js" --exclude-dir=node_modules --exclude="*test*" --exclude="*interface*" --exclude="*types*" . 2>/dev/null; then
-    print_status "❌ Hardcoded passwords found in production code" "$RED"
+if [ ! -d "node_modules" ]; then
+    print_status "⚠️  Installing frontend dependencies..." "$YELLOW"
+    npm install --cache=/tmp/npm-cache
+fi
+
+# Run frontend tests with --run flag (same as CI)
+if npm test -- --run; then
+    print_status "✅ Frontend tests passed" "$GREEN"
+else
+    print_status "❌ Frontend tests failed" "$RED"
+    print_status "Fix the failing tests before pushing" "$RED"
+    print_status "Tip: Run 'cd frontend && npm test -- --run' to see failures" "$YELLOW"
     exit 1
 fi
 
-# Check for API tokens and secrets
-if grep -r -E "(api_?secret|auth_?token|bearer_?token)\s*[:=]\s*['\"][a-zA-Z0-9]{20,}['\"]" --include="*.ts" --include="*.js" --exclude-dir=node_modules --exclude="*test*" . 2>/dev/null; then
-    print_status "❌ API secrets or tokens found in production code" "$RED"
-    exit 1
+cd ..
+
+# 5. Run comprehensive security scan
+print_status "🔒 Running comprehensive security scan..." "$YELLOW"
+
+if [ -f "scripts/security-scan.sh" ]; then
+    if ./scripts/security-scan.sh --staged; then
+        print_status "✅ Security scan passed" "$GREEN"
+    else
+        print_status "❌ Security scan failed" "$RED"
+        print_status "Fix security issues before pushing" "$RED"
+        exit 1
+    fi
+else
+    # Fallback to basic security checks if script not found
+    print_status "⚠️  Security scan script not found, using basic checks" "$YELLOW"
+
+    # Check for hardcoded AWS credentials
+    if grep -r -E "(aws_access_key_id|aws_secret_access_key|AKIA[0-9A-Z]{16})" --include="*.ts" --include="*.js" --exclude-dir=node_modules . 2>/dev/null; then
+        print_status "❌ AWS credentials found in code" "$RED"
+        exit 1
+    fi
+
+    print_status "✅ Basic security checks passed" "$GREEN"
 fi
 
-print_status "✅ Security checks passed" "$GREEN"
-
-# 5. Final validation
+# 6. Final validation
 print_status "🎯 Pre-push validation summary:" "$GREEN"
 echo ""
 print_status "  ✅ Shared-types tests passed" "$GREEN"
@@ -154,6 +181,7 @@ print_status "  ✅ Backend function tests passed (209 tests)" "$GREEN"
 print_status "  ✅ Test coverage check passed (90%+ required)" "$GREEN"
 print_status "  ✅ Infrastructure TypeScript compilation passed" "$GREEN"
 print_status "  ✅ Infrastructure tests passed (20/20)" "$GREEN"
+print_status "  ✅ Frontend tests passed" "$GREEN"
 print_status "  ✅ Security checks passed" "$GREEN"
 echo ""
 print_status "🚀 Ready to push to remote repository!" "$GREEN"
