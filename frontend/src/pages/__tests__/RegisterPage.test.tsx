@@ -17,7 +17,6 @@ import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Routes, Route } from 'react-router-dom';
 import RegisterPage from '../RegisterPage';
 import { AuthProvider } from '../../contexts/AuthContext';
-import { ROUTES } from '../../config/constants';
 
 // Mock dashboard component
 function MockDashboard() {

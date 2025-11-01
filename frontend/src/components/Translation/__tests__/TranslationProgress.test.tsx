@@ -10,8 +10,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, waitFor } from '../../../test-utils';
 import { TranslationProgress } from '../TranslationProgress';
-import { translationService } from '../../../services/translationService';
-import type { TranslationJob } from '@lfmt/shared-types';
+import { translationService, type TranslationJob } from '../../../services/translationService';
 
 // Mock the translation service
 vi.mock('../../../services/translationService', () => ({
@@ -25,16 +24,13 @@ describe('TranslationProgress Component', () => {
     jobId: 'job-123',
     userId: 'user-456',
     status: 'IN_PROGRESS',
-    sourceLanguage: 'en',
+    fileName: 'test-document.txt',
+    fileSize: 1024,
+    contentType: 'text/plain',
     targetLanguage: 'es',
     tone: 'neutral',
-    filename: 'test-document.txt',
-    fileName: 'test-document.txt',
-    originalFileKey: 's3://bucket/test.txt',
-    fileSize: 1024,
     totalChunks: 10,
     completedChunks: 5,
-    legalAttestation: {} as any,
     createdAt: '2024-10-31T12:00:00Z',
     updatedAt: '2024-10-31T12:05:00Z',
   };

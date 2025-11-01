@@ -23,13 +23,11 @@ import {
   downloadTranslation,
   createLegalAttestation,
   TranslationServiceError,
+  type TranslationJob,
+  type LegalAttestation,
+  type UploadDocumentRequest,
+  type TranslationConfig,
 } from '../translationService';
-import type {
-  UploadDocumentRequest,
-  StartTranslationRequest,
-  TranslationJob,
-  LegalAttestation,
-} from '@lfmt/shared-types';
 
 // Mock auth token utility
 vi.mock('../../utils/api', () => ({
@@ -49,8 +47,7 @@ vi.mock('axios', () => {
   };
 });
 
-import axios from 'axios';
-const mockedAxios = axios as  { post: ReturnType<typeof vi.fn>, get: ReturnType<typeof vi.fn>, isAxiosError: (error: any) => boolean };
+const mockedAxios = axios as unknown as { post: ReturnType<typeof vi.fn>, get: ReturnType<typeof vi.fn>, isAxiosError: (error: any) => boolean };
 
 describe('TranslationService - uploadDocument', () => {
   beforeEach(() => {
@@ -81,13 +78,9 @@ describe('TranslationService - uploadDocument', () => {
             jobId: 'job-123',
             userId: 'user-456',
             status: 'PENDING' as const,
-            sourceLanguage: 'en' as const,
-            targetLanguage: 'es' as const,
-            tone: 'neutral' as const,
-            filename: 'test.txt',
-            originalFileKey: 's3://bucket/test.txt',
+            fileName: 'test.txt',
             fileSize: 1024,
-            legalAttestation: mockLegalAttestation,
+            contentType: 'text/plain',
             createdAt: '2024-10-31T12:00:00Z',
             updatedAt: '2024-10-31T12:00:00Z',
           },
@@ -118,7 +111,7 @@ describe('TranslationService - uploadDocument', () => {
       );
       expect(result).toEqual(mockResponse.data.data);
       expect(result.jobId).toBe('job-123');
-      expect(result.filename).toBe('test.txt');
+      expect(result.fileName).toBe('test.txt');
     });
 
     it('should include legal attestation in form data', async () => {
@@ -139,13 +132,9 @@ describe('TranslationService - uploadDocument', () => {
             jobId: 'job-123',
             userId: 'user-456',
             status: 'PENDING' as const,
-            sourceLanguage: 'en' as const,
-            targetLanguage: 'es' as const,
-            tone: 'neutral' as const,
-            filename: 'test.txt',
-            originalFileKey: 's3://bucket/test.txt',
+            fileName: 'test.txt',
             fileSize: 1024,
-            legalAttestation: mockLegalAttestation,
+            contentType: 'text/plain',
             createdAt: '2024-10-31T12:00:00Z',
             updatedAt: '2024-10-31T12:00:00Z',
           },
@@ -352,13 +341,9 @@ describe('TranslationService - uploadDocument', () => {
             jobId: 'job-123',
             userId: 'user-456',
             status: 'PENDING' as const,
-            sourceLanguage: 'en' as const,
-            targetLanguage: 'es' as const,
-            tone: 'neutral' as const,
-            filename: 'test.txt',
-            originalFileKey: 's3://bucket/test.txt',
+            fileName: 'test.txt',
             fileSize: 1024,
-            legalAttestation: mockLegalAttestation,
+            contentType: 'text/plain',
             createdAt: '2024-10-31T12:00:00Z',
             updatedAt: '2024-10-31T12:00:00Z',
           },
@@ -395,7 +380,7 @@ describe('TranslationService - startTranslation', () => {
     it('should start translation with correct payload', async () => {
       // Arrange
       const jobId = 'job-123';
-      const request: StartTranslationRequest = {
+      const request: TranslationConfig = {
         targetLanguage: 'es',
         tone: 'formal',
       };
@@ -406,13 +391,11 @@ describe('TranslationService - startTranslation', () => {
             jobId: 'job-123',
             userId: 'user-456',
             status: 'CHUNKING' as const,
-            sourceLanguage: 'en' as const,
             targetLanguage: 'es' as const,
             tone: 'formal' as const,
-            filename: 'test.txt',
-            originalFileKey: 's3://bucket/test.txt',
+            fileName: 'test.txt',
             fileSize: 1024,
-            legalAttestation: {} as LegalAttestation,
+            contentType: 'text/plain',
             createdAt: '2024-10-31T12:00:00Z',
             updatedAt: '2024-10-31T12:00:00Z',
           },
@@ -445,7 +428,7 @@ describe('TranslationService - startTranslation', () => {
     it('should throw error on 404 Job Not Found', async () => {
       // Arrange
       const jobId = 'non-existent-job';
-      const request: StartTranslationRequest = {
+      const request: TranslationConfig = {
         targetLanguage: 'es',
         tone: 'neutral',
       };
@@ -474,7 +457,7 @@ describe('TranslationService - startTranslation', () => {
       (getAuthToken as ReturnType<typeof vi.fn>).mockReturnValueOnce(null);
 
       const jobId = 'job-123';
-      const request: StartTranslationRequest = {
+      const request: TranslationConfig = {
         targetLanguage: 'es',
         tone: 'neutral',
       };
@@ -506,15 +489,13 @@ describe('TranslationService - getJobStatus', () => {
         jobId: 'job-123',
         userId: 'user-456',
         status: 'IN_PROGRESS',
-        sourceLanguage: 'en',
+        fileName: 'test.txt',
+        fileSize: 1024,
+        contentType: 'text/plain',
         targetLanguage: 'es',
         tone: 'neutral',
-        filename: 'test.txt',
-        originalFileKey: 's3://bucket/test.txt',
-        fileSize: 1024,
         totalChunks: 10,
         completedChunks: 5,
-        legalAttestation: {} as LegalAttestation,
         createdAt: '2024-10-31T12:00:00Z',
         updatedAt: '2024-10-31T12:05:00Z',
       };
@@ -548,16 +529,13 @@ describe('TranslationService - getJobStatus', () => {
         jobId: 'job-123',
         userId: 'user-456',
         status: 'COMPLETED',
-        sourceLanguage: 'en',
+        fileName: 'test.txt',
+        fileSize: 1024,
+        contentType: 'text/plain',
         targetLanguage: 'es',
         tone: 'neutral',
-        filename: 'test.txt',
-        originalFileKey: 's3://bucket/test.txt',
-        translatedFileKey: 's3://bucket/test-es.txt',
-        fileSize: 1024,
         totalChunks: 10,
         completedChunks: 10,
-        legalAttestation: {} as LegalAttestation,
         createdAt: '2024-10-31T12:00:00Z',
         updatedAt: '2024-10-31T12:30:00Z',
         completedAt: '2024-10-31T12:30:00Z',
@@ -572,7 +550,6 @@ describe('TranslationService - getJobStatus', () => {
 
       // Assert
       expect(result.status).toBe('COMPLETED');
-      expect(result.translatedFileKey).toBeDefined();
       expect(result.completedAt).toBeDefined();
     });
   });
@@ -615,13 +592,11 @@ describe('TranslationService - getTranslationJobs', () => {
           jobId: 'job-1',
           userId: 'user-456',
           status: 'COMPLETED',
-          sourceLanguage: 'en',
+          fileName: 'test1.txt',
+          fileSize: 1024,
+          contentType: 'text/plain',
           targetLanguage: 'es',
           tone: 'neutral',
-          filename: 'test1.txt',
-          originalFileKey: 's3://bucket/test1.txt',
-          fileSize: 1024,
-          legalAttestation: {} as LegalAttestation,
           createdAt: '2024-10-31T12:00:00Z',
           updatedAt: '2024-10-31T12:30:00Z',
         },
@@ -629,13 +604,11 @@ describe('TranslationService - getTranslationJobs', () => {
           jobId: 'job-2',
           userId: 'user-456',
           status: 'IN_PROGRESS',
-          sourceLanguage: 'en',
+          fileName: 'test2.txt',
+          fileSize: 2048,
+          contentType: 'text/plain',
           targetLanguage: 'fr',
           tone: 'formal',
-          filename: 'test2.txt',
-          originalFileKey: 's3://bucket/test2.txt',
-          fileSize: 2048,
-          legalAttestation: {} as LegalAttestation,
           createdAt: '2024-10-31T13:00:00Z',
           updatedAt: '2024-10-31T13:15:00Z',
         },

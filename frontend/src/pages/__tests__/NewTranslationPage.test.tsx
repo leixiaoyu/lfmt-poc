@@ -15,7 +15,6 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { BrowserRouter } from 'react-router-dom';
 import NewTranslationPage from '../NewTranslationPage';
-import { AuthProvider } from '../../contexts/AuthContext';
 import * as AuthContext from '../../contexts/AuthContext';
 
 // Mock the FileUploadForm component to isolate testing

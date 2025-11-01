@@ -333,7 +333,7 @@ describe('FileUploadForm', () => {
       vi.spyOn(
         uploadService.uploadService,
         'uploadDocument'
-      ).mockImplementation(async (file, onProgress) => {
+      ).mockImplementation(async (_file, onProgress) => {
         // Simulate progress
         if (onProgress) {
           onProgress({ loaded: 50, total: 100, percentage: 50 });
