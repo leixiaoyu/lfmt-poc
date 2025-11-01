@@ -93,14 +93,51 @@ jobs:
         working-directory: backend/infrastructure
         run: npx cdk synth --context environment=${{ github.event.inputs.environment || 'dev' }} --context skipLambdaBundling=true
 
+  build-frontend:
+    name: Build Frontend
+    runs-on: ubuntu-latest
+    needs: [test, build-infrastructure]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Run frontend tests
+        working-directory: frontend
+        run: npm test -- --run
+
+      - name: Build frontend (production)
+        working-directory: frontend
+        run: npm run build
+        env:
+          NODE_ENV: production
+
+      - name: Upload frontend build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-dist
+          path: frontend/dist
+          retention-days: 7
+
   deploy-dev:
     name: Deploy to Development
     runs-on: ubuntu-latest
-    needs: [test, build-infrastructure]
+    needs: [test, build-infrastructure, build-frontend]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     environment:
       name: development
-      url: https://dev.lfmt.yourcompany.com
+      url: https://d1yysvwo9eg20b.cloudfront.net
 
     permissions:
       id-token: write   # Required for OIDC authentication
@@ -135,9 +172,17 @@ jobs:
         working-directory: backend/functions
         run: npm ci
 
+      - name: Build backend functions
+        working-directory: backend/functions
+        run: npm run build
+
       - name: Install infrastructure dependencies
         working-directory: backend/infrastructure
         run: npm ci
+
+      - name: Build infrastructure
+        working-directory: backend/infrastructure
+        run: npm run build
 
       - name: CDK Bootstrap (if needed)
         working-directory: backend/infrastructure
@@ -169,11 +214,55 @@ jobs:
         run: |
           curl -f ${{ steps.get-url.outputs.api_url }}/v1/auth || echo "API not yet ready, may need warm-up"
 
+      - name: Download frontend build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-dist
+          path: frontend/dist
+
+      - name: Create frontend .env.production
+        working-directory: frontend
+        run: |
+          echo "VITE_API_URL=${{ steps.get-url.outputs.api_url }}" > .env.production
+          cat .env.production
+
+      - name: Deploy frontend to S3
+        run: |
+          aws s3 sync frontend/dist/ s3://lfmt-poc-frontend/ --delete --cache-control "public, max-age=31536000, immutable" --exclude "index.html"
+          aws s3 cp frontend/dist/index.html s3://lfmt-poc-frontend/index.html --cache-control "public, max-age=0, must-revalidate"
+
+      - name: Get CloudFront Distribution ID
+        id: get-cf-dist
+        run: |
+          DIST_ID=$(aws cloudfront list-distributions --query "DistributionList.Items[?Origins.Items[0].DomainName=='lfmt-poc-frontend.s3.amazonaws.com'].Id | [0]" --output text)
+          echo "distribution_id=$DIST_ID" >> $GITHUB_OUTPUT
+          echo "CloudFront Distribution ID: $DIST_ID"
+
+      - name: Invalidate CloudFront cache
+        run: |
+          aws cloudfront create-invalidation --distribution-id ${{ steps.get-cf-dist.outputs.distribution_id }} --paths "/*"
+          echo "CloudFront cache invalidation initiated"
+
+      - name: Frontend Deployment Summary
+        run: |
+          echo "========================================="
+          echo "Frontend Deployment Summary"
+          echo "========================================="
+          echo "S3 Bucket: lfmt-poc-frontend"
+          echo "CloudFront Distribution: ${{ steps.get-cf-dist.outputs.distribution_id }}"
+          echo "Frontend URL: https://d1yysvwo9eg20b.cloudfront.net"
+          echo "API URL: ${{ steps.get-url.outputs.api_url }}"
+          echo "========================================="
+
   integration-tests:
-    name: Run Integration Tests
+    name: Run Backend Integration Tests
     runs-on: ubuntu-latest
     needs: deploy-dev
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+
+    permissions:
+      id-token: write
+      contents: read
 
     steps:
       - name: Checkout code
@@ -185,6 +274,13 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'npm'
           cache-dependency-path: backend/functions/package-lock.json
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          role-session-name: GitHubActions-LFMT-Integration-Tests
+          aws-region: ${{ env.AWS_REGION }}
 
       - name: Install shared-types dependencies
         working-directory: shared-types
@@ -201,12 +297,9 @@ jobs:
             --stack-name LfmtPocDev \
             --query "Stacks[0].Outputs[?OutputKey=='ApiUrl'].OutputValue" \
             --output text \
-            --region ${{ env.AWS_REGION }} || echo "https://8brwlwf68h.execute-api.us-east-1.amazonaws.com")
+            --region ${{ env.AWS_REGION }})
           echo "api_url=$API_URL" >> $GITHUB_OUTPUT
           echo "Using API URL: $API_URL"
-        env:
-          AWS_REGION: ${{ env.AWS_REGION }}
-        continue-on-error: true
 
       - name: Wait for API to be ready
         run: |
@@ -244,13 +337,84 @@ jobs:
           TEST_TIMEOUT: 600000
         continue-on-error: true
 
-      - name: Integration Test Summary
+      - name: Backend Integration Test Summary
         if: always()
         run: |
           echo "========================================="
-          echo "Integration Test Summary"
+          echo "Backend Integration Test Summary"
           echo "========================================="
           echo "API URL: ${{ steps.get-api-url.outputs.api_url }}"
+          echo "Tests completed at: $(date -u +"%Y-%m-%d %H:%M:%S UTC")"
+          echo "========================================="
+
+  e2e-tests:
+    name: Run E2E Tests
+    runs-on: ubuntu-latest
+    needs: deploy-dev
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Install Playwright browsers
+        working-directory: frontend
+        run: npx playwright install --with-deps chromium
+
+      - name: Wait for frontend to be ready
+        run: |
+          echo "Waiting for frontend to be ready..."
+          for i in {1..30}; do
+            if curl -sf https://d1yysvwo9eg20b.cloudfront.net/ > /dev/null 2>&1; then
+              echo "Frontend is ready!"
+              exit 0
+            fi
+            echo "Attempt $i/30: Frontend not ready yet, waiting 10 seconds..."
+            sleep 10
+          done
+          echo "Proceeding with tests..."
+
+      - name: Run E2E tests
+        working-directory: frontend
+        run: npm run test:e2e
+        env:
+          PLAYWRIGHT_BASE_URL: https://d1yysvwo9eg20b.cloudfront.net
+          CI: true
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: frontend/playwright-report/
+          retention-days: 30
+
+      - name: Upload test videos
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-videos
+          path: frontend/test-results/
+          retention-days: 7
+
+      - name: E2E Test Summary
+        if: always()
+        run: |
+          echo "========================================="
+          echo "E2E Test Summary"
+          echo "========================================="
+          echo "Frontend URL: https://d1yysvwo9eg20b.cloudfront.net"
           echo "Tests completed at: $(date -u +"%Y-%m-%d %H:%M:%S UTC")"
           echo "========================================="
 
