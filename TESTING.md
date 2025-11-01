@@ -102,6 +102,40 @@ npm run test:e2e:report     # View last report
 
 ## Running Tests Locally
 
+### ⚠️ IMPORTANT: Local vs CI Test Differences
+
+**Tests pass locally but fail in CI?** Here's why:
+
+| Environment | Command | Behavior |
+|------------|---------|----------|
+| **Local (default)** | `npm test` | Watch mode, doesn't exit, ignores some warnings |
+| **CI / Pre-push** | `npm test -- --run` | Runs once, exits, strict mode |
+
+**Solution:** Always use CI simulation before pushing!
+
+### 🚀 CI Simulation (Recommended Before Pushing)
+
+**Run this to catch CI failures locally:**
+
+```bash
+# Simulate exact CI environment
+./scripts/simulate-ci.sh
+
+# Test only frontend (matches CI exactly!)
+./scripts/simulate-ci.sh --frontend
+
+# Test only backend
+./scripts/simulate-ci.sh --backend
+```
+
+This simulates the **exact** GitHub Actions environment including:
+- Same test flags (`--run` for frontend)
+- Same build process
+- Same linting and security checks
+- Immediate feedback before pushing
+
+**Time:** ~3-5 minutes for full suite
+
 ### Quick Smoke Tests
 
 Run the most critical tests before pushing:
@@ -299,6 +333,25 @@ npm run test:integration
 ```
 
 ## Troubleshooting
+
+### Frontend Tests Pass Locally But Fail in CI
+
+**Problem:** Tests run in watch mode locally but CI uses `--run` flag (strict mode).
+
+**Solution:**
+```bash
+# Option 1: Run CI simulation (recommended)
+./scripts/simulate-ci.sh --frontend
+
+# Option 2: Run tests exactly like CI
+cd frontend
+npm test -- --run
+```
+
+**Why this happens:**
+- Local: `npm test` runs in watch mode (permissive)
+- CI: `npm test -- --run` exits after running (strict)
+- Pre-push hook now matches CI with `--run` flag
 
 ### Frontend Tests Failing
 

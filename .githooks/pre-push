@@ -123,7 +123,33 @@ fi
 
 cd ../..
 
-# 4. Run comprehensive security scan
+# 4. Test frontend
+print_status "⚛️  Testing frontend..." "$YELLOW"
+cd frontend
+
+if [ ! -f "package.json" ]; then
+    print_status "❌ Error: frontend/package.json not found" "$RED"
+    exit 1
+fi
+
+if [ ! -d "node_modules" ]; then
+    print_status "⚠️  Installing frontend dependencies..." "$YELLOW"
+    npm install --cache=/tmp/npm-cache
+fi
+
+# Run frontend tests with --run flag (same as CI)
+if npm test -- --run; then
+    print_status "✅ Frontend tests passed" "$GREEN"
+else
+    print_status "❌ Frontend tests failed" "$RED"
+    print_status "Fix the failing tests before pushing" "$RED"
+    print_status "Tip: Run 'cd frontend && npm test -- --run' to see failures" "$YELLOW"
+    exit 1
+fi
+
+cd ..
+
+# 5. Run comprehensive security scan
 print_status "🔒 Running comprehensive security scan..." "$YELLOW"
 
 if [ -f "scripts/security-scan.sh" ]; then
@@ -147,7 +173,7 @@ else
     print_status "✅ Basic security checks passed" "$GREEN"
 fi
 
-# 5. Final validation
+# 6. Final validation
 print_status "🎯 Pre-push validation summary:" "$GREEN"
 echo ""
 print_status "  ✅ Shared-types tests passed" "$GREEN"
@@ -155,6 +181,7 @@ print_status "  ✅ Backend function tests passed (209 tests)" "$GREEN"
 print_status "  ✅ Test coverage check passed (90%+ required)" "$GREEN"
 print_status "  ✅ Infrastructure TypeScript compilation passed" "$GREEN"
 print_status "  ✅ Infrastructure tests passed (20/20)" "$GREEN"
+print_status "  ✅ Frontend tests passed" "$GREEN"
 print_status "  ✅ Security checks passed" "$GREEN"
 echo ""
 print_status "🚀 Ready to push to remote repository!" "$GREEN"
