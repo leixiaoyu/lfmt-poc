@@ -14,7 +14,7 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import axios from 'axios';
-import { createApiClient, setAuthToken, clearAuthToken } from '../api';
+import { createApiClient, setAuthToken } from '../api';
 import { AUTH_CONFIG } from '../../config/constants';
 
 describe('API Token Refresh Interceptor', () => {

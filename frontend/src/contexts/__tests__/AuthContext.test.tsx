@@ -250,8 +250,11 @@ describe('AuthContext - Register', () => {
       await result.current.register({
         email: 'newuser@example.com',
         password: 'SecurePass123!',
+        confirmPassword: 'SecurePass123!',
         firstName: 'New',
         lastName: 'User',
+        acceptedTerms: true,
+        acceptedPrivacy: true,
       });
     });
 
@@ -279,8 +282,11 @@ describe('AuthContext - Register', () => {
         await result.current.register({
           email: 'existing@example.com',
           password: 'Password123!',
+          confirmPassword: 'Password123!',
           firstName: 'Test',
           lastName: 'User',
+          acceptedTerms: true,
+          acceptedPrivacy: true,
         });
       } catch (error) {
         // Expected

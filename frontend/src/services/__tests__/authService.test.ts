@@ -59,8 +59,11 @@ describe('AuthService - Registration', () => {
     const result = await authService.register({
       email: 'test@example.com',
       password: 'SecurePass123!',
+      confirmPassword: 'SecurePass123!',
       firstName: 'John',
       lastName: 'Doe',
+      acceptedTerms: true,
+      acceptedPrivacy: true,
     });
 
     // Verify API call
@@ -95,8 +98,11 @@ describe('AuthService - Registration', () => {
       authService.register({
         email: 'existing@example.com',
         password: 'SecurePass123!',
+        confirmPassword: 'SecurePass123!',
         firstName: 'John',
         lastName: 'Doe',
+        acceptedTerms: true,
+        acceptedPrivacy: true,
       })
     ).rejects.toEqual({
       message: 'Email already exists',
