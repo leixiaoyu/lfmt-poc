@@ -292,11 +292,12 @@ describe('RegisterForm - Submission', () => {
         lastName: 'Smith',
         email: 'jane@example.com',
         password: 'SecurePass123!',
+        confirmPassword: 'SecurePass123!',
       });
     });
   });
 
-  it('should not include confirmPassword in submission data', async () => {
+  it('should include confirmPassword in submission data for backend validation', async () => {
     const user = userEvent.setup();
     const onSubmit = vi.fn().mockResolvedValue(undefined);
     renderWithRouter(<RegisterForm onSubmit={onSubmit} />);
@@ -319,7 +320,8 @@ describe('RegisterForm - Submission', () => {
     await waitFor(() => {
       expect(onSubmit).toHaveBeenCalledTimes(1);
       const callArgs = onSubmit.mock.calls[0][0];
-      expect(callArgs).not.toHaveProperty('confirmPassword');
+      // confirmPassword is included for backend validation
+      expect(callArgs).toHaveProperty('confirmPassword', 'Password123!');
     });
   });
 

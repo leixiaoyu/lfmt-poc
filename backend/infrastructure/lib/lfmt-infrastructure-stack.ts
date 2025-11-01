@@ -311,7 +311,11 @@ export class LfmtInfrastructureStack extends Stack {
         case 'staging':
           return ['https://staging.lfmt.yourcompany.com']; // Replace with actual staging domain
         default:
-          return ['http://localhost:3000', 'https://localhost:3000']; // Development origins
+          return [
+            'http://localhost:3000',
+            'https://localhost:3000',
+            'https://d1yysvwo9eg20b.cloudfront.net' // CloudFront distribution
+          ]; // Development origins
       }
     };
 

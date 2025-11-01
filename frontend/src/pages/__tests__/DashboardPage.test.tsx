@@ -71,13 +71,15 @@ describe('DashboardPage', () => {
     it('should display welcome message with user name', () => {
       renderDashboard({ user: mockUser });
 
-      expect(screen.getByText(/welcome john doe!/i)).toBeInTheDocument();
+      expect(screen.getByText(/welcome back, john doe!/i)).toBeInTheDocument();
     });
 
     it('should display user email', () => {
       renderDashboard({ user: mockUser });
 
-      expect(screen.getByText(/email: john.doe@example.com/i)).toBeInTheDocument();
+      // Email is no longer displayed in the new Dashboard structure
+      // Dashboard now shows cards for "New Translation" and "Translation History"
+      expect(screen.getByText(/new translation/i)).toBeInTheDocument();
     });
 
     it('should render logout button', () => {
@@ -90,9 +92,9 @@ describe('DashboardPage', () => {
     it('should display placeholder text for future implementation', () => {
       renderDashboard({ user: mockUser });
 
-      expect(
-        screen.getByText(/dashboard content will be implemented in later phases/i)
-      ).toBeInTheDocument();
+      // Dashboard now has actual content (translation cards and info section)
+      expect(screen.getByText(/upload document/i)).toBeInTheDocument();
+      expect(screen.getByText(/view history/i)).toBeInTheDocument();
     });
   });
 
@@ -107,7 +109,7 @@ describe('DashboardPage', () => {
 
       renderDashboard({ user });
 
-      expect(screen.getByText(/welcome jane smith!/i)).toBeInTheDocument();
+      expect(screen.getByText(/welcome back, jane smith!/i)).toBeInTheDocument();
     });
 
     it('should display email correctly', () => {
@@ -120,7 +122,8 @@ describe('DashboardPage', () => {
 
       renderDashboard({ user });
 
-      expect(screen.getByText(/email: custom@email.com/i)).toBeInTheDocument();
+      // Email is no longer displayed, verify user name is shown instead
+      expect(screen.getByText(/welcome back, test user!/i)).toBeInTheDocument();
     });
 
     it('should handle user with empty first name', () => {
@@ -147,8 +150,8 @@ describe('DashboardPage', () => {
 
       renderDashboard({ user });
 
-      // Should render "Welcome John !" (with trailing space)
-      expect(screen.getByText(/welcome john/i)).toBeInTheDocument();
+      // Should render "Welcome back, John !" (with trailing space)
+      expect(screen.getByText(/welcome back, john/i)).toBeInTheDocument();
     });
 
     it('should handle special characters in user name', () => {
@@ -161,7 +164,7 @@ describe('DashboardPage', () => {
 
       renderDashboard({ user });
 
-      expect(screen.getByText(/welcome o'brien josé-maría!/i)).toBeInTheDocument();
+      expect(screen.getByText(/welcome back, o'brien josé-maría!/i)).toBeInTheDocument();
     });
   });
 
@@ -249,8 +252,8 @@ describe('DashboardPage', () => {
 
       renderDashboard({ user: contextUser });
 
-      expect(screen.getByText(/welcome context user!/i)).toBeInTheDocument();
-      expect(screen.getByText(/email: context@example.com/i)).toBeInTheDocument();
+      expect(screen.getByText(/welcome back, context user!/i)).toBeInTheDocument();
+      // Email is no longer displayed in new Dashboard
     });
 
     it('should use logout function from AuthContext', async () => {
