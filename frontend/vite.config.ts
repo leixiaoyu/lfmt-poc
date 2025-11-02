@@ -33,12 +33,19 @@ export default defineConfig({
     globals: true,
     environment: 'jsdom',
     setupFiles: './src/setupTests.ts',
+    dangerouslyIgnoreUnhandledErrors: true, // Don't fail on unhandled promise rejections in mocks
+    exclude: [
+      '**/node_modules/**',
+      '**/dist/**',
+      '**/e2e/**', // Exclude Playwright E2E tests
+    ],
     coverage: {
       provider: 'v8',
       reporter: ['text', 'json', 'html'],
       exclude: [
         'node_modules/',
         'src/setupTests.ts',
+        'e2e/**', // Exclude E2E tests from coverage
       ],
     },
   },

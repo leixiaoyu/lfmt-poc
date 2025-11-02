@@ -66,12 +66,15 @@ describe('AuthService - Registration', () => {
       acceptedPrivacy: true,
     });
 
-    // Verify API call
+    // Verify API call - includes all fields from RegisterRequest
     expect(apiClient.post).toHaveBeenCalledWith('/auth/register', {
       email: 'test@example.com',
       password: 'SecurePass123!',
+      confirmPassword: 'SecurePass123!',
       firstName: 'John',
       lastName: 'Doe',
+      acceptedTerms: true,
+      acceptedPrivacy: true,
     });
 
     // Verify tokens are stored

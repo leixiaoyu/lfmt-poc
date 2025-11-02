@@ -16,8 +16,13 @@ export default function NewTranslationPage() {
   const { logout, user } = useAuth();
 
   const handleLogout = async () => {
-    await logout();
-    navigate(ROUTES.LOGIN);
+    try {
+      await logout();
+      navigate(ROUTES.LOGIN);
+    } catch (error) {
+      console.error('Logout failed:', error);
+      // Do NOT navigate on error - user is still authenticated
+    }
   };
 
   const handleUploadComplete = (fileId: string) => {
