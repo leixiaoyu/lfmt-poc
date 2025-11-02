@@ -13,16 +13,11 @@ import { TranslationProgress } from '../TranslationProgress';
 import { translationService, type TranslationJob } from '../../../services/translationService';
 
 // Mock the translation service
-vi.mock('../../../services/translationService', async () => {
-  const actual = await vi.importActual<typeof import('../../../services/translationService')>('../../../services/translationService');
-  return {
-    ...actual,
-    translationService: {
-      ...actual.translationService,
-      getJobStatus: vi.fn(),
-    },
-  };
-});
+vi.mock('../../../services/translationService', () => ({
+  translationService: {
+    getJobStatus: vi.fn(),
+  },
+}));
 
 describe('TranslationProgress Component', () => {
   const mockJob: TranslationJob = {
@@ -42,7 +37,6 @@ describe('TranslationProgress Component', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    // Use real timers for simpler async testing
   });
 
   afterEach(() => {
@@ -63,7 +57,7 @@ describe('TranslationProgress Component', () => {
 
     it('should fetch job status on mount', async () => {
       // Arrange
-      vi.mocked(translationService.getJobStatus).mockResolvedValue(mockJob);
+      vi.mocked(translationService.getJobStatus).mockResolvedValueOnce(mockJob);
 
       // Act
       render(<TranslationProgress jobId="job-123" />);
@@ -78,7 +72,7 @@ describe('TranslationProgress Component', () => {
   describe('Progress Display', () => {
     it('should display job details after loading', async () => {
       // Arrange
-      vi.mocked(translationService.getJobStatus).mockResolvedValue(mockJob);
+      vi.mocked(translationService.getJobStatus).mockResolvedValueOnce(mockJob);
 
       // Act
       render(<TranslationProgress jobId="job-123" />);
@@ -93,7 +87,7 @@ describe('TranslationProgress Component', () => {
 
     it('should display chunk progress', async () => {
       // Arrange
-      vi.mocked(translationService.getJobStatus).mockResolvedValue(mockJob);
+      vi.mocked(translationService.getJobStatus).mockResolvedValueOnce(mockJob);
 
       // Act
       render(<TranslationProgress jobId="job-123" />);
@@ -107,7 +101,7 @@ describe('TranslationProgress Component', () => {
 
     it('should show correct status chip for IN_PROGRESS', async () => {
       // Arrange
-      vi.mocked(translationService.getJobStatus).mockResolvedValue(mockJob);
+      vi.mocked(translationService.getJobStatus).mockResolvedValueOnce(mockJob);
 
       // Act
       render(<TranslationProgress jobId="job-123" />);
@@ -125,7 +119,7 @@ describe('TranslationProgress Component', () => {
         status: 'COMPLETED',
         completedChunks: 10,
       };
-      vi.mocked(translationService.getJobStatus).mockResolvedValue(completedJob);
+      vi.mocked(translationService.getJobStatus).mockResolvedValueOnce(completedJob);
 
       // Act
       render(<TranslationProgress jobId="job-123" />);
@@ -146,7 +140,7 @@ describe('TranslationProgress Component', () => {
         status: 'COMPLETED',
         completedChunks: 10,
       };
-      vi.mocked(translationService.getJobStatus).mockResolvedValue(completedJob);
+      vi.mocked(translationService.getJobStatus).mockResolvedValueOnce(completedJob);
 
       // Act
       render(<TranslationProgress jobId="job-123" />);
@@ -159,7 +153,7 @@ describe('TranslationProgress Component', () => {
 
     it('should calculate progress based on completed chunks', async () => {
       // Arrange - 5 out of 10 chunks = 50% of 85% = 42.5% + 15% base = 57.5%
-      vi.mocked(translationService.getJobStatus).mockResolvedValue(mockJob);
+      vi.mocked(translationService.getJobStatus).mockResolvedValueOnce(mockJob);
 
       // Act
       render(<TranslationProgress jobId="job-123" />);
@@ -176,7 +170,7 @@ describe('TranslationProgress Component', () => {
         ...mockJob,
         status: 'PENDING',
       };
-      vi.mocked(translationService.getJobStatus).mockResolvedValue(pendingJob);
+      vi.mocked(translationService.getJobStatus).mockResolvedValueOnce(pendingJob);
 
       // Act
       render(<TranslationProgress jobId="job-123" />);
@@ -194,7 +188,7 @@ describe('TranslationProgress Component', () => {
         status: 'FAILED',
         errorMessage: 'Translation failed',
       };
-      vi.mocked(translationService.getJobStatus).mockResolvedValue(failedJob);
+      vi.mocked(translationService.getJobStatus).mockResolvedValueOnce(failedJob);
 
       // Act
       render(<TranslationProgress jobId="job-123" />);
@@ -209,7 +203,7 @@ describe('TranslationProgress Component', () => {
   describe('Error Handling', () => {
     it('should display error when fetch fails', async () => {
       // Arrange
-      vi.mocked(translationService.getJobStatus).mockRejectedValue(
+      vi.mocked(translationService.getJobStatus).mockRejectedValueOnce(
         new Error('Network error')
       );
 
@@ -225,7 +219,7 @@ describe('TranslationProgress Component', () => {
     it('should call onError callback when fetch fails', async () => {
       // Arrange
       const mockOnError = vi.fn();
-      vi.mocked(translationService.getJobStatus).mockRejectedValue(
+      vi.mocked(translationService.getJobStatus).mockRejectedValueOnce(
         new Error('API error')
       );
 
@@ -245,7 +239,7 @@ describe('TranslationProgress Component', () => {
         status: 'FAILED',
         errorMessage: 'Chunking failed: Invalid format',
       };
-      vi.mocked(translationService.getJobStatus).mockResolvedValue(failedJob);
+      vi.mocked(translationService.getJobStatus).mockResolvedValueOnce(failedJob);
 
       // Act
       render(<TranslationProgress jobId="job-123" />);
@@ -262,7 +256,7 @@ describe('TranslationProgress Component', () => {
         ...mockJob,
         failedChunks: 2,
       };
-      vi.mocked(translationService.getJobStatus).mockResolvedValue(jobWithFailedChunks);
+      vi.mocked(translationService.getJobStatus).mockResolvedValueOnce(jobWithFailedChunks);
 
       // Act
       render(<TranslationProgress jobId="job-123" />);
@@ -283,7 +277,7 @@ describe('TranslationProgress Component', () => {
         ...mockJob,
         status: 'COMPLETED',
       };
-      vi.mocked(translationService.getJobStatus).mockResolvedValue(completedJob);
+      vi.mocked(translationService.getJobStatus).mockResolvedValueOnce(completedJob);
 
       // Act
       render(<TranslationProgress jobId="job-123" onComplete={mockOnComplete} />);
@@ -302,7 +296,7 @@ describe('TranslationProgress Component', () => {
         status: 'FAILED',
         errorMessage: 'Translation failed',
       };
-      vi.mocked(translationService.getJobStatus).mockResolvedValue(failedJob);
+      vi.mocked(translationService.getJobStatus).mockResolvedValueOnce(failedJob);
 
       // Act
       render(<TranslationProgress jobId="job-123" onError={mockOnError} />);
@@ -321,7 +315,7 @@ describe('TranslationProgress Component', () => {
         ...mockJob,
         status: 'CHUNKING',
       };
-      vi.mocked(translationService.getJobStatus).mockResolvedValue(chunkingJob);
+      vi.mocked(translationService.getJobStatus).mockResolvedValueOnce(chunkingJob);
 
       // Act
       render(<TranslationProgress jobId="job-123" />);
@@ -338,7 +332,7 @@ describe('TranslationProgress Component', () => {
         ...mockJob,
         status: 'CHUNKED',
       };
-      vi.mocked(translationService.getJobStatus).mockResolvedValue(chunkedJob);
+      vi.mocked(translationService.getJobStatus).mockResolvedValueOnce(chunkedJob);
 
       // Act
       render(<TranslationProgress jobId="job-123" />);
