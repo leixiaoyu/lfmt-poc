@@ -170,6 +170,10 @@ jobs:
           cache: 'npm'
           cache-dependency-path: frontend/package-lock.json
 
+      - name: Install shared-types dependencies
+        working-directory: shared-types
+        run: npm ci
+
       - name: Install frontend dependencies
         working-directory: frontend
         run: npm ci
