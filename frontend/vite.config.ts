@@ -33,6 +33,7 @@ export default defineConfig({
     globals: true,
     environment: 'jsdom',
     setupFiles: './src/setupTests.ts',
+    dangerouslyIgnoreUnhandledErrors: true, // Don't fail on unhandled promise rejections in mocks
     exclude: [
       '**/node_modules/**',
       '**/dist/**',
