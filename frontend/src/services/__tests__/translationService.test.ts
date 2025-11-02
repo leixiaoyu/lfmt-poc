@@ -174,10 +174,6 @@ describe('TranslationService - uploadDocument', () => {
       };
 
       // Act & Assert
-      // NOTE: Current implementation catches TranslationServiceError from getAuthHeaders()
-      // and wraps it in handleError(), resulting in generic error message.
-      // This is a code smell - handleError should re-throw TranslationServiceError.
-      // Testing actual behavior, not ideal behavior.
       try {
         await uploadDocument({
           file: mockFile,
@@ -186,8 +182,7 @@ describe('TranslationService - uploadDocument', () => {
         expect.fail('Should have thrown TranslationServiceError');
       } catch (error) {
         expect(error).toBeInstanceOf(TranslationServiceError);
-        // Current behavior: generic message due to handleError() wrapping
-        expect((error as TranslationServiceError).message).toBe('An unexpected error occurred');
+        expect((error as TranslationServiceError).message).toBe('Not authenticated');
       }
     });
 
@@ -463,14 +458,9 @@ describe('TranslationService - startTranslation', () => {
       };
 
       // Act & Assert
-      // NOTE: Same issue as uploadDocument - handleError() wraps the auth error
-      try {
-        await startTranslation(jobId, request);
-        expect.fail('Should have thrown TranslationServiceError');
-      } catch (error) {
-        expect(error).toBeInstanceOf(TranslationServiceError);
-        expect((error as TranslationServiceError).message).toBe('An unexpected error occurred');
-      }
+      await expect(startTranslation(jobId, request)).rejects.toThrow(
+        'Not authenticated'
+      );
     });
   });
 });
@@ -656,14 +646,7 @@ describe('TranslationService - getTranslationJobs', () => {
       (getAuthToken as ReturnType<typeof vi.fn>).mockReturnValueOnce(null);
 
       // Act & Assert
-      // NOTE: Same issue - handleError() wraps the auth error
-      try {
-        await getTranslationJobs();
-        expect.fail('Should have thrown TranslationServiceError');
-      } catch (error) {
-        expect(error).toBeInstanceOf(TranslationServiceError);
-        expect((error as TranslationServiceError).message).toBe('An unexpected error occurred');
-      }
+      await expect(getTranslationJobs()).rejects.toThrow('Not authenticated');
     });
   });
 });

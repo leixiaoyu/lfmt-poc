@@ -99,6 +99,11 @@ const getAuthHeaders = () => {
  * Handle API errors
  */
 const handleError = (error: unknown): never => {
+  // Re-throw TranslationServiceError without wrapping
+  if (error instanceof TranslationServiceError) {
+    throw error;
+  }
+
   if (axios.isAxiosError(error)) {
     const message = error.response?.data?.message || error.message;
     const statusCode = error.response?.status;
