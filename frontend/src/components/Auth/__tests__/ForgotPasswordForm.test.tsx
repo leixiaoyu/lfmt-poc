@@ -330,7 +330,9 @@ describe('ForgotPasswordForm - Error Handling', () => {
     // Start typing in email field
     await user.type(emailInput, 'a');
 
-    expect(screen.queryByText(/email not found/i)).not.toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.queryByText(/email not found/i)).not.toBeInTheDocument();
+    });
   });
 });
 

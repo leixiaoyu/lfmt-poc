@@ -211,6 +211,11 @@ describe('DashboardPage', () => {
         expect(mockLogout).toHaveBeenCalled();
       });
 
+      // Wait for error to be handled by component
+      await waitFor(() => {
+        expect(consoleError).toHaveBeenCalled();
+      });
+
       // Should still be on dashboard page
       expect(screen.getByRole('heading', { name: /dashboard/i })).toBeInTheDocument();
       expect(screen.queryByTestId('login-page')).not.toBeInTheDocument();
@@ -387,6 +392,11 @@ describe('DashboardPage', () => {
       // Should call logout but not navigate on error
       await waitFor(() => {
         expect(mockLogout).toHaveBeenCalled();
+      });
+
+      // Wait for error to be handled by component
+      await waitFor(() => {
+        expect(consoleError).toHaveBeenCalled();
       });
 
       // Should remain on dashboard page after error

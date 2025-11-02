@@ -138,6 +138,11 @@ describe('NewTranslationPage', () => {
         expect(mockLogout).toHaveBeenCalled();
       });
 
+      // Wait for error to be handled by component
+      await waitFor(() => {
+        expect(consoleErrorSpy).toHaveBeenCalled();
+      });
+
       // Component should still attempt to navigate even if logout throws
       // (This is current behavior - could be improved to show error)
 
