@@ -57,46 +57,10 @@ jobs:
         working-directory: backend/functions
         run: npm run test:coverage
 
-  build-infrastructure:
-    name: Build Infrastructure
-    runs-on: ubuntu-latest
-    needs: test
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: 'npm'
-          cache-dependency-path: backend/infrastructure/package-lock.json
-
-      - name: Install shared-types dependencies
-        working-directory: shared-types
-        run: npm ci
-
-      - name: Install function dependencies
-        working-directory: backend/functions
-        run: npm ci
-
-      - name: Install infrastructure dependencies
-        working-directory: backend/infrastructure
-        run: npm ci
-
-      - name: Build infrastructure
-        working-directory: backend/infrastructure
-        run: npm run build
-
-      - name: CDK Synth (validate CloudFormation)
-        working-directory: backend/infrastructure
-        run: npx cdk synth --context environment=${{ github.event.inputs.environment || 'dev' }} --context skipLambdaBundling=true
-
   build-frontend:
     name: Build Frontend
     runs-on: ubuntu-latest
-    needs: [test, build-infrastructure]
+    needs: test
 
     steps:
       - name: Checkout code
@@ -133,11 +97,14 @@ jobs:
   deploy-dev:
     name: Deploy to Development
     runs-on: ubuntu-latest
-    needs: [test, build-infrastructure, build-frontend]
+    needs: [test, build-frontend]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     environment:
       name: development
       url: https://d1yysvwo9eg20b.cloudfront.net
+    outputs:
+      api_url: ${{ steps.get-url.outputs.api_url }}
+      frontend_url: ${{ steps.get-frontend-url.outputs.frontend_url }}
 
     permissions:
       id-token: write   # Required for OIDC authentication
@@ -172,17 +139,9 @@ jobs:
         working-directory: backend/functions
         run: npm ci
 
-      - name: Build backend functions
-        working-directory: backend/functions
-        run: npm run build
-
       - name: Install infrastructure dependencies
         working-directory: backend/infrastructure
         run: npm ci
-
-      - name: Build infrastructure
-        working-directory: backend/infrastructure
-        run: npm run build
 
       - name: CDK Bootstrap (if needed)
         working-directory: backend/infrastructure
@@ -238,6 +197,15 @@ jobs:
           echo "distribution_id=$DIST_ID" >> $GITHUB_OUTPUT
           echo "CloudFront Distribution ID: $DIST_ID"
 
+      - name: Get CloudFront URL
+        id: get-frontend-url
+        run: |
+          FRONTEND_URL=$(aws cloudfront list-distributions \
+            --query "DistributionList.Items[?Origins.Items[0].DomainName=='lfmt-poc-frontend.s3.amazonaws.com'].DomainName | [0]" \
+            --output text)
+          echo "frontend_url=https://${FRONTEND_URL}" >> $GITHUB_OUTPUT
+          echo "Frontend URL: https://${FRONTEND_URL}"
+
       - name: Invalidate CloudFront cache
         run: |
           aws cloudfront create-invalidation --distribution-id ${{ steps.get-cf-dist.outputs.distribution_id }} --paths "/*"
@@ -250,7 +218,7 @@ jobs:
           echo "========================================="
           echo "S3 Bucket: lfmt-poc-frontend"
           echo "CloudFront Distribution: ${{ steps.get-cf-dist.outputs.distribution_id }}"
-          echo "Frontend URL: https://d1yysvwo9eg20b.cloudfront.net"
+          echo "Frontend URL: ${{ steps.get-frontend-url.outputs.frontend_url }}"
           echo "API URL: ${{ steps.get-url.outputs.api_url }}"
           echo "========================================="
 
@@ -376,7 +344,7 @@ jobs:
         run: |
           echo "Waiting for frontend to be ready..."
           for i in {1..30}; do
-            if curl -sf https://d1yysvwo9eg20b.cloudfront.net/ > /dev/null 2>&1; then
+            if curl -sf ${{ needs.deploy-dev.outputs.frontend_url }}/ > /dev/null 2>&1; then
               echo "Frontend is ready!"
               exit 0
             fi
@@ -389,7 +357,8 @@ jobs:
         working-directory: frontend
         run: npm run test:e2e
         env:
-          PLAYWRIGHT_BASE_URL: https://d1yysvwo9eg20b.cloudfront.net
+          PLAYWRIGHT_BASE_URL: ${{ needs.deploy-dev.outputs.frontend_url }}
+          API_BASE_URL: ${{ needs.deploy-dev.outputs.api_url }}
           CI: true
 
       - name: Upload test results
@@ -414,14 +383,15 @@ jobs:
           echo "========================================="
           echo "E2E Test Summary"
           echo "========================================="
-          echo "Frontend URL: https://d1yysvwo9eg20b.cloudfront.net"
+          echo "Frontend URL: ${{ needs.deploy-dev.outputs.frontend_url }}"
+          echo "API URL: ${{ needs.deploy-dev.outputs.api_url }}"
           echo "Tests completed at: $(date -u +"%Y-%m-%d %H:%M:%S UTC")"
           echo "========================================="
 
   deploy-staging:
     name: Deploy to Staging
     runs-on: ubuntu-latest
-    needs: [test, build-infrastructure]
+    needs: test
     if: github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'staging'
     environment:
       name: staging
@@ -466,7 +436,7 @@ jobs:
   deploy-prod:
     name: Deploy to Production
     runs-on: ubuntu-latest
-    needs: [test, build-infrastructure]
+    needs: test
     if: github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'prod'
     environment:
       name: production

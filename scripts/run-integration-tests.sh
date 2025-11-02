@@ -66,8 +66,11 @@ print_header "LFMT POC - Local Integration Test Runner"
 
 # Check if API_BASE_URL is set
 if [ -z "$API_BASE_URL" ]; then
-    print_status "⚠️  API_BASE_URL not set, using default dev endpoint" "$YELLOW"
-    export API_BASE_URL="https://8brwlwf68h.execute-api.us-east-1.amazonaws.com/v1"
+    print_status "❌ ERROR: API_BASE_URL environment variable is not set." "$RED"
+    print_status "   Please export API_BASE_URL to point to your deployed dev environment." "$YELLOW"
+    print_status "   Example: export API_BASE_URL='https://your-api-id.execute-api.us-east-1.amazonaws.com/v1'" "$YELLOW"
+    echo ""
+    exit 1
 fi
 
 print_status "API Base URL: $API_BASE_URL" "$BLUE"
