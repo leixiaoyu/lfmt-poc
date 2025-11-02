@@ -161,14 +161,21 @@ describe('RateLimiter', () => {
     });
 
     it('should deny 26th request when RPD limit exceeded', () => {
+      // Create a rate limiter with higher RPM to avoid hitting that limit
+      const testLimiter = new RateLimiter({
+        requestsPerMinute: 100, // High RPM so we can test RPD in isolation
+        tokensPerMinute: 500_000,
+        requestsPerDay: 25,
+      });
+
       // Consume 25 requests
       for (let i = 0; i < 25; i++) {
-        rateLimiter.checkLimit(1000);
-        rateLimiter.consume(1000);
+        testLimiter.checkLimit(1000);
+        testLimiter.consume(1000);
       }
 
       // 26th request should be denied
-      const result = rateLimiter.checkLimit(1000);
+      const result = testLimiter.checkLimit(1000);
       expect(result.allowed).toBe(false);
       expect(result.reason).toContain('Daily request limit');
       expect(result.retryAfterMs).toBeGreaterThan(0);
@@ -176,20 +183,27 @@ describe('RateLimiter', () => {
     });
 
     it('should reset daily counter at midnight Pacific', () => {
+      // Create a rate limiter with higher RPM to avoid hitting that limit
+      const testLimiter = new RateLimiter({
+        requestsPerMinute: 100, // High RPM so we can test RPD in isolation
+        tokensPerMinute: 500_000,
+        requestsPerDay: 25,
+      });
+
       // Consume 25 requests
       for (let i = 0; i < 25; i++) {
-        rateLimiter.checkLimit(1000);
-        rateLimiter.consume(1000);
+        testLimiter.checkLimit(1000);
+        testLimiter.consume(1000);
       }
 
       // 26th request denied
-      expect(rateLimiter.checkLimit(1000).allowed).toBe(false);
+      expect(testLimiter.checkLimit(1000).allowed).toBe(false);
 
       // Reset (simulates midnight)
-      rateLimiter.reset();
+      testLimiter.reset();
 
       // Should allow requests again
-      const result = rateLimiter.checkLimit(1000);
+      const result = testLimiter.checkLimit(1000);
       expect(result.allowed).toBe(true);
       expect(result.usage.rpd.used).toBe(0);
     });
@@ -311,12 +325,19 @@ describe('RateLimiter', () => {
     });
 
     it('should calculate correct retry time for RPD limit', () => {
+      // Create a rate limiter with higher RPM to avoid hitting that limit
+      const testLimiter = new RateLimiter({
+        requestsPerMinute: 100, // High RPM so we can test RPD in isolation
+        tokensPerMinute: 500_000,
+        requestsPerDay: 25,
+      });
+
       // Consume all 25 daily requests
       for (let i = 0; i < 25; i++) {
-        rateLimiter.consume(1000);
+        testLimiter.consume(1000);
       }
 
-      const result = rateLimiter.checkLimit(1000);
+      const result = testLimiter.checkLimit(1000);
       expect(result.allowed).toBe(false);
       expect(result.retryAfterMs).toBeGreaterThan(0);
       expect(result.retryAfterMs).toBeLessThanOrEqual(24 * 60 * 60 * 1000); // Max 24 hours
