@@ -276,7 +276,9 @@ describe('LoginForm - Error Handling', () => {
     // Start typing in email field
     await user.type(emailInput, 'a');
 
-    expect(screen.queryByText(/invalid credentials/i)).not.toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.queryByText(/invalid credentials/i)).not.toBeInTheDocument();
+    });
   });
 });
 
