@@ -499,7 +499,9 @@ describe('RegisterForm - Error Handling', () => {
     // Start typing in email field
     await user.type(emailInput, 'a');
 
-    expect(screen.queryByText(/registration failed/i)).not.toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.queryByText(/registration failed/i)).not.toBeInTheDocument();
+    });
   });
 });
 
