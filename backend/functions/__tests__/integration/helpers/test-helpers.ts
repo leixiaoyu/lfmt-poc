@@ -151,7 +151,7 @@ export const apiRequest = async <T = any>(
 
   let data: T;
   try {
-    data = await response.json();
+    data = (await response.json()) as T;
   } catch (error) {
     data = null as any;
   }

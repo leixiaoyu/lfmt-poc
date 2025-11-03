@@ -7,6 +7,7 @@ import { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
 import {
   CognitoIdentityProviderClient,
   GetUserCommand,
+  GetUserCommandOutput,
   NotAuthorizedException,
   UserNotFoundException,
 } from '@aws-sdk/client-cognito-identity-provider';
@@ -79,7 +80,7 @@ export const handler = async (
       AccessToken: accessToken,
     });
 
-    const response = await cognitoClient.send(command);
+    const response: GetUserCommandOutput = await cognitoClient.send(command);
 
     // Extract user attributes
     const attributes = response.UserAttributes || [];

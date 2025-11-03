@@ -7,6 +7,7 @@ import { GoogleGenAI } from '@google/genai';
 import {
   SecretsManagerClient,
   GetSecretValueCommand,
+  GetSecretValueCommandOutput,
 } from '@aws-sdk/client-secrets-manager';
 import Logger from '../shared/logger';
 import {
@@ -88,14 +89,14 @@ export class GeminiClient {
         SecretId: this.config.apiKeySecretName,
       });
 
-      const response = await this.secretsClient.send(command);
+      const response: GetSecretValueCommandOutput = await this.secretsClient.send(command);
 
       if (!response.SecretString) {
         throw new Error('Secret value is empty');
       }
 
-      this.apiKey = response.SecretString;
-      this.genAI = new GoogleGenAI({ apiKey: this.apiKey });
+      this.apiKey = response.SecretString ?? null;
+      this.genAI = this.apiKey ? new GoogleGenAI({ apiKey: this.apiKey }) : null;
 
       logger.info('Gemini client initialized successfully');
     } catch (error) {

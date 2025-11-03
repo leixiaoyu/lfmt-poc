@@ -32,6 +32,7 @@
     "@aws-sdk/s3-request-presigner": "^3.525.0",
     "@google/genai": "^1.28.0",
     "@lfmt/shared-types": "file:../../shared-types",
+    "date-fns-tz": "^3.2.0",
     "gpt-tokenizer": "^3.2.0"
   },
   "devDependencies": {

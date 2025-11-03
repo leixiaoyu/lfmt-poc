@@ -12,12 +12,14 @@ import { S3Event, S3Handler } from 'aws-lambda';
 import {
   S3Client,
   GetObjectCommand,
+  GetObjectCommandOutput,
   PutObjectCommand,
 } from '@aws-sdk/client-s3';
 import {
   DynamoDBClient,
   UpdateItemCommand,
   GetItemCommand,
+  GetItemCommandOutput,
 } from '@aws-sdk/client-dynamodb';
 import { marshall, unmarshall } from '@aws-sdk/util-dynamodb';
 import { createChunker, ChunkContext } from './documentChunker';
@@ -79,7 +81,7 @@ async function downloadDocument(bucket: string, key: string): Promise<string> {
     Key: key,
   });
 
-  const response = await s3Client.send(command);
+  const response: GetObjectCommandOutput = await s3Client.send(command);
 
   if (!response.Body) {
     throw new Error('S3 object has no body');
@@ -155,7 +157,7 @@ async function getJobRecord(jobId: string, userId: string): Promise<JobRecord | 
     Key: marshall({ jobId, userId }),
   });
 
-  const response = await dynamoClient.send(command);
+  const response: GetItemCommandOutput = await dynamoClient.send(command);
 
   if (!response.Item) {
     logger.warn('Job record not found', { jobId, userId });
@@ -237,7 +239,7 @@ export const handler: S3Handler = async (event: S3Event): Promise<void> => {
         Bucket: bucket,
         Key: key,
       });
-      const objectResponse = await s3Client.send(getObjectCommand);
+      const objectResponse: GetObjectCommandOutput = await s3Client.send(getObjectCommand);
       const { userId, jobId, fileId } = extractJobMetadata(objectResponse.Metadata);
 
       // Verify job exists in DynamoDB
@@ -305,7 +307,7 @@ export const handler: S3Handler = async (event: S3Event): Promise<void> => {
           Bucket: bucket,
           Key: key,
         });
-        const objectResponse = await s3Client.send(getObjectCommand);
+        const objectResponse: GetObjectCommandOutput = await s3Client.send(getObjectCommand);
         const { jobId, userId } = extractJobMetadata(objectResponse.Metadata);
 
         await updateJobStatus(
