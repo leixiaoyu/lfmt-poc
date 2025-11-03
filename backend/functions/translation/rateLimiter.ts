@@ -4,6 +4,8 @@
  */
 
 import Logger from '../shared/logger';
+import { toZonedTime, fromZonedTime } from 'date-fns-tz';
+import { addDays, startOfDay } from 'date-fns';
 
 const logger = new Logger('lfmt-rate-limiter');
 
@@ -334,23 +336,22 @@ export class RateLimiter {
   }
 
   /**
-   * Calculate next daily reset time (midnight Pacific)
+   * Calculate next daily reset time (midnight in configured timezone)
+   * Uses date-fns-tz for reliable timezone handling across all environments
    */
   private calculateNextDailyReset(): number {
     const now = new Date();
 
-    // Get current time in Pacific timezone
-    const pacificTime = new Date(
-      now.toLocaleString('en-US', { timeZone: this.config.dailyResetTimezone })
-    );
+    // Convert current UTC time to target timezone
+    const zonedNow = toZonedTime(now, this.config.dailyResetTimezone);
 
-    // Calculate next midnight Pacific
-    const nextMidnight = new Date(pacificTime);
-    nextMidnight.setHours(24, 0, 0, 0);
+    // Get tomorrow at midnight in the target timezone
+    const tomorrowMidnight = startOfDay(addDays(zonedNow, 1));
 
     // Convert back to UTC timestamp
-    const utcMidnight = new Date(
-      nextMidnight.toLocaleString('en-US', { timeZone: 'UTC' })
+    const utcMidnight = fromZonedTime(
+      tomorrowMidnight,
+      this.config.dailyResetTimezone
     );
 
     return utcMidnight.getTime();

@@ -7,6 +7,7 @@ import { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
 import {
   CognitoIdentityProviderClient,
   InitiateAuthCommand,
+  InitiateAuthCommandOutput,
   NotAuthorizedException,
   UserNotFoundException,
   UserNotConfirmedException,
@@ -76,7 +77,7 @@ export const handler = async (
       },
     });
 
-    const response = await cognitoClient.send(command);
+    const response: InitiateAuthCommandOutput = await cognitoClient.send(command);
 
     if (!response.AuthenticationResult) {
       logger.error('Authentication succeeded but no tokens returned', {

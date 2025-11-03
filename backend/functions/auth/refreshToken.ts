@@ -6,6 +6,7 @@ import { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
 import {
   CognitoIdentityProviderClient,
   InitiateAuthCommand,
+  InitiateAuthCommandOutput,
   NotAuthorizedException,
   TooManyRequestsException,
 } from '@aws-sdk/client-cognito-identity-provider';
@@ -56,7 +57,7 @@ export const handler = async (
       },
     });
 
-    const response = await cognitoClient.send(command);
+    const response: InitiateAuthCommandOutput = await cognitoClient.send(command);
 
     if (!response.AuthenticationResult) {
       logger.error('Token refresh succeeded but no tokens returned', {

@@ -9,8 +9,9 @@ import {
   DynamoDBClient,
   UpdateItemCommand,
   GetItemCommand,
+  GetItemCommandOutput,
 } from '@aws-sdk/client-dynamodb';
-import { S3Client, HeadObjectCommand, CopyObjectCommand } from '@aws-sdk/client-s3';
+import { S3Client, HeadObjectCommand, HeadObjectCommandOutput, CopyObjectCommand } from '@aws-sdk/client-s3';
 import { marshall, unmarshall } from '@aws-sdk/util-dynamodb';
 import Logger from '../shared/logger';
 import { getRequiredEnv } from '../shared/env';
@@ -56,7 +57,7 @@ export const handler = async (event: S3Event): Promise<void> => {
         Key: key,
       });
 
-      const headResponse = await s3Client.send(headCommand);
+      const headResponse: HeadObjectCommandOutput = await s3Client.send(headCommand);
       const metadata = headResponse.Metadata || {};
 
       logger.info('Retrieved S3 object metadata', {
@@ -103,7 +104,7 @@ export const handler = async (event: S3Event): Promise<void> => {
         Key: marshall({ jobId }),
       });
 
-      const getResult = await dynamoClient.send(getItemCommand);
+      const getResult: GetItemCommandOutput = await dynamoClient.send(getItemCommand);
 
       if (!getResult.Item) {
         logger.error('Job record not found', {
