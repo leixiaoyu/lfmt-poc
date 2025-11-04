@@ -326,6 +326,90 @@ describe('LFMT Infrastructure Stack', () => {
     });
   });
 
+  describe('Step Functions State Machine', () => {
+    test('Translation state machine exists', () => {
+      // Verify state machine is created
+      template.resourceCountIs('AWS::StepFunctions::StateMachine', 1);
+
+      // Verify it has the correct name
+      template.hasResourceProperties('AWS::StepFunctions::StateMachine', {
+        StateMachineName: 'lfmt-translation-workflow-test'
+      });
+    });
+
+    test('State machine has Map state for sequential chunk processing', () => {
+      const stateMachines = template.findResources('AWS::StepFunctions::StateMachine');
+      const stateMachineKeys = Object.keys(stateMachines);
+      expect(stateMachineKeys.length).toBe(1);
+
+      const stateMachine = stateMachines[stateMachineKeys[0]];
+      const definition = JSON.parse(stateMachine.Properties.DefinitionString['Fn::Join'][1].join(''));
+
+      // Verify Map state exists
+      const states = definition.States;
+      const mapState = Object.values(states).find((state: any) => state.Type === 'Map');
+      expect(mapState).toBeDefined();
+
+      // Verify sequential processing (maxConcurrency: 1) for context continuity
+      expect((mapState as any).MaxConcurrency).toBe(1);
+    });
+
+    test('State machine has workflow states', () => {
+      const stateMachines = template.findResources('AWS::StepFunctions::StateMachine');
+      const stateMachineKeys = Object.keys(stateMachines);
+      const stateMachine = stateMachines[stateMachineKeys[0]];
+      const definition = JSON.parse(stateMachine.Properties.DefinitionString['Fn::Join'][1].join(''));
+
+      // Verify state machine has multiple states
+      const states = definition.States;
+      const stateCount = Object.keys(states).length;
+      expect(stateCount).toBeGreaterThan(2); // At least: Map, DynamoDB Update, Success (Fail is inside Map iterator)
+
+      // Verify there's a Succeed state for successful completion
+      const successState = Object.values(states).find((state: any) => state.Type === 'Succeed');
+      expect(successState).toBeDefined();
+
+      // Note: Fail state is nested inside Map iterator (TranslationFailed), not at top level
+    });
+
+    test('State machine has required IAM permissions', () => {
+      // State machine should have permission to invoke Lambda
+      template.hasResourceProperties('AWS::IAM::Policy', {
+        PolicyDocument: {
+          Statement: Match.arrayWith([
+            Match.objectLike({
+              Effect: 'Allow',
+              Action: 'lambda:InvokeFunction',
+              Resource: Match.anyValue()
+            })
+          ])
+        }
+      });
+
+      // State machine should have permission to read/write DynamoDB
+      template.hasResourceProperties('AWS::IAM::Policy', {
+        PolicyDocument: {
+          Statement: Match.arrayWith([
+            Match.objectLike({
+              Effect: 'Allow',
+              Action: Match.arrayWith([
+                Match.stringLikeRegexp('dynamodb:.*')
+              ]),
+              Resource: Match.anyValue()
+            })
+          ])
+        }
+      });
+    });
+
+    test('State machine log group configured correctly', () => {
+      template.hasResourceProperties('AWS::Logs::LogGroup', {
+        LogGroupName: '/aws/stepfunctions/lfmt-translation-test',
+        RetentionInDays: 7  // One week retention as specified in implementation
+      });
+    });
+  });
+
   describe('CloudWatch Log Groups', () => {
     test('Log groups created with correct retention', () => {
       template.hasResourceProperties('AWS::Logs::LogGroup', {
@@ -339,7 +423,7 @@ describe('LFMT Infrastructure Stack', () => {
       });
 
       template.hasResourceProperties('AWS::Logs::LogGroup', {
-        LogGroupName: '/aws/stepfunctions/lfmt-test', 
+        LogGroupName: '/aws/stepfunctions/lfmt-test',
         RetentionInDays: 30
       });
 
@@ -354,7 +438,7 @@ describe('LFMT Infrastructure Stack', () => {
     test('Required outputs are present', () => {
       // Validate all required outputs exist
       const outputs = template.findOutputs('*');
-      
+
       expect(outputs).toHaveProperty('JobsTableName');
       expect(outputs).toHaveProperty('UsersTableName');
       expect(outputs).toHaveProperty('AttestationsTableName');
@@ -364,6 +448,8 @@ describe('LFMT Infrastructure Stack', () => {
       expect(outputs).toHaveProperty('UserPoolClientId');
       expect(outputs).toHaveProperty('ApiUrl');
       expect(outputs).toHaveProperty('ApiId');
+      expect(outputs).toHaveProperty('TranslationStateMachineArn');
+      expect(outputs).toHaveProperty('TranslationStateMachineName');
     });
   });
 
@@ -375,7 +461,7 @@ describe('LFMT Infrastructure Stack', () => {
       template.resourceCountIs('AWS::Cognito::UserPool', 1);
       template.resourceCountIs('AWS::Cognito::UserPoolClient', 1);
       template.resourceCountIs('AWS::ApiGateway::RestApi', 1);
-      template.resourceCountIs('AWS::Logs::LogGroup', 4);   // API, Lambda, Step Functions, Security Audit
+      template.resourceCountIs('AWS::Logs::LogGroup', 5);   // API, Lambda x3, Step Functions State Machine x1
       // CDK creates additional service roles, so check we have at least our expected roles
       const roleCount = Object.keys(template.findResources('AWS::IAM::Role')).length;
       expect(roleCount).toBeGreaterThanOrEqual(2);

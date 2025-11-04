@@ -114,7 +114,7 @@ fi
 
 # Run infrastructure tests
 if npm test; then
-    print_status "✅ Infrastructure tests passed (20/20)" "$GREEN"
+    print_status "✅ Infrastructure tests passed (25/25)" "$GREEN"
 else
     print_status "❌ Infrastructure tests failed" "$RED"
     print_status "Fix the failing tests before pushing" "$RED"

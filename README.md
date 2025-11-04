@@ -100,11 +100,13 @@ Currently working on: Phase 5 - Document Chunking Service (70% Complete - Integr
 
 ### Core Components
 - **Frontend**: React 18 + TypeScript + Material-UI + React Query
-- **Backend**: AWS Lambda + API Gateway + Step Functions + ECS Fargate
+- **Backend**: AWS Lambda + API Gateway + Step Functions
 - **Database**: DynamoDB with appropriate GSIs
 - **Storage**: S3 with intelligent tiering and lifecycle policies
 - **Authentication**: AWS Cognito with JWT tokens
-- **Translation Engine**: Claude Sonnet 4 API integration (planned)
+- **Translation Engine**: Google Gemini 1.5 Pro (POC phase)
+  - **Note**: Using Gemini free tier for POC to meet <$50/month cost target
+  - **Future**: May upgrade to Claude Sonnet 4 for production if quality requirements increase
 
 ### Key Features
 - **Intelligent Chunking**: 3,500-token chunks with 250-token overlap (✅ implemented)

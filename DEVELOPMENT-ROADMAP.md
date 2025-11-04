@@ -187,11 +187,11 @@ frontend/
 
 ---
 
-## Phase 4: Translation Processing Engine (PLANNED)
+## Phase 4: Translation Processing Engine (IN PROGRESS)
 
 ### 🎯 Objectives
-- Implement document chunking algorithm
-- Integrate Claude Sonnet 4 API
+- Implement document chunking algorithm ✅ Complete
+- Integrate Google Gemini 1.5 Pro API (POC phase with free tier)
 - Build reassembly and quality checks
 - Handle rate limiting and retries
 
@@ -240,15 +240,15 @@ Translation Engine/
   - [ ] Edge cases (empty docs, very small docs)
   - [ ] Context overlap validation
 
-**2. Translation Service (ECS Fargate)**
-- Input: Document chunks from SQS
-- Processing: Claude Sonnet 4 API calls
+**2. Translation Service (Lambda Functions)**
+- Input: Document chunks from S3
+- Processing: Google Gemini 1.5 Pro API calls (free tier: 5 RPM, 250K TPM, 25 RPD)
 - Output: Translated chunks to S3
 - Testing:
-  - [ ] Mock Claude API responses
-  - [ ] Rate limiting compliance (45 req/min)
+  - [ ] Mock Gemini API responses
+  - [ ] Rate limiting compliance (5 req/min for free tier)
   - [ ] Retry logic with exponential backoff
-  - [ ] Cost tracking and limits
+  - [ ] Cost tracking (free tier monitoring)
   - [ ] Error handling and recovery
 
 **3. Step Functions Workflow**
@@ -281,12 +281,12 @@ describe('Document Chunking', () => {
   it('should respect paragraph boundaries');
 });
 
-describe('Claude API Integration', () => {
+describe('Gemini API Integration', () => {
   it('should translate chunk within rate limits');
   it('should maintain context consistency');
   it('should handle API errors gracefully');
   it('should retry on transient failures');
-  it('should track API costs accurately');
+  it('should track token usage accurately');
 });
 
 describe('Chunk Reassembly', () => {
@@ -480,7 +480,7 @@ Types: feat, fix, docs, test, refactor, perf, chore
 ### Documentation
 - [AWS CDK Documentation](https://docs.aws.amazon.com/cdk/)
 - [AWS Lambda Best Practices](https://docs.aws.amazon.com/lambda/latest/dg/best-practices.html)
-- [Claude API Documentation](https://docs.anthropic.com/)
+- [Google Gemini API Documentation](https://ai.google.dev/docs)
 - [React Testing Library](https://testing-library.com/react)
 
 ### Internal Docs
