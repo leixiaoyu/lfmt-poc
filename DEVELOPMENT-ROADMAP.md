@@ -1,500 +1,428 @@
 # LFMT POC - Development Roadmap
 
-## Current Status: Phase 1 Complete ✅
-
-**Last Updated:** October 18, 2025
-**Current Phase:** Backend Infrastructure & Authentication
-**Next Phase:** Frontend Development & Translation Engine
+**Last Updated:** 2025-11-04
+**Team Lead:** xlei-raymond (Principal Engineer)
+**Based on:** Project Priorities Proposal v2 (2025-11-02)
 
 ---
 
-## Phase 1: Backend Infrastructure & Authentication (COMPLETE)
+## Executive Summary
 
-### ✅ Accomplishments
+With the successful implementation of the Step Functions orchestrator (PR #33), we have achieved a critical milestone: **a functional, end-to-end V1 translation workflow**. Our focus now shifts from initial implementation to **viability and performance**.
 
-#### Infrastructure (AWS CDK)
-- [x] DynamoDB tables with GSIs (Jobs, Users, Attestations)
-- [x] S3 buckets with compliant lifecycle policies (30/60/90 days)
-- [x] Cognito User Pool with email verification
-- [x] API Gateway with CORS configuration
-- [x] Lambda functions with NodejsFunction + esbuild bundling
-- [x] CloudWatch logging and monitoring
-- [x] IAM roles with least-privilege permissions
-- [x] GitHub Actions CI/CD pipeline with OIDC
+The two most critical risks to the project's success are:
+1. **Unresolved cost model discrepancy** (Claude vs. Gemini pricing)
+2. **Known performance bottleneck** of sequential translation
 
-#### Authentication API
-- [x] POST /auth - User registration with validation
-- [x] POST /auth/login - User authentication
-- [x] POST /auth/refresh - Token refresh
-- [x] POST /auth/reset-password - Password reset flow
-- [x] Zod schema validation
-- [x] Structured logging with request IDs
-- [x] Comprehensive error handling
-
-#### Testing & Quality
-- [x] 12 unit tests for Lambda functions (100% passing)
-- [x] 20 infrastructure tests (100% passing)
-- [x] 11 shared-types tests (100% passing)
-- [x] Integration test framework created
-- [x] Pre-push git hooks validation
-- [x] Security checks automated
-
-#### Documentation
-- [x] DEPLOYMENT-VERIFICATION.md - Infrastructure guide
-- [x] API-TESTING-GUIDE.md - API reference with examples
-- [x] Comprehensive CloudWatch logging
-- [x] Code comments and type safety
-
-### 📊 Metrics
-- **Total Tests:** 43/43 passing
-- **Code Coverage:** High (unit tests)
-- **Deployment Time:** ~3 minutes (automated)
-- **Lambda Cold Start:** 450ms
-- **Lambda Execution:** 15-960ms
-- **API Response Time:** <2 seconds
+This roadmap prioritizes tackling these issues head-on with a clear, phased approach.
 
 ---
 
-## Phase 2: Integration Testing (IN PROGRESS)
+## Completed Milestones ✅
 
-### 🎯 Objectives
-- Validate end-to-end API functionality
-- Test against deployed infrastructure
-- Ensure data consistency across services
-- Verify security and authorization
+### V1 End-to-End Workflow (Phase 6 - Complete)
+- **Status**: ✅ Merged via PR #33 (2025-11-04)
+- **Achievement**: Core Step Functions state machine implemented, tested, and deployed
+- **Test Coverage**: 25/25 infrastructure tests, 296/296 backend function tests
+- **Performance**: Sequential processing (V1) - 65K words: ~100s, 400K words: ~600s
+- **Related Issues**: #22 (Missing Step Functions orchestrator)
 
-### 📋 Tasks
-
-#### Integration Test Suite
-- [x] Test framework created (`__tests__/integration/`)
-- [x] Test scripts configured in package.json
-- [ ] Run integration tests against dev environment
-- [ ] Add test data cleanup utilities
-- [ ] Implement test user management
-- [ ] Add performance benchmarks
-- [ ] Create CI/CD integration test stage
-
-#### Test Scenarios
-- [ ] Complete user registration flow
-- [ ] Email verification process
-- [ ] Login with verified user
-- [ ] Token refresh cycle
-- [ ] Password reset flow
-- [ ] Concurrent user operations
-- [ ] Rate limiting validation
-- [ ] CORS verification from browser
-- [ ] Error handling edge cases
-
-#### Test Commands
-```bash
-# Unit tests only (fast)
-npm test
-
-# Integration tests (requires deployed API)
-npm run test:integration
-
-# All tests
-npm run test:all
-
-# With coverage
-npm run test:coverage
-```
+**Key Implementations:**
+- Step Functions workflow with Map state for chunk processing
+- Retry logic with exponential backoff (2s → 4s → 8s)
+- DynamoDB service integration for job status updates
+- CloudWatch logging and X-Ray tracing
+- IAM least-privilege permissions
 
 ---
 
-## Phase 3: Frontend Development (PLANNED)
+## Updated Roadmap: 4-Phase Approach
 
-### 🎯 Objectives
-- Build React SPA with TypeScript
-- Implement authentication UI
-- Create translation job workflow
-- Responsive design with Material-UI
+### **Phase 1: Foundational Viability & Performance** (Immediate Focus - P0/P1)
 
-### 📋 Architecture (TDD Approach)
+This phase ensures the project is both economically viable and technically performant.
 
-#### Project Structure
-```
-frontend/
-├── src/
-│   ├── components/
-│   │   ├── Auth/
-│   │   │   ├── LoginForm.tsx
-│   │   │   ├── RegisterForm.tsx
-│   │   │   ├── ForgotPassword.tsx
-│   │   │   └── __tests__/
-│   │   ├── Translation/
-│   │   │   ├── UploadDocument.tsx
-│   │   │   ├── JobList.tsx
-│   │   │   ├── JobProgress.tsx
-│   │   │   └── __tests__/
-│   │   └── Shared/
-│   │       ├── Header.tsx
-│   │       ├── Loading.tsx
-│   │       └── ErrorBoundary.tsx
-│   ├── services/
-│   │   ├── authService.ts
-│   │   ├── jobService.ts
-│   │   └── __tests__/
-│   ├── hooks/
-│   │   ├── useAuth.ts
-│   │   ├── useJob.ts
-│   │   └── __tests__/
-│   ├── contexts/
-│   │   └── AuthContext.tsx
-│   ├── utils/
-│   │   ├── api.ts
-│   │   ├── validators.ts
-│   │   └── __tests__/
-│   └── App.tsx
-├── public/
-├── package.json
-└── tsconfig.json
-```
+#### P0 - Validate Cost Model & Engine Choice
+**Priority**: CRITICAL - Highest business risk
+**Status**: 🔴 BLOCKED - Requires business decision
+**Related Issue**: #13
 
-#### Technology Stack
-- **Framework:** React 18
-- **Language:** TypeScript 5
-- **Styling:** Material-UI (MUI) v5
-- **State Management:** React Context + Hooks
-- **Routing:** React Router v6
-- **HTTP Client:** Axios with interceptors
-- **Forms:** React Hook Form + Zod
-- **Testing:** Jest + React Testing Library
-- **E2E Testing:** Playwright
-- **Build:** Vite
-- **Deployment:** CloudFront + S3
+**Description:**
+The conflict between the project's cost targets and the estimated cost of the translation engine must be resolved.
 
-#### Testing Strategy
-1. **Unit Tests** - Components, hooks, utilities
-2. **Integration Tests** - API service integration
-3. **E2E Tests** - Critical user flows
-4. **Accessibility Tests** - WCAG 2.1 compliance
+**Action Items:**
+- [ ] Finalize choice of translation engine (Claude Sonnet 4 vs. Gemini 1.5 Pro)
+- [ ] Get business approval on realistic cost model
+- [ ] Update all documentation to reflect final engine choice
+- [ ] Update infrastructure to support chosen engine
 
-#### Key Features
-- [ ] Authentication flow (login, register, forgot password)
-- [ ] Protected routes with authentication guards
-- [ ] Token management with auto-refresh
-- [ ] Document upload with progress tracking
-- [ ] Job list with real-time status
-- [ ] Translation progress polling
-- [ ] Download completed translations
-- [ ] Legal attestation workflow
-- [ ] User profile management
-- [ ] Error handling and retries
-- [ ] Loading states and skeletons
-- [ ] Responsive mobile design
-- [ ] Dark mode support
+**Decision Criteria:**
+- **Claude Sonnet 4**: Higher quality, $3 per 1M input tokens
+- **Gemini 1.5 Pro**: Free tier (5 RPM, 250K TPM, 25 RPD), then $1.25 per 1M tokens
+- **Cost Target**: <$50/month for 1000 translations
 
 ---
 
-## Phase 4: Translation Processing Engine (IN PROGRESS)
+#### P1 - Enable Parallel Translation
+**Priority**: HIGH - Critical performance blocker
+**Status**: 🟡 READY - Unblocked after cost model decision
+**Related Issue**: #23
 
-### 🎯 Objectives
-- Implement document chunking algorithm ✅ Complete
-- Integrate Google Gemini 1.5 Pro API (POC phase with free tier)
-- Build reassembly and quality checks
-- Handle rate limiting and retries
+**Description:**
+The V1 orchestrator intentionally processes chunks sequentially (`maxConcurrency: 1`). This was a temporary trade-off for context continuity that must now be addressed to meet performance goals.
 
-### 📋 Architecture (TDD Approach)
+**Current Performance (Sequential):**
+- 65K words (10 chunks): ~100 seconds
+- 400K words (60 chunks): ~600 seconds (10 minutes)
 
-#### System Design
-```
-Translation Engine/
-├── functions/
-│   ├── chunking/
-│   │   ├── documentParser.ts
-│   │   ├── chunkGenerator.ts
-│   │   ├── contextManager.ts
-│   │   └── __tests__/
-│   ├── translation/
-│   │   ├── claudeClient.ts
-│   │   ├── rateLimiter.ts
-│   │   ├── translationEngine.ts
-│   │   └── __tests__/
-│   ├── reassembly/
-│   │   ├── chunkMerger.ts
-│   │   ├── qualityChecker.ts
-│   │   └── __tests__/
-│   └── orchestration/
-│       ├── stepFunctions.ts
-│       ├── jobManager.ts
-│       └── __tests__/
-├── infrastructure/
-│   ├── step-functions/
-│   │   └── translationWorkflow.asl.json
-│   └── ecs/
-│       ├── Dockerfile
-│       └── task-definition.ts
-└── docker/
-    └── translation-processor/
-```
+**Target Performance (Parallel):**
+- 65K words (10 chunks): ~15-20 seconds (5-7x faster)
+- 400K words (60 chunks): ~60-90 seconds (6-10x faster)
 
-#### Components
+**Action Items:**
+- [ ] Modify `translateChunk` function to use pre-calculated context from chunk object
+- [ ] Remove `maxConcurrency: 1` limitation in Step Functions Map state
+- [ ] Implement distributed rate limiting for parallel execution
+- [ ] Add integration tests for parallel translation
+- [ ] Update performance benchmarks and documentation
 
-**1. Document Chunking Service**
-- Input: Document from S3 (65K-400K words)
-- Output: Chunks with 3,500 tokens + 250-token context
-- Testing:
-  - [ ] Unit tests for token counting
-  - [ ] Tests for various document formats
-  - [ ] Edge cases (empty docs, very small docs)
-  - [ ] Context overlap validation
-
-**2. Translation Service (Lambda Functions)**
-- Input: Document chunks from S3
-- Processing: Google Gemini 1.5 Pro API calls (free tier: 5 RPM, 250K TPM, 25 RPD)
-- Output: Translated chunks to S3
-- Testing:
-  - [ ] Mock Gemini API responses
-  - [ ] Rate limiting compliance (5 req/min for free tier)
-  - [ ] Retry logic with exponential backoff
-  - [ ] Cost tracking (free tier monitoring)
-  - [ ] Error handling and recovery
-
-**3. Step Functions Workflow**
-- States: Parse → Chunk → Translate → Reassemble → Complete
-- Error handling: Retry policies, catch clauses
-- Testing:
-  - [ ] Happy path execution
-  - [ ] Partial failure recovery
-  - [ ] Timeout handling
-  - [ ] State transitions validation
-
-**4. Job Management**
-- DynamoDB updates for progress tracking
-- Status: QUEUED → PROCESSING → COMPLETED/FAILED
-- Testing:
-  - [ ] Concurrent job handling
-  - [ ] Progress calculation accuracy
-  - [ ] Status transition validation
-  - [ ] Job cancellation
-
-#### Translation Algorithm (TDD Approach)
-
-**Test Cases to Implement:**
-```typescript
-describe('Document Chunking', () => {
-  it('should split 65K word document into ~19 chunks');
-  it('should include 250-token context overlap');
-  it('should preserve formatting markers');
-  it('should handle UTF-8 multi-byte characters');
-  it('should respect paragraph boundaries');
-});
-
-describe('Gemini API Integration', () => {
-  it('should translate chunk within rate limits');
-  it('should maintain context consistency');
-  it('should handle API errors gracefully');
-  it('should retry on transient failures');
-  it('should track token usage accurately');
-});
-
-describe('Chunk Reassembly', () => {
-  it('should merge chunks in correct order');
-  it('should remove duplicate context regions');
-  it('should preserve document structure');
-  it('should validate translation completeness');
-});
-```
-
-#### Key Metrics
-- **Target:** 30-60 min for 65K words
-- **Target:** 2-6 hours for 400K words
-- **Cost:** <$0.05 per 100K words
-- **Success Rate:** >95% complete translations
-- **Quality:** Context consistency across chunks
+**Technical Approach:**
+1. Chunk metadata already includes context windows (250-token overlap)
+2. Each chunk is self-contained with pre-calculated context
+3. Remove sequential constraint and rely on pre-calculated context
+4. Implement global rate limiter to respect API limits
 
 ---
 
-## Phase 5: Production Readiness (PLANNED)
+#### P1 - Address Core Scalability Blockers
+**Priority**: HIGH - Will cause failures at scale
+**Status**: 🟡 READY - Can start immediately
+**Related Issues**: #24, #25
 
-### 🎯 Objectives
-- Implement monitoring and alerting
-- Add disaster recovery procedures
-- Optimize performance
-- Security hardening
+**Two major scalability issues:**
 
-### 📋 Tasks
+**Issue #24: In-Memory File Processing**
+- **Problem**: Chunking Lambda loads entire document into memory
+- **Risk**: Lambda OOM errors for 400K word documents (~2-3 MB plain text)
+- **Solution**: Stream processing from S3 with chunk-by-chunk processing
+- **Impact**: Enables processing of documents up to 10 MB without Lambda limits
 
-#### Monitoring & Observability
-- [ ] CloudWatch dashboards for key metrics
-- [ ] Custom metrics for translation quality
-- [ ] X-Ray distributed tracing
-- [ ] Cost anomaly detection
-- [ ] Error rate alerts
-- [ ] Performance degradation alerts
+**Issue #25: Distributed Rate Limiter**
+- **Problem**: Current rate limiting is per-Lambda instance, not global
+- **Risk**: Parallel execution will violate API rate limits
+- **Solution**: DynamoDB-backed distributed rate limiter with token bucket algorithm
+- **Impact**: Safe parallel processing up to API limits
 
-#### Security Enhancements
-- [ ] AWS WAF rules for API protection
-- [ ] Rate limiting per user/IP
-- [ ] Input sanitization for all endpoints
-- [ ] S3 bucket policies audit
-- [ ] Secrets rotation automation
-- [ ] Security scanning in CI/CD
-- [ ] Penetration testing
-
-#### Performance Optimization
-- [ ] API Gateway caching strategy
-- [ ] Lambda memory/timeout tuning
-- [ ] DynamoDB capacity planning
-- [ ] S3 Transfer Acceleration
-- [ ] CloudFront edge caching
-- [ ] Database query optimization
-
-#### Disaster Recovery
-- [ ] Automated backup strategy
-- [ ] Multi-region replication (if needed)
-- [ ] RTO/RPO documentation
-- [ ] Failover procedures
-- [ ] Data retention policies
-- [ ] Incident response playbook
+**Action Items:**
+- [ ] Implement S3 streaming for chunking Lambda
+- [ ] Add memory usage monitoring and alerts
+- [ ] Implement DynamoDB token bucket rate limiter
+- [ ] Add rate limit monitoring and throttling metrics
+- [ ] Load test with 10+ concurrent documents
 
 ---
 
-## Testing Philosophy (TDD)
+### **Phase 2: Stabilize and Secure** (P1)
 
-### Test Pyramid
-```
-        /\
-       /E2E\       ← Few, critical paths
-      /------\
-     /Integr-\    ← Moderate, API contracts
-    /----------\
-   /Unit Tests \  ← Many, fast, isolated
-  /--------------\
-```
+With a scalable workflow, fix remaining bugs and security flaws.
 
-### Coverage Goals
-- **Unit Tests:** 80%+ coverage
-- **Integration Tests:** All API endpoints
-- **E2E Tests:** Critical user journeys
-- **Performance Tests:** Load scenarios
+#### P1 - Fix Critical Bugs
+**Status**: 🟡 READY - Can start immediately
+**Related Issues**: #10, #12, #15, #26
 
-### Test-First Development
-1. Write failing test
-2. Implement minimum code to pass
-3. Refactor for quality
-4. Repeat
+**Bug Inventory:**
 
----
+| Issue | Priority | Description | Impact |
+|-------|----------|-------------|--------|
+| #10 | P1 | Inconsistent environment variables | Deployment failures |
+| #12 | P1 | Unprotected `/auth/me` endpoint | Security vulnerability |
+| #15 | P1 | Incorrect API Gateway caching on auth endpoints | Stale auth responses |
+| #26 | P1 | Hardcoded fallback URL in frontend | Breaks non-dev environments |
 
-## Success Criteria
-
-### Phase 1 ✅
-- [x] Infrastructure deployed and verified
-- [x] Authentication working end-to-end
-- [x] All tests passing
-- [x] Documentation complete
-
-### Phase 2 (Current)
-- [ ] Integration tests running in CI/CD
-- [ ] API contract tests validated
-- [ ] Performance benchmarks established
-
-### Phase 3
-- [ ] Frontend deployed to CloudFront
-- [ ] User can register and login
-- [ ] File upload working
-- [ ] UI/UX approved
-
-### Phase 4
-- [ ] Translation engine processes documents
-- [ ] Quality checks passing
-- [ ] Cost targets met
-- [ ] Performance SLAs achieved
-
-### Phase 5
-- [ ] Production monitoring active
-- [ ] Security audit passed
-- [ ] Load testing completed
-- [ ] Documentation finalized
+**Action Items:**
+- [ ] Audit and standardize all environment variable usage
+- [ ] Add Cognito authorizer to `/auth/me` endpoint
+- [ ] Configure API Gateway cache exclusions for auth endpoints
+- [ ] Replace hardcoded URL with environment-based configuration
+- [ ] Add integration tests for each bug fix
 
 ---
 
-## Development Commands
+#### P1 - Harden Security
+**Status**: 🟡 READY - Can start immediately
+**Related Issues**: #11, #14
 
-### Backend
-```bash
-# Infrastructure
-cd backend/infrastructure
-npm run build
-npm test
-npx cdk synth --context environment=dev
-npx cdk deploy --context environment=dev
+**Security Issues:**
 
-# Functions
-cd backend/functions
-npm test                    # Unit tests only
-npm run test:integration    # Integration tests
-npm run test:all           # All tests
-npm run test:coverage      # With coverage report
-```
+**Issue #11: Wildcard CORS Vulnerability**
+- **Problem**: API Gateway allows `Access-Control-Allow-Origin: *`
+- **Risk**: CSRF attacks, credential leakage
+- **Solution**: Restrict to specific frontend origins
+- **Action**: Update API Gateway CORS configuration
 
-### Frontend (Planned)
-```bash
-cd frontend
-npm test                    # Unit tests
-npm run test:e2e           # Playwright E2E tests
-npm run dev                # Development server
-npm run build              # Production build
-npm run preview            # Preview production build
-```
+**Issue #14: Overly Permissive IAM Role**
+- **Problem**: Some Lambda roles have broader permissions than needed
+- **Risk**: Privilege escalation, blast radius expansion
+- **Solution**: Apply least-privilege principles
+- **Action**: Audit all IAM roles and scope down permissions
+
+**Action Items:**
+- [ ] Update CORS to whitelist specific origins (dev, staging, prod)
+- [ ] Audit all Lambda IAM policies
+- [ ] Remove unnecessary permissions
+- [ ] Add IAM policy validation to CI/CD
+- [ ] Security audit with AWS IAM Access Analyzer
 
 ---
 
-## Contributing
+### **Phase 3: Feature Enhancement & Technical Debt** (P2)
 
-### Code Quality Standards
-- TypeScript strict mode enabled
-- ESLint + Prettier configured
-- No console.log in production
-- Comprehensive error handling
-- JSDoc comments for public APIs
-- Test coverage maintained
+Once the core service is stable, performant, and secure, focus on user-facing features and developer experience.
 
-### Git Workflow
-1. Create feature branch
-2. Write tests first (TDD)
-3. Implement feature
-4. Run all tests
-5. Update documentation
-6. Create pull request
-7. Code review
-8. Merge to main (triggers deployment)
+#### P2 - Implement High-Value Features
+**Status**: ⏸️ BLOCKED - Waiting on Phase 1/2 completion
+**Related Issues**: #29, #27, #28
 
-### Commit Message Format
-```
-<type>: <subject>
+**Feature Priority:**
 
-<body>
+1. **Post-Translation Editor** (#29) - Highest user value
+   - Allow users to refine translations before export
+   - Inline editing with original context
+   - Track user modifications for quality improvement
 
-<footer>
-```
+2. **Side-by-Side Viewer** (#27) - Quality validation
+   - Display original and translated text in parallel
+   - Highlight chunk boundaries
+   - Enable quick quality checks
 
-Types: feat, fix, docs, test, refactor, perf, chore
+3. **ePub/PDF Support** (#28) - Format expansion
+   - Support beyond plain text
+   - Preserve formatting and structure
+   - Handle embedded images and metadata
+
+**Action Items:**
+- [ ] Design and prototype Post-Translation Editor UI
+- [ ] Implement backend API for translation updates
+- [ ] Build Side-by-Side Viewer component
+- [ ] Add ePub/PDF parsing and generation
+- [ ] User acceptance testing for each feature
 
 ---
 
-## Resources
+#### P2 - Address Technical Debt
+**Status**: ⏸️ BLOCKED - Waiting on Phase 1/2 completion
+**Related Issues**: #18, #20, #19
+
+**Technical Debt Items:**
+
+**Issue #18: Integrate React Query**
+- **Benefit**: Better caching, automatic refetching, optimistic updates
+- **Scope**: Replace current API client with React Query
+- **Effort**: Medium (2-3 days)
+
+**Issue #20: Centralize Shared Constants**
+- **Benefit**: Single source of truth, easier maintenance
+- **Scope**: Move constants from `shared-types` to centralized module
+- **Effort**: Low (1 day)
+
+**Issue #19: Improve File Upload UX**
+- **Benefit**: Better user experience, clearer feedback
+- **Scope**: Enhanced progress tracking, better error handling
+- **Effort**: Medium (2 days)
+
+**Action Items:**
+- [ ] Implement React Query for all API calls
+- [ ] Create centralized constants module
+- [ ] Enhance file upload component with better UX
+- [ ] Refactor components to use new patterns
+- [ ] Update tests for refactored code
+
+---
+
+### **Phase 4: Polish and Cleanup** (P3 - Ongoing)
+
+Minor cleanup tasks addressed as bandwidth allows.
+
+#### P3 - Chores and Documentation
+**Status**: 🟢 ONGOING - As bandwidth permits
+**Related Issues**: #17, #16, #21
+
+**Chores:**
+- Update outdated dependencies
+- Refactor deprecated API usage
+- Improve code comments and documentation
+- Cleanup unused code and assets
+
+**Action Items:**
+- [ ] Quarterly dependency updates
+- [ ] Documentation reviews
+- [ ] Code cleanup sprints
+- [ ] Performance profiling and optimization
+
+---
+
+## Implementation Strategy
+
+### Priority Sequence
+
+```
+                ┌─────────────────────────────────┐
+                │  P0: Cost Model Decision        │ ◄── CRITICAL
+                └─────────────┬───────────────────┘
+                              │
+                              ▼
+                ┌─────────────────────────────────┐
+                │  P1: Parallel Translation       │ ◄── HIGH
+                └─────────────┬───────────────────┘
+                              │
+                ┌─────────────┴───────────────┐
+                │                             │
+                ▼                             ▼
+   ┌────────────────────────┐    ┌────────────────────────┐
+   │  P1: Scalability       │    │  P1: Bugs & Security   │
+   │      Blockers          │    │                        │
+   └────────────┬───────────┘    └───────────┬────────────┘
+                │                             │
+                └─────────────┬───────────────┘
+                              │
+                              ▼
+                ┌─────────────────────────────────┐
+                │  P2: Features & Tech Debt       │
+                └─────────────┬───────────────────┘
+                              │
+                              ▼
+                ┌─────────────────────────────────┐
+                │  P3: Polish & Cleanup           │
+                └─────────────────────────────────┘
+```
+
+### Team Allocation (Recommended)
+
+**Week 1-2: Foundation**
+- **P0** - Business stakeholders: Finalize cost model decision
+- **P1** - Backend team: Start distributed rate limiter (#25)
+- **P1** - Infrastructure team: Start S3 streaming (#24)
+
+**Week 3-4: Performance**
+- **P1** - Full team: Implement parallel translation (#23)
+- **P1** - Backend team: Fix critical bugs (#10, #12, #15, #26)
+
+**Week 5-6: Security & Stabilization**
+- **P1** - Security team: CORS and IAM hardening (#11, #14)
+- **P1** - QA team: Comprehensive load testing
+- **P2** - Begin technical debt reduction (#18, #20)
+
+**Week 7+: Features**
+- **P2** - Frontend team: Post-Translation Editor (#29)
+- **P2** - Full stack team: Side-by-Side Viewer (#27)
+- **P3** - Ongoing: Polish and cleanup
+
+---
+
+## Success Metrics
+
+### Phase 1 (Viability & Performance)
+- [ ] Cost model approved by business stakeholders
+- [ ] Translation speed: <20s for 65K words, <90s for 400K words
+- [ ] Zero OOM errors in chunking Lambda
+- [ ] Zero rate limit violations in production
+
+### Phase 2 (Stability & Security)
+- [ ] All P1 bugs resolved
+- [ ] Zero security vulnerabilities in automated scans
+- [ ] CORS restricted to specific origins
+- [ ] IAM policies follow least-privilege
+
+### Phase 3 (Features & Debt)
+- [ ] Post-Translation Editor user satisfaction >80%
+- [ ] React Query implemented across frontend
+- [ ] Code coverage maintained at 90%+
+
+### Phase 4 (Polish)
+- [ ] All dependencies up-to-date
+- [ ] Documentation accuracy >95%
+- [ ] Technical debt backlog <10 items
+
+---
+
+## Testing Strategy
+
+### Phase-Specific Testing
+
+**Phase 1: Performance Testing**
+- Load testing with 10+ concurrent translations
+- Memory profiling for chunking Lambda
+- Rate limit compliance testing
+
+**Phase 2: Security Testing**
+- OWASP Top 10 vulnerability scanning
+- Penetration testing for auth endpoints
+- IAM policy validation
+
+**Phase 3: User Acceptance Testing**
+- Beta testing for Post-Translation Editor
+- Usability testing for new features
+- A/B testing for UX improvements
+
+**Phase 4: Regression Testing**
+- Automated regression suite for all features
+- Performance regression detection
+- Security regression monitoring
+
+---
+
+## Risk Management
+
+### High-Risk Items
+
+| Risk | Likelihood | Impact | Mitigation |
+|------|------------|--------|------------|
+| Cost model rejected | Medium | Critical | Prepare fallback options (Gemini free tier) |
+| Parallel translation breaks context | Low | High | Comprehensive testing with pre-calculated context |
+| Rate limiter fails at scale | Medium | High | Load testing before production rollout |
+| Security vulnerability discovered | Low | Critical | Regular security audits, automated scanning |
+
+### Contingency Plans
+
+**If P0 is delayed:**
+- Continue with P1 items that don't depend on engine choice (#24, #25)
+- Use Gemini free tier as temporary solution
+- Delay parallel translation (#23) until cost model is approved
+
+**If performance targets not met:**
+- Re-evaluate chunk size and overlap
+- Consider moving to ECS Fargate for long-running processes
+- Implement caching for repeated translations
+
+---
+
+## Communication Plan
+
+### Weekly Updates
+- **Monday**: Sprint planning, priority review
+- **Wednesday**: Mid-week sync, blocker resolution
+- **Friday**: Sprint demo, retrospective
+
+### Stakeholder Updates
+- **Bi-weekly**: Business stakeholders (cost, timeline, risks)
+- **Monthly**: Full team retrospective and roadmap adjustment
 
 ### Documentation
-- [AWS CDK Documentation](https://docs.aws.amazon.com/cdk/)
-- [AWS Lambda Best Practices](https://docs.aws.amazon.com/lambda/latest/dg/best-practices.html)
-- [Google Gemini API Documentation](https://ai.google.dev/docs)
-- [React Testing Library](https://testing-library.com/react)
-
-### Internal Docs
-- DEPLOYMENT-VERIFICATION.md - Infrastructure verification
-- API-TESTING-GUIDE.md - API reference
-- Long-Form Translation Service - Technical Architecture Design v2.0.md - System architecture
+- Update [PROGRESS.md](PROGRESS.md) after each completed milestone
+- Update this roadmap quarterly or when priorities shift
+- Maintain issue tracking in GitHub Projects
 
 ---
 
-**Next Immediate Steps:**
-1. ✅ Complete Lambda debugging
-2. ✅ Add comprehensive documentation
-3. 🔄 Run integration tests
-4. ⏳ Plan frontend architecture
-5. ⏳ Design translation engine
+## References
 
-**Priority:** Integration Testing → Frontend Development → Translation Engine
+- **Progress Tracking**: [PROGRESS.md](PROGRESS.md)
+- **Implementation Plan**: [LFMT Implementation Plan v2.md](../LFMT%20Implementation%20Plan%20v2.md)
+- **Technical Architecture**: [Technical Architecture Design v2.0.md](../Long-Form%20Translation%20Service%20-%20Technical%20Architecture%20Design%20v2.0.md)
+- **Team Lead Proposal**: [Project Priorities Proposal v2](/Users/raymondl/Documents/LFMT%20POC/LFMT/project_priorities_proposal.md)
+
+---
+
+**Last Updated**: 2025-11-04
+**Next Review**: 2025-11-18
+**Owner**: xlei-raymond (Principal Engineer / Team Lead)

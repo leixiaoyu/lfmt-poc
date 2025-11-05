@@ -2,99 +2,9 @@
 
 ## Overview
 
-This is a proof-of-concept implementation of a Long-Form Translation Service that translates 65K-400K word documents using Claude Sonnet 4 API with intelligent document chunking and AWS serverless infrastructure.
+This is a proof-of-concept implementation of a Long-Form Translation Service that translates 65K-400K word documents using Google Gemini 1.5 Pro API (POC phase) with intelligent document chunking and AWS serverless infrastructure.
 
-## Project Status
-
-**Current Phase**: Phase 5 - Document Chunking Service (In Progress)
-**Implementation Plan**: [LFMT Implementation Plan v2.md](../LFMT%20Implementation%20Plan%20v2.md)
-**Overall Progress**: ~35% (Infrastructure, Auth, Upload, and Chunking Integration Complete)
-
-### ✅ Completed Components
-
-#### Infrastructure & DevOps (100% Complete)
-- [x] AWS CDK infrastructure stack (Multi-environment: Dev, Staging, Prod)
-- [x] DynamoDB tables: Jobs, Users, LegalAttestations
-- [x] S3 buckets: Documents, Results (with lifecycle policies)
-- [x] API Gateway with CORS, caching, and rate limiting
-- [x] Cognito User Pool with MFA-ready configuration
-- [x] Infrastructure validation tests (20 test cases passing)
-- [x] **Production Stack**: LfmtPocProd (CREATE_COMPLETE)
-- [x] **Production API**: https://YOUR_API_ID.execute-api.us-east-1.amazonaws.com/v1/
-- [x] **CI/CD Pipeline**: GitHub Actions with comprehensive testing
-  - Automated testing (unit, integration, infrastructure)
-  - Automated deployment to dev on main branch push
-  - Manual workflow dispatch for staging/production
-  - Security scanning and dependency audits
-
-#### Backend Authentication (100% Complete)
-- [x] Authentication Lambda functions (4 deployed to production)
-  - Login authentication with Cognito
-  - User registration with validation
-  - Token refresh functionality
-  - Password reset workflow
-- [x] API Gateway integration with Lambda
-- [x] DynamoDB integration for user data
-- [x] CloudWatch logging and monitoring
-- [x] Comprehensive unit and integration tests
-- [x] Production deployment verified
-
-#### Frontend Authentication & UI (100% Complete)
-- [x] React 18 + TypeScript + Material-UI setup
-- [x] Authentication components (Login, Register, Forgot Password, Protected Routes)
-- [x] Auth context and service layer with token management
-- [x] API client with Axios interceptors
-- [x] **Automatic token refresh on 401 errors** with request queuing
-- [x] **Logout button with user context display** in app bar
-- [x] Comprehensive test suite with 252+ passing tests
-- [x] **91.66% overall test coverage** (exceeds 90% target)
-- [x] All critical components at 100% coverage
-- [x] React Router v6 integration
-- [x] Form validation with React Hook Form + Zod
-- [x] Production environment configuration ready
-- [x] **API Gateway CORS fixes** for error responses (401, 403, 400, 5XX)
-- [x] **File upload UI component** with drag-and-drop and progress tracking
-
-#### Phase 4: Document Upload Service (100% Complete)
-- [x] Frontend upload component with drag-and-drop
-- [x] Upload progress tracking UI
-- [x] File validation (size, type) on client and server side
-- [x] Upload service integration layer
-- [x] **S3 signed URL generation endpoint (backend)** - Deployed to dev
-- [x] **Job record creation in DynamoDB (backend)** - Deployed with comprehensive validation
-- [x] **API Gateway endpoint POST /jobs/upload** - Live with Cognito auth
-- [x] **All 209 backend unit tests passing** (updated from 203)
-- [x] **End-to-end upload flow verified** - Frontend to S3 via presigned URLs
-
-#### Phase 5: Document Chunking Service (70% Complete)
-- [x] **Upload completion handler** - Validates uploaded files and triggers chunking
-- [x] **S3 event-driven architecture** - Automatic chunking trigger on document upload
-- [x] **Upload→Chunking workflow integration** - Files automatically copied to documents/ prefix
-- [x] **Document chunking algorithm** - 3,500 tokens + 250 token overlap with sliding window
-- [x] **Token counting with GPT tokenizer** - Accurate token counting for Claude API
-- [x] **Chunk storage in S3** - JSON chunks with metadata
-- [x] **Job status tracking** - PENDING_UPLOAD → UPLOADED → CHUNKING → CHUNKED
-- [x] **Comprehensive test coverage** - 100% statement coverage, 87.5% branch coverage
-- [x] **27 test cases for upload completion** - Including error scenarios and edge cases
-- [x] **15 test cases for document chunking** - Including tokenization and chunking logic
-- [ ] Deploy chunking Lambda to dev environment
-- [ ] End-to-end testing with real documents
-- [ ] Integration with translation pipeline
-
-### 🔄 In Progress
-
-Currently working on: Phase 5 - Document Chunking Service (70% Complete - Integration Testing)
-
-### 📋 Upcoming Features
-
-#### Translation Core Features (Phase 6-7)
-- [ ] Claude API integration and rate limiting
-- [ ] Translation processing pipeline (Step Functions orchestration)
-- [ ] Legal attestation system (7-year retention)
-- [ ] Job polling endpoint (adaptive intervals: 15s → 30s → 60s)
-- [ ] Result download endpoint with presigned URLs
-- [ ] Job history management and dashboard
-- [ ] Chunk reassembly and translation merging
+**For detailed implementation progress and status, see [PROGRESS.md](PROGRESS.md)**
 
 ## Architecture
 
@@ -109,10 +19,11 @@ Currently working on: Phase 5 - Document Chunking Service (70% Complete - Integr
   - **Future**: May upgrade to Claude Sonnet 4 for production if quality requirements increase
 
 ### Key Features
-- **Intelligent Chunking**: 3,500-token chunks with 250-token overlap (✅ implemented)
-- **S3 Event-Driven Architecture**: Automatic upload→chunking workflow (✅ implemented)
-- **Adaptive Polling**: 15s → 30s → 60s intervals for progress tracking (planned)
-- **Legal Compliance**: 7-year attestation retention with audit trails (planned)
+- **Intelligent Chunking**: 3,500-token chunks with 250-token overlap
+- **S3 Event-Driven Architecture**: Automatic upload→chunking workflow
+- **Step Functions Orchestration**: Scalable translation workflow with retry logic
+- **Adaptive Polling**: 15s → 30s → 60s intervals for progress tracking
+- **Legal Compliance**: 7-year attestation retention with audit trails
 - **Cost Optimization**: <$50/month operational target for 1000 translations
 - **Security**: Encryption at rest/transit, IAM least-privilege access, OIDC authentication
 
@@ -193,7 +104,10 @@ lfmt-poc/
 │       └── deploy.yml     # Multi-environment deployment
 ├── backend/
 │   ├── functions/         # Lambda functions
-│   │   └── auth/         # Authentication functions
+│   │   ├── auth/         # Authentication functions
+│   │   ├── jobs/         # Job management functions
+│   │   ├── chunking/     # Document chunking functions
+│   │   └── translation/  # Translation engine functions
 │   ├── infrastructure/    # AWS CDK infrastructure
 │   └── shared/           # Shared backend utilities
 ├── frontend/              # React application
@@ -263,19 +177,26 @@ npm run test:ui            # Interactive test UI
 ### CI/CD Pipeline Tests
 All pull requests automatically run:
 - Shared-types validation (11 tests)
-- Function unit tests with coverage (209 tests)
+- Function unit tests with coverage (209+ tests)
 - Infrastructure TypeScript compilation
-- Infrastructure tests (20 tests)
+- Infrastructure tests (25+ tests)
 - Linting and format checks
 - Security audits (npm audit)
 - Pre-push validation hooks enforce local testing
 
 ## Documentation
 
+### Core Documentation
+- **[PROGRESS.md](PROGRESS.md)** - Detailed implementation status and progress tracking
+- **[DEVELOPMENT-ROADMAP.md](DEVELOPMENT-ROADMAP.md)** - Project roadmap and priorities
 - **[Production Setup Checklist](PRODUCTION-SETUP-CHECKLIST.md)** - Complete production deployment guide
 - **[Production Deployment Guide](PRODUCTION-DEPLOYMENT-GUIDE.md)** - Detailed deployment procedures
-- **[Production Security](PRODUCTION-SECURITY-DEPLOYMENT.md)** - Optional security enhancements
+- **[Production Security](PRODUCTION-SECURITY.md)** - Optional security enhancements
 - **[Security Policy](SECURITY.md)** - Security practices and reporting
+- **[API Reference](API-REFERENCE.md)** - API endpoint documentation
+- **[Testing Strategy](TESTING.md)** - Comprehensive testing guidelines
+
+### External References
 - **[Implementation Plan v2](../LFMT%20Implementation%20Plan%20v2.md)** - Detailed implementation roadmap
 - **[Technical Architecture v2](../Long-Form%20Translation%20Service%20-%20Technical%20Architecture%20Design%20v2.0.md)** - High-level architecture
 
@@ -304,7 +225,7 @@ All pull requests automatically run:
 - **Encryption**: AES-256 at rest, TLS 1.3 in transit
 - **Access Control**: IAM roles with least-privilege principles
 - **Authentication**: Cognito with strong password policies (min 8 chars, complexity requirements)
-- **Secrets Management**: AWS Secrets Manager integration (planned)
+- **Secrets Management**: AWS Secrets Manager integration
 - **OIDC**: GitHub Actions uses OIDC for secure AWS access (no static credentials)
 
 ### Security Features
@@ -316,9 +237,9 @@ All pull requests automatically run:
 - All production credentials redacted from documentation
 
 ### Compliance
-- Legal attestation system (planned)
-- Audit trails for all user actions (planned)
-- 7-year data retention for legal compliance (planned)
+- Legal attestation system
+- Audit trails for all user actions
+- 7-year data retention for legal compliance
 - GDPR compliance considerations
 
 ## Cost Optimization
@@ -340,18 +261,16 @@ All pull requests automatically run:
 ### Production Environment
 - **AWS Region**: us-east-1
 - **Stack Name**: LfmtPocProd
-- **Stack Status**: CREATE_COMPLETE
 - **API Endpoint**: https://YOUR_PROD_API_ID.execute-api.us-east-1.amazonaws.com/v1/
 - **Cognito User Pool**: us-east-1_XXXXXXXXX
 - **Cognito Client ID**: YOUR_CLIENT_ID
-- **Deployment Date**: 2025-10-21
+
+**Note**: Actual endpoint URLs and resource IDs are stored in local `.env.production` file (gitignored)
 
 ### Development Environment
 - **Stack Name**: LfmtPocDev
 - **API Endpoint**: https://YOUR_DEV_API_ID.execute-api.us-east-1.amazonaws.com/v1/
 - **Auto-deploys**: On push to main branch
-
-**Note**: Actual endpoint URLs and resource IDs are stored in local `.env.production` file (gitignored)
 
 ## Contributing
 
@@ -368,7 +287,8 @@ All pull requests automatically run:
 
 ### Getting Help
 - Check documentation in root directory
-- Review implementation plan for current status
+- Review [PROGRESS.md](PROGRESS.md) for current implementation status
+- Review [DEVELOPMENT-ROADMAP.md](DEVELOPMENT-ROADMAP.md) for project priorities
 - Check CloudWatch logs for runtime issues
 - Verify AWS resource status in CloudFormation console
 
@@ -384,40 +304,6 @@ This is a proof-of-concept project. All rights reserved.
 
 ---
 
-**Last Updated**: 2025-10-29
-**Implementation Plan Version**: v2.0
-**Current Phase**: Phase 5 - Document Chunking Service (70% Complete)
-**Overall Progress**: ~35% complete
+**Last Updated**: 2025-11-04
 **Repository**: https://github.com/leixiaoyu/lfmt-poc
-**Branch**: `feature/upload-chunking-integration` (ready for merge)
-
-## 🎯 Next Steps
-
-### Immediate Priorities (This Week)
-1. **Deploy Chunking Service** (P0 - Next)
-   - Deploy upload completion Lambda to dev
-   - Deploy document chunking Lambda to dev
-   - Test end-to-end upload→chunking workflow
-   - Verify S3 events triggering correctly
-   - Monitor CloudWatch logs for both Lambdas
-
-### Short-term Goals (Next 2 Weeks)
-2. **Legal Attestation System** (P1)
-   - Legal attestation UI components
-   - Attestation storage in DynamoDB
-   - 7-year retention implementation
-   - Audit trail logging
-
-3. **Claude API Integration** (P1)
-   - Create Claude service wrapper
-   - Implement rate limiting (45 req/min, 405K input tokens/min)
-   - Add exponential backoff with jitter
-   - Test with sample chunks from real documents
-
-4. **Translation Processing Pipeline** (P2)
-   - Step Functions workflow orchestration
-   - Translation Lambda implementation
-   - Chunk reassembly logic
-   - Result storage and download endpoints
-
-For detailed implementation roadmap, see [PROGRESS.md](PROGRESS.md)
+**Current Status**: See [PROGRESS.md](PROGRESS.md) for detailed status
