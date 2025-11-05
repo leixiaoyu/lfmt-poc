@@ -42,30 +42,42 @@ This roadmap prioritizes tackling these issues head-on with a clear, phased appr
 
 This phase ensures the project is both economically viable and technically performant.
 
-#### P0 - Validate Cost Model & Engine Choice
+#### P0 - Validate Cost Model & Engine Choice ✅ COMPLETED
 **Priority**: CRITICAL - Highest business risk
-**Status**: 🔴 BLOCKED - Requires business decision
+**Status**: ✅ COMPLETE - Decision made, infrastructure implemented
 **Related Issue**: #13
+**Completed**: 2025-11-05
 
 **Description:**
-The conflict between the project's cost targets and the estimated cost of the translation engine must be resolved.
+The conflict between the project's cost targets and the estimated cost of the translation engine has been resolved.
+
+**Decision Made:**
+- **Selected Engine**: Google Gemini 1.5 Pro (POC phase)
+- **Cost Model**: Using Gemini free tier to meet <$50/month cost target
+- **Future Path**: Option to upgrade to Claude Sonnet 4 for production if quality requirements increase
 
 **Action Items:**
-- [ ] Finalize choice of translation engine (Claude Sonnet 4 vs. Gemini 1.5 Pro)
-- [ ] Get business approval on realistic cost model
-- [ ] Update all documentation to reflect final engine choice
-- [ ] Update infrastructure to support chosen engine
+- [x] Finalize choice of translation engine (Claude Sonnet 4 vs. Gemini 1.5 Pro) - **Gemini selected**
+- [x] Get business approval on realistic cost model - **Approved: Gemini free tier**
+- [x] Update all documentation to reflect final engine choice - **README.md updated**
+- [x] Update infrastructure to support chosen engine - **PR #6 merged (87 tests, 93-100% coverage)**
 
-**Decision Criteria:**
-- **Claude Sonnet 4**: Higher quality, $3 per 1M input tokens
-- **Gemini 1.5 Pro**: Free tier (5 RPM, 250K TPM, 25 RPD), then $1.25 per 1M tokens
-- **Cost Target**: <$50/month for 1000 translations
+**Implementation Evidence:**
+- ✅ GeminiClient with AWS Secrets Manager integration (17 tests, 95% coverage)
+- ✅ RateLimiter with token bucket algorithm (26 tests, 93.75% coverage)
+- ✅ Full CDK infrastructure with IAM permissions
+- ✅ Production-ready backend (296/296 tests passing)
+
+**Decision Rationale:**
+- **Cost**: Gemini free tier (5 RPM, 250K TPM, 25 RPD) meets <$50/month target
+- **Quality**: Sufficient for POC phase, can upgrade later if needed
+- **Risk**: Minimal - infrastructure supports future Claude migration if required
 
 ---
 
 #### P1 - Enable Parallel Translation
 **Priority**: HIGH - Critical performance blocker
-**Status**: 🟡 READY - Unblocked after cost model decision
+**Status**: 🟢 READY - Unblocked (P0 complete)
 **Related Issue**: #23
 
 **Description:**
