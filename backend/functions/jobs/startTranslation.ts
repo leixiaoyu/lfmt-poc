@@ -11,7 +11,7 @@ import {
   GetItemCommandOutput,
   UpdateItemCommand,
 } from '@aws-sdk/client-dynamodb';
-import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda';
+import { SFNClient, StartExecutionCommand, StartExecutionCommandOutput } from '@aws-sdk/client-sfn';
 import { marshall, unmarshall } from '@aws-sdk/util-dynamodb';
 import Logger from '../shared/logger';
 import { getRequiredEnv } from '../shared/env';
@@ -20,10 +20,18 @@ import { isValidTargetLanguage, TargetLanguage } from '../translation/types';
 
 const logger = new Logger('lfmt-start-translation');
 const dynamoClient = new DynamoDBClient({});
-const lambdaClient = new LambdaClient({});
+const sfnClient = new SFNClient({});
 
 const JOBS_TABLE = getRequiredEnv('JOBS_TABLE');
-const TRANSLATE_CHUNK_FUNCTION = getRequiredEnv('TRANSLATE_CHUNK_FUNCTION_NAME');
+const STATE_MACHINE_NAME = getRequiredEnv('STATE_MACHINE_NAME');
+
+// Construct state machine ARN from name and region
+// This avoids circular dependency in CDK infrastructure
+const AWS_REGION = process.env.AWS_REGION || 'us-east-1';
+const AWS_ACCOUNT_ID = process.env.AWS_ACCOUNT_ID; // Will be available in Lambda context
+const STATE_MACHINE_ARN = AWS_ACCOUNT_ID
+  ? `arn:aws:states:${AWS_REGION}:${AWS_ACCOUNT_ID}:stateMachine:${STATE_MACHINE_NAME}`
+  : `arn:aws:states:${AWS_REGION}:\${AWS::AccountId}:stateMachine:${STATE_MACHINE_NAME}`;
 
 /**
  * Request body for starting translation
@@ -131,11 +139,12 @@ export const handler = async (
       totalChunks: job.totalChunks,
     });
 
-    // Trigger first chunk translation
-    await invokeTranslateChunk(jobId, 0, {
+    // Start Step Functions workflow to process all chunks
+    const executionArn = await startStateMachineExecution(jobId, userId, {
       targetLanguage: body.targetLanguage,
       tone: body.tone,
-      contextChunks: body.contextChunks,
+      contextChunks: body.contextChunks ?? 2,
+      totalChunks: job.totalChunks,
     });
 
     // Calculate estimated completion time
@@ -149,6 +158,7 @@ export const handler = async (
       jobId,
       totalChunks: job.totalChunks,
       estimatedCompletion,
+      executionArn,
     });
 
     return createSuccessResponse(200, {
@@ -160,6 +170,7 @@ export const handler = async (
       chunksTranslated: 0,
       estimatedCompletion,
       estimatedCost: calculateEstimatedCost(job.totalChunks, 3500), // Assume 3500 tokens per chunk
+      executionArn, // Step Functions execution ARN for tracking
     });
   } catch (error) {
     logger.error('Failed to start translation', {
@@ -274,38 +285,50 @@ async function initializeTranslation(
 }
 
 /**
- * Invoke translateChunk Lambda asynchronously
+ * Start Step Functions state machine execution
  */
-async function invokeTranslateChunk(
+async function startStateMachineExecution(
   jobId: string,
-  chunkIndex: number,
+  userId: string,
   params: {
     targetLanguage: string;
     tone?: string;
-    contextChunks?: number;
+    contextChunks: number;
+    totalChunks: number;
   }
-): Promise<void> {
-  const payload = {
+): Promise<string> {
+  // Load chunk metadata from S3 to build chunks array for state machine
+  const chunks = [];
+  for (let i = 0; i < params.totalChunks; i++) {
+    chunks.push({
+      chunkIndex: i,
+    });
+  }
+
+  const input = {
     jobId,
-    chunkIndex,
+    userId,
     targetLanguage: params.targetLanguage,
-    tone: params.tone,
+    tone: params.tone || 'neutral',
     contextChunks: params.contextChunks,
+    chunks,
   };
 
-  const command = new InvokeCommand({
-    FunctionName: TRANSLATE_CHUNK_FUNCTION,
-    InvocationType: 'Event', // Asynchronous invocation
-    Payload: JSON.stringify(payload),
+  const command = new StartExecutionCommand({
+    stateMachineArn: STATE_MACHINE_ARN,
+    name: `${jobId}-${Date.now()}`, // Unique execution name
+    input: JSON.stringify(input),
   });
 
-  await lambdaClient.send(command);
+  const response: StartExecutionCommandOutput = await sfnClient.send(command);
 
-  logger.info('Invoked translateChunk Lambda', {
+  logger.info('Started Step Functions execution', {
     jobId,
-    chunkIndex,
-    functionName: TRANSLATE_CHUNK_FUNCTION,
+    executionArn: response.executionArn,
+    totalChunks: params.totalChunks,
   });
+
+  return response.executionArn!;
 }
 
 /**

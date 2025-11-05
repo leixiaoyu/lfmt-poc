@@ -4,7 +4,9 @@
 
 // Set environment variables BEFORE imports
 process.env.JOBS_TABLE = 'test-jobs-table';
-process.env.TRANSLATE_CHUNK_FUNCTION_NAME = 'test-translate-chunk-function';
+process.env.STATE_MACHINE_NAME = 'test-state-machine';
+process.env.AWS_REGION = 'us-east-1';
+process.env.AWS_ACCOUNT_ID = '123456789012';
 
 import { APIGatewayProxyEvent } from 'aws-lambda';
 import { mockClient } from 'aws-sdk-client-mock';
@@ -13,19 +15,19 @@ import {
   GetItemCommand,
   UpdateItemCommand,
 } from '@aws-sdk/client-dynamodb';
-import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda';
+import { SFNClient, StartExecutionCommand } from '@aws-sdk/client-sfn';
 import { handler } from './startTranslation';
 
 // Create mocks
 const dynamoMock = mockClient(DynamoDBClient);
-const lambdaMock = mockClient(LambdaClient);
+const sfnMock = mockClient(SFNClient);
 
 // No need to mock getCurrentUser since we're using requestContext directly
 
 describe('startTranslation endpoint', () => {
   beforeEach(() => {
     dynamoMock.reset();
-    lambdaMock.reset();
+    sfnMock.reset();
     jest.clearAllMocks();
   });
 
@@ -63,7 +65,9 @@ describe('startTranslation endpoint', () => {
       } as any);
 
       dynamoMock.on(UpdateItemCommand).resolves({} as any);
-      lambdaMock.on(InvokeCommand).resolves({} as any);
+      sfnMock.on(StartExecutionCommand).resolves({
+        executionArn: 'arn:aws:states:us-east-1:123456789012:execution:test-state-machine:test-execution',
+      } as any);
 
       const event = createEvent('job-123', {
         targetLanguage: 'es',
@@ -82,15 +86,18 @@ describe('startTranslation endpoint', () => {
       expect(body.chunksTranslated).toBe(0);
       expect(body.estimatedCompletion).toBeDefined();
       expect(body.estimatedCost).toBeGreaterThan(0);
+      expect(body.executionArn).toBeDefined();
 
       // Verify DynamoDB update was called
       const dynamoCalls = dynamoMock.commandCalls(UpdateItemCommand);
       expect(dynamoCalls.length).toBe(1);
 
-      // Verify Lambda invocation
-      const lambdaCalls = lambdaMock.commandCalls(InvokeCommand);
-      expect(lambdaCalls.length).toBe(1);
-      expect(lambdaCalls[0].args[0].input.InvocationType).toBe('Event');
+      // Verify Step Functions execution started
+      const sfnCalls = sfnMock.commandCalls(StartExecutionCommand);
+      expect(sfnCalls.length).toBe(1);
+      // Check that state machine ARN was constructed correctly from name and region
+      expect(sfnCalls[0].args[0].input.stateMachineArn).toContain(process.env.STATE_MACHINE_NAME);
+      expect(sfnCalls[0].args[0].input.stateMachineArn).toContain(process.env.AWS_REGION);
     });
 
     it('should start translation with custom tone', async () => {
@@ -104,7 +111,7 @@ describe('startTranslation endpoint', () => {
       } as any);
 
       dynamoMock.on(UpdateItemCommand).resolves({} as any);
-      lambdaMock.on(InvokeCommand).resolves({} as any);
+      sfnMock.on(StartExecutionCommand).resolves({} as any);
 
       const event = createEvent('job-123', {
         targetLanguage: 'fr',
@@ -130,7 +137,7 @@ describe('startTranslation endpoint', () => {
       } as any);
 
       dynamoMock.on(UpdateItemCommand).resolves({} as any);
-      lambdaMock.on(InvokeCommand).resolves({} as any);
+      sfnMock.on(StartExecutionCommand).resolves({} as any);
 
       const event = createEvent('job-123', {
         targetLanguage: 'de',
@@ -200,7 +207,7 @@ describe('startTranslation endpoint', () => {
         } as any);
 
         dynamoMock.on(UpdateItemCommand).resolves({} as any);
-        lambdaMock.on(InvokeCommand).resolves({} as any);
+        sfnMock.on(StartExecutionCommand).resolves({} as any);
 
         const event = createEvent('job-123', {
           targetLanguage: lang,

@@ -1,6 +1,6 @@
 # LFMT POC - Development Progress Report
 
-**Last Updated**: 2025-10-29
+**Last Updated**: 2025-11-03
 **Project**: Long-Form Translation Service POC
 **Repository**: https://github.com/leixiaoyu/lfmt-poc
 **Owner**: Raymond Lei (leixiaoyu@github)
@@ -474,26 +474,26 @@ The LFMT POC project has successfully completed infrastructure deployment to bot
    - Review chunking metadata accuracy
 
 ### Short-term (Next 1-2 weeks)
-3. **Legal Attestation System** (P1)
+3. **Gemini API Integration** (P0 - ✅ COMPLETE)
+   - ✅ Gemini client wrapper with rate limiting (5 RPM, 250K TPM, 25 RPD)
+   - ✅ Exponential backoff with jitter
+   - ✅ Token usage tracking (free tier monitoring)
+   - ✅ Comprehensive error handling for API failures
+   - ✅ All 282 backend tests passing (100% coverage)
+
+4. **Translation Processing Pipeline** (P0 - 🔄 IN PROGRESS)
+   - 🔄 Step Functions workflow orchestration (CURRENT TASK)
+   - ✅ translateChunk Lambda implementation (492 lines, fully tested)
+   - ✅ Result storage in S3 (translated chunks)
+   - ⏳ startTranslation trigger Lambda
+   - ⏳ End-to-end testing with 400K word document
+
+5. **Legal Attestation System** (P1 - Deferred)
    - Legal attestation UI components (copyright confirmation)
    - Attestation storage in DynamoDB with 7-year TTL
    - Audit trail logging (IP, timestamp, document hash)
    - Backend validation before processing
    - Frontend integration with upload workflow
-
-4. **Claude API Integration** (P1)
-   - Claude service wrapper with rate limiting
-   - Exponential backoff with jitter
-   - Token usage tracking and cost monitoring
-   - Test translation with sample chunks
-   - Error handling for API failures
-
-5. **Translation Processing Pipeline** (P1)
-   - Step Functions workflow orchestration
-   - Translation Lambda implementation
-   - Chunk reassembly logic
-   - Result storage in S3
-   - Job polling endpoint (adaptive intervals)
 
 ### Medium-term (Next 1-2 months)
 6. **Translation UI & Job Management** (P2)
@@ -560,11 +560,14 @@ The LFMT POC project has successfully completed infrastructure deployment to bot
 - **Documentation**: ~8 hours
 - **Total**: ~88 hours invested
 
-### Cost (AWS)
-- **Development Environment**: Currently operational (~$10/month estimated)
+### Cost (AWS + Gemini)
+- **Development Environment**: Currently operational (~$10/month AWS infrastructure)
+- **Gemini API**: $0 (free tier - 5 RPM, 250K TPM, 25 RPD for POC phase)
 - **Current Spend**: Minimal (no translation jobs processed yet)
-- **Expected Monthly**: $10-20 for development, $30-50 for production
-- **Well Within Budget**: Target <$50/month for production with 1000 translations
+- **Expected Monthly**: $10-20 for development, $30-50 for production (AWS only)
+- **Translation Engine Cost**: ~$0 for POC using Gemini free tier
+- **Well Within Budget**: <$50/month target achieved with Gemini free tier
+- **Note**: May upgrade to Claude Sonnet 4 in future if quality requirements increase (~$30-40/month additional cost)
 
 ---
 
@@ -660,6 +663,130 @@ The LFMT POC project has successfully completed infrastructure deployment to bot
 **Branch**: `main`
 **AWS Environment**: Development (us-east-1)
 **API Endpoint**: https://8brwlwf68h.execute-api.us-east-1.amazonaws.com/v1/
+
+---
+
+## Recent Updates (November 2025)
+
+### Rate Limiter Timezone Fix - PR #31 (2025-11-03)
+**Status**: ✅ Merged
+**Pull Request**: https://github.com/leixiaoyu/lfmt-poc/pull/31
+
+#### Problem
+- Rate limiter tests were failing in CI (7 RPD test failures)
+- Root cause: `toLocaleString()` timezone handling inconsistency between local and CI environments
+- Failed tests: "should allow requests within RPD limit", "should enforce daily request limit", etc.
+
+#### Solution
+- Replaced `toLocaleString()` with `date-fns-tz` library for reliable timezone handling
+- Used `toZonedTime()` and `fromZonedTime()` for accurate Pacific timezone calculations
+- Fixed 7 AWS SDK TypeScript type errors (added explicit `XxxCommandOutput` types)
+
+#### Files Modified
+- `backend/functions/translation/rateLimiter.ts` - Timezone calculation fix
+- 7 files with AWS SDK type errors (auth, chunking, jobs, translation)
+- `backend/functions/__tests__/integration/helpers/test-helpers.ts` - Type inference fix
+
+#### Impact
+- ✅ All 7 RPD tests now passing
+- ✅ All 296 backend tests passing (209 unit + rest)
+- ✅ CI/CD pipeline fully green
+
+### E2E Test ES Module Fix - PR #32 (2025-11-03)
+**Status**: ✅ Merged
+**Pull Request**: https://github.com/leixiaoyu/lfmt-poc/pull/32
+
+#### Problem
+- E2E tests failing on main branch with `ReferenceError: __dirname is not defined in ES module scope`
+- Error in `frontend/e2e/tests/translation/upload-workflow.spec.ts`
+- Root cause: Frontend uses `"type": "module"` in package.json, making all files ES modules
+
+#### Solution
+- Added ES module equivalent of `__dirname` using `import.meta.url`:
+  ```typescript
+  import { fileURLToPath } from 'url';
+  import { dirname } from 'path';
+
+  const __filename = fileURLToPath(import.meta.url);
+  const __dirname = dirname(__filename);
+  ```
+
+#### Files Modified
+- `frontend/e2e/tests/translation/upload-workflow.spec.ts`
+
+#### Impact
+- ✅ E2E tests fixed for ES module compatibility
+- ✅ Main branch CI/CD should now pass
+- ✅ No other `__dirname` usage found in E2E tests
+
+#### Key Learning
+- **Branch Protection**: Discovered main branch requires all changes via pull requests (no direct pushes)
+- **Senior Engineer Approach**: Fixed ALL failing tests (not just related code) before creating PR
+- **CI/CD Hygiene**: Ensured pre-push validation catches these issues locally
+
+### Translation Engine Decision - Issue #13 Resolution (2025-11-03)
+**Status**: ✅ Resolved - Using Gemini 1.5 Pro for POC Phase
+**Related Issues**: #13 (Engine Inconsistency), #22 (Missing Step Functions)
+
+#### Decision Context
+- Team lead (xlei-raymond) prioritized P0 blockers in project_priorities_proposal.md
+- Two critical issues identified:
+  1. **Issue #13**: Documentation specified Claude Sonnet 4 (~$700/month) but code implemented GEMINI_API_KEY_SECRET_NAME
+  2. **Issue #22**: Missing Step Functions orchestrator preventing end-to-end translation
+
+#### Resolution: Use Gemini 1.5 Pro for POC
+**Rationale**:
+- **Cost Priority**: User explicitly prioritized cost over quality for POC phase (<$50/month target)
+- **Free Tier**: Gemini free tier (5 RPM, 250K TPM, 25 RPD) provides sufficient capacity for POC
+- **Already Implemented**: Rate limiter (`backend/functions/translation/rateLimiter.ts`) already uses Gemini limits
+- **Quality Can Improve Later**: Architecture is engine-agnostic; can upgrade to Claude Sonnet 4 if quality requirements increase
+- **Actual Cost**: ~$0 for POC using free tier vs ~$30-40/month for Claude
+
+#### Impact
+- ✅ Updated README.md to document Gemini as POC engine
+- ✅ Updated DEVELOPMENT-ROADMAP.md with Gemini references
+- ✅ Updated PROGRESS.md cost model with Gemini free tier details
+- ✅ Maintained architecture flexibility for future Claude migration
+- 🔄 Next: Implement Step Functions orchestrator (Issue #22)
+
+#### Testing Requirements
+- Load test with at least one 400K word document (user requirement)
+- Validate rate limiting compliance (5 RPM free tier)
+- Monitor token usage to stay within free tier limits
+- Track cost as ~$0 for POC phase
+
+#### GitHub Issue Status
+- **Issue #13**: ✅ Resolved - [Comment posted](https://github.com/leixiaoyu/lfmt-poc/issues/13#issuecomment-3483175055)
+- **Issue #22**: 🔄 In Progress - [Comment posted](https://github.com/leixiaoyu/lfmt-poc/issues/22#issuecomment-3483175339)
+
+### Step Functions Implementation - Phase 6 (2025-11-03)
+**Status**: 🔄 IN PROGRESS - Implementing Translation Orchestration
+**Related Issues**: #22 (Missing Step Functions orchestrator)
+
+#### Current Task: Define Step Functions State Machine
+Implementing production-ready orchestration workflow to enable end-to-end document translation.
+
+**Planned State Machine Architecture**:
+- **Map State**: Iterate through all document chunks sequentially
+- **Error Handling**: Retry logic with exponential backoff for transient failures
+- **Progress Tracking**: Update DynamoDB job status after each chunk
+- **Rate Limiting**: Respect Gemini free tier limits (5 RPM, 250K TPM)
+- **Completion Detection**: Mark job as COMPLETED when all chunks translated
+
+**State Flow**:
+```
+Start → Validate Job → Load Metadata
+  → Map State (For Each Chunk):
+      → Check Rate Limits
+      → Translate Chunk (invoke Lambda)
+      → Update Progress in DynamoDB
+  → All Chunks Complete → Update Final Status → End
+```
+
+**IAM Permissions Required**:
+- Step Functions invoke Lambda
+- Step Functions read/write DynamoDB
+- Lambda access to S3 chunks and translations
 
 ---
 

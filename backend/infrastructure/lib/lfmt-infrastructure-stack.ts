@@ -1,9 +1,10 @@
-import { 
-  Stack, 
-  StackProps, 
+import {
+  Stack,
+  StackProps,
   RemovalPolicy,
   Duration,
-  CfnOutput 
+  CfnOutput,
+  Lazy
 } from 'aws-cdk-lib';
 import { Construct } from 'constructs';
 
@@ -17,6 +18,7 @@ import { NodejsFunction } from 'aws-cdk-lib/aws-lambda-nodejs';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as cognito from 'aws-cdk-lib/aws-cognito';
 import * as stepfunctions from 'aws-cdk-lib/aws-stepfunctions';
+import * as tasks from 'aws-cdk-lib/aws-stepfunctions-tasks';
 import * as logs from 'aws-cdk-lib/aws-logs';
 import * as cloudfront from 'aws-cdk-lib/aws-cloudfront';
 import * as route53 from 'aws-cdk-lib/aws-route53';
@@ -55,6 +57,10 @@ export class LfmtInfrastructureStack extends Stack {
   // IAM role for Lambda functions
   private lambdaRole?: iam.Role;
 
+  // Step Functions state machine
+  public readonly translationStateMachine: stepfunctions.StateMachine;
+  private readonly stateMachineArnPattern: string;
+
   // API Gateway resources
   private authResource?: apigateway.Resource;
 
@@ -65,6 +71,9 @@ export class LfmtInfrastructureStack extends Stack {
 
     // Removal policy based on environment
     const removalPolicy = retainData ? RemovalPolicy.RETAIN : RemovalPolicy.DESTROY;
+
+    // Initialize state machine ARN pattern for IAM permissions
+    (this as any).stateMachineArnPattern = `arn:aws:states:\${AWS::Region}:\${AWS::AccountId}:stateMachine:lfmt-translation-workflow-${this.stackName}`;
 
     // 1. DynamoDB Tables
     this.createDynamoDBTables(removalPolicy);
@@ -86,13 +95,16 @@ export class LfmtInfrastructureStack extends Stack {
     // 6. Lambda Functions
     this.createLambdaFunctions();
 
-    // 7. API Gateway
+    // 7. Step Functions State Machine
+    this.createStepFunctions();
+
+    // 8. API Gateway
     this.createApiGateway();
 
-    // 8. API Gateway Endpoints
+    // 9. API Gateway Endpoints
     this.createApiEndpoints();
 
-    // 9. Outputs
+    // 10. Outputs
     this.createOutputs();
   }
 
@@ -729,6 +741,7 @@ export class LfmtInfrastructureStack extends Stack {
       environment: {
         ...commonEnv,
         TRANSLATE_CHUNK_FUNCTION_NAME: `lfmt-translate-chunk-${this.stackName}`,
+        STATE_MACHINE_NAME: `lfmt-translation-workflow-${this.stackName}`, // Pass name instead of ARN
       },
       timeout: Duration.seconds(30),
       memorySize: 256,
@@ -779,6 +792,144 @@ export class LfmtInfrastructureStack extends Stack {
         prefix: 'documents/',
         suffix: '.txt',
       }
+    );
+  }
+
+  private createStepFunctions() {
+    if (!this.translateChunkFunction) {
+      throw new Error('Translate chunk function must be created before Step Functions');
+    }
+
+    /**
+     * Step Functions State Machine for Translation Workflow
+     *
+     * Architecture: Sequential chunk translation with context continuity
+     *
+     * Flow:
+     * 1. Initialize translation (mark job as IN_PROGRESS)
+     * 2. Load job metadata from DynamoDB
+     * 3. Map state - iterate through all chunks sequentially
+     * 4. For each chunk:
+     *    - Invoke translateChunk Lambda
+     *    - Lambda handles rate limiting internally
+     *    - Update progress in DynamoDB
+     * 5. Mark job as COMPLETED or FAILED
+     *
+     * Error Handling:
+     * - Retry transient failures (rate limits, API errors)
+     * - Fail job on non-retryable errors
+     * - Catch-all for unexpected failures
+     */
+
+    // Define the Translate Chunk task with retry logic
+    const translateChunkTask = new tasks.LambdaInvoke(this, 'TranslateChunkTask', {
+      lambdaFunction: this.translateChunkFunction,
+      // Input: { jobId, chunkIndex, targetLanguage, tone, contextChunks }
+      payload: stepfunctions.TaskInput.fromObject({
+        jobId: stepfunctions.JsonPath.stringAt('$.jobId'),
+        chunkIndex: stepfunctions.JsonPath.numberAt('$.chunkIndex'),
+        targetLanguage: stepfunctions.JsonPath.stringAt('$.targetLanguage'),
+        tone: stepfunctions.JsonPath.stringAt('$.tone'),
+        contextChunks: stepfunctions.JsonPath.numberAt('$.contextChunks'),
+      }),
+      resultPath: '$.translateResult',
+      retryOnServiceExceptions: true,
+    });
+
+    // Add retry logic for transient failures
+    translateChunkTask.addRetry({
+      errors: [
+        'Lambda.ServiceException',
+        'Lambda.TooManyRequestsException',
+        'States.TaskFailed', // Retryable errors from Lambda (rate limits, etc.)
+      ],
+      interval: Duration.seconds(2),
+      maxAttempts: 3,
+      backoffRate: 2.0, // Exponential backoff: 2s, 4s, 8s
+    });
+
+    // Add catch for non-retryable errors
+    const failState = new stepfunctions.Fail(this, 'TranslationFailed', {
+      comment: 'Translation failed - non-retryable error',
+    });
+
+    translateChunkTask.addCatch(failState, {
+      errors: ['States.ALL'],
+      resultPath: '$.error',
+    });
+
+    // Map state to process all chunks sequentially
+    const processChunksMap = new stepfunctions.Map(this, 'ProcessChunksMap', {
+      maxConcurrency: 1, // Sequential processing for context continuity
+      itemsPath: stepfunctions.JsonPath.stringAt('$.chunks'),
+      parameters: {
+        'jobId.$': '$.jobId',
+        'chunkIndex.$': '$$.Map.Item.Value.chunkIndex',
+        'targetLanguage.$': '$.targetLanguage',
+        'tone.$': '$.tone',
+        'contextChunks.$': '$.contextChunks',
+      },
+      resultPath: '$.translationResults',
+    });
+
+    processChunksMap.iterator(translateChunkTask);
+
+    // Update job status to COMPLETED
+    const updateJobCompleted = new tasks.DynamoUpdateItem(this, 'UpdateJobCompleted', {
+      table: this.jobsTable,
+      key: {
+        jobId: tasks.DynamoAttributeValue.fromString(stepfunctions.JsonPath.stringAt('$.jobId')),
+        userId: tasks.DynamoAttributeValue.fromString(stepfunctions.JsonPath.stringAt('$.userId')),
+      },
+      updateExpression: 'SET translationStatus = :status, completedAt = :completedAt',
+      expressionAttributeValues: {
+        ':status': tasks.DynamoAttributeValue.fromString('COMPLETED'),
+        ':completedAt': tasks.DynamoAttributeValue.fromString(stepfunctions.JsonPath.stringAt('$$.State.EnteredTime')),
+      },
+      resultPath: stepfunctions.JsonPath.DISCARD,
+    });
+
+    // Success state
+    const successState = new stepfunctions.Succeed(this, 'TranslationSuccess', {
+      comment: 'All chunks translated successfully',
+    });
+
+    // Define the state machine workflow
+    const definition = processChunksMap
+      .next(updateJobCompleted)
+      .next(successState);
+
+    // Create the state machine
+    (this as any).translationStateMachine = new stepfunctions.StateMachine(this, 'TranslationStateMachine', {
+      stateMachineName: `lfmt-translation-workflow-${this.stackName}`,
+      definition,
+      timeout: Duration.hours(6), // Max 6 hours for large documents (400K words)
+      logs: {
+        destination: new logs.LogGroup(this, 'TranslationStateMachineLogGroup', {
+          logGroupName: `/aws/stepfunctions/lfmt-translation-${this.stackName}`,
+          removalPolicy: RemovalPolicy.DESTROY,
+          retention: logs.RetentionDays.ONE_WEEK,
+        }),
+        level: stepfunctions.LogLevel.ALL,
+        includeExecutionData: true,
+      },
+      tracingEnabled: true,
+    });
+
+    // Grant the state machine permission to invoke the Lambda function
+    this.translateChunkFunction.grantInvoke(this.translationStateMachine);
+
+    // Grant the state machine permission to update DynamoDB
+    this.jobsTable.grantReadWriteData(this.translationStateMachine);
+
+    // Grant startTranslation Lambda permission to start state machine executions
+    // Use ARN pattern to avoid circular dependency
+    this.lambdaRole!.addToPrincipalPolicy(
+      new iam.PolicyStatement({
+        effect: iam.Effect.ALLOW,
+        actions: ['states:StartExecution'],
+        resources: [this.stateMachineArnPattern],
+      })
     );
   }
 
@@ -1046,5 +1197,18 @@ export class LfmtInfrastructureStack extends Stack {
       value: this.api.restApiId,
       description: 'API Gateway ID',
     });
+
+    // Step Functions State Machine
+    if (this.translationStateMachine) {
+      new CfnOutput(this, 'TranslationStateMachineArn', {
+        value: this.translationStateMachine.stateMachineArn,
+        description: 'Translation Workflow State Machine ARN',
+      });
+
+      new CfnOutput(this, 'TranslationStateMachineName', {
+        value: this.translationStateMachine.stateMachineName,
+        description: 'Translation Workflow State Machine Name',
+      });
+    }
   }
 }
