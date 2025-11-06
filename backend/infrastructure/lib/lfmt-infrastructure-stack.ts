@@ -177,6 +177,19 @@ export class LfmtInfrastructureStack extends Stack {
       partitionKey: { name: 'documentId', type: dynamodb.AttributeType.STRING },
       sortKey: { name: 'createdAt', type: dynamodb.AttributeType.STRING },
     });
+
+    // Rate Limit Buckets Table - For distributed rate limiting across Lambda instances
+    // Supports token bucket algorithm with atomic conditional writes
+    (this as any).rateLimitBucketsTable = new dynamodb.Table(this, 'RateLimitBucketsTable', {
+      tableName: `lfmt-rate-limit-buckets-${this.stackName}`,
+      partitionKey: { name: 'bucketKey', type: dynamodb.AttributeType.STRING }, // e.g., "gemini-api-rpm", "gemini-api-tpm"
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST, // On-demand for variable rate limiter access
+      removalPolicy,
+      pointInTimeRecoverySpecification: { pointInTimeRecoveryEnabled: true },
+      encryption: dynamodb.TableEncryption.AWS_MANAGED,
+      // Automatic cleanup of inactive buckets after 7 days
+      timeToLiveAttribute: 'ttl',
+    });
   }
 
   private createS3Buckets(removalPolicy: RemovalPolicy) {
