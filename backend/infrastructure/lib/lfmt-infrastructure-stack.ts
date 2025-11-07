@@ -461,6 +461,7 @@ export class LfmtInfrastructureStack extends Stack {
                 this.jobsTable.tableArn,
                 this.usersTable.tableArn,
                 this.attestationsTable.tableArn,
+                (this as any).rateLimitBucketsTable.tableArn,
                 `${this.jobsTable.tableArn}/index/*`,
                 `${this.usersTable.tableArn}/index/*`,
                 `${this.attestationsTable.tableArn}/index/*`,
@@ -562,6 +563,7 @@ export class LfmtInfrastructureStack extends Stack {
       JOBS_TABLE_NAME: this.jobsTable.tableName,
       USERS_TABLE_NAME: this.usersTable.tableName,
       ATTESTATIONS_TABLE_NAME: this.attestationsTable.tableName,
+      RATE_LIMIT_BUCKETS_TABLE: (this as any).rateLimitBucketsTable.tableName,
       DOCUMENT_BUCKET: this.documentBucket.bucketName,
       CHUNKS_BUCKET: this.documentBucket.bucketName, // Chunks stored in same bucket as documents
       GEMINI_API_KEY_SECRET_NAME: `lfmt/gemini-api-key-${this.stackName}`,

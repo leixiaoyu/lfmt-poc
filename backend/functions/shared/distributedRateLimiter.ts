@@ -58,6 +58,8 @@ interface FallbackBucket {
  * Coordinates API rate limits across multiple Lambda instances using DynamoDB.
  */
 export class DistributedRateLimiter {
+  private static readonly TTL_SECONDS = 7 * 24 * 60 * 60; // 7 days
+
   private readonly dynamoClient: DynamoDBClient;
   private readonly config: Required<DistributedRateLimiterConfig>;
   private readonly fallbackBuckets: Map<string, FallbackBucket> = new Map();
@@ -93,38 +95,27 @@ export class DistributedRateLimiter {
 
         // Calculate refilled tokens
         const now = Date.now();
-        const refillSeconds = (now - bucket.lastRefillTimestamp * 1000) / 1000;
-        const tokensToAdd = Math.floor(refillSeconds * bucket.refillRate);
+        const tokensToAdd = this.calculateTokenRefill(now, bucket.lastRefillTimestamp, bucket.refillRate);
 
-        // Check if window needs to be reset (for RPM/TPM: every minute, for RPD: daily)
+        // Calculate available tokens considering window reset
         const windowDuration = this.getWindowDuration(limitType);
-        const windowElapsed = now - bucket.windowStartTimestamp * 1000;
-        const shouldResetWindow = windowElapsed >= windowDuration;
-
-        // Calculate available tokens
-        let availableTokens: number;
-        if (shouldResetWindow) {
-          // Window expired, reset to full capacity
-          availableTokens = bucket.maxCapacity;
-        } else {
-          // Add refilled tokens up to capacity
-          availableTokens = Math.min(
-            bucket.tokensAvailable + tokensToAdd,
-            bucket.maxCapacity
-          );
-        }
-
+        const { availableTokens, shouldResetWindow } = this.calculateAvailableTokens(
+          bucket.tokensAvailable,
+          tokensToAdd,
+          bucket.maxCapacity,
+          bucket.windowStartTimestamp,
+          windowDuration,
+          now
+        );
 
         // Check if sufficient tokens available
         if (availableTokens < tokensRequested) {
-          const timeToRefill = (tokensRequested - availableTokens) / bucket.refillRate;
-          return {
-            success: false,
-            tokensAcquired: 0,
-            tokensRemaining: availableTokens,
-            retryAfterMs: Math.ceil(timeToRefill * 1000),
-            error: `Rate limit exceeded. Need ${tokensRequested}, have ${availableTokens}`,
-          };
+          return this.createRateLimitExceededResponse(
+            tokensRequested,
+            availableTokens,
+            bucket.refillRate,
+            limitType
+          );
         }
 
         const tokensAfterAcquisition = availableTokens - tokensRequested;
@@ -167,6 +158,62 @@ export class DistributedRateLimiter {
       tokensAcquired: 0,
       tokensRemaining: 0,
       error: `Failed to acquire tokens after ${this.config.maxRetries} attempts: ${lastError?.message}`,
+    };
+  }
+
+  /**
+   * Calculate tokens to refill based on elapsed time
+   */
+  private calculateTokenRefill(
+    now: number,
+    lastRefillTimestamp: number,
+    refillRate: number
+  ): number {
+    const refillSeconds = (now - lastRefillTimestamp * 1000) / 1000;
+    return Math.floor(refillSeconds * refillRate);
+  }
+
+  /**
+   * Calculate available tokens after refill, considering window resets
+   */
+  private calculateAvailableTokens(
+    currentTokens: number,
+    tokensToAdd: number,
+    maxCapacity: number,
+    windowStartTimestamp: number,
+    windowDuration: number,
+    now: number
+  ): { availableTokens: number; shouldResetWindow: boolean } {
+    const windowElapsed = now - windowStartTimestamp * 1000;
+    const shouldResetWindow = windowElapsed >= windowDuration;
+
+    const availableTokens = shouldResetWindow
+      ? maxCapacity
+      : Math.min(currentTokens + tokensToAdd, maxCapacity);
+
+    return { availableTokens, shouldResetWindow };
+  }
+
+  /**
+   * Create a rate limit exceeded response
+   */
+  private createRateLimitExceededResponse(
+    tokensRequested: number,
+    availableTokens: number,
+    refillRate: number,
+    limitType: RateLimitType,
+    fallbackMode: boolean = false
+  ): TokenAcquisitionResult {
+    const timeToRefill = (tokensRequested - availableTokens) / refillRate;
+    const limitTypeName = limitType.toUpperCase();
+    const mode = fallbackMode ? ' (fallback mode)' : '';
+
+    return {
+      success: false,
+      tokensAcquired: 0,
+      tokensRemaining: availableTokens,
+      retryAfterMs: Math.ceil(timeToRefill * 1000),
+      error: `${limitTypeName} rate limit exceeded${mode}. Need ${tokensRequested}, have ${availableTokens}`,
     };
   }
 
@@ -214,7 +261,7 @@ export class DistributedRateLimiter {
       refillRate,
       lastRefillTimestamp: Math.floor(now / 1000),
       windowStartTimestamp: Math.floor(now / 1000),
-      ttl: Math.floor(now / 1000) + 7 * 24 * 60 * 60, // 7 days
+      ttl: Math.floor(now / 1000) + DistributedRateLimiter.TTL_SECONDS,
       createdAt: new Date(now).toISOString(),
       updatedAt: new Date(now).toISOString(),
       version: 0,
@@ -279,7 +326,7 @@ export class DistributedRateLimiter {
           ':newVersion': expectedVersion + 1,
           ':expectedVersion': expectedVersion,
           ':updatedAt': new Date(now).toISOString(),
-          ':ttl': Math.floor(now / 1000) + 7 * 24 * 60 * 60, // Reset TTL to 7 days
+          ':ttl': Math.floor(now / 1000) + DistributedRateLimiter.TTL_SECONDS,
         }),
       })
     );
@@ -307,33 +354,37 @@ export class DistributedRateLimiter {
 
     // Refill tokens
     const now = Date.now();
-    const refillSeconds = (now - bucket.lastRefillTimestamp * 1000) / 1000;
-    const tokensToAdd = Math.floor(refillSeconds * this.getRefillRate(limitType));
-    bucket.tokensAvailable = Math.min(
-      bucket.tokensAvailable + tokensToAdd,
-      this.getMaxCapacity(limitType)
-    );
-    bucket.lastRefillTimestamp = Math.floor(now / 1000);
+    const refillRate = this.getRefillRate(limitType);
+    const maxCapacity = this.getMaxCapacity(limitType);
+    const tokensToAdd = this.calculateTokenRefill(now, bucket.lastRefillTimestamp, refillRate);
 
-    // Check window reset
+    // Calculate available tokens considering window reset
     const windowDuration = this.getWindowDuration(limitType);
-    const windowElapsed = now - bucket.windowStartTimestamp * 1000;
-    if (windowElapsed >= windowDuration) {
-      bucket.tokensAvailable = this.getMaxCapacity(limitType);
+    const { availableTokens, shouldResetWindow } = this.calculateAvailableTokens(
+      bucket.tokensAvailable,
+      tokensToAdd,
+      maxCapacity,
+      bucket.windowStartTimestamp,
+      windowDuration,
+      now
+    );
+
+    // Update fallback bucket state
+    bucket.tokensAvailable = availableTokens;
+    bucket.lastRefillTimestamp = Math.floor(now / 1000);
+    if (shouldResetWindow) {
       bucket.windowStartTimestamp = Math.floor(now / 1000);
     }
 
     // Acquire tokens
     if (bucket.tokensAvailable < tokensRequested) {
-      const timeToRefill =
-        (tokensRequested - bucket.tokensAvailable) / this.getRefillRate(limitType);
-      return {
-        success: false,
-        tokensAcquired: 0,
-        tokensRemaining: bucket.tokensAvailable,
-        retryAfterMs: Math.ceil(timeToRefill * 1000),
-        error: `Rate limit exceeded (fallback mode). Need ${tokensRequested}, have ${bucket.tokensAvailable}`,
-      };
+      return this.createRateLimitExceededResponse(
+        tokensRequested,
+        bucket.tokensAvailable,
+        refillRate,
+        limitType,
+        true // fallbackMode
+      );
     }
 
     bucket.tokensAvailable -= tokensRequested;
