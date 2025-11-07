@@ -1,0 +1,34 @@
+# OpenSpec Configuration for LFMT POC
+# https://docs.openspec.dev/
+
+# Project Information
+project:
+  name: "LFMT POC - Long-Form Translation Service"
+  description: "Proof-of-concept translation service for 65K-400K word documents"
+
+# Directory Paths
+paths:
+  specs: "./openspec"
+  changes: "./openspec/changes"
+  archive: "./openspec/changes/archive"
+
+# AI Agent Configuration
+agents:
+  enabled: true
+  instructions_file: "./openspec/AGENTS.md"
+
+# Change Management
+changes:
+  require_proposal: true
+  require_tasks: true
+  auto_archive: false
+
+# Git Integration
+git:
+  auto_commit: false
+  commit_prefix: "feat"
+
+# Validation
+validation:
+  strict: false
+  require_tests: true

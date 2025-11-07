@@ -127,6 +127,31 @@ describe('LFMT Infrastructure Stack', () => {
         ]
       });
     });
+
+    test('Rate Limit Buckets table exists for distributed rate limiting', () => {
+      // Validates P1 (Enable Parallel Translation) requirements
+      // Supports distributed token bucket algorithm across Lambda instances
+      template.hasResourceProperties('AWS::DynamoDB::Table', {
+        TableName: 'lfmt-rate-limit-buckets-test',
+        KeySchema: [
+          {
+            AttributeName: 'bucketKey',
+            KeyType: 'HASH'
+          }
+        ],
+        BillingMode: 'PAY_PER_REQUEST',
+        PointInTimeRecoverySpecification: {
+          PointInTimeRecoveryEnabled: true
+        },
+        SSESpecification: {
+          SSEEnabled: true
+        },
+        TimeToLiveSpecification: {
+          AttributeName: 'ttl',
+          Enabled: true
+        }
+      });
+    });
   });
 
   describe('S3 Buckets', () => {
@@ -456,7 +481,7 @@ describe('LFMT Infrastructure Stack', () => {
   describe('Resource Count Validation', () => {
     test('Expected number of resources created', () => {
       // Ensure we're not creating too many or too few resources
-      template.resourceCountIs('AWS::DynamoDB::Table', 3); // Jobs, Users, Attestations
+      template.resourceCountIs('AWS::DynamoDB::Table', 4); // Jobs, Users, Attestations, Rate Limit Buckets
       template.resourceCountIs('AWS::S3::Bucket', 2);      // Documents, Results
       template.resourceCountIs('AWS::Cognito::UserPool', 1);
       template.resourceCountIs('AWS::Cognito::UserPoolClient', 1);

@@ -177,6 +177,19 @@ export class LfmtInfrastructureStack extends Stack {
       partitionKey: { name: 'documentId', type: dynamodb.AttributeType.STRING },
       sortKey: { name: 'createdAt', type: dynamodb.AttributeType.STRING },
     });
+
+    // Rate Limit Buckets Table - For distributed rate limiting across Lambda instances
+    // Supports token bucket algorithm with atomic conditional writes
+    (this as any).rateLimitBucketsTable = new dynamodb.Table(this, 'RateLimitBucketsTable', {
+      tableName: `lfmt-rate-limit-buckets-${this.stackName}`,
+      partitionKey: { name: 'bucketKey', type: dynamodb.AttributeType.STRING }, // e.g., "gemini-api-rpm", "gemini-api-tpm"
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST, // On-demand for variable rate limiter access
+      removalPolicy,
+      pointInTimeRecoverySpecification: { pointInTimeRecoveryEnabled: true },
+      encryption: dynamodb.TableEncryption.AWS_MANAGED,
+      // Automatic cleanup of inactive buckets after 7 days
+      timeToLiveAttribute: 'ttl',
+    });
   }
 
   private createS3Buckets(removalPolicy: RemovalPolicy) {
@@ -448,6 +461,7 @@ export class LfmtInfrastructureStack extends Stack {
                 this.jobsTable.tableArn,
                 this.usersTable.tableArn,
                 this.attestationsTable.tableArn,
+                (this as any).rateLimitBucketsTable.tableArn,
                 `${this.jobsTable.tableArn}/index/*`,
                 `${this.usersTable.tableArn}/index/*`,
                 `${this.attestationsTable.tableArn}/index/*`,
@@ -549,6 +563,7 @@ export class LfmtInfrastructureStack extends Stack {
       JOBS_TABLE_NAME: this.jobsTable.tableName,
       USERS_TABLE_NAME: this.usersTable.tableName,
       ATTESTATIONS_TABLE_NAME: this.attestationsTable.tableName,
+      RATE_LIMIT_BUCKETS_TABLE: (this as any).rateLimitBucketsTable.tableName,
       DOCUMENT_BUCKET: this.documentBucket.bucketName,
       CHUNKS_BUCKET: this.documentBucket.bucketName, // Chunks stored in same bucket as documents
       GEMINI_API_KEY_SECRET_NAME: `lfmt/gemini-api-key-${this.stackName}`,

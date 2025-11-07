@@ -18,7 +18,8 @@ import {
 } from '@aws-sdk/client-s3';
 import { marshall, unmarshall } from '@aws-sdk/util-dynamodb';
 import { GeminiClient } from './geminiClient';
-import { RateLimiter } from './rateLimiter';
+import { DistributedRateLimiter } from '../shared/distributedRateLimiter';
+import { GEMINI_RATE_LIMITS, RateLimitType } from '../shared/types/rateLimiting';
 import { TranslationOptions, TranslationContext, GeminiApiError } from './types';
 import Logger from '../shared/logger';
 import { getRequiredEnv } from '../shared/env';
@@ -31,17 +32,18 @@ const s3Client = new S3Client({});
 const JOBS_TABLE = getRequiredEnv('JOBS_TABLE');
 const CHUNKS_BUCKET = getRequiredEnv('CHUNKS_BUCKET');
 const GEMINI_API_KEY_SECRET = getRequiredEnv('GEMINI_API_KEY_SECRET_NAME');
+const RATE_LIMIT_BUCKETS_TABLE = getRequiredEnv('RATE_LIMIT_BUCKETS_TABLE');
 
 // Singleton instances (reused across invocations)
 let geminiClient: GeminiClient | null = null;
-let rateLimiter: RateLimiter | null = null;
+let distributedRateLimiter: DistributedRateLimiter | null = null;
 
 /**
  * Reset singleton instances (for testing)
  */
 export function resetClients(): void {
   geminiClient = null;
-  rateLimiter = null;
+  distributedRateLimiter = null;
 }
 
 /**
@@ -95,11 +97,13 @@ export const handler = async (
       await geminiClient.initialize();
     }
 
-    if (!rateLimiter) {
-      rateLimiter = new RateLimiter({
-        requestsPerMinute: 5,
-        tokensPerMinute: 250_000,
-        requestsPerDay: 25,
+    if (!distributedRateLimiter) {
+      distributedRateLimiter = new DistributedRateLimiter({
+        tableName: RATE_LIMIT_BUCKETS_TABLE,
+        apiId: GEMINI_RATE_LIMITS.apiId,
+        rpm: GEMINI_RATE_LIMITS.rpm,
+        tpm: GEMINI_RATE_LIMITS.tpm,
+        rpd: GEMINI_RATE_LIMITS.rpd,
       });
     }
 
@@ -136,13 +140,17 @@ export const handler = async (
       contextChunks: context.previousChunks.length,
     });
 
-    // Check rate limits before making API call
-    const rateLimitCheck = rateLimiter.checkLimit(estimatedTokens);
-    if (!rateLimitCheck.allowed) {
+    // Acquire rate limit tokens before making API call
+    const rateLimitAcquire = await distributedRateLimiter.acquire(
+      estimatedTokens,
+      RateLimitType.TPM
+    );
+
+    if (!rateLimitAcquire.success) {
       logger.warn('Rate limit exceeded, returning retryable error', {
-        reason: rateLimitCheck.reason,
-        retryAfterMs: rateLimitCheck.retryAfterMs,
-        usage: rateLimitCheck.usage,
+        error: rateLimitAcquire.error,
+        retryAfterMs: rateLimitAcquire.retryAfterMs,
+        tokensRemaining: rateLimitAcquire.tokensRemaining,
       });
 
       return {
@@ -150,7 +158,7 @@ export const handler = async (
         jobId: event.jobId,
         chunkIndex: event.chunkIndex,
         processingTimeMs: Date.now() - startTime,
-        error: `Rate limit exceeded: ${rateLimitCheck.reason}`,
+        error: `Rate limit exceeded: ${rateLimitAcquire.error}`,
         retryable: true,
       };
     }
@@ -167,9 +175,6 @@ export const handler = async (
       translationOptions,
       context
     );
-
-    // Consume rate limit quota
-    rateLimiter.consume(result.tokensUsed.total);
 
     logger.info('Translation completed', {
       jobId: event.jobId,

@@ -21,4 +21,5 @@ module.exports = {
   moduleNameMapper: {
     '^@lfmt/shared-types$': '<rootDir>/../../shared-types/src',
   },
+  setupFiles: ['<rootDir>/jest.setup.js'],
 };
