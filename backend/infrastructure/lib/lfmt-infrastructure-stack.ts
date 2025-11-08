@@ -873,9 +873,9 @@ export class LfmtInfrastructureStack extends Stack {
       resultPath: '$.error',
     });
 
-    // Map state to process all chunks sequentially
+    // Map state to process all chunks in parallel
     const processChunksMap = new stepfunctions.Map(this, 'ProcessChunksMap', {
-      maxConcurrency: 1, // Sequential processing for context continuity
+      maxConcurrency: 10, // Parallel processing with distributed rate limiting
       itemsPath: stepfunctions.JsonPath.stringAt('$.chunks'),
       parameters: {
         'jobId.$': '$.jobId',
