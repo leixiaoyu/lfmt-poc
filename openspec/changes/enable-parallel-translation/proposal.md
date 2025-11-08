@@ -1,11 +1,13 @@
 # Proposal: Enable Parallel Translation
 
 **Change ID**: `enable-parallel-translation`
-**Status**: Proposed
+**Status**: In Progress - Phase 1 Complete, Phase 2 Pending
 **Priority**: P1 - HIGH (Critical Performance Blocker)
-**Related Issue**: #23
+**Related Issues**: #23 (main), #25 (distributed rate limiter - ✅ completed)
 **Owner**: xlei-raymond (Principal Engineer / Team Lead)
 **Created**: 2025-11-06
+**Updated**: 2025-11-07
+**PR #39**: Distributed rate limiter implementation - ✅ merged to main
 
 ## Problem Statement
 
@@ -276,8 +278,16 @@ export const handler = async (event: TranslateChunkEvent): Promise<void> => {
 ### Required Implementations
 - ✅ Chunk metadata includes pre-calculated context (already done)
 - ✅ Gemini client with rate limiting (already done)
-- ⏳ Distributed rate limiter (new - Phase 1)
-- ⏳ Updated Step Functions definition (new - Phase 2)
+- ✅ **Distributed rate limiter (Phase 1 - COMPLETED via PR #39)**
+  - DynamoDB table for rate limit state
+  - DistributedRateLimiter class with token bucket algorithm
+  - 95.65% test coverage with 21 comprehensive unit tests
+  - Integration with translateChunk Lambda
+  - Issue #25 resolved
+- ⏳ Updated Step Functions definition (Phase 2 - PENDING)
+  - Change maxConcurrency from 1 to 10
+  - Update translateChunk to use previousContext
+  - Add CloudWatch metrics and alarms
 
 ### External Dependencies
 - AWS DynamoDB (for distributed state)
@@ -337,11 +347,37 @@ export const handler = async (event: TranslateChunkEvent): Promise<void> => {
 ## Approval Requirements
 
 Before implementation begins:
-- [x] P0 (Cost Model) complete ✅
-- [ ] Team lead approval (xlei-raymond)
-- [ ] Architecture review
-- [ ] Security review (distributed rate limiter)
-- [ ] Cost analysis approval (<$55/month total)
+- [x] P0 (Cost Model) complete ✅ (Issue #13 closed)
+- [x] Team lead approval (xlei-raymond) ✅
+- [x] Architecture review ✅
+- [x] Security review (distributed rate limiter) ✅
+- [x] Cost analysis approval (<$55/month total) ✅
+
+## Implementation Progress
+
+### ✅ Phase 1: Distributed Rate Limiter (COMPLETED - PR #39)
+- **Completion Date**: 2025-11-07
+- **PR**: #39 merged to main
+- **Deliverables**:
+  - ✅ DynamoDB RateLimitBucket table design and CDK construct
+  - ✅ DistributedRateLimiter implementation with token bucket algorithm
+  - ✅ 95.65% test coverage with 21 comprehensive unit tests
+  - ✅ Integration with translateChunk Lambda
+  - ✅ Environment variables and IAM permissions
+  - ✅ Jest test configuration with environment setup
+  - 📋 Future enhancement tracked: RateLimitError exception (Issue #40)
+
+### 🚧 Phase 2: Parallel Translation (IN PROGRESS)
+- **Status**: Awaiting Step Functions update
+- **Remaining Tasks**:
+  - [ ] Update Step Functions Map state to `maxConcurrency: 10`
+  - [ ] Modify translateChunk to use chunk.previousContext directly
+  - [ ] Add CloudWatch metrics and alarms
+  - [ ] Update retry configuration for rate limit errors
+  - [ ] Integration testing with parallel execution
+
+### ⏳ Phase 3: Testing & Validation (PENDING)
+### ⏳ Phase 4: Documentation & Deployment (PENDING)
 
 ## References
 
@@ -353,5 +389,5 @@ Before implementation begins:
 
 ---
 
-**Status**: Awaiting Approval
-**Next Step**: Team lead review and approval to proceed with implementation
+**Status**: In Progress - Phase 1 Complete (PR #39), Phase 2 Pending
+**Next Step**: Implement Phase 2 (Step Functions update and parallel translation)
