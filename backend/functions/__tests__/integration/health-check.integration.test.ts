@@ -13,6 +13,7 @@ const API_BASE_URL =
 
 interface HealthCheckResult {
   endpoint: string;
+  method: string;
   status: number;
   responseTime: number;
   success: boolean;
@@ -39,6 +40,7 @@ const checkEndpoint = async (
 
     return {
       endpoint,
+      method,
       status: response.status,
       responseTime,
       success,
@@ -47,6 +49,7 @@ const checkEndpoint = async (
   } catch (error) {
     return {
       endpoint,
+      method,
       status: 0,
       responseTime: Date.now() - startTime,
       success: false,
@@ -334,7 +337,7 @@ describe('API Health Check Integration Tests', () => {
 
         expect(response.status).toBe(endpoint.expectedStatus);
 
-        const data = await response.json();
+        const data = await response.json() as any;
 
         // All error responses should have these fields
         expect(data).toHaveProperty('message');

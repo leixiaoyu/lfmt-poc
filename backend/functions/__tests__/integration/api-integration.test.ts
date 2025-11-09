@@ -36,9 +36,11 @@ describe('Real API Integration Tests', () => {
       // Validate response body format
       const body = await response.json() as any;
       expect(body).toHaveProperty('message');
-      expect(body).toHaveProperty('requestId');
       expect(typeof body.message).toBe('string');
-      expect(typeof body.requestId).toBe('string');
+
+      // API Gateway 401s (missing auth) may not include requestId
+      // Only Lambda-generated errors include requestId
+      // This is expected behavior - see cdk-best-practices.md
 
       // Validate Content-Type header
       const contentType = response.headers.get('content-type');
@@ -253,12 +255,23 @@ describe('Real API Integration Tests', () => {
 
         const body = await response.json() as any;
 
-        // All error responses must have these fields
+        // All error responses must have message field
         expect(body).toHaveProperty('message');
-        expect(body).toHaveProperty('requestId');
         expect(typeof body.message).toBe('string');
-        expect(typeof body.requestId).toBe('string');
-        expect(body.requestId).toMatch(/^[\w-]+$/); // Valid request ID format
+
+        // Lambda-generated errors have requestId
+        // API Gateway 401s (missing auth) do not have requestId
+        if (response.status !== 401) {
+          // Non-401 errors are from Lambda and should have requestId
+          expect(body).toHaveProperty('requestId');
+          expect(typeof body.requestId).toBe('string');
+          expect(body.requestId).toMatch(/^[\w-]+$/); // Valid request ID format
+        } else if (body.requestId) {
+          // 401 with requestId (Lambda-generated auth error)
+          expect(typeof body.requestId).toBe('string');
+          expect(body.requestId).toMatch(/^[\w-]+$/);
+        }
+        // 401 without requestId (API Gateway) - no assertion needed
       }
     });
   });
