@@ -372,10 +372,12 @@ export class LfmtInfrastructureStack extends Stack {
         ],
         allowCredentials: true,
       },
-      // Caching is disabled to control costs. Re-evaluate if performance becomes an issue.
+      // Caching is disabled to control costs. Throttling is retained for abuse protection.
       deployOptions: {
         stageName: 'v1',
         cachingEnabled: false,
+        throttlingRateLimit: this.node.tryGetContext('environment') === 'prod' ? 1000 : 100,
+        throttlingBurstLimit: this.node.tryGetContext('environment') === 'prod' ? 2000 : 200,
       },
     });
 
