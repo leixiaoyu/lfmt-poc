@@ -73,7 +73,8 @@ export class LfmtInfrastructureStack extends Stack {
     const removalPolicy = retainData ? RemovalPolicy.RETAIN : RemovalPolicy.DESTROY;
 
     // Initialize state machine ARN pattern for IAM permissions
-    (this as any).stateMachineArnPattern = `arn:aws:states:\${AWS::Region}:\${AWS::AccountId}:stateMachine:lfmt-translation-workflow-${this.stackName}`;
+    // Use CDK Stack tokens instead of CloudFormation intrinsic functions for managed policies
+    (this as any).stateMachineArnPattern = `arn:aws:states:${Stack.of(this).region}:${Stack.of(this).account}:stateMachine:lfmt-translation-workflow-${this.stackName}`;
 
     // 1. DynamoDB Tables
     this.createDynamoDBTables(removalPolicy);
