@@ -120,16 +120,15 @@ export const handler = async (
       );
     }
 
-    // Load current chunk from S3
+    // Load current chunk from S3 (includes pre-calculated previousSummary)
     const chunk = await loadChunk(event.jobId, event.chunkIndex);
 
-    // Load context from previous translated chunks
-    const contextChunksCount = event.contextChunks ?? 2;
-    const context = await loadTranslationContext(
-      event.jobId,
-      event.chunkIndex,
-      contextChunksCount
-    );
+    // Use pre-calculated context from chunk metadata (parallel-safe)
+    // This eliminates sequential dependency on previous chunk translations
+    const context: TranslationContext = {
+      previousChunks: chunk.previousSummary ? [chunk.previousSummary] : [],
+      contextTokens: chunk.previousSummary ? countTokens(chunk.previousSummary) : 0,
+    };
 
     // Estimate token count for rate limiting
     const estimatedTokens = estimateTokens(chunk.primaryContent, context);
@@ -137,7 +136,8 @@ export const handler = async (
     logger.info('Estimated token usage', {
       estimatedTokens,
       chunkIndex: event.chunkIndex,
-      contextChunks: context.previousChunks.length,
+      contextTokens: context.contextTokens,
+      hasContext: context.previousChunks.length > 0,
     });
 
     // Acquire rate limit tokens before making API call
@@ -297,7 +297,7 @@ async function loadJob(jobId: string): Promise<any> {
 async function loadChunk(
   jobId: string,
   chunkIndex: number
-): Promise<{ primaryContent: string; chunkId: string }> {
+): Promise<{ primaryContent: string; chunkId: string; previousSummary: string }> {
   const key = `chunks/${jobId}/chunk-${chunkIndex}.json`;
 
   logger.debug('Loading chunk from S3', { key });
@@ -319,60 +319,16 @@ async function loadChunk(
   return {
     primaryContent: chunk.primaryContent,
     chunkId: chunk.chunkId,
+    previousSummary: chunk.previousSummary || '', // Pre-calculated context from chunking phase
   };
 }
 
 /**
  * Load translation context from previous translated chunks
+ * DEPRECATED: This function is no longer used in parallel translation mode.
+ * Context is now pre-calculated during chunking phase and stored in chunk.previousSummary.
+ * Keeping this function for reference only - it will be removed in future cleanup.
  */
-async function loadTranslationContext(
-  jobId: string,
-  currentChunkIndex: number,
-  contextChunksCount: number
-): Promise<TranslationContext> {
-  const previousChunks: string[] = [];
-  let contextTokens = 0;
-
-  // Load up to N previous translated chunks for context
-  for (let i = currentChunkIndex - 1; i >= 0 && previousChunks.length < contextChunksCount; i--) {
-    try {
-      const translatedKey = `translated/${jobId}/chunk-${i}.txt`;
-
-      const command = new GetObjectCommand({
-        Bucket: CHUNKS_BUCKET,
-        Key: translatedKey,
-      });
-
-      const response: GetObjectCommandOutput = await s3Client.send(command);
-
-      if (response.Body) {
-        const translatedText = await response.Body.transformToString();
-        const tokens = countTokens(translatedText);
-
-        previousChunks.unshift(translatedText); // Add to beginning
-        contextTokens += tokens;
-
-        logger.debug('Loaded context chunk', {
-          chunkIndex: i,
-          tokens,
-          totalContextTokens: contextTokens,
-        });
-      }
-    } catch (error) {
-      // If translated chunk doesn't exist yet, skip it
-      logger.debug('Context chunk not available', {
-        chunkIndex: i,
-        error: error instanceof Error ? error.message : 'Unknown error',
-      });
-      break; // Stop if we hit a missing chunk (they must be translated sequentially)
-    }
-  }
-
-  return {
-    previousChunks,
-    contextTokens,
-  };
-}
 
 /**
  * Estimate total tokens for rate limiting
