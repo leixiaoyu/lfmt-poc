@@ -256,6 +256,11 @@ export class LfmtInfrastructureStack extends Stack {
   }
 
   private createCognitoUserPool(removalPolicy: RemovalPolicy) {
+    // Environment-specific email verification config
+    // Dev: Disable to avoid Cognito SES email limits (50 emails/day)
+    // Staging/Prod: Enable for security (requires custom SES setup)
+    const isDev = this.stackName.includes('Dev');
+
     (this as any).userPool = new cognito.UserPool(this, 'UserPool', {
       userPoolName: `lfmt-users-${this.stackName}`,
       removalPolicy,
@@ -264,10 +269,12 @@ export class LfmtInfrastructureStack extends Stack {
         email: true,
       },
       selfSignUpEnabled: true,
-      autoVerify: {
+      // Disable email verification in dev to avoid SES limits
+      // Integration tests create many users, exhausting 50 email/day quota
+      autoVerify: isDev ? {} : {
         email: true,
       },
-      userVerification: {
+      userVerification: isDev ? undefined : {
         emailSubject: 'LFMT Account Verification',
         emailBody: 'Please verify your account by clicking the link: {##Verify Email##}',
         emailStyle: cognito.VerificationEmailStyle.LINK,
