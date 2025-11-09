@@ -1,11 +1,33 @@
 # Proposal: Fix CI/CD Deployment Workflow
 
 **Change ID**: `fix-cicd-deployment-workflow`
-**Status**: Proposed
+**Status**: ✅ COMPLETED (Superseded by PR #52)
 **Priority**: P1 - HIGH (Critical Team Velocity Blocker)
 **Related Issues**: N/A (workflow configuration issue)
 **Owner**: xlei-raymond (Principal Engineer / Team Lead)
 **Created**: 2025-11-08
+**Completed**: 2025-11-09
+**Resolution**: The actual issue was different from initial hypothesis. Fixed via PR #52 (Frontend API URL Configuration).
+
+---
+
+## Completion Summary
+
+**Original Problem**: Workflow not triggering on PR merge (INCORRECT HYPOTHESIS)
+
+**Actual Problem**: Frontend built WITHOUT `VITE_API_URL`, causing E2E test failures
+
+**Solution Implemented**: PR #52 - Rebuild frontend during deployment with correct API URL
+- Changed: `.github/workflows/deploy.yml` to rebuild frontend with `VITE_API_URL` env var
+- Impact: E2E tests now pass, frontend properly configured
+- Investigation: See `P0-INVESTIGATION-E2E-FAILURES.md` for full analysis
+
+**Why This Proposal Was Obsolete**:
+- Workflow WAS triggering correctly on every PR merge (verified via git log)
+- E2E test failures were due to misconfigured frontend, not workflow triggers
+- Root cause analysis revealed build-time vs runtime env var issue
+
+---
 
 ## Problem Statement
 
