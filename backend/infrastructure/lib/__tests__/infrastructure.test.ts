@@ -285,9 +285,9 @@ describe('LFMT Infrastructure Stack', () => {
         StageName: 'v1'
       });
 
-      // Verify caching is configured
+      // Verify caching is disabled to control costs
       template.hasResourceProperties('AWS::ApiGateway::Stage', {
-        CacheClusterEnabled: true
+        CachingEnabled: false
       });
     });
 
