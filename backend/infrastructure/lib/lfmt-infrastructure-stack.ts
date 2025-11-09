@@ -439,97 +439,111 @@ export class LfmtInfrastructureStack extends Stack {
 
   private createIamRoles() {
     // Lambda Execution Role with required permissions
+    // IMPORTANT: Use separate managed policies instead of inline policies to avoid AWS IAM size limits
     this.lambdaRole = new iam.Role(this, 'LambdaExecutionRole', {
       assumedBy: new iam.ServicePrincipal('lambda.amazonaws.com'),
       managedPolicies: [
         iam.ManagedPolicy.fromAwsManagedPolicyName('service-role/AWSLambdaBasicExecutionRole'),
       ],
-      inlinePolicies: {
-        DynamoDBAccess: new iam.PolicyDocument({
-          statements: [
-            new iam.PolicyStatement({
-              effect: iam.Effect.ALLOW,
-              actions: [
-                'dynamodb:GetItem',
-                'dynamodb:PutItem',
-                'dynamodb:UpdateItem',
-                'dynamodb:DeleteItem',
-                'dynamodb:Query',
-                'dynamodb:Scan',
-              ],
-              resources: [
-                this.jobsTable.tableArn,
-                this.usersTable.tableArn,
-                this.attestationsTable.tableArn,
-                (this as any).rateLimitBucketsTable.tableArn,
-                `${this.jobsTable.tableArn}/index/*`,
-                `${this.usersTable.tableArn}/index/*`,
-                `${this.attestationsTable.tableArn}/index/*`,
-              ],
-            }),
+    });
+
+    // DynamoDB Access Policy (separate managed policy)
+    const dynamoDbPolicy = new iam.ManagedPolicy(this, 'LambdaDynamoDBPolicy', {
+      roles: [this.lambdaRole],
+      statements: [
+        new iam.PolicyStatement({
+          effect: iam.Effect.ALLOW,
+          actions: [
+            'dynamodb:GetItem',
+            'dynamodb:PutItem',
+            'dynamodb:UpdateItem',
+            'dynamodb:DeleteItem',
+            'dynamodb:Query',
+            'dynamodb:Scan',
+          ],
+          resources: [
+            this.jobsTable.tableArn,
+            this.usersTable.tableArn,
+            this.attestationsTable.tableArn,
+            (this as any).rateLimitBucketsTable.tableArn,
+            `${this.jobsTable.tableArn}/index/*`,
+            `${this.usersTable.tableArn}/index/*`,
+            `${this.attestationsTable.tableArn}/index/*`,
           ],
         }),
-        S3Access: new iam.PolicyDocument({
-          statements: [
-            new iam.PolicyStatement({
-              effect: iam.Effect.ALLOW,
-              actions: [
-                's3:GetObject',
-                's3:PutObject',
-                's3:DeleteObject',
-              ],
-              resources: [
-                `${this.documentBucket.bucketArn}/*`,
-                `${this.resultsBucket.bucketArn}/*`,
-              ],
-            }),
+      ],
+    });
+
+    // S3 Access Policy (separate managed policy)
+    const s3Policy = new iam.ManagedPolicy(this, 'LambdaS3Policy', {
+      roles: [this.lambdaRole],
+      statements: [
+        new iam.PolicyStatement({
+          effect: iam.Effect.ALLOW,
+          actions: [
+            's3:GetObject',
+            's3:PutObject',
+            's3:DeleteObject',
+          ],
+          resources: [
+            `${this.documentBucket.bucketArn}/*`,
+            `${this.resultsBucket.bucketArn}/*`,
           ],
         }),
-        CognitoAccess: new iam.PolicyDocument({
-          statements: [
-            new iam.PolicyStatement({
-              effect: iam.Effect.ALLOW,
-              actions: [
-                'cognito-idp:SignUp',
-                'cognito-idp:InitiateAuth',
-                'cognito-idp:ForgotPassword',
-                'cognito-idp:ConfirmForgotPassword',
-                'cognito-idp:AdminCreateUser',
-                'cognito-idp:AdminSetUserPassword',
-                'cognito-idp:AdminGetUser',
-                'cognito-idp:AdminUpdateUserAttributes',
-              ],
-              resources: [this.userPool.userPoolArn],
-            }),
+      ],
+    });
+
+    // Cognito Access Policy (separate managed policy)
+    const cognitoPolicy = new iam.ManagedPolicy(this, 'LambdaCognitoPolicy', {
+      roles: [this.lambdaRole],
+      statements: [
+        new iam.PolicyStatement({
+          effect: iam.Effect.ALLOW,
+          actions: [
+            'cognito-idp:SignUp',
+            'cognito-idp:InitiateAuth',
+            'cognito-idp:ForgotPassword',
+            'cognito-idp:ConfirmForgotPassword',
+            'cognito-idp:AdminCreateUser',
+            'cognito-idp:AdminSetUserPassword',
+            'cognito-idp:AdminGetUser',
+            'cognito-idp:AdminUpdateUserAttributes',
+          ],
+          resources: [this.userPool.userPoolArn],
+        }),
+      ],
+    });
+
+    // Secrets Manager Access Policy (separate managed policy)
+    const secretsPolicy = new iam.ManagedPolicy(this, 'LambdaSecretsPolicy', {
+      roles: [this.lambdaRole],
+      statements: [
+        new iam.PolicyStatement({
+          effect: iam.Effect.ALLOW,
+          actions: [
+            'secretsmanager:GetSecretValue',
+          ],
+          resources: [
+            `arn:aws:secretsmanager:${this.region}:${this.account}:secret:lfmt/gemini-api-key-*`,
           ],
         }),
-        SecretsManagerAccess: new iam.PolicyDocument({
-          statements: [
-            new iam.PolicyStatement({
-              effect: iam.Effect.ALLOW,
-              actions: [
-                'secretsmanager:GetSecretValue',
-              ],
-              resources: [
-                `arn:aws:secretsmanager:${this.region}:${this.account}:secret:lfmt/gemini-api-key-*`,
-              ],
-            }),
+      ],
+    });
+
+    // Lambda Invoke Access Policy (separate managed policy)
+    const lambdaInvokePolicy = new iam.ManagedPolicy(this, 'LambdaInvokePolicy', {
+      roles: [this.lambdaRole],
+      statements: [
+        new iam.PolicyStatement({
+          effect: iam.Effect.ALLOW,
+          actions: [
+            'lambda:InvokeFunction',
+          ],
+          resources: [
+            `arn:aws:lambda:${this.region}:${this.account}:function:lfmt-*`,
           ],
         }),
-        LambdaInvokeAccess: new iam.PolicyDocument({
-          statements: [
-            new iam.PolicyStatement({
-              effect: iam.Effect.ALLOW,
-              actions: [
-                'lambda:InvokeFunction',
-              ],
-              resources: [
-                `arn:aws:lambda:${this.region}:${this.account}:function:lfmt-*`,
-              ],
-            }),
-          ],
-        }),
-      },
+      ],
     });
 
     // Step Functions Execution Role
@@ -938,14 +952,17 @@ export class LfmtInfrastructureStack extends Stack {
     this.jobsTable.grantReadWriteData(this.translationStateMachine);
 
     // Grant startTranslation Lambda permission to start state machine executions
-    // Use ARN pattern to avoid circular dependency
-    this.lambdaRole!.addToPrincipalPolicy(
-      new iam.PolicyStatement({
-        effect: iam.Effect.ALLOW,
-        actions: ['states:StartExecution'],
-        resources: [this.stateMachineArnPattern],
-      })
-    );
+    // Use separate managed policy to avoid IAM policy size limits
+    new iam.ManagedPolicy(this, 'LambdaStepFunctionsPolicy', {
+      roles: [this.lambdaRole!],
+      statements: [
+        new iam.PolicyStatement({
+          effect: iam.Effect.ALLOW,
+          actions: ['states:StartExecution'],
+          resources: [this.stateMachineArnPattern],
+        }),
+      ],
+    });
   }
 
   private createApiEndpoints() {
