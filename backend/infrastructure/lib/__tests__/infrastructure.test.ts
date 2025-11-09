@@ -312,26 +312,87 @@ describe('LFMT Infrastructure Stack', () => {
         }
       });
 
-      // Check for DynamoDB permissions in IAM role policies (inline policies)
-      template.hasResourceProperties('AWS::IAM::Role', {
-        Policies: Match.arrayWith([
-          Match.objectLike({
-            PolicyName: 'DynamoDBAccess',
-            PolicyDocument: {
-              Statement: Match.arrayWith([
-                Match.objectLike({
-                  Effect: 'Allow',
-                  Action: Match.arrayWith([
-                    'dynamodb:GetItem',
-                    'dynamodb:PutItem',
-                    'dynamodb:UpdateItem',
-                    'dynamodb:Query'
-                  ])
-                })
+      // Check for DynamoDB permissions in managed policies (refactored from inline to avoid IAM size limits)
+      template.hasResourceProperties('AWS::IAM::ManagedPolicy', {
+        PolicyDocument: {
+          Statement: Match.arrayWith([
+            Match.objectLike({
+              Effect: 'Allow',
+              Action: Match.arrayWith([
+                'dynamodb:GetItem',
+                'dynamodb:PutItem',
+                'dynamodb:UpdateItem',
+                'dynamodb:Query'
               ])
-            }
-          })
-        ])
+            })
+          ])
+        }
+      });
+
+      // Verify S3 permissions in managed policy
+      template.hasResourceProperties('AWS::IAM::ManagedPolicy', {
+        PolicyDocument: {
+          Statement: Match.arrayWith([
+            Match.objectLike({
+              Effect: 'Allow',
+              Action: Match.arrayWith([
+                's3:GetObject',
+                's3:PutObject'
+              ])
+            })
+          ])
+        }
+      });
+
+      // Verify Cognito permissions in managed policy
+      template.hasResourceProperties('AWS::IAM::ManagedPolicy', {
+        PolicyDocument: {
+          Statement: Match.arrayWith([
+            Match.objectLike({
+              Effect: 'Allow',
+              Action: Match.arrayWith([
+                'cognito-idp:SignUp',
+                'cognito-idp:InitiateAuth'
+              ])
+            })
+          ])
+        }
+      });
+
+      // Verify Secrets Manager permissions in managed policy
+      template.hasResourceProperties('AWS::IAM::ManagedPolicy', {
+        PolicyDocument: {
+          Statement: Match.arrayWith([
+            Match.objectLike({
+              Effect: 'Allow',
+              Action: 'secretsmanager:GetSecretValue'
+            })
+          ])
+        }
+      });
+
+      // Verify Lambda invoke permissions in managed policy
+      template.hasResourceProperties('AWS::IAM::ManagedPolicy', {
+        PolicyDocument: {
+          Statement: Match.arrayWith([
+            Match.objectLike({
+              Effect: 'Allow',
+              Action: 'lambda:InvokeFunction'
+            })
+          ])
+        }
+      });
+
+      // Verify Step Functions permissions in managed policy
+      template.hasResourceProperties('AWS::IAM::ManagedPolicy', {
+        PolicyDocument: {
+          Statement: Match.arrayWith([
+            Match.objectLike({
+              Effect: 'Allow',
+              Action: 'states:StartExecution'
+            })
+          ])
+        }
       });
     });
 
