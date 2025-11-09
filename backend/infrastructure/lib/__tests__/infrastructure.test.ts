@@ -362,7 +362,7 @@ describe('LFMT Infrastructure Stack', () => {
       });
     });
 
-    test('State machine has Map state for sequential chunk processing', () => {
+    test('State machine has Map state for parallel chunk processing', () => {
       const stateMachines = template.findResources('AWS::StepFunctions::StateMachine');
       const stateMachineKeys = Object.keys(stateMachines);
       expect(stateMachineKeys.length).toBe(1);
@@ -375,8 +375,8 @@ describe('LFMT Infrastructure Stack', () => {
       const mapState = Object.values(states).find((state: any) => state.Type === 'Map');
       expect(mapState).toBeDefined();
 
-      // Verify sequential processing (maxConcurrency: 1) for context continuity
-      expect((mapState as any).MaxConcurrency).toBe(1);
+      // Verify parallel processing (maxConcurrency: 10) with distributed rate limiting
+      expect((mapState as any).MaxConcurrency).toBe(10);
     });
 
     test('State machine has workflow states', () => {
