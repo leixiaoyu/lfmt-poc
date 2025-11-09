@@ -372,20 +372,12 @@ export class LfmtInfrastructureStack extends Stack {
         ],
         allowCredentials: true,
       },
-      // Enable caching for polling endpoints
+      // Caching is disabled to control costs. Throttling is retained for abuse protection.
       deployOptions: {
         stageName: 'v1',
-        cachingEnabled: true,
-        cacheClusterEnabled: true,
-        cacheClusterSize: '0.5',
+        cachingEnabled: false,
         throttlingRateLimit: this.node.tryGetContext('environment') === 'prod' ? 1000 : 100,
         throttlingBurstLimit: this.node.tryGetContext('environment') === 'prod' ? 2000 : 200,
-        methodOptions: {
-          '/*/*': {
-            cachingEnabled: true,
-            cacheTtl: Duration.seconds(30), // 30-second cache for polling endpoints
-          },
-        },
       },
     });
 

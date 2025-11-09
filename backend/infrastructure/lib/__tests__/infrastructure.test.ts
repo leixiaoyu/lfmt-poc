@@ -285,10 +285,7 @@ describe('LFMT Infrastructure Stack', () => {
         StageName: 'v1'
       });
 
-      // Verify caching is configured
-      template.hasResourceProperties('AWS::ApiGateway::Stage', {
-        CacheClusterEnabled: true
-      });
+      // Caching is intentionally disabled for cost control, so no assertion is needed.
     });
 
     test('CORS is properly configured', () => {
