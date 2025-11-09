@@ -32,7 +32,7 @@ const API_BASE_URL =
   process.env.API_BASE_URL ||
   'https://8brwlwf68h.execute-api.us-east-1.amazonaws.com/v1';
 const TEST_TIMEOUT = parseInt(process.env.TEST_TIMEOUT || '300000', 10); // 5 minutes
-const TEST_EMAIL_DOMAIN = '@integration-test.com';
+const TEST_EMAIL_DOMAIN = '@example.org'; // Using .org for better Cognito compatibility
 
 // Test document content (small text for fast testing)
 const TEST_DOCUMENT_CONTENT = `Chapter 1: The Beginning
@@ -86,6 +86,8 @@ interface TranslationStatus {
   translationStartedAt?: string;
   translationCompletedAt?: string;
   error?: string;
+  tokensUsed?: number;
+  estimatedCost?: number;
 }
 
 // Helper functions
