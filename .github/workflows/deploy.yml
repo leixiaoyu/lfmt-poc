@@ -181,17 +181,24 @@ jobs:
         run: |
           curl -f ${{ steps.get-url.outputs.api_url }}/v1/auth || echo "API not yet ready, may need warm-up"
 
-      - name: Download frontend build artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: frontend-dist
-          path: frontend/dist
+      - name: Install shared-types for frontend rebuild
+        working-directory: shared-types
+        run: npm ci
 
-      - name: Create frontend .env.production
+      - name: Build shared-types for frontend rebuild
+        working-directory: shared-types
+        run: npm run build
+
+      - name: Install frontend dependencies for rebuild
         working-directory: frontend
-        run: |
-          echo "VITE_API_URL=${{ steps.get-url.outputs.api_url }}" > .env.production
-          cat .env.production
+        run: npm ci
+
+      - name: Rebuild frontend with correct API URL
+        working-directory: frontend
+        run: npm run build
+        env:
+          NODE_ENV: production
+          VITE_API_URL: ${{ steps.get-url.outputs.api_url }}
 
       - name: Deploy frontend to S3
         run: |
