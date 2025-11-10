@@ -21,6 +21,7 @@ import * as stepfunctions from 'aws-cdk-lib/aws-stepfunctions';
 import * as tasks from 'aws-cdk-lib/aws-stepfunctions-tasks';
 import * as logs from 'aws-cdk-lib/aws-logs';
 import * as cloudfront from 'aws-cdk-lib/aws-cloudfront';
+import * as origins from 'aws-cdk-lib/aws-cloudfront-origins';
 import * as route53 from 'aws-cdk-lib/aws-route53';
 
 export interface LfmtInfrastructureStackProps extends StackProps {
@@ -39,7 +40,9 @@ export class LfmtInfrastructureStack extends Stack {
   public readonly attestationsTable: dynamodb.Table;
   public readonly documentBucket: s3.Bucket;
   public readonly resultsBucket: s3.Bucket;
+  public readonly frontendBucket: s3.Bucket;
   public readonly api: apigateway.RestApi;
+  public readonly frontendDistribution: cloudfront.Distribution;
 
   // Lambda functions
   private registerFunction?: lambda.Function;
@@ -99,13 +102,16 @@ export class LfmtInfrastructureStack extends Stack {
     // 7. Step Functions State Machine
     this.createStepFunctions();
 
-    // 8. API Gateway
+    // 8. Frontend Hosting (CloudFront + S3) - Create before API Gateway to get CloudFront URL for CORS
+    this.createFrontendHosting(removalPolicy);
+
+    // 9. API Gateway - Create after CloudFront to include CloudFront URL in CORS origins
     this.createApiGateway();
 
-    // 9. API Gateway Endpoints
+    // 10. API Gateway Endpoints
     this.createApiEndpoints();
 
-    // 10. Outputs
+    // 11. Outputs
     this.createOutputs();
   }
 
@@ -337,19 +343,28 @@ export class LfmtInfrastructureStack extends Stack {
 
   private createApiGateway() {
     // Environment-specific CORS origins
+    // NOTE: CloudFront URL will be added after createFrontendHosting() is called
     const getAllowedApiOrigins = () => {
+      const origins = [];
+
       switch (this.node.tryGetContext('environment')) {
         case 'prod':
-          return ['https://lfmt.yourcompany.com']; // Replace with actual production domain
+          origins.push('https://lfmt.yourcompany.com'); // Replace with actual production domain
+          break;
         case 'staging':
-          return ['https://staging.lfmt.yourcompany.com']; // Replace with actual staging domain
+          origins.push('https://staging.lfmt.yourcompany.com'); // Replace with actual staging domain
+          break;
         default:
-          return [
-            'http://localhost:3000',
-            'https://localhost:3000',
-            'https://d1yysvwo9eg20b.cloudfront.net' // CloudFront distribution
-          ]; // Development origins
+          origins.push('http://localhost:3000');
+          origins.push('https://localhost:3000');
       }
+
+      // Add CloudFront distribution URL if it exists (after createFrontendHosting() is called)
+      if (this.frontendDistribution) {
+        origins.push(`https://${this.frontendDistribution.distributionDomainName}`);
+      }
+
+      return origins;
     };
 
     // Create API Gateway - From Document 3 (API Gateway & Lambda Functions)
@@ -1180,6 +1195,142 @@ export class LfmtInfrastructureStack extends Stack {
     });
   }
 
+  private createFrontendHosting(removalPolicy: RemovalPolicy) {
+    /**
+     * Frontend Hosting Infrastructure
+     * 
+     * Creates CloudFront distribution and S3 bucket for hosting React SPA.
+     * 
+     * Key Features:
+     * - Origin Access Control (OAC) for secure S3 access
+     * - Custom error responses for SPA routing (403 + 404 → /index.html)
+     * - Security headers (HSTS, CSP, X-Frame-Options, etc.)
+     * - Environment-specific configuration (dev vs prod)
+     * - HTTPS-only viewer protocol
+     */
+
+    // 1. Create Frontend S3 Bucket
+    (this as any).frontendBucket = new s3.Bucket(this, 'FrontendBucket', {
+      bucketName: `lfmt-frontend-${this.stackName.toLowerCase()}`,
+      removalPolicy,
+      autoDeleteObjects: removalPolicy === RemovalPolicy.DESTROY,
+      versioned: true,
+      encryption: s3.BucketEncryption.S3_MANAGED,
+      publicReadAccess: false,
+      blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
+      lifecycleRules: [{
+        id: 'FrontendCleanup',
+        enabled: true,
+        expiration: Duration.days(90), // Delete old deployments after 90 days
+        noncurrentVersionExpiration: Duration.days(30),
+      }],
+    });
+
+    // 2. Create Origin Access Control (OAC) for CloudFront
+    const oac = new cloudfront.S3OriginAccessControl(this, 'FrontendOAC', {
+      signing: cloudfront.Signing.SIGV4_ALWAYS,
+    });
+
+    // 3. Create CloudFront Distribution
+    const environment = this.node.tryGetContext('environment');
+    const isProd = environment === 'prod';
+
+    // Environment-specific configuration
+    const priceClass = isProd 
+      ? cloudfront.PriceClass.PRICE_CLASS_ALL  // Global edge locations for production
+      : cloudfront.PriceClass.PRICE_CLASS_100; // North America & Europe only for dev (cost-optimized)
+
+    // Create Response Headers Policy with security headers
+    const responseHeadersPolicy = new cloudfront.ResponseHeadersPolicy(this, 'FrontendSecurityHeaders', {
+      securityHeadersBehavior: {
+        strictTransportSecurity: {
+          accessControlMaxAge: Duration.days(365),
+          includeSubdomains: true,
+          override: true,
+        },
+        contentTypeOptions: {
+          override: true,
+        },
+        frameOptions: {
+          frameOption: cloudfront.HeadersFrameOption.DENY,
+          override: true,
+        },
+        xssProtection: {
+          protection: true,
+          modeBlock: true,
+          override: true,
+        },
+        referrerPolicy: {
+          referrerPolicy: cloudfront.HeadersReferrerPolicy.STRICT_ORIGIN_WHEN_CROSS_ORIGIN,
+          override: true,
+        },
+      },
+      customHeadersBehavior: {
+        customHeaders: [
+          {
+            header: 'Content-Security-Policy',
+            value: "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self' https://*.execute-api.*.amazonaws.com;",
+            override: true,
+          },
+        ],
+      },
+    });
+
+    (this as any).frontendDistribution = new cloudfront.Distribution(this, 'FrontendDistribution', {
+      defaultBehavior: {
+        origin: origins.S3BucketOrigin.withOriginAccessControl(this.frontendBucket, {
+          originAccessControl: oac,
+        }),
+        viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
+        allowedMethods: cloudfront.AllowedMethods.ALLOW_GET_HEAD,
+        cachedMethods: cloudfront.CachedMethods.CACHE_GET_HEAD,
+        compress: true,
+        responseHeadersPolicy: responseHeadersPolicy,
+      },
+      defaultRootObject: 'index.html',
+      priceClass,
+      enableIpv6: true,
+      errorResponses: [
+        {
+          // Handle S3 403 Forbidden for non-existent objects (restricted bucket)
+          httpStatus: 403,
+          responseHttpStatus: 200,
+          responsePagePath: '/index.html',
+          ttl: Duration.minutes(5),
+        },
+        {
+          // Handle S3 404 Not Found (rare case with certain bucket configurations)
+          httpStatus: 404,
+          responseHttpStatus: 200,
+          responsePagePath: '/index.html',
+          ttl: Duration.minutes(5),
+        },
+      ],
+      comment: `LFMT Frontend Distribution - ${this.stackName}`,
+      enableLogging: isProd, // Enable access logging for production
+      logBucket: isProd ? new s3.Bucket(this, 'CloudFrontLogBucket', {
+        bucketName: `lfmt-cloudfront-logs-${this.stackName.toLowerCase()}`,
+        removalPolicy,
+        autoDeleteObjects: removalPolicy === RemovalPolicy.DESTROY,
+        lifecycleRules: [{
+          expiration: Duration.days(90),
+        }],
+      }) : undefined,
+    });
+
+    // 4. Grant CloudFront OAC access to frontend bucket
+    this.frontendBucket.addToResourcePolicy(new iam.PolicyStatement({
+      actions: ['s3:GetObject'],
+      resources: [`${this.frontendBucket.bucketArn}/*`],
+      principals: [new iam.ServicePrincipal('cloudfront.amazonaws.com')],
+      conditions: {
+        StringEquals: {
+          'AWS:SourceArn': `arn:aws:cloudfront::${this.account}:distribution/${this.frontendDistribution.distributionId}`,
+        },
+      },
+    }));
+  }
+
   private createOutputs() {
     // DynamoDB Table Names
     new CfnOutput(this, 'JobsTableName', {
@@ -1228,6 +1379,27 @@ export class LfmtInfrastructureStack extends Stack {
     new CfnOutput(this, 'ApiId', {
       value: this.api.restApiId,
       description: 'API Gateway ID',
+    });
+
+    // Frontend Hosting (CloudFront + S3)
+    new CfnOutput(this, 'FrontendBucketName', {
+      value: this.frontendBucket.bucketName,
+      description: 'S3 Frontend Hosting Bucket Name',
+    });
+
+    new CfnOutput(this, 'CloudFrontDistributionId', {
+      value: this.frontendDistribution.distributionId,
+      description: 'CloudFront Distribution ID',
+    });
+
+    new CfnOutput(this, 'CloudFrontDistributionDomain', {
+      value: this.frontendDistribution.distributionDomainName,
+      description: 'CloudFront Distribution Domain',
+    });
+
+    new CfnOutput(this, 'FrontendUrl', {
+      value: `https://${this.frontendDistribution.distributionDomainName}`,
+      description: 'Frontend Application URL',
     });
 
     // Step Functions State Machine
