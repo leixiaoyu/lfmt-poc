@@ -20,20 +20,21 @@ const TEST_USER = {
 test.describe('Complete User Journey', () => {
   test.describe.configure({ mode: 'serial' });
 
-  test('should load home page successfully', async ({ page }) => {
+  test('should redirect root to login page', async ({ page }) => {
     await page.goto('/');
-    
-    // Check page loaded
+
+    // Should redirect to login
+    await expect(page).toHaveURL(/\/login/);
     await expect(page).toHaveTitle(/LFMT/i);
-    await expect(page.getByRole('link', { name: /login/i })).toBeVisible();
+    await expect(page.getByRole('heading', { name: /log in/i })).toBeVisible();
   });
 
-  test('should navigate to registration page', async ({ page }) => {
-    await page.goto('/');
-    
+  test('should navigate to registration page from login', async ({ page }) => {
+    await page.goto('/login');
+
     // Click register link
-    await page.getByRole('link', { name: /register|sign up/i }).click();
-    
+    await page.getByRole('link', { name: /sign up/i }).click();
+
     // Verify on registration page
     await expect(page).toHaveURL(/\/register/);
     await expect(page.getByRole('heading', { name: /register|sign up/i })).toBeVisible();
