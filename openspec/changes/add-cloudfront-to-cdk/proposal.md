@@ -1,11 +1,12 @@
 # Proposal: Add CloudFront Distribution to CDK Infrastructure
 
 **Change ID**: `add-cloudfront-to-cdk`
-**Status**: Proposed - Awaiting Approval
+**Status**: In Progress - Phase 1 Complete
 **Priority**: P1 - HIGH (Infrastructure Team Priority per Team Lead)
-**Related Issues**: PR #54 Review Comments
+**Related Issues**: PR #54 Review Comments, PR #58 (Approved), PR #59 (Merged - Phase 1)
 **Owner**: Infrastructure Team
 **Created**: 2025-11-09
+**Phase 1 Completed**: 2025-11-10
 
 ---
 
@@ -106,12 +107,70 @@ This change will migrate the manually-created CloudFront distribution to AWS CDK
 6. **Cost Visibility**: CloudFront resources tagged and tracked in CDK
 
 ### Estimated Effort
-- **Design & Proposal**: 2 hours (DONE - this proposal)
-- **Implementation**: 4-6 hours (CDK construct, testing)
-- **Deployment & Validation**: 2-3 hours (blue-green deployment)
-- **Total**: 8-11 hours (~1.5 days)
+- **Design & Proposal**: 2 hours ✅ DONE (PR #58)
+- **Phase 1 - CDK Infrastructure**: 4-6 hours ✅ DONE (PR #59)
+- **Phase 2 - Deployment Workflow**: 1-2 hours (PENDING)
+- **Phase 3 - Documentation**: 1 hour (PENDING)
+- **Phase 4 - Testing & Validation**: 2-3 hours (PENDING)
+- **Total**: 10-14 hours (~1.5-2 days)
+
+## Progress
+
+### ✅ Phase 1: CDK Infrastructure (Complete - PR #59)
+**Completed**: 2025-11-10
+**PR**: https://github.com/leixiaoyu/lfmt-poc/pull/59
+
+**Implemented**:
+- ✅ CloudFront distribution with Origin Access Control (OAC)
+- ✅ Custom error responses for SPA routing (403/404 → `/index.html`)
+- ✅ Security headers policy (HSTS, CSP, X-Frame-Options, etc.)
+- ✅ Frontend S3 bucket with versioning and lifecycle policies
+- ✅ API Gateway CORS updated to use CloudFront URL
+- ✅ Removed hardcoded CloudFront URL (`d1yysvwo9eg20b.cloudfront.net`)
+- ✅ CDK stack outputs (FrontendBucketName, CloudFrontDistributionId, FrontendUrl)
+- ✅ Infrastructure tests (33 tests passing, including 7 CloudFront/CORS tests)
+
+**Deliverables**:
+- `backend/infrastructure/lib/lfmt-infrastructure-stack.ts`:
+  - Added `createFrontendHosting()` method (135 lines)
+  - Added `frontendBucket` and `frontendDistribution` properties
+  - Updated constructor ordering (CloudFront before API Gateway)
+- `backend/infrastructure/lib/__tests__/infrastructure.test.ts`:
+  - Added 6 CloudFront-specific tests
+  - Added 1 CORS verification test
+  - Updated resource count validation
+
+### 🔄 Phase 2: Deployment Workflow (Next)
+**Status**: Pending
+**Target**: Update GitHub Actions workflow to use CDK outputs
+
+**Tasks**:
+- Update frontend build step to use CDK API Gateway URL
+- Update frontend deployment to retrieve bucket name from CDK outputs
+- Add CloudFront invalidation step after S3 sync
+- Update E2E test configuration to use CloudFront URL from CDK
+
+### 📋 Phase 3: Documentation (Pending)
+**Status**: Pending
+**Target**: Update project documentation
+
+**Tasks**:
+- Update `CLAUDE.md` with CloudFront configuration details
+- Document SPA routing best practices
+- Add migration guide for blue-green deployment
+
+### 🧪 Phase 4: Testing & Validation (Pending)
+**Status**: Pending
+**Target**: Deploy and validate in dev environment
+
+**Tasks**:
+- Deploy CDK stack to dev environment
+- Verify CloudFront distribution creation
+- Test SPA routing (403 error handling)
+- Validate security headers
+- Run E2E tests against CloudFront URL
 
 ---
 
-**Next Step**: Team lead review and approval to proceed with implementation
+**Next Step**: Proceed with Phase 2 - Update deployment workflow
 **Validation**: `openspec validate add-cloudfront-to-cdk --strict`
