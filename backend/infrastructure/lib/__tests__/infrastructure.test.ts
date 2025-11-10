@@ -674,6 +674,10 @@ describe('LFMT Infrastructure Stack', () => {
             ReferrerPolicy: {
               ReferrerPolicy: 'strict-origin-when-cross-origin',
               Override: true
+            },
+            ContentSecurityPolicy: {
+              ContentSecurityPolicy: "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self' https://*.execute-api.*.amazonaws.com;",
+              Override: true
             }
           }
         }
