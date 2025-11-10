@@ -109,7 +109,7 @@ jobs:
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     environment:
       name: development
-      url: https://d1yysvwo9eg20b.cloudfront.net
+      url: ${{ steps.get-frontend-url.outputs.frontend_url }}
     outputs:
       api_url: ${{ steps.get-url.outputs.api_url }}
       frontend_url: ${{ steps.get-frontend-url.outputs.frontend_url }}
@@ -200,26 +200,43 @@ jobs:
           NODE_ENV: production
           VITE_API_URL: ${{ steps.get-url.outputs.api_url }}
 
+      - name: Get Frontend Bucket Name from CDK
+        id: get-bucket-name
+        run: |
+          FRONTEND_BUCKET=$(aws cloudformation describe-stacks \
+            --stack-name LfmtPocDev \
+            --query "Stacks[0].Outputs[?OutputKey=='FrontendBucketName'].OutputValue" \
+            --output text \
+            --region ${{ env.AWS_REGION }})
+          echo "bucket_name=$FRONTEND_BUCKET" >> $GITHUB_OUTPUT
+          echo "Frontend Bucket: $FRONTEND_BUCKET"
+
       - name: Deploy frontend to S3
         run: |
-          aws s3 sync frontend/dist/ s3://lfmt-poc-frontend/ --delete --cache-control "public, max-age=31536000, immutable" --exclude "index.html"
-          aws s3 cp frontend/dist/index.html s3://lfmt-poc-frontend/index.html --cache-control "public, max-age=0, must-revalidate"
+          aws s3 sync frontend/dist/ s3://${{ steps.get-bucket-name.outputs.bucket_name }}/ --delete --cache-control "public, max-age=31536000, immutable" --exclude "index.html"
+          aws s3 cp frontend/dist/index.html s3://${{ steps.get-bucket-name.outputs.bucket_name }}/index.html --cache-control "public, max-age=0, must-revalidate"
 
       - name: Get CloudFront Distribution ID
         id: get-cf-dist
         run: |
-          DIST_ID=$(aws cloudfront list-distributions --query "DistributionList.Items[?Origins.Items[0].DomainName=='lfmt-poc-frontend.s3.amazonaws.com'].Id | [0]" --output text)
+          DIST_ID=$(aws cloudformation describe-stacks \
+            --stack-name LfmtPocDev \
+            --query "Stacks[0].Outputs[?OutputKey=='CloudFrontDistributionId'].OutputValue" \
+            --output text \
+            --region ${{ env.AWS_REGION }})
           echo "distribution_id=$DIST_ID" >> $GITHUB_OUTPUT
           echo "CloudFront Distribution ID: $DIST_ID"
 
       - name: Get CloudFront URL
         id: get-frontend-url
         run: |
-          FRONTEND_URL=$(aws cloudfront list-distributions \
-            --query "DistributionList.Items[?Origins.Items[0].DomainName=='lfmt-poc-frontend.s3.amazonaws.com'].DomainName | [0]" \
-            --output text)
-          echo "frontend_url=https://${FRONTEND_URL}" >> $GITHUB_OUTPUT
-          echo "Frontend URL: https://${FRONTEND_URL}"
+          FRONTEND_URL=$(aws cloudformation describe-stacks \
+            --stack-name LfmtPocDev \
+            --query "Stacks[0].Outputs[?OutputKey=='FrontendUrl'].OutputValue" \
+            --output text \
+            --region ${{ env.AWS_REGION }})
+          echo "frontend_url=$FRONTEND_URL" >> $GITHUB_OUTPUT
+          echo "Frontend URL: $FRONTEND_URL"
 
       - name: Invalidate CloudFront cache
         run: |
@@ -231,7 +248,7 @@ jobs:
           echo "========================================="
           echo "Frontend Deployment Summary"
           echo "========================================="
-          echo "S3 Bucket: lfmt-poc-frontend"
+          echo "S3 Bucket: ${{ steps.get-bucket-name.outputs.bucket_name }}"
           echo "CloudFront Distribution: ${{ steps.get-cf-dist.outputs.distribution_id }}"
           echo "Frontend URL: ${{ steps.get-frontend-url.outputs.frontend_url }}"
           echo "API URL: ${{ steps.get-url.outputs.api_url }}"

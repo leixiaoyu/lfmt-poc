@@ -1,62 +1,65 @@
 # Implementation Tasks: Add CloudFront to CDK
 
-## Phase 1: CDK Infrastructure (4-5 hours)
+## Phase 1: CDK Infrastructure ✅ COMPLETE (PR #59)
+**Completed**: 2025-11-10
+**Time Spent**: ~5 hours
 
-### 1.1 Create Frontend S3 Bucket
-- [ ] 1.1.1 Add `frontendBucket` property to LfmtInfrastructureStack class
-- [ ] 1.1.2 Implement bucket with:
-  - [ ] Public access blocked
-  - [ ] Static website hosting disabled (CloudFront-only access)
-  - [ ] Versioning enabled
-  - [ ] Lifecycle policy (delete old deployments after 90 days)
-  - [ ] Encryption (S3-managed)
-  - [ ] Removal policy based on environment (DESTROY for dev, RETAIN for prod)
+### 1.1 Create Frontend S3 Bucket ✅
+- [x] 1.1.1 Add `frontendBucket` property to LfmtInfrastructureStack class
+- [x] 1.1.2 Implement bucket with:
+  - [x] Public access blocked
+  - [x] Static website hosting disabled (CloudFront-only access)
+  - [x] Versioning enabled
+  - [x] Lifecycle policy (delete old deployments after 90 days)
+  - [x] Encryption (S3-managed)
+  - [x] Removal policy based on environment (DESTROY for dev, RETAIN for prod)
 
-### 1.2 Create CloudFront Distribution
-- [ ] 1.2.1 Add `frontendDistribution` property to LfmtInfrastructureStack class
-- [ ] 1.2.2 Configure S3 origin with Origin Access Control (OAC)
-- [ ] 1.2.3 Add custom error responses:
-  - [ ] 403 → `/index.html` with 200 status (SPA routing)
-  - [ ] 404 → `/index.html` with 200 status (SPA routing)
-  - [ ] Error caching TTL: 300 seconds (5 minutes)
-- [ ] 1.2.4 Configure cache behaviors:
-  - [ ] Default cache behavior for static assets
-  - [ ] Cache policy for `index.html` (no cache or short TTL)
-  - [ ] Viewer protocol policy: HTTPS only (redirect HTTP to HTTPS)
-  - [ ] Compression enabled (gzip, brotli)
-- [ ] 1.2.5 Add security headers via response headers policy:
-  - [ ] `Strict-Transport-Security: max-age=31536000; includeSubDomains`
-  - [ ] `X-Content-Type-Options: nosniff`
-  - [ ] `X-Frame-Options: DENY`
-  - [ ] `X-XSS-Protection: 1; mode=block`
-  - [ ] `Content-Security-Policy` (strict CSP for SPA)
-  - [ ] `Referrer-Policy: strict-origin-when-cross-origin`
-- [ ] 1.2.6 Configure default root object: `index.html`
-- [ ] 1.2.7 Enable IPv6
+### 1.2 Create CloudFront Distribution ✅
+- [x] 1.2.1 Add `frontendDistribution` property to LfmtInfrastructureStack class
+- [x] 1.2.2 Configure S3 origin with Origin Access Control (OAC)
+- [x] 1.2.3 Add custom error responses:
+  - [x] 403 → `/index.html` with 200 status (SPA routing)
+  - [x] 404 → `/index.html` with 200 status (SPA routing)
+  - [x] Error caching TTL: 300 seconds (5 minutes)
+- [x] 1.2.4 Configure cache behaviors:
+  - [x] Default cache behavior for static assets
+  - [x] Cache policy for `index.html` (no cache or short TTL)
+  - [x] Viewer protocol policy: HTTPS only (redirect HTTP to HTTPS)
+  - [x] Compression enabled (gzip, brotli)
+- [x] 1.2.5 Add security headers via response headers policy:
+  - [x] `Strict-Transport-Security: max-age=31536000; includeSubDomains`
+  - [x] `X-Content-Type-Options: nosniff`
+  - [x] `X-Frame-Options: DENY`
+  - [x] `X-XSS-Protection: 1; mode=block`
+  - [x] `Content-Security-Policy` (strict CSP for SPA)
+  - [x] `Referrer-Policy: strict-origin-when-cross-origin`
+- [x] 1.2.6 Configure default root object: `index.html`
+- [x] 1.2.7 Enable IPv6
 
-### 1.3 Grant CloudFront Access to S3
-- [ ] 1.3.1 Create Origin Access Control (OAC) for CloudFront
-- [ ] 1.3.2 Update frontend bucket policy to allow CloudFront OAC access
-- [ ] 1.3.3 Deny all other access to frontend bucket
+### 1.3 Grant CloudFront Access to S3 ✅
+- [x] 1.3.1 Create Origin Access Control (OAC) for CloudFront
+- [x] 1.3.2 Update frontend bucket policy to allow CloudFront OAC access
+- [x] 1.3.3 Deny all other access to frontend bucket
 
-### 1.4 Update CDK Stack Outputs
-- [ ] 1.4.1 Add `FrontendBucketName` output
-- [ ] 1.4.2 Add `CloudFrontDistributionId` output
-- [ ] 1.4.3 Add `CloudFrontDistributionDomain` output (e.g., `d1abc123.cloudfront.net`)
-- [ ] 1.4.4 Add `FrontendUrl` output (HTTPS URL of CloudFront distribution)
+### 1.4 Update CDK Stack Outputs ✅
+- [x] 1.4.1 Add `FrontendBucketName` output
+- [x] 1.4.2 Add `CloudFrontDistributionId` output
+- [x] 1.4.3 Add `CloudFrontDistributionDomain` output (e.g., `d1abc123.cloudfront.net`)
+- [x] 1.4.4 Add `FrontendUrl` output (HTTPS URL of CloudFront distribution)
 
-### 1.5 Update API Gateway CORS
-- [ ] 1.5.1 Read CloudFront URL from CDK context or outputs
-- [ ] 1.5.2 Update `getAllowedApiOrigins()` to use CloudFront domain
-- [ ] 1.5.3 Remove hardcoded `https://d1yysvwo9eg20b.cloudfront.net` reference
-- [ ] 1.5.4 Keep localhost origins for local development
+### 1.5 Update API Gateway CORS ✅
+- [x] 1.5.1 Read CloudFront URL from CDK context or outputs
+- [x] 1.5.2 Update `getAllowedApiOrigins()` to use CloudFront domain
+- [x] 1.5.3 Remove hardcoded `https://d1yysvwo9eg20b.cloudfront.net` reference
+- [x] 1.5.4 Keep localhost origins for local development
 
-### 1.6 Infrastructure Tests
-- [ ] 1.6.1 Add test: CloudFront distribution exists
-- [ ] 1.6.2 Add test: Custom error responses configured correctly
-- [ ] 1.6.3 Add test: HTTPS-only viewer protocol policy
-- [ ] 1.6.4 Add test: S3 bucket has block public access enabled
-- [ ] 1.6.5 Add test: Stack outputs include CloudFront URL
+### 1.6 Infrastructure Tests ✅
+- [x] 1.6.1 Add test: CloudFront distribution exists
+- [x] 1.6.2 Add test: Custom error responses configured correctly
+- [x] 1.6.3 Add test: HTTPS-only viewer protocol policy
+- [x] 1.6.4 Add test: S3 bucket has block public access enabled
+- [x] 1.6.5 Add test: Stack outputs include CloudFront URL
+- [x] 1.6.6 Add test: CloudFront URL included in CORS origins (BONUS)
 
 ## Phase 2: Deployment Workflow Updates (1-2 hours)
 
@@ -203,9 +206,13 @@
 ---
 
 **Total Estimated Tasks**: 88
-**Completed**: 0
-**Remaining**: 88
-**Progress**: 0%
+**Completed**: 30 (Phase 1 complete)
+**Remaining**: 58 (Phases 2-6)
+**Progress**: 34%
 
-**Critical Path**: Phase 1 (CDK) → Phase 2 (Deployment) → Phase 4 (Testing)
-**Estimated Duration**: 8-11 hours (~1.5 days)
+**Critical Path**: ~~Phase 1 (CDK)~~ ✅ → **Phase 2 (Deployment)** → Phase 4 (Testing)
+**Total Duration**: 10-14 hours (~1.5-2 days)
+**Time Spent**: ~5 hours (Phase 1)
+**Time Remaining**: 5-9 hours (Phases 2-6)
+
+**Next Phase**: Phase 2 - Deployment Workflow Updates (1-2 hours)
