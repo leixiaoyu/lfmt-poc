@@ -533,6 +533,10 @@ describe('LFMT Infrastructure Stack', () => {
       expect(outputs).toHaveProperty('ApiId');
       expect(outputs).toHaveProperty('TranslationStateMachineArn');
       expect(outputs).toHaveProperty('TranslationStateMachineName');
+      expect(outputs).toHaveProperty('FrontendBucketName');
+      expect(outputs).toHaveProperty('CloudFrontDistributionId');
+      expect(outputs).toHaveProperty('CloudFrontDistributionDomain');
+      expect(outputs).toHaveProperty('FrontendUrl');
     });
   });
 
@@ -540,11 +544,14 @@ describe('LFMT Infrastructure Stack', () => {
     test('Expected number of resources created', () => {
       // Ensure we're not creating too many or too few resources
       template.resourceCountIs('AWS::DynamoDB::Table', 4); // Jobs, Users, Attestations, Rate Limit Buckets
-      template.resourceCountIs('AWS::S3::Bucket', 2);      // Documents, Results
+      template.resourceCountIs('AWS::S3::Bucket', 3);      // Documents, Results, Frontend
       template.resourceCountIs('AWS::Cognito::UserPool', 1);
       template.resourceCountIs('AWS::Cognito::UserPoolClient', 1);
       template.resourceCountIs('AWS::ApiGateway::RestApi', 1);
       template.resourceCountIs('AWS::Logs::LogGroup', 5);   // API, Lambda x3, Step Functions State Machine x1
+      template.resourceCountIs('AWS::CloudFront::Distribution', 1);
+      template.resourceCountIs('AWS::CloudFront::OriginAccessControl', 1);
+      template.resourceCountIs('AWS::CloudFront::ResponseHeadersPolicy', 1);
       // CDK creates additional service roles, so check we have at least our expected roles
       const roleCount = Object.keys(template.findResources('AWS::IAM::Role')).length;
       expect(roleCount).toBeGreaterThanOrEqual(2);
@@ -580,6 +587,114 @@ describe('LFMT Infrastructure Stack', () => {
           SSEEnabled: true
         }
       });
+    });
+  });
+
+  describe('CloudFront Distribution', () => {
+    test('CloudFront distribution exists', () => {
+      template.hasResourceProperties('AWS::CloudFront::Distribution', {
+        DistributionConfig: {
+          Enabled: true,
+          IPV6Enabled: true,
+          DefaultRootObject: 'index.html'
+        }
+      });
+    });
+
+    test('Custom error responses configured for SPA routing', () => {
+      template.hasResourceProperties('AWS::CloudFront::Distribution', {
+        DistributionConfig: {
+          CustomErrorResponses: [
+            {
+              ErrorCode: 403,
+              ResponseCode: 200,
+              ResponsePagePath: '/index.html',
+              ErrorCachingMinTTL: 300
+            },
+            {
+              ErrorCode: 404,
+              ResponseCode: 200,
+              ResponsePagePath: '/index.html',
+              ErrorCachingMinTTL: 300
+            }
+          ]
+        }
+      });
+    });
+
+    test('HTTPS-only viewer protocol policy', () => {
+      template.hasResourceProperties('AWS::CloudFront::Distribution', {
+        DistributionConfig: {
+          DefaultCacheBehavior: {
+            ViewerProtocolPolicy: 'redirect-to-https'
+          }
+        }
+      });
+    });
+
+    test('Security headers policy configured', () => {
+      template.hasResourceProperties('AWS::CloudFront::ResponseHeadersPolicy', {
+        ResponseHeadersPolicyConfig: {
+          SecurityHeadersConfig: {
+            StrictTransportSecurity: {
+              AccessControlMaxAgeSec: 31536000,
+              IncludeSubdomains: true,
+              Override: true
+            },
+            ContentTypeOptions: {
+              Override: true
+            },
+            FrameOptions: {
+              FrameOption: 'DENY',
+              Override: true
+            },
+            XSSProtection: {
+              Protection: true,
+              ModeBlock: true,
+              Override: true
+            },
+            ReferrerPolicy: {
+              ReferrerPolicy: 'strict-origin-when-cross-origin',
+              Override: true
+            }
+          }
+        }
+      });
+    });
+
+    test('Origin Access Control configured for S3', () => {
+      template.hasResourceProperties('AWS::CloudFront::OriginAccessControl', {
+        OriginAccessControlConfig: {
+          OriginAccessControlOriginType: 's3',
+          SigningBehavior: 'always',
+          SigningProtocol: 'sigv4'
+        }
+      });
+    });
+
+    test('Frontend S3 bucket has public access blocked', () => {
+      const buckets = template.findResources('AWS::S3::Bucket');
+      const frontendBucket = Object.values(buckets).find((bucket: any) => {
+        const bucketName = bucket.Properties?.BucketName;
+        // Check if it's a string containing 'frontend' OR a Fn::Join with 'frontend'
+        return (
+          (typeof bucketName === 'string' && bucketName.includes('frontend')) ||
+          bucketName?.['Fn::Join']?.[1]?.some((part: any) =>
+            typeof part === 'string' && part.includes('frontend')
+          )
+        );
+      });
+
+      expect(frontendBucket).toBeDefined();
+      if (frontendBucket) {
+        expect(frontendBucket).toHaveProperty('Properties.PublicAccessBlockConfiguration');
+        expect(frontendBucket.Properties.PublicAccessBlockConfiguration).toEqual({
+          BlockPublicAcls: true,
+          BlockPublicPolicy: true,
+          IgnorePublicAcls: true,
+          RestrictPublicBuckets: true
+        });
+      }
     });
   });
 });
