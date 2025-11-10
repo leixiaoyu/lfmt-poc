@@ -140,15 +140,25 @@ This change will migrate the manually-created CloudFront distribution to AWS CDK
   - Added 1 CORS verification test
   - Updated resource count validation
 
-### 🔄 Phase 2: Deployment Workflow (Next)
-**Status**: Pending
-**Target**: Update GitHub Actions workflow to use CDK outputs
+### ✅ Phase 2: Deployment Workflow (Complete - PR #61)
+**Completed**: 2025-11-10
+**PR**: https://github.com/leixiaoyu/lfmt-poc/pull/61
 
-**Tasks**:
-- Update frontend build step to use CDK API Gateway URL
-- Update frontend deployment to retrieve bucket name from CDK outputs
-- Add CloudFront invalidation step after S3 sync
-- Update E2E test configuration to use CloudFront URL from CDK
+**Implemented**:
+- ✅ Updated environment URL to use CDK stack output
+- ✅ Added step to retrieve FrontendBucketName from CDK outputs
+- ✅ Updated S3 sync commands to use dynamic bucket name
+- ✅ Replaced manual CloudFront distribution lookup with CDK output
+- ✅ Updated CloudFront URL retrieval to use CDK FrontendUrl output
+- ✅ Updated deployment summary to display CDK-managed resources
+- ✅ E2E test configuration already using CDK outputs via job outputs
+
+**Deliverables**:
+- `.github/workflows/deploy.yml`:
+  - Removed hardcoded CloudFront URL (`d1yysvwo9eg20b.cloudfront.net`)
+  - Removed hardcoded S3 bucket name (`lfmt-poc-frontend`)
+  - All infrastructure references now use CDK stack outputs
+  - CloudFront invalidation already configured (no changes needed)
 
 ### 📋 Phase 3: Documentation (Pending)
 **Status**: Pending
