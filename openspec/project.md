@@ -26,6 +26,11 @@ LFMT POC (Long-Form Translation Service) is a proof-of-concept serverless applic
 - **UI Library**: Material-UI (MUI) v5
 - **Routing**: React Router v6
 - **Build Tool**: Vite
+- **Hosting**: AWS CloudFront + S3 (CDK-managed since 2025-11-10)
+  - Origin Access Control (OAC) for secure S3 access
+  - Custom error responses for SPA routing (403/404 → /index.html)
+  - Security headers (CSP, HSTS, X-Frame-Options, etc.)
+  - HTTPS-only with automatic HTTP redirect
 - **Form Management**: React Hook Form + Zod validation
 - **HTTP Client**: Axios with interceptors (auto token refresh)
 - **Testing**: Vitest + React Testing Library (91.66% coverage)
@@ -301,10 +306,16 @@ LFMT POC (Long-Form Translation Service) is a proof-of-concept serverless applic
 
 **Cloud Services (AWS)**:
 - **AWS CDK**: Infrastructure as code framework
+- **CloudFront**: CDN for frontend hosting with Origin Access Control (OAC)
+  - Custom error responses for SPA routing
+  - Security headers policy (CSP, HSTS, X-Frame-Options)
+  - Cache invalidation after deployments
 - **API Gateway**: REST API with caching and rate limiting
 - **Lambda**: Serverless compute (Node.js 18 runtime)
 - **DynamoDB**: NoSQL database with on-demand billing
 - **S3**: Object storage with intelligent tiering
+  - Frontend hosting bucket (CloudFront origin)
+  - Document uploads and results storage
 - **Cognito**: User authentication and JWT tokens
 - **CloudWatch**: Logging, metrics, and dashboards
 - **Step Functions**: Workflow orchestration (planned)

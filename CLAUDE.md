@@ -16,3 +16,443 @@ Use `@/openspec/AGENTS.md` to learn:
 Keep this managed block so 'openspec update' can refresh the instructions.
 
 <!-- OPENSPEC:END -->
+
+---
+
+# LFMT POC - Claude Development Guide
+
+## Project Overview
+
+This is the **Long-Form Translation Service** Proof of Concept (LFMT POC) - a React SPA with AWS serverless backend for translating large documents (65K-400K words) using Claude Sonnet 4 API.
+
+## Infrastructure Architecture
+
+### Frontend Hosting - CloudFront CDK
+
+**Status**: Fully managed via AWS CDK (as of PR #59, 2025-11-10)
+
+The frontend React SPA is hosted on AWS CloudFront with S3 origin, fully managed as Infrastructure as Code.
+
+#### CloudFront Configuration
+
+**Location**: `backend/infrastructure/lib/lfmt-infrastructure-stack.ts:1194-1303`
+
+**Key Components**:
+
+1. **S3 Bucket** (`frontendBucket`):
+   ```typescript
+   - Public access blocked (CloudFront-only access via OAC)
+   - Versioning enabled for rollback capability
+   - Lifecycle policy: Delete old deployments after 90 days
+   - Server-side encryption (S3-managed)
+   - Removal policy: DESTROY (dev), RETAIN (prod)
+   ```
+
+2. **CloudFront Distribution** (`frontendDistribution`):
+   ```typescript
+   - Origin Access Control (OAC) for secure S3 access
+   - Default root object: index.html
+   - HTTPS-only (redirect HTTP to HTTPS)
+   - IPv6 enabled
+   - Compression: gzip, brotli
+   ```
+
+3. **Custom Error Responses** (SPA Routing):
+   ```typescript
+   403 → /index.html (status: 200, TTL: 300s)
+   404 → /index.html (status: 200, TTL: 300s)
+   ```
+
+   **Why 403 instead of 404?**
+   - S3 returns 403 (Forbidden) for non-existent objects when bucket has restricted access via OAC
+   - Both 403 and 404 redirect to `/index.html` to enable React Router client-side routing
+   - Error caching TTL: 5 minutes to balance UX and cache efficiency
+
+4. **Security Headers** (`ResponseHeadersPolicy`):
+   ```typescript
+   Strict-Transport-Security: max-age=31536000; includeSubDomains
+   X-Content-Type-Options: nosniff
+   X-Frame-Options: DENY
+   X-XSS-Protection: 1; mode=block
+   Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; ...
+   Referrer-Policy: strict-origin-when-cross-origin
+   ```
+
+   **CRITICAL**: CSP **must** be in `securityHeadersBehavior.contentSecurityPolicy`, **NOT** in `customHeadersBehavior.customHeaders[]` (CloudFormation will reject deployment).
+
+5. **Cache Behaviors**:
+   ```typescript
+   - Default: Caching optimized for static assets
+   - index.html: No cache or short TTL for faster deployments
+   - Viewer protocol: HTTPS redirect
+   ```
+
+#### Stack Outputs
+
+**Location**: `backend/infrastructure/lib/lfmt-infrastructure-stack.ts:1435-1457`
+
+```typescript
+FrontendBucketName: ${frontendBucket.bucketName}
+CloudFrontDistributionId: ${frontendDistribution.distributionId}
+CloudFrontDistributionDomain: ${frontendDistribution.distributionDomainName}
+FrontendUrl: https://${frontendDistribution.distributionDomainName}
+```
+
+**Usage**: Deployment workflow retrieves these outputs dynamically via `aws cloudformation describe-stacks`.
+
+### CORS Configuration
+
+**Location**: `backend/infrastructure/lib/lfmt-infrastructure-stack.ts:337-400`
+
+The API Gateway CORS allowed origins **dynamically include** the CloudFront URL from stack outputs:
+
+```typescript
+getAllowedApiOrigins() {
+  const origins = [
+    'http://localhost:5173',
+    'http://localhost:3000',
+  ];
+
+  // Add CloudFront URL if available
+  if (this.frontendDistribution) {
+    origins.push(`https://${this.frontendDistribution.distributionDomainName}`);
+  }
+
+  return origins;
+}
+```
+
+**Why this matters**:
+- No hardcoded CloudFront URLs
+- CORS automatically works with CDK-managed distribution
+- Supports local development origins
+
+### Deployment Workflow
+
+**Location**: `.github/workflows/deploy.yml`
+
+**CloudFront Deployment Steps** (Lines 203-261):
+
+1. **Retrieve Frontend Bucket Name** (Lines 203-212):
+   ```yaml
+   aws cloudformation describe-stacks \
+     --stack-name LfmtPocDev \
+     --query "Stacks[0].Outputs[?OutputKey=='FrontendBucketName'].OutputValue"
+   ```
+
+2. **Deploy Frontend to S3** (Lines 214-217):
+   ```yaml
+   aws s3 sync frontend/dist/ s3://$BUCKET_NAME/ --delete
+   aws s3 cp frontend/dist/index.html s3://$BUCKET_NAME/index.html
+   ```
+
+3. **Retrieve CloudFront Distribution ID** (Lines 219-228):
+   ```yaml
+   aws cloudformation describe-stacks \
+     --stack-name LfmtPocDev \
+     --query "Stacks[0].Outputs[?OutputKey=='CloudFrontDistributionId'].OutputValue"
+   ```
+
+4. **Create CloudFront Invalidation** (Lines 241-250):
+   ```yaml
+   aws cloudfront create-invalidation \
+     --distribution-id $DISTRIBUTION_ID \
+     --paths "/*"
+   ```
+
+5. **Wait for Invalidation** (Lines 252-261):
+   ```yaml
+   aws cloudfront wait invalidation-completed \
+     --distribution-id $DISTRIBUTION_ID \
+     --id $INVALIDATION_ID
+   ```
+   **Timeout**: 15 minutes (typical: 3-5 minutes)
+
+### CloudFront Invalidation Best Practices
+
+**When to Invalidate**:
+- ✅ After deploying new frontend build
+- ✅ When updating `index.html` (app entry point)
+- ✅ When fixing critical bugs (e.g., broken routing)
+
+**What to Invalidate**:
+- `/*` - Full distribution (simplest, recommended for POC)
+- `/index.html` - Only entry point (faster, but requires careful cache management)
+
+**Invalidation Cost**:
+- First 1,000 invalidations per month: FREE
+- Additional: $0.005 per path
+- POC impact: Negligible (< 100 deployments/month)
+
+**Invalidation Time**:
+- Typical: 3-5 minutes
+- Maximum: 15 minutes
+- Timeout in workflow: 15 minutes (900 seconds)
+
+### SPA Routing Deep Dive
+
+**Problem**:
+Direct navigation to `/dashboard` or `/translation/upload` in a CloudFront SPA results in S3 returning 403 (Forbidden) because:
+1. S3 bucket has restricted access (OAC)
+2. `/dashboard` doesn't exist as an S3 object
+3. S3 denies access to non-existent objects with 403 instead of 404
+
+**Solution**:
+Custom error responses redirect **both** 403 and 404 to `/index.html` with status 200, allowing React Router to handle client-side routing.
+
+**Configuration** (`backend/infrastructure/lib/lfmt-infrastructure-stack.ts:1257-1272`):
+```typescript
+errorResponses: [
+  {
+    httpStatus: 403,
+    responsePagePath: '/index.html',
+    responseHttpStatus: 200,
+    ttl: Duration.seconds(300), // 5 minutes
+  },
+  {
+    httpStatus: 404,
+    responsePagePath: '/index.html',
+    responseHttpStatus: 200,
+    ttl: Duration.seconds(300),
+  },
+],
+```
+
+**Validation**:
+Test SPA routing by navigating directly to:
+- `/` → redirects to `/login` (React Router)
+- `/dashboard` → serves React app (403 fix validation)
+- `/translation/upload` → serves React app
+- Browser refresh on any route → stays on route
+
+### Blue-Green Deployment Strategy
+
+**For CDK Infrastructure Updates**:
+
+1. **GREEN Deployment** (New):
+   ```bash
+   npx cdk deploy --context environment=dev
+   ```
+   - Creates new CloudFront distribution
+   - New S3 bucket
+   - New stack outputs
+
+2. **Testing Phase**:
+   - Deploy frontend to GREEN S3 bucket
+   - Test CloudFront URL thoroughly
+   - Validate SPA routing, security headers, CORS
+
+3. **Traffic Cutover**:
+   - Update DNS (if using custom domain)
+   - Update environment variables in GitHub Actions
+   - Monitor for 24 hours
+
+4. **BLUE Deprecation** (Old):
+   - Keep manual distribution for 30-day grace period
+   - Delete after validation complete
+
+**Rollback Procedure**:
+If issues occur with GREEN deployment:
+1. Revert DNS to old CloudFront URL (if changed)
+2. Redeploy frontend to old S3 bucket
+3. Update API Gateway CORS to old CloudFront URL
+4. Investigate and fix issues before retry
+
+### Known Issues & Fixes
+
+#### Issue: CloudFront CSP Deployment Failure (Fixed in PR #66)
+
+**Error**:
+```
+The parameter CustomHeaders contains Content-Security-Policy that is a security header
+and cannot be set as custom header.
+```
+
+**Root Cause**:
+CSP was incorrectly placed in `customHeadersBehavior.customHeaders[]` instead of `securityHeadersBehavior.contentSecurityPolicy`.
+
+**Fix** (`backend/infrastructure/lib/lfmt-infrastructure-stack.ts:1243-1272`):
+```typescript
+// ❌ WRONG:
+customHeadersBehavior: {
+  customHeaders: [
+    { header: 'Content-Security-Policy', value: "...", override: true }
+  ]
+}
+
+// ✅ CORRECT:
+securityHeadersBehavior: {
+  contentSecurityPolicy: {
+    contentSecurityPolicy: "default-src 'self'; ...",
+    override: true,
+  }
+}
+```
+
+**Lesson**: AWS CloudFront API requires security headers (CSP, HSTS, X-Frame-Options, etc.) to be configured via dedicated properties in `SecurityHeadersConfig`, not as custom headers.
+
+### Testing CloudFront Infrastructure
+
+**Location**: `backend/infrastructure/lib/__tests__/infrastructure.test.ts`
+
+**Key Tests** (Lines 568-685):
+
+1. **CloudFront distribution exists** (Lines 568-572)
+2. **S3 bucket has block public access** (Lines 574-587)
+3. **Custom error responses configured** (Lines 589-614)
+4. **HTTPS-only viewer protocol** (Lines 616-625)
+5. **Security headers policy** (Lines 627-685)
+   - Validates CSP in `SecurityHeadersConfig.ContentSecurityPolicy`
+6. **Stack outputs include CloudFront URL** (Lines 715-732)
+7. **CloudFront URL in CORS origins** (Lines 687-713)
+
+**Run Tests**:
+```bash
+cd backend/infrastructure
+npm test
+```
+
+### CloudFront Manual Operations
+
+**Synthesize CloudFormation Template**:
+```bash
+cd backend/infrastructure
+npm run cdk:synth
+```
+
+**Deploy to Dev**:
+```bash
+npx cdk deploy --context environment=dev
+```
+
+**View Stack Outputs**:
+```bash
+aws cloudformation describe-stacks \
+  --stack-name LfmtPocDev \
+  --query 'Stacks[0].Outputs'
+```
+
+**Check Distribution Status**:
+```bash
+aws cloudfront list-distributions \
+  --query 'DistributionList.Items[?Comment==`LFMT Frontend - Dev`]'
+```
+
+**Create Manual Invalidation**:
+```bash
+aws cloudfront create-invalidation \
+  --distribution-id <DISTRIBUTION_ID> \
+  --paths "/*"
+```
+
+---
+
+## Development Guidelines
+
+### When Working with CloudFront
+
+1. **Always use CDK stack outputs** - Never hardcode CloudFront URLs or S3 bucket names
+2. **Test SPA routing** - Validate 403 and 404 error responses redirect to `/index.html`
+3. **Validate security headers** - Check CSP, HSTS, X-Frame-Options in browser dev tools
+4. **Invalidate after deploy** - Ensure users see latest frontend changes
+5. **Monitor invalidation time** - Typical 3-5 min, max 15 min
+
+### When Modifying CloudFront Configuration
+
+1. **Update infrastructure tests first** - Test-driven infrastructure changes
+2. **Run `npm run cdk:synth`** - Validate CloudFormation before deploying
+3. **Deploy to dev environment** - Test thoroughly before production
+4. **Check AWS Console** - Verify distribution settings match CDK code
+5. **Validate security headers** - Ensure CSP is in `securityHeadersBehavior`, not `customHeadersBehavior`
+
+### Common Pitfalls
+
+❌ **DON'T**:
+- Hardcode CloudFront URLs anywhere (use stack outputs)
+- Put CSP in `customHeadersBehavior` (use `securityHeadersBehavior.contentSecurityPolicy`)
+- Skip CloudFront invalidation after deploy (users will see stale content)
+- Modify CloudFront distribution manually in AWS Console (breaks IaC)
+
+✅ **DO**:
+- Retrieve infrastructure values from CDK stack outputs
+- Configure security headers in `securityHeadersBehavior`
+- Create invalidations after S3 deploy
+- Make all infrastructure changes via CDK code + PR workflow
+
+---
+
+## Migration Notes
+
+### From Manual CloudFront to CDK (Completed 2025-11-10)
+
+**Phase 1**: CDK Infrastructure (PR #59) ✅
+**Phase 2**: Deployment Workflow (PR #61) ✅
+**Hotfix**: CSP Configuration (PR #66) ✅
+**Phase 3**: Documentation (Current)
+
+**Manual Distribution**: `d1yysvwo9eg20b.cloudfront.net`
+- **Status**: Deprecated, scheduled for deletion after 30-day grace period
+- **Replacement**: CDK-managed distribution (outputs from `LfmtPocDev` stack)
+
+### DNS Update Instructions (If Using Custom Domain)
+
+**Pre-Cutover**:
+1. Document current DNS records (CNAME or ALIAS to old distribution)
+2. Retrieve new CloudFront distribution domain from stack outputs
+3. Plan maintenance window (DNS propagation: 1-48 hours)
+
+**Cutover**:
+1. Update CNAME/ALIAS record to point to new distribution domain
+2. Monitor DNS propagation: `dig <your-domain>`
+3. Test new CloudFront URL: `curl -I https://<your-domain>`
+
+**Post-Cutover**:
+1. Monitor CloudWatch metrics for errors
+2. Check frontend access logs in S3
+3. Validate CORS, security headers, SPA routing
+
+---
+
+## Quick Reference
+
+### CDK Stack Structure
+
+```
+backend/infrastructure/lib/lfmt-infrastructure-stack.ts
+├── constructor()
+│   ├── createS3Buckets()           # Frontend + uploads
+│   ├── createDynamoDBTables()      # Jobs, attestations
+│   ├── createCognito()             # User authentication
+│   ├── createFrontendHosting()     # ⭐ CloudFront + S3 origin
+│   ├── createApiGateway()          # REST API (uses CloudFront URL for CORS)
+│   ├── createLambdaFunctions()     # Auth, upload, jobs, etc.
+│   └── createOutputs()             # CloudFront URL, bucket name, etc.
+```
+
+### Deployment Flow
+
+```
+1. Developer: git push → GitHub Actions
+2. GitHub Actions: npm run build (frontend)
+3. CDK: Retrieve FrontendBucketName from stack outputs
+4. AWS CLI: aws s3 sync frontend/dist/ s3://$BUCKET_NAME/
+5. CDK: Retrieve CloudFrontDistributionId from stack outputs
+6. AWS CLI: aws cloudfront create-invalidation --paths "/*"
+7. CloudFront: Invalidate cache (3-5 min)
+8. Users: Access updated frontend via CloudFront URL
+```
+
+### Tech Stack
+
+- **Frontend**: React 18, TypeScript, Material-UI, Vite
+- **Hosting**: AWS CloudFront + S3 (CDK-managed)
+- **Backend**: AWS Lambda (Node.js), API Gateway, DynamoDB
+- **Auth**: AWS Cognito (JWT tokens)
+- **Translation**: Claude Sonnet 4 API
+- **IaC**: AWS CDK (TypeScript)
+- **CI/CD**: GitHub Actions
+
+---
+
+**Last Updated**: 2025-11-10 (Phase 3 - Documentation)
+**CloudFront CDK Migration**: Completed (PR #59, #61, #66)

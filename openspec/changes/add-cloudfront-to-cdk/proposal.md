@@ -1,12 +1,12 @@
 # Proposal: Add CloudFront Distribution to CDK Infrastructure
 
 **Change ID**: `add-cloudfront-to-cdk`
-**Status**: In Progress - Phase 1 Complete
+**Status**: In Progress - Phases 1-3 Complete
 **Priority**: P1 - HIGH (Infrastructure Team Priority per Team Lead)
-**Related Issues**: PR #54 Review Comments, PR #58 (Approved), PR #59 (Merged - Phase 1)
+**Related Issues**: PR #54 Review Comments, PR #58 (Approved), PR #59 (Phase 1), PR #61 (Phase 2), PR #66 (Hotfix), PR #67 (Phase 3)
 **Owner**: Infrastructure Team
 **Created**: 2025-11-09
-**Phase 1 Completed**: 2025-11-10
+**Phases 1-3 Completed**: 2025-11-10
 
 ---
 
@@ -160,17 +160,33 @@ This change will migrate the manually-created CloudFront distribution to AWS CDK
   - All infrastructure references now use CDK stack outputs
   - CloudFront invalidation already configured (no changes needed)
 
-### 📋 Phase 3: Documentation (Pending)
-**Status**: Pending
-**Target**: Update project documentation
+### ✅ Phase 3: Documentation (Complete - PR #67)
+**Completed**: 2025-11-10
+**PR**: https://github.com/leixiaoyu/lfmt-poc/pull/67
 
-**Tasks**:
-- Update `CLAUDE.md` with CloudFront configuration details
-- Document SPA routing best practices
-- Add migration guide for blue-green deployment
+**Implemented**:
+- ✅ Updated `CLAUDE.md` with comprehensive CloudFront documentation:
+  - CloudFront configuration details (S3 bucket, distribution, OAC)
+  - SPA routing deep dive (403 vs 404, custom error responses)
+  - Security headers configuration (CSP placement fix explained)
+  - CloudFront invalidation best practices
+  - Blue-green deployment strategy
+  - Known issues and fixes (CSP hotfix from PR #66)
+  - Testing guidelines and manual operations
+  - Development guidelines and common pitfalls
+- ✅ Updated `openspec/project.md`:
+  - Added CloudFront to tech stack (Frontend hosting section)
+  - Updated External Dependencies (AWS CloudFront with OAC details)
+  - Documented manual distribution deprecation timeline
+- ✅ Integrated migration guide into CLAUDE.md (no separate file needed)
 
-### 🧪 Phase 4: Testing & Validation (Pending)
-**Status**: Pending
+**Deliverables**:
+- `CLAUDE.md`: ~460 lines of comprehensive CloudFront documentation
+- `openspec/project.md`: Updated tech stack and dependencies sections
+- Migration guidance integrated into main documentation
+
+### 🧪 Phase 4: Testing & Validation (Next)
+**Status**: Next
 **Target**: Deploy and validate in dev environment
 
 **Tasks**:
@@ -182,5 +198,5 @@ This change will migrate the manually-created CloudFront distribution to AWS CDK
 
 ---
 
-**Next Step**: Proceed with Phase 2 - Update deployment workflow
+**Next Step**: Proceed with Phase 4 - Testing & Validation
 **Validation**: `openspec validate add-cloudfront-to-cdk --strict`
