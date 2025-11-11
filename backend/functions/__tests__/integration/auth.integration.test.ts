@@ -314,3 +314,5 @@ describe('Authentication API Integration Tests', () => {
  *   });
  * });
  */
+
+export {};

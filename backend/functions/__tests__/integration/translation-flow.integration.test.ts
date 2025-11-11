@@ -141,8 +141,11 @@ const registerAndLogin = async (
   const registerResponse = await apiRequest('/auth/register', 'POST', {
     email,
     password,
+    confirmPassword: password,
     firstName: 'Integration',
     lastName: 'Test',
+    acceptedTerms: true,
+    acceptedPrivacy: true,
   });
 
   if (registerResponse.status !== 201 && registerResponse.status !== 409) {
@@ -709,3 +712,5 @@ describe('End-to-End Translation Flow Integration Tests', () => {
     });
   });
 });
+
+export {};
