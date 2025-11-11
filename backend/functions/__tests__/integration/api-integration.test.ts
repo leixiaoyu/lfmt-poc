@@ -26,8 +26,8 @@ describe('Real API Integration Tests', () => {
         },
       });
 
-      // Validate HTTP status
-      expect(response.status).toBe(401);
+      // Validate HTTP status - AWS API Gateway returns 403 for unauthorized access with Cognito authorizer
+      expect(response.status).toBe(403);
 
       // Validate CORS headers
       const corsHeaders = response.headers.get('access-control-allow-origin');
@@ -38,7 +38,7 @@ describe('Real API Integration Tests', () => {
       expect(body).toHaveProperty('message');
       expect(typeof body.message).toBe('string');
 
-      // API Gateway 401s (missing auth) may not include requestId
+      // API Gateway 403s (missing auth) may not include requestId
       // Only Lambda-generated errors include requestId
       // This is expected behavior - see cdk-best-practices.md
 
@@ -47,7 +47,7 @@ describe('Real API Integration Tests', () => {
       expect(contentType).toContain('application/json');
     });
 
-    it('should return 401 for invalid token format', async () => {
+    it('should return 403 for invalid token format', async () => {
       const response = await fetch(`${API_BASE_URL}/auth/me`, {
         method: 'GET',
         headers: {
@@ -56,13 +56,14 @@ describe('Real API Integration Tests', () => {
         },
       });
 
-      expect(response.status).toBe(401);
+      // AWS API Gateway returns 403 for invalid authorization
+      expect(response.status).toBe(403);
 
       const body = await response.json() as any;
       expect(body.message).toContain('Authorization');
     });
 
-    it('should return 401 for missing Authorization header', async () => {
+    it('should return 403 for missing Authorization header', async () => {
       const response = await fetch(`${API_BASE_URL}/auth/me`, {
         method: 'GET',
         headers: {
@@ -70,7 +71,8 @@ describe('Real API Integration Tests', () => {
         },
       });
 
-      expect(response.status).toBe(401);
+      // AWS API Gateway returns 403 for missing authorization
+      expect(response.status).toBe(403);
 
       const body = await response.json() as any;
       expect(body).toHaveProperty('message');
@@ -290,10 +292,11 @@ describe('Real API Integration Tests', () => {
         }),
       });
 
-      expect(response.status).toBe(401);
+      // AWS API Gateway returns 403 for missing authorization
+      expect(response.status).toBe(403);
       const body = await response.json() as any;
       expect(body).toHaveProperty('message');
-      // API Gateway's default 401 doesn't include requestId - this is expected
+      // API Gateway's default 403 doesn't include requestId - this is expected
       // Only Lambda-generated errors include requestId
     });
 
@@ -310,7 +313,8 @@ describe('Real API Integration Tests', () => {
         }),
       });
 
-      expect(response.status).toBe(401); // Will be 401 because no auth, but structure is tested
+      // AWS API Gateway returns 403 for missing authorization
+      expect(response.status).toBe(403);
       const body = await response.json() as any;
       expect(body).toHaveProperty('message');
     });

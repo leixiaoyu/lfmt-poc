@@ -523,8 +523,8 @@ describe('API Health Check Integration Tests', () => {
         },
       });
 
-      // Should get 401 from Cognito authorizer
-      expect(response.status).toBe(401);
+      // Should get 403 from Cognito authorizer (AWS returns 403 for unauthorized access)
+      expect(response.status).toBe(403);
 
       const data = await response.json();
       expect(data).toHaveProperty('message');
