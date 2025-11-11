@@ -108,6 +108,9 @@ export class LfmtInfrastructureStack extends Stack {
     // 9. API Gateway - Create after CloudFront to include CloudFront URL in CORS origins
     this.createApiGateway();
 
+    // 9.5. Update CloudFront CSP with API Gateway URL (must be after API Gateway creation)
+    this.updateCloudFrontCSP();
+
     // 10. API Gateway Endpoints
     this.createApiEndpoints();
 
@@ -1265,7 +1268,9 @@ export class LfmtInfrastructureStack extends Stack {
           override: true,
         },
         contentSecurityPolicy: {
-          contentSecurityPolicy: "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self' https://*.execute-api.*.amazonaws.com;",
+          // NOTE: This CSP will be updated after API Gateway is created to include the actual API URL
+          // Temporary CSP allows connections to execute-api.us-east-1.amazonaws.com domain
+          contentSecurityPolicy: "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self' https://*.execute-api.us-east-1.amazonaws.com;",
           override: true,
         },
       },
@@ -1324,6 +1329,62 @@ export class LfmtInfrastructureStack extends Stack {
         },
       },
     }));
+  }
+
+  private updateCloudFrontCSP() {
+    /**
+     * Update CloudFront CSP with API Gateway URL
+     *
+     * This method is called after API Gateway is created to update the CSP
+     * with the actual API Gateway URL instead of using wildcards.
+     *
+     * NOTE: CloudFront distributions cannot be modified after creation for certain properties,
+     * so we update the response headers policy's CSP to include the specific API Gateway domain.
+     */
+
+    if (!this.api) {
+      throw new Error('API Gateway must be created before updating CloudFront CSP');
+    }
+
+    // Get the API Gateway domain (e.g., "8brwlwf68h.execute-api.us-east-1.amazonaws.com")
+    const apiDomain = `${this.api.restApiId}.execute-api.${this.region}.amazonaws.com`;
+
+    // Create a new Response Headers Policy with the updated CSP
+    const updatedResponseHeadersPolicy = new cloudfront.ResponseHeadersPolicy(this, 'FrontendSecurityHeadersUpdated', {
+      securityHeadersBehavior: {
+        strictTransportSecurity: {
+          accessControlMaxAge: Duration.days(365),
+          includeSubdomains: true,
+          override: true,
+        },
+        contentTypeOptions: {
+          override: true,
+        },
+        frameOptions: {
+          frameOption: cloudfront.HeadersFrameOption.DENY,
+          override: true,
+        },
+        xssProtection: {
+          protection: true,
+          modeBlock: true,
+          override: true,
+        },
+        referrerPolicy: {
+          referrerPolicy: cloudfront.HeadersReferrerPolicy.STRICT_ORIGIN_WHEN_CROSS_ORIGIN,
+          override: true,
+        },
+        contentSecurityPolicy: {
+          // Use specific API Gateway domain instead of wildcard
+          contentSecurityPolicy: `default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self' https://${apiDomain};`,
+          override: true,
+        },
+      },
+    });
+
+    // Update the CloudFront distribution's default behavior to use the new response headers policy
+    // Note: We need to access the L1 CloudFormation construct to update this property
+    const cfnDistribution = this.frontendDistribution.node.defaultChild as cloudfront.CfnDistribution;
+    cfnDistribution.addPropertyOverride('DistributionConfig.DefaultCacheBehavior.ResponseHeadersPolicyId', updatedResponseHeadersPolicy.responseHeadersPolicyId);
   }
 
   private createOutputs() {
