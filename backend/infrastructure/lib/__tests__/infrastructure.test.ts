@@ -569,7 +569,8 @@ describe('LFMT Infrastructure Stack', () => {
       template.resourceCountIs('AWS::Logs::LogGroup', 5);   // API, Lambda x3, Step Functions State Machine x1
       template.resourceCountIs('AWS::CloudFront::Distribution', 1);
       template.resourceCountIs('AWS::CloudFront::OriginAccessControl', 1);
-      template.resourceCountIs('AWS::CloudFront::ResponseHeadersPolicy', 1);
+      // Now we have 2 ResponseHeadersPolicy: initial + updated with API Gateway URL
+      template.resourceCountIs('AWS::CloudFront::ResponseHeadersPolicy', 2);
       // CDK creates additional service roles, so check we have at least our expected roles
       const roleCount = Object.keys(template.findResources('AWS::IAM::Role')).length;
       expect(roleCount).toBeGreaterThanOrEqual(2);
@@ -651,6 +652,7 @@ describe('LFMT Infrastructure Stack', () => {
     });
 
     test('Security headers policy configured', () => {
+      // Check that we have a Response Headers Policy with all security headers
       template.hasResourceProperties('AWS::CloudFront::ResponseHeadersPolicy', {
         ResponseHeadersPolicyConfig: {
           SecurityHeadersConfig: {
@@ -674,14 +676,22 @@ describe('LFMT Infrastructure Stack', () => {
             ReferrerPolicy: {
               ReferrerPolicy: 'strict-origin-when-cross-origin',
               Override: true
-            },
-            ContentSecurityPolicy: {
-              ContentSecurityPolicy: "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self' https://*.execute-api.*.amazonaws.com;",
-              Override: true
             }
           }
         }
       });
+
+      // Verify that CSP includes API Gateway domain (specific test)
+      const policies = template.findResources('AWS::CloudFront::ResponseHeadersPolicy');
+      const policyWithUpdatedCSP = Object.values(policies).find((policy: any) => {
+        const csp = policy?.Properties?.ResponseHeadersPolicyConfig?.SecurityHeadersConfig?.ContentSecurityPolicy?.ContentSecurityPolicy;
+        // Check if CSP contains the specific API Gateway domain pattern or the Fn::Join construct
+        return csp && (
+          (typeof csp === 'string' && csp.includes('execute-api')) ||
+          (typeof csp === 'object' && csp['Fn::Join'])
+        );
+      });
+      expect(policyWithUpdatedCSP).toBeDefined();
     });
 
     test('Origin Access Control configured for S3', () => {

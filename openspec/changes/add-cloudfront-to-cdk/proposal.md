@@ -287,6 +287,5 @@ This change will migrate the manually-created CloudFront distribution to AWS CDK
 Monitor GREEN distribution for 30 days, then delete BLUE distribution (Team lead approval required)
 
 ---
-
 **Validation**: `openspec validate add-cloudfront-to-cdk --strict`
 **Final Status**: Migration Complete - Cleanup Scheduled
