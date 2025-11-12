@@ -526,6 +526,7 @@ export class LfmtInfrastructureStack extends Stack {
             'cognito-idp:AdminSetUserPassword',
             'cognito-idp:AdminGetUser',
             'cognito-idp:AdminUpdateUserAttributes',
+            'cognito-idp:AdminConfirmSignUp',
           ],
           resources: [this.userPool.userPoolArn],
         }),

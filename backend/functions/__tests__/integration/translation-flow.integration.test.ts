@@ -166,7 +166,12 @@ const registerAndLogin = async (
     );
   }
 
-  return loginResponse.data.tokens;
+  // Extract tokens from login response (all tokens are at root level)
+  return {
+    accessToken: loginResponse.data.accessToken,
+    refreshToken: loginResponse.data.refreshToken,
+    idToken: loginResponse.data.idToken,
+  };
 };
 
 const uploadDocument = async (

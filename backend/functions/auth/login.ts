@@ -44,7 +44,10 @@ export const handler = async (
   logger.info('Processing login request', { requestId });
 
   try {
-    const body = JSON.parse(event.body || '{}');
+    // Handle both string and object body (API Gateway integration differences)
+    const body = typeof event.body === 'string'
+      ? JSON.parse(event.body)
+      : event.body || {};
     const validationResult = loginRequestSchema.safeParse(body);
 
     if (!validationResult.success) {
@@ -123,6 +126,7 @@ export const handler = async (
         user,
         accessToken: response.AuthenticationResult.AccessToken,
         refreshToken: response.AuthenticationResult.RefreshToken,
+        idToken: response.AuthenticationResult.IdToken,
       }),
     };
   } catch (error) {
