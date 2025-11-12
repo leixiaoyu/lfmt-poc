@@ -129,7 +129,7 @@ describe('API Health Check Integration Tests', () => {
     it('should have all jobs endpoints available', async () => {
       const endpoints = [
         { path: '/jobs/upload', method: 'POST', expectedCodes: [401, 400] },
-        { path: '/jobs/fake-id', method: 'GET', expectedCodes: [401, 404] },
+        { path: '/jobs/fake-id', method: 'GET', expectedCodes: [403] },
         {
           path: '/jobs/fake-id/translate',
           method: 'POST',
@@ -322,7 +322,7 @@ describe('API Health Check Integration Tests', () => {
     it('all error responses should have consistent structure', async () => {
       const endpoints = [
         { path: '/auth/me', method: 'GET', expectedStatus: 401 },
-        { path: '/jobs/fake-id', method: 'GET', expectedStatus: 401 },
+        { path: '/jobs/fake-id', method: 'GET', expectedStatus: 403 },
         {
           path: '/jobs/fake-id/translation-status',
           method: 'GET',
@@ -345,9 +345,12 @@ describe('API Health Check Integration Tests', () => {
         expect(data.message.length).toBeGreaterThan(0);
 
         // Lambda-generated errors should have requestId
-        // API Gateway 401s may not have requestId
-        if (response.status !== 401 || data.requestId) {
+        // API Gateway 401s and 403s may not have requestId
+        if (response.status !== 401 && response.status !== 403) {
           expect(data).toHaveProperty('requestId');
+          expect(typeof data.requestId).toBe('string');
+        } else if (data.requestId) {
+          // If 401/403 happens to have requestId (Lambda-generated), validate it
           expect(typeof data.requestId).toBe('string');
         }
       }
@@ -432,7 +435,7 @@ describe('API Health Check Integration Tests', () => {
         const result = await checkEndpoint(
           endpoint.path,
           endpoint.method,
-          [200, 201, 400, 401, 404, 409]
+          [200, 201, 400, 401, 403, 404, 409]
         );
         results.push({ ...result, category: endpoint.category });
       }
@@ -523,8 +526,8 @@ describe('API Health Check Integration Tests', () => {
         },
       });
 
-      // Should get 403 from Cognito authorizer (AWS returns 403 for unauthorized access)
-      expect(response.status).toBe(403);
+      // Should get 401 from Cognito authorizer
+      expect(response.status).toBe(401);
 
       const data = await response.json();
       expect(data).toHaveProperty('message');

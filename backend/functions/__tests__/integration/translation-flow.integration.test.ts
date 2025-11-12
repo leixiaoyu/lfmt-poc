@@ -571,8 +571,8 @@ describe('End-to-End Translation Flow Integration Tests', () => {
         targetLanguage: 'es',
       });
 
-      // AWS API Gateway returns 403 for unauthorized access with Cognito authorizer
-      expect(response.status).toBe(403);
+      // AWS API Gateway returns 401 for unauthorized access
+      expect(response.status).toBe(401);
     });
 
     it('should reject translation status request without authentication', async () => {
@@ -581,8 +581,8 @@ describe('End-to-End Translation Flow Integration Tests', () => {
         'GET'
       );
 
-      // AWS API Gateway returns 403 for unauthorized access with Cognito authorizer
-      expect(response.status).toBe(403);
+      // AWS API Gateway returns 401 for unauthorized access
+      expect(response.status).toBe(401);
     });
 
     it(

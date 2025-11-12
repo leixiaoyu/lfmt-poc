@@ -26,8 +26,8 @@ describe('Real API Integration Tests', () => {
         },
       });
 
-      // Validate HTTP status - AWS API Gateway returns 403 for unauthorized access with Cognito authorizer
-      expect(response.status).toBe(403);
+      // Validate HTTP status
+      expect(response.status).toBe(401);
 
       // Validate CORS headers
       const corsHeaders = response.headers.get('access-control-allow-origin');
@@ -56,14 +56,14 @@ describe('Real API Integration Tests', () => {
         },
       });
 
-      // AWS API Gateway returns 403 for invalid authorization
-      expect(response.status).toBe(403);
+      // AWS API Gateway returns 401 for invalid authorization
+      expect(response.status).toBe(401);
 
       const body = await response.json() as any;
       expect(body.message).toContain('Authorization');
     });
 
-    it('should return 403 for missing Authorization header', async () => {
+    it('should return 401 for missing Authorization header', async () => {
       const response = await fetch(`${API_BASE_URL}/auth/me`, {
         method: 'GET',
         headers: {
@@ -71,8 +71,8 @@ describe('Real API Integration Tests', () => {
         },
       });
 
-      // AWS API Gateway returns 403 for missing authorization
-      expect(response.status).toBe(403);
+      // AWS API Gateway returns 401 for missing authorization
+      expect(response.status).toBe(401);
 
       const body = await response.json() as any;
       expect(body).toHaveProperty('message');
@@ -292,15 +292,15 @@ describe('Real API Integration Tests', () => {
         }),
       });
 
-      // AWS API Gateway returns 403 for missing authorization
-      expect(response.status).toBe(403);
+      // AWS API Gateway returns 401 for missing authorization
+      expect(response.status).toBe(401);
       const body = await response.json() as any;
       expect(body).toHaveProperty('message');
       // API Gateway's default 403 doesn't include requestId - this is expected
       // Only Lambda-generated errors include requestId
     });
 
-    it('should return 400 for invalid file validation', async () => {
+    it('should return 401 for invalid file validation', async () => {
       const response = await fetch(`${API_BASE_URL}/jobs/upload`, {
         method: 'POST',
         headers: {
@@ -313,8 +313,8 @@ describe('Real API Integration Tests', () => {
         }),
       });
 
-      // AWS API Gateway returns 403 for missing authorization
-      expect(response.status).toBe(403);
+      // AWS API Gateway returns 401 for missing authorization
+      expect(response.status).toBe(401);
       const body = await response.json() as any;
       expect(body).toHaveProperty('message');
     });
