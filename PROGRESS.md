@@ -715,6 +715,115 @@ The auto-confirm feature (PR #72) allows immediate login after registration in d
 #### Files Modified
 - `CLAUDE.md` - Added 197 lines of comprehensive documentation
 - `.gitignore` - Added 2 patterns for tool directories
+- `PROGRESS.md` - Added PR #73 documentation entry
+- `openspec/project.md` - Added auto-confirm reference
+
+---
+
+### CloudFront CDK Migration Complete - Issue #55 (2025-11-12)
+**Status**: ✅ Completed and Closed
+**Issue**: https://github.com/leixiaoyu/lfmt-poc/issues/55
+**Related PRs**: #58, #59, #61, #66, #67, #68, #69
+
+#### Summary
+Successfully migrated CloudFront distribution from manual configuration to fully CDK-managed infrastructure through a comprehensive 5-phase implementation, eliminating configuration drift risk and enabling automated deployments.
+
+#### Implementation Phases
+
+**Phase 1 - CDK Infrastructure** (PR #59, 2025-11-10)
+- Created `frontendBucket` with Origin Access Control (OAC) for secure S3 access
+- Configured `frontendDistribution` with HTTPS-only, gzip/brotli compression
+- Added custom error responses (403/404 → /index.html) for SPA routing
+- Implemented security headers policy (CSP, HSTS, X-Frame-Options, X-XSS-Protection)
+- Stack outputs for dynamic deployment workflow integration
+- CORS automatically includes CloudFront URL
+
+**Phase 2 - Deployment Workflow** (PR #61, 2025-11-10)
+- Updated GitHub Actions to use CDK stack outputs dynamically
+- Automated S3 sync (`aws s3 sync frontend/dist/ s3://$BUCKET_NAME/ --delete`)
+- Automated CloudFront invalidation with wait (`aws cloudfront create-invalidation --paths "/*"`)
+- Dynamic retrieval of bucket name and distribution ID from CloudFormation stack
+
+**Hotfix - CSP Configuration** (PR #66, 2025-11-10)
+- Fixed CSP placement in `securityHeadersBehavior.contentSecurityPolicy` (not `customHeadersBehavior`)
+- Resolved CloudFormation deployment failure
+- AWS requires security headers in dedicated `SecurityHeadersConfig` properties
+
+**Phase 3 - Documentation** (PR #67, 2025-11-11)
+- Added comprehensive CloudFront CDK documentation to CLAUDE.md (600+ lines)
+- Documented configuration, deployment workflow, SPA routing, security headers
+- Troubleshooting guide for common issues
+- Blue-green deployment strategy
+
+**Phase 4 - Validation** (PR #68, 2025-11-11)
+- Added 20 infrastructure tests validating CloudFront configuration
+- Tests: Distribution exists, OAC configured, error responses, security headers, stack outputs
+- Verified CSP in correct `SecurityHeadersConfig.ContentSecurityPolicy` location
+- All infrastructure tests passing (20/20)
+
+**Phase 5 - Migration Summary** (PR #69, 2025-11-11)
+- Documented blue-green deployment strategy
+- Created deprecation plan for manual distribution (`d1yysvwo9eg20b.cloudfront.net`)
+- 30-day grace period before manual distribution deletion
+
+#### Technical Achievements
+
+**Security Improvements**:
+- ✅ Origin Access Control (OAC) - CloudFront-only S3 access
+- ✅ HTTPS-only with automatic HTTP redirect
+- ✅ Security headers policy:
+  - `Strict-Transport-Security: max-age=31536000; includeSubDomains`
+  - `X-Content-Type-Options: nosniff`
+  - `X-Frame-Options: DENY`
+  - `X-XSS-Protection: 1; mode=block`
+  - `Content-Security-Policy` (comprehensive policy)
+  - `Referrer-Policy: strict-origin-when-cross-origin`
+
+**Reliability Improvements**:
+- ✅ Infrastructure as Code - No configuration drift
+- ✅ Automated deployments via GitHub Actions
+- ✅ CloudFront invalidation with wait (ensures cache refresh)
+- ✅ Multi-environment support (dev/staging/prod)
+
+**SPA Routing**:
+- ✅ Custom error responses for client-side routing:
+  - 403 → /index.html (status: 200, TTL: 300s)
+  - 404 → /index.html (status: 200, TTL: 300s)
+- ✅ React Router works correctly on direct navigation
+- ✅ Browser refresh maintains route
+
+**Performance**:
+- ✅ Compression: gzip, brotli
+- ✅ IPv6 enabled
+- ✅ Cache behaviors optimized for static assets
+
+#### Current Status
+- ✅ CDK-managed CloudFront distribution deployed to dev environment
+- ✅ Deployment workflow fully automated (S3 sync + invalidation)
+- ✅ Security headers configured correctly in production
+- ✅ SPA routing working (403/404 error handling validated)
+- ✅ Infrastructure tests passing (20/20)
+- ✅ Comprehensive documentation complete (600+ lines)
+- ✅ Issue #55 closed (2025-11-12)
+
+#### Deprecation Plan
+- **Manual Distribution**: `d1yysvwo9eg20b.cloudfront.net`
+- **Status**: Scheduled for deletion after 30-day grace period (by 2025-12-10)
+- **Replacement**: CDK-managed distribution from stack outputs
+
+#### Impact
+- 🔒 **Security**: Production-grade security headers and OAC
+- 🚀 **Automation**: Zero-touch deployments via GitHub Actions
+- 📊 **Reliability**: Infrastructure as Code prevents drift
+- ⚡ **Performance**: Optimized caching and compression
+- 📚 **Documentation**: 600+ lines covering all aspects
+
+#### Files Modified Across All PRs
+- `backend/infrastructure/lib/lfmt-infrastructure-stack.ts` - CloudFront infrastructure
+- `.github/workflows/deploy.yml` - Automated deployment workflow
+- `backend/infrastructure/lib/__tests__/infrastructure.test.ts` - 20 CloudFront tests
+- `CLAUDE.md` - 600+ lines of CloudFront documentation
+- `openspec/project.md` - CloudFront CDK status updates
 
 ---
 
