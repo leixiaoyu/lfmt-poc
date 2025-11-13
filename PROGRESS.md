@@ -670,6 +670,56 @@ The LFMT POC project has successfully completed infrastructure deployment to bot
 
 ## Recent Updates (November 2025)
 
+### Auto-Confirm Feature Documentation - PR #73 (2025-11-12)
+**Status**: 🔄 In Review
+**Pull Request**: https://github.com/leixiaoyu/lfmt-poc/pull/73
+**Branch**: `docs/auto-confirm-feature-documentation`
+
+#### Summary
+Added comprehensive documentation for the email verification auto-confirm feature (PR #72) to CLAUDE.md and updated .gitignore for tool-specific temporary directories.
+
+#### Changes Made
+**Documentation (CLAUDE.md)**:
+- Added new section: "Authentication & User Management - Email Verification Auto-Confirm Feature"
+- Documented environment-based configuration (dev vs prod behavior)
+- Implementation details with code snippets from register.ts
+- IAM permissions requirements (`cognito-idp:AdminConfirmSignUp`)
+- Cognito configuration explanation (autoVerify behavior)
+- Login Lambda integration and error handling
+- Testing procedures (unit, integration, manual)
+- Production considerations and rollback procedures
+- Troubleshooting guide for common issues
+
+**.gitignore Updates**:
+- Added `.serena/` - Serena AI tool cache directory
+- Added `cdk*.out/` - CDK build artifacts pattern (covers `cdk 2.out/` etc.)
+- Ensures tool directories function properly but aren't tracked in git
+
+#### Feature Context
+The auto-confirm feature (PR #72) allows immediate login after registration in dev environment without email verification, streamlining development and testing workflows.
+
+**Key Implementation Details**:
+- **Environment-based**: Only active when `ENVIRONMENT.includes('Dev')`
+- **Uses**: `AdminConfirmSignUpCommand` to bypass email verification
+- **Requires**: `cognito-idp:AdminConfirmSignUp` IAM permission
+- **Behavior**: Users auto-confirmed immediately after registration in dev
+- **Production**: Email verification required when deployed to staging/prod
+
+#### Impact
+- ✅ Comprehensive documentation for auto-confirm feature
+- ✅ Clear guidance for developers working with authentication
+- ✅ Production deployment considerations documented
+- ✅ Troubleshooting guidance for common issues
+- ✅ .gitignore updated to exclude tool caches
+
+#### Files Modified
+- `CLAUDE.md` - Added 197 lines of comprehensive documentation
+- `.gitignore` - Added 2 patterns for tool directories
+
+---
+
+## Recent Updates (November 2025)
+
 ### Rate Limiter Timezone Fix - PR #31 (2025-11-03)
 **Status**: ✅ Merged
 **Pull Request**: https://github.com/leixiaoyu/lfmt-poc/pull/31
