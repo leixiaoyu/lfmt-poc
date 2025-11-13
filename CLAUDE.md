@@ -25,6 +25,199 @@ Keep this managed block so 'openspec update' can refresh the instructions.
 
 This is the **Long-Form Translation Service** Proof of Concept (LFMT POC) - a React SPA with AWS serverless backend for translating large documents (65K-400K words) using Claude Sonnet 4 API.
 
+## Authentication & User Management
+
+### Email Verification - Auto-Confirm Feature
+
+**Status**: Implemented for dev environment (as of PR #72, 2025-11-12)
+
+The auto-confirm feature allows users to register and immediately log in without email verification, streamlining the development and testing workflow.
+
+#### Configuration
+
+**Location**: `backend/functions/auth/register.ts:30-36`
+
+```typescript
+const COGNITO_CLIENT_ID = getRequiredEnv('COGNITO_CLIENT_ID');
+const COGNITO_USER_POOL_ID = getRequiredEnv('COGNITO_USER_POOL_ID');
+const ENVIRONMENT = process.env.ENVIRONMENT || 'dev';
+
+// Auto-confirm users in dev environment (email verification disabled)
+const AUTO_CONFIRM_USERS = ENVIRONMENT.includes('Dev');
+```
+
+**Environment-based Behavior**:
+- **Dev**: Users auto-confirmed immediately after registration (`AUTO_CONFIRM_USERS = true`)
+- **Staging/Prod**: Email verification required (`AUTO_CONFIRM_USERS = false`)
+
+#### Implementation Details
+
+**Registration Flow** (`backend/functions/auth/register.ts:87-123`):
+
+1. **User Registration** - Create user in Cognito with `SignUpCommand`
+2. **Auto-Confirm** (dev only) - Immediately confirm user with `AdminConfirmSignUpCommand`
+3. **Success Response** - Return environment-specific message
+
+```typescript
+// After successful SignUp
+if (AUTO_CONFIRM_USERS) {
+  logger.info('Auto-confirming user (dev environment)', {
+    requestId,
+    email: email.toLowerCase(),
+  });
+
+  const confirmCommand = new AdminConfirmSignUpCommand({
+    UserPoolId: COGNITO_USER_POOL_ID,
+    Username: email,
+  });
+
+  await cognitoClient.send(confirmCommand);
+}
+
+return createSuccessResponse(
+  201,
+  {
+    message: AUTO_CONFIRM_USERS
+      ? 'User registered successfully. You can now log in.'
+      : 'User registered successfully. Please check your email to verify your account.',
+  },
+  requestId
+);
+```
+
+#### IAM Permissions
+
+**Location**: `backend/infrastructure/lib/lfmt-infrastructure-stack.ts:520-530`
+
+The Register Lambda requires `cognito-idp:AdminConfirmSignUp` permission:
+
+```typescript
+actions: [
+  'cognito-idp:SignUp',
+  'cognito-idp:InitiateAuth',
+  'cognito-idp:ForgotPassword',
+  'cognito-idp:ConfirmForgotPassword',
+  'cognito-idp:AdminCreateUser',
+  'cognito-idp:AdminSetUserPassword',
+  'cognito-idp:AdminGetUser',
+  'cognito-idp:AdminUpdateUserAttributes',
+  'cognito-idp:AdminConfirmSignUp',  // ⭐ Required for auto-confirm
+],
+```
+
+#### Cognito Configuration
+
+**Location**: `backend/infrastructure/lib/lfmt-infrastructure-stack.ts:278-295`
+
+```typescript
+autoVerify: {}, // ⭐ Empty = email verification disabled
+selfSignUpEnabled: true,
+```
+
+**Important**: Even with `autoVerify: {}`, Cognito creates users with status `UNCONFIRMED` by default. The auto-confirm logic explicitly changes status to `CONFIRMED` using `AdminConfirmSignUpCommand`.
+
+#### Login Lambda Integration
+
+**Location**: `backend/functions/auth/login.ts:155-165`
+
+The Login Lambda handles `UserNotConfirmedException` for users who haven't been auto-confirmed:
+
+```typescript
+if (error instanceof UserNotConfirmedException) {
+  logger.warn('Login failed: user not confirmed', {
+    requestId,
+    error: error.message,
+  });
+
+  return createErrorResponse(
+    403,
+    'Please verify your email address before logging in. Check your inbox for the verification link.',
+    requestId
+  );
+}
+```
+
+**In dev environment**: This error should never occur due to auto-confirm.
+
+#### Testing
+
+**Unit Tests**: `backend/functions/auth/__tests__/register.test.ts`
+**Integration Tests**: `backend/functions/__tests__/integration/translation-flow.integration.test.ts`
+
+**Manual Testing**:
+```bash
+# Register user (dev environment)
+curl -X POST https://8brwlwf68h.execute-api.us-east-1.amazonaws.com/v1/auth/register \
+  -H "Content-Type: application/json" \
+  -d @register-payload.json
+
+# Expected response:
+{
+  "message": "User registered successfully. You can now log in.",
+  "requestId": "..."
+}
+
+# Login immediately (no email verification required)
+curl -X POST https://8brwlwf68h.execute-api.us-east-1.amazonaws.com/v1/auth/login \
+  -H "Content-Type: application/json" \
+  -d @login-payload.json
+
+# Expected response:
+{
+  "user": { "id": "...", "email": "...", "firstName": "...", "lastName": "..." },
+  "accessToken": "...",
+  "refreshToken": "...",
+  "idToken": "..."
+}
+```
+
+#### Production Considerations
+
+**For Production Deployment**:
+
+1. **Disable Auto-Confirm**:
+   - Set `ENVIRONMENT` variable to include "Prod" or "Staging"
+   - Users will require email verification
+
+2. **Email Configuration**:
+   - Configure Cognito SES email settings
+   - Customize verification email templates
+   - Set up proper sender email address
+
+3. **Security**:
+   - Email verification prevents fake account creation
+   - Consider additional bot protection (reCAPTCHA)
+   - Monitor registration patterns for abuse
+
+**Rollback**: If auto-confirm causes issues, simply redeploy with `ENVIRONMENT` not including "Dev".
+
+#### Known Issues & Troubleshooting
+
+**Issue**: Users getting 403 "Please verify your email" even in dev
+
+**Troubleshooting**:
+1. Check Lambda environment variable: `ENVIRONMENT` should include "Dev"
+2. Verify IAM permission: `cognito-idp:AdminConfirmSignUp` in Lambda role
+3. Check CloudWatch logs for auto-confirm execution
+4. Verify `COGNITO_USER_POOL_ID` environment variable is set
+
+**Issue**: JSON parsing errors with special characters in password
+
+**Solution**: Use file-based JSON payloads instead of inline bash strings:
+```bash
+cat > /tmp/register.json <<'EOF'
+{
+  "email": "test@example.com",
+  "password": "TestPass123!",
+  ...
+}
+EOF
+
+curl -X POST ... -d @/tmp/register.json
+```
+
+---
+
 ## Infrastructure Architecture
 
 ### Frontend Hosting - CloudFront CDK

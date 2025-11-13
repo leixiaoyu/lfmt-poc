@@ -50,6 +50,7 @@ LFMT POC (Long-Form Translation Service) is a proof-of-concept serverless applic
 - **Authentication**: AWS Cognito User Pool
   - JWT tokens with automatic refresh
   - Strong password policy (min 8 chars, complexity requirements)
+  - Auto-confirm feature in dev (immediate login without email verification)
 - **Orchestration**: AWS Step Functions (planned for translation workflow)
 
 ### Translation Engine

@@ -151,6 +151,7 @@ __pycache__/
 
 # CDK and CloudFormation
 cdk.out/
+cdk*.out/
 *.template.json
 *.template.yaml
 
@@ -164,6 +165,9 @@ infrastructure-outputs.json
 stack-outputs.json
 
 # Local configuration overrides
+# Serena AI tool cache
+.serena/
+
 **/config/local.*
 **/config/dev.*
 **/config/prod.*frontend/.env.local
