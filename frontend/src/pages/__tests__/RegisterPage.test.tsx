@@ -194,6 +194,12 @@ describe('RegisterPage - Integration Tests', () => {
       await user.type(screen.getByLabelText(/^password/i), 'Password123!');
       await user.type(screen.getByLabelText(/confirm password/i), 'Password123!');
 
+      // Check legal compliance checkboxes
+      const termsCheckbox = screen.getByLabelText(/terms of service/i);
+      const privacyCheckbox = screen.getByLabelText(/privacy policy/i);
+      await user.click(termsCheckbox);
+      await user.click(privacyCheckbox);
+
       const submitButton = screen.getByRole('button', { name: /sign up/i });
       await user.click(submitButton);
 
