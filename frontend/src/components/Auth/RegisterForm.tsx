@@ -16,7 +16,7 @@
  */
 
 import { useState, useEffect } from 'react';
-import { useForm } from 'react-hook-form';
+import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import {
@@ -28,6 +28,9 @@ import {
   Alert,
   CircularProgress,
   Grid,
+  FormControlLabel,
+  Checkbox,
+  FormHelperText,
 } from '@mui/material';
 import { Link as RouterLink } from 'react-router-dom';
 import { ROUTES } from '../../config/constants';
@@ -59,6 +62,16 @@ const registerSchema = z.object({
   confirmPassword: z
     .string()
     .min(1, 'Please confirm your password'),
+  acceptedTerms: z
+    .boolean()
+    .refine((val) => val === true, {
+      message: 'You must accept the Terms of Service to register',
+    }),
+  acceptedPrivacy: z
+    .boolean()
+    .refine((val) => val === true, {
+      message: 'You must accept the Privacy Policy to register',
+    }),
 }).refine((data) => data.password === data.confirmPassword, {
   message: 'Passwords do not match',
   path: ['confirmPassword'],
@@ -97,9 +110,19 @@ export function RegisterForm({ onSubmit }: RegisterFormProps) {
     formState: { errors },
     reset,
     watch,
+    control,
   } = useForm<RegisterFormData>({
     resolver: zodResolver(registerSchema),
     mode: 'onSubmit',
+    defaultValues: {
+      firstName: '',
+      lastName: '',
+      email: '',
+      password: '',
+      confirmPassword: '',
+      acceptedTerms: false,
+      acceptedPrivacy: false,
+    },
   });
 
   // Watch form values to clear errors when user types
@@ -224,6 +247,58 @@ export function RegisterForm({ onSubmit }: RegisterFormProps) {
         helperText={errors.confirmPassword?.message}
         disabled={isSubmitting}
       />
+
+      {/* Terms of Service Checkbox */}
+      <Box sx={{ mt: 2 }}>
+        <Controller
+          name="acceptedTerms"
+          control={control}
+          render={({ field }) => (
+            <FormControlLabel
+              control={
+                <Checkbox
+                  {...field}
+                  checked={field.value || false}
+                  color="primary"
+                  disabled={isSubmitting}
+                />
+              }
+              label="I agree to the Terms of Service"
+            />
+          )}
+        />
+        {errors.acceptedTerms && (
+          <FormHelperText error sx={{ mt: -1, mb: 1, ml: 4 }}>
+            {errors.acceptedTerms.message}
+          </FormHelperText>
+        )}
+      </Box>
+
+      {/* Privacy Policy Checkbox */}
+      <Box sx={{ mt: 1 }}>
+        <Controller
+          name="acceptedPrivacy"
+          control={control}
+          render={({ field }) => (
+            <FormControlLabel
+              control={
+                <Checkbox
+                  {...field}
+                  checked={field.value || false}
+                  color="primary"
+                  disabled={isSubmitting}
+                />
+              }
+              label="I agree to the Privacy Policy"
+            />
+          )}
+        />
+        {errors.acceptedPrivacy && (
+          <FormHelperText error sx={{ mt: -1, mb: 1, ml: 4 }}>
+            {errors.acceptedPrivacy.message}
+          </FormHelperText>
+        )}
+      </Box>
 
       <Button
         type="submit"
