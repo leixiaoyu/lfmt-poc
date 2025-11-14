@@ -245,12 +245,16 @@ describe('RegisterForm - Validation - Password Confirmation', () => {
     const emailInput = screen.getByLabelText(/^email/i);
     const passwordInput = screen.getByLabelText(/^password/i);
     const confirmInput = screen.getByLabelText(/confirm password/i);
+    const termsCheckbox = screen.getByLabelText(/terms of service/i);
+    const privacyCheckbox = screen.getByLabelText(/privacy policy/i);
 
     await user.type(firstNameInput, 'John');
     await user.type(lastNameInput, 'Doe');
     await user.type(emailInput, 'john@example.com');
     await user.type(passwordInput, 'SecurePass123!');
     await user.type(confirmInput, 'SecurePass123!');
+    await user.click(termsCheckbox);
+    await user.click(privacyCheckbox);
 
     const submitButton = screen.getByRole('button', { name: /sign up/i });
     await user.click(submitButton);
@@ -276,12 +280,16 @@ describe('RegisterForm - Submission', () => {
     const emailInput = screen.getByLabelText(/^email/i);
     const passwordInput = screen.getByLabelText(/^password/i);
     const confirmInput = screen.getByLabelText(/confirm password/i);
+    const termsCheckbox = screen.getByLabelText(/terms of service/i);
+    const privacyCheckbox = screen.getByLabelText(/privacy policy/i);
 
     await user.type(firstNameInput, 'Jane');
     await user.type(lastNameInput, 'Smith');
     await user.type(emailInput, 'jane@example.com');
     await user.type(passwordInput, 'SecurePass123!');
     await user.type(confirmInput, 'SecurePass123!');
+    await user.click(termsCheckbox);
+    await user.click(privacyCheckbox);
 
     const submitButton = screen.getByRole('button', { name: /sign up/i });
     await user.click(submitButton);
@@ -293,6 +301,8 @@ describe('RegisterForm - Submission', () => {
         email: 'jane@example.com',
         password: 'SecurePass123!',
         confirmPassword: 'SecurePass123!',
+        acceptedTerms: true,
+        acceptedPrivacy: true,
       });
     });
   });
@@ -307,12 +317,16 @@ describe('RegisterForm - Submission', () => {
     const emailInput = screen.getByLabelText(/^email/i);
     const passwordInput = screen.getByLabelText(/^password/i);
     const confirmInput = screen.getByLabelText(/confirm password/i);
+    const termsCheckbox = screen.getByLabelText(/terms of service/i);
+    const privacyCheckbox = screen.getByLabelText(/privacy policy/i);
 
     await user.type(firstNameInput, 'Test');
     await user.type(lastNameInput, 'User');
     await user.type(emailInput, 'test@example.com');
     await user.type(passwordInput, 'Password123!');
     await user.type(confirmInput, 'Password123!');
+    await user.click(termsCheckbox);
+    await user.click(privacyCheckbox);
 
     const submitButton = screen.getByRole('button', { name: /sign up/i });
     await user.click(submitButton);
@@ -335,12 +349,16 @@ describe('RegisterForm - Submission', () => {
     const emailInput = screen.getByLabelText(/^email/i);
     const passwordInput = screen.getByLabelText(/^password/i);
     const confirmInput = screen.getByLabelText(/confirm password/i);
+    const termsCheckbox = screen.getByLabelText(/terms of service/i);
+    const privacyCheckbox = screen.getByLabelText(/privacy policy/i);
 
     await user.type(firstNameInput, 'Test');
     await user.type(lastNameInput, 'User');
     await user.type(emailInput, 'test@example.com');
     await user.type(passwordInput, 'Password123!');
     await user.type(confirmInput, 'Password123!');
+    await user.click(termsCheckbox);
+    await user.click(privacyCheckbox);
 
     const submitButton = screen.getByRole('button', { name: /sign up/i });
     await user.click(submitButton);
@@ -362,6 +380,8 @@ describe('RegisterForm - Submission', () => {
     const emailInput = screen.getByLabelText(/^email/i);
     const passwordInput = screen.getByLabelText(/^password/i);
     const confirmInput = screen.getByLabelText(/confirm password/i);
+    const termsCheckbox = screen.getByLabelText(/terms of service/i);
+    const privacyCheckbox = screen.getByLabelText(/privacy policy/i);
 
     await user.type(firstNameInput, 'Test');
     await user.type(lastNameInput, 'User');
@@ -369,6 +389,8 @@ describe('RegisterForm - Submission', () => {
     await user.type(passwordInput, 'Password123!');
     await user.type(confirmInput, 'Password123!');
 
+    await user.click(termsCheckbox);
+    await user.click(privacyCheckbox);
     const submitButton = screen.getByRole('button', { name: /sign up/i });
     await user.click(submitButton);
 
@@ -389,13 +411,16 @@ describe('RegisterForm - Submission', () => {
     const emailInput = screen.getByLabelText(/^email/i) as HTMLInputElement;
     const passwordInput = screen.getByLabelText(/^password/i) as HTMLInputElement;
     const confirmInput = screen.getByLabelText(/confirm password/i) as HTMLInputElement;
+    const termsCheckbox = screen.getByLabelText(/terms of service/i);
+    const privacyCheckbox = screen.getByLabelText(/privacy policy/i);
 
     await user.type(firstNameInput, 'Test');
     await user.type(lastNameInput, 'User');
     await user.type(emailInput, 'test@example.com');
     await user.type(passwordInput, 'Password123!');
     await user.type(confirmInput, 'Password123!');
-
+    await user.click(termsCheckbox);
+    await user.click(privacyCheckbox);
     const submitButton = screen.getByRole('button', { name: /sign up/i });
     await user.click(submitButton);
 
@@ -422,6 +447,8 @@ describe('RegisterForm - Error Handling', () => {
     const emailInput = screen.getByLabelText(/^email/i);
     const passwordInput = screen.getByLabelText(/^password/i);
     const confirmInput = screen.getByLabelText(/confirm password/i);
+    const termsCheckbox = screen.getByLabelText(/terms of service/i);
+    const privacyCheckbox = screen.getByLabelText(/privacy policy/i);
 
     await user.type(firstNameInput, 'Test');
     await user.type(lastNameInput, 'User');
@@ -429,6 +456,8 @@ describe('RegisterForm - Error Handling', () => {
     await user.type(passwordInput, 'Password123!');
     await user.type(confirmInput, 'Password123!');
 
+    await user.click(termsCheckbox);
+    await user.click(privacyCheckbox);
     const submitButton = screen.getByRole('button', { name: /sign up/i });
     await user.click(submitButton);
 
@@ -449,13 +478,16 @@ describe('RegisterForm - Error Handling', () => {
     const emailInput = screen.getByLabelText(/^email/i) as HTMLInputElement;
     const passwordInput = screen.getByLabelText(/^password/i) as HTMLInputElement;
     const confirmInput = screen.getByLabelText(/confirm password/i) as HTMLInputElement;
+    const termsCheckbox = screen.getByLabelText(/terms of service/i);
+    const privacyCheckbox = screen.getByLabelText(/privacy policy/i);
 
     await user.type(firstNameInput, 'Test');
     await user.type(lastNameInput, 'User');
     await user.type(emailInput, 'test@example.com');
     await user.type(passwordInput, 'Password123!');
     await user.type(confirmInput, 'Password123!');
-
+    await user.click(termsCheckbox);
+    await user.click(privacyCheckbox);
     const submitButton = screen.getByRole('button', { name: /sign up/i });
     await user.click(submitButton);
 
@@ -482,6 +514,8 @@ describe('RegisterForm - Error Handling', () => {
     const emailInput = screen.getByLabelText(/^email/i);
     const passwordInput = screen.getByLabelText(/^password/i);
     const confirmInput = screen.getByLabelText(/confirm password/i);
+    const termsCheckbox = screen.getByLabelText(/terms of service/i);
+    const privacyCheckbox = screen.getByLabelText(/privacy policy/i);
 
     await user.type(firstNameInput, 'Test');
     await user.type(lastNameInput, 'User');
@@ -489,6 +523,8 @@ describe('RegisterForm - Error Handling', () => {
     await user.type(passwordInput, 'Password123!');
     await user.type(confirmInput, 'Password123!');
 
+    await user.click(termsCheckbox);
+    await user.click(privacyCheckbox);
     const submitButton = screen.getByRole('button', { name: /sign up/i });
     await user.click(submitButton);
 
@@ -501,6 +537,141 @@ describe('RegisterForm - Error Handling', () => {
 
     await waitFor(() => {
       expect(screen.queryByText(/registration failed/i)).not.toBeInTheDocument();
+    });
+  });
+});
+
+describe('RegisterForm - Legal Compliance Checkboxes', () => {
+  it('should render terms of service checkbox', () => {
+    renderWithRouter(<RegisterForm onSubmit={vi.fn()} />);
+
+    const termsCheckbox = screen.getByLabelText(/terms of service/i);
+    expect(termsCheckbox).toBeInTheDocument();
+    expect(termsCheckbox).not.toBeChecked();
+  });
+
+  it('should render privacy policy checkbox', () => {
+    renderWithRouter(<RegisterForm onSubmit={vi.fn()} />);
+
+    const privacyCheckbox = screen.getByLabelText(/privacy policy/i);
+    expect(privacyCheckbox).toBeInTheDocument();
+    expect(privacyCheckbox).not.toBeChecked();
+  });
+
+  it('should show error when terms checkbox is not checked', async () => {
+    const user = userEvent.setup();
+    renderWithRouter(<RegisterForm onSubmit={vi.fn()} />);
+
+    const firstNameInput = screen.getByLabelText(/first name/i);
+    const lastNameInput = screen.getByLabelText(/last name/i);
+    const emailInput = screen.getByLabelText(/^email/i);
+    const passwordInput = screen.getByLabelText(/^password/i);
+    const confirmInput = screen.getByLabelText(/confirm password/i);
+
+    await user.type(firstNameInput, 'Test');
+    await user.type(lastNameInput, 'User');
+    await user.type(emailInput, 'test@example.com');
+    await user.type(passwordInput, 'Password123!');
+    await user.type(confirmInput, 'Password123!');
+
+    const submitButton = screen.getByRole('button', { name: /sign up/i });
+    await user.click(submitButton);
+
+    await waitFor(() => {
+      expect(screen.getByText(/you must accept the terms of service to register/i)).toBeInTheDocument();
+    });
+  });
+
+  it('should show error when privacy checkbox is not checked', async () => {
+    const user = userEvent.setup();
+    renderWithRouter(<RegisterForm onSubmit={vi.fn()} />);
+
+    const firstNameInput = screen.getByLabelText(/first name/i);
+    const lastNameInput = screen.getByLabelText(/last name/i);
+    const emailInput = screen.getByLabelText(/^email/i);
+    const passwordInput = screen.getByLabelText(/^password/i);
+    const confirmInput = screen.getByLabelText(/confirm password/i);
+
+    await user.type(firstNameInput, 'Test');
+    await user.type(lastNameInput, 'User');
+    await user.type(emailInput, 'test@example.com');
+    await user.type(passwordInput, 'Password123!');
+    await user.type(confirmInput, 'Password123!');
+
+    const submitButton = screen.getByRole('button', { name: /sign up/i });
+    await user.click(submitButton);
+
+    await waitFor(() => {
+      expect(screen.getByText(/you must accept the privacy policy to register/i)).toBeInTheDocument();
+    });
+  });
+
+  it('should allow submission when both checkboxes are checked', async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn().mockResolvedValue(undefined);
+    renderWithRouter(<RegisterForm onSubmit={onSubmit} />);
+
+    const firstNameInput = screen.getByLabelText(/first name/i);
+    const lastNameInput = screen.getByLabelText(/last name/i);
+    const emailInput = screen.getByLabelText(/^email/i);
+    const passwordInput = screen.getByLabelText(/^password/i);
+    const confirmInput = screen.getByLabelText(/confirm password/i);
+    const termsCheckbox = screen.getByLabelText(/terms of service/i);
+    const privacyCheckbox = screen.getByLabelText(/privacy policy/i);
+
+    await user.type(firstNameInput, 'Test');
+    await user.type(lastNameInput, 'User');
+    await user.type(emailInput, 'test@example.com');
+    await user.type(passwordInput, 'Password123!');
+    await user.type(confirmInput, 'Password123!');
+    await user.click(termsCheckbox);
+    await user.click(privacyCheckbox);
+
+    const submitButton = screen.getByRole('button', { name: /sign up/i });
+    await user.click(submitButton);
+
+    await waitFor(() => {
+      expect(onSubmit).toHaveBeenCalledWith({
+        firstName: 'Test',
+        lastName: 'User',
+        email: 'test@example.com',
+        password: 'Password123!',
+        confirmPassword: 'Password123!',
+        acceptedTerms: true,
+        acceptedPrivacy: true,
+      });
+    });
+  });
+
+  it('should include checkbox values in form submission', async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn().mockResolvedValue(undefined);
+    renderWithRouter(<RegisterForm onSubmit={onSubmit} />);
+
+    const firstNameInput = screen.getByLabelText(/first name/i);
+    const lastNameInput = screen.getByLabelText(/last name/i);
+    const emailInput = screen.getByLabelText(/^email/i);
+    const passwordInput = screen.getByLabelText(/^password/i);
+    const confirmInput = screen.getByLabelText(/confirm password/i);
+    const termsCheckbox = screen.getByLabelText(/terms of service/i);
+    const privacyCheckbox = screen.getByLabelText(/privacy policy/i);
+
+    await user.type(firstNameInput, 'Jane');
+    await user.type(lastNameInput, 'Doe');
+    await user.type(emailInput, 'jane@example.com');
+    await user.type(passwordInput, 'SecurePass123!');
+    await user.type(confirmInput, 'SecurePass123!');
+    await user.click(termsCheckbox);
+    await user.click(privacyCheckbox);
+
+    const submitButton = screen.getByRole('button', { name: /sign up/i });
+    await user.click(submitButton);
+
+    await waitFor(() => {
+      expect(onSubmit).toHaveBeenCalledTimes(1);
+      const callArgs = onSubmit.mock.calls[0][0];
+      expect(callArgs).toHaveProperty('acceptedTerms', true);
+      expect(callArgs).toHaveProperty('acceptedPrivacy', true);
     });
   });
 });
@@ -530,5 +701,12 @@ describe('RegisterForm - Accessibility', () => {
     expect(emailInput).toHaveAttribute('autocomplete', 'email');
     expect(passwordInput).toHaveAttribute('autocomplete', 'new-password');
     expect(confirmInput).toHaveAttribute('autocomplete', 'new-password');
+  });
+
+  it('should have accessible labels for checkboxes', () => {
+    renderWithRouter(<RegisterForm onSubmit={vi.fn()} />);
+
+    expect(screen.getByLabelText(/terms of service/i)).toHaveAccessibleName();
+    expect(screen.getByLabelText(/privacy policy/i)).toHaveAccessibleName();
   });
 });
