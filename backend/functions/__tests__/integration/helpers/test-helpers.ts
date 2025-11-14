@@ -170,8 +170,11 @@ export const registerUser = async (user: TestUser): Promise<ApiResponse> => {
   return apiRequest('/auth/register', 'POST', {
     email: user.email,
     password: user.password,
+    confirmPassword: user.password,
     firstName: user.firstName,
     lastName: user.lastName,
+    acceptedTerms: true,
+    acceptedPrivacy: true,
   });
 };
 
