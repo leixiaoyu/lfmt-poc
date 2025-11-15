@@ -305,7 +305,7 @@ jobs:
         run: |
           echo "Waiting for API to be ready..."
           for i in {1..30}; do
-            if curl -sf ${{ steps.get-api-url.outputs.api_url }}/v1/auth/me > /dev/null 2>&1; then
+            if curl -sf ${{ steps.get-api-url.outputs.api_url }}auth/me > /dev/null 2>&1; then
               echo "API is ready!"
               exit 0
             fi
@@ -319,23 +319,20 @@ jobs:
         working-directory: backend/functions
         run: npm run test:integration -- health-check.integration.test.ts
         env:
-          API_BASE_URL: ${{ steps.get-api-url.outputs.api_url }}/v1
-        continue-on-error: true
+          API_BASE_URL: ${{ steps.get-api-url.outputs.api_url }}
 
       - name: Run API Integration Tests
         working-directory: backend/functions
         run: npm run test:integration -- api-integration.test.ts
         env:
-          API_BASE_URL: ${{ steps.get-api-url.outputs.api_url }}/v1
-        continue-on-error: true
+          API_BASE_URL: ${{ steps.get-api-url.outputs.api_url }}
 
       - name: Run Translation Flow Integration Tests
         working-directory: backend/functions
         run: npm run test:integration -- translation-flow.integration.test.ts --testTimeout=600000
         env:
-          API_BASE_URL: ${{ steps.get-api-url.outputs.api_url }}/v1
+          API_BASE_URL: ${{ steps.get-api-url.outputs.api_url }}
           TEST_TIMEOUT: 600000
-        continue-on-error: true
 
       - name: Backend Integration Test Summary
         if: always()
