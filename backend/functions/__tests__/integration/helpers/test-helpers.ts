@@ -184,7 +184,7 @@ export const registerUser = async (user: TestUser): Promise<ApiResponse> => {
 export const loginUser = async (
   email: string,
   password: string
-): Promise<ApiResponse<{ tokens: AuthTokens }>> => {
+): Promise<ApiResponse<AuthTokens & { user: any }>> => {
   return apiRequest('/auth/login', 'POST', {
     email,
     password,
@@ -214,7 +214,12 @@ export const registerAndLogin = async (
     );
   }
 
-  return loginResponse.data.tokens;
+  // Extract tokens from login response (tokens are at root level)
+  return {
+    accessToken: loginResponse.data.accessToken,
+    refreshToken: loginResponse.data.refreshToken,
+    idToken: loginResponse.data.idToken,
+  };
 };
 
 /**

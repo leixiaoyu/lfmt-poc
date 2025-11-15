@@ -59,21 +59,12 @@ export const handler = async (
       return createErrorResponse(400, 'Missing jobId in path', undefined);
     }
 
-    // Load job from DynamoDB
-    const job = await loadJob(jobId);
+    // Load job from DynamoDB (requires both jobId and userId as composite key)
+    const job = await loadJob(jobId, userId);
 
     // Verify job exists
     if (!job) {
       return createErrorResponse(404, `Job not found: ${jobId}`, undefined);
-    }
-
-    // Verify user owns the job
-    if (job.userId !== userId) {
-      return createErrorResponse(
-        403,
-        'You do not have permission to view this job',
-        undefined
-      );
     }
 
     // Build response
@@ -131,11 +122,12 @@ export const handler = async (
 
 /**
  * Load job from DynamoDB
+ * DynamoDB table has composite primary key: jobId (HASH) + userId (RANGE)
  */
-async function loadJob(jobId: string): Promise<any | null> {
+async function loadJob(jobId: string, userId: string): Promise<any | null> {
   const command = new GetItemCommand({
     TableName: JOBS_TABLE,
-    Key: marshall({ jobId }),
+    Key: marshall({ jobId, userId }),
   });
 
   const response: GetItemCommandOutput = await dynamoClient.send(command);
