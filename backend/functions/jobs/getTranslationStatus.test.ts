@@ -216,21 +216,19 @@ describe('getTranslationStatus endpoint', () => {
       expect(body.message).toContain('Unauthorized');
     });
 
-    it('should reject request for job owned by different user', async () => {
+    it('should return 404 for job owned by different user (composite key security)', async () => {
+      // With composite key (jobId + userId), accessing another user's job returns no item
+      // This is better security - doesn't leak information about whether job exists
       dynamoMock.on(GetItemCommand).resolves({
-        Item: {
-          jobId: { S: 'job-123' },
-          userId: { S: 'other-user' },
-          status: { S: 'CHUNKED' },
-        },
+        Item: undefined, // DynamoDB returns no item when key doesn't match
       } as any);
 
       const event = createEvent('job-123');
       const result = await handler(event as APIGatewayProxyEvent);
 
-      expect(result.statusCode).toBe(403);
+      expect(result.statusCode).toBe(404);
       const body = JSON.parse(result.body);
-      expect(body.message).toContain('permission');
+      expect(body.message).toContain('Job not found');
     });
   });
 

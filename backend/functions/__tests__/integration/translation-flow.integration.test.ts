@@ -34,31 +34,35 @@ const API_BASE_URL =
 const TEST_TIMEOUT = parseInt(process.env.TEST_TIMEOUT || '300000', 10); // 5 minutes
 const TEST_EMAIL_DOMAIN = '@example.org'; // Using .org for better Cognito compatibility
 
-// Test document content (small text for fast testing)
+// Test document content (small text for fast testing, minimum 1000 bytes)
 const TEST_DOCUMENT_CONTENT = `Chapter 1: The Beginning
 
 This is a test document for the LFMT translation service integration tests.
-It contains enough text to test the chunking and translation process.
+It contains enough text to test the chunking and translation process while
+meeting the minimum file size requirement of 1000 bytes.
 
 The document includes multiple paragraphs to ensure proper chunk boundaries
-are detected and maintained during the translation process.
+are detected and maintained during the translation process. The translation
+system is designed to handle documents much larger than this sample.
 
 Chapter 2: The Journey
 
 In the second chapter, we explore the translation capabilities of the system.
 This section will be translated along with the first chapter to verify that
-context is maintained across chunk boundaries.
+context is maintained across chunk boundaries. The engine preserves formatting
+and paragraph structure throughout the translation process.
 
 The translation engine should preserve formatting, paragraph structure, and
-the overall flow of the narrative.
+the overall flow of the narrative. This ensures that the final translated
+document maintains the same quality and readability as the original text.
 
 Chapter 3: The Conclusion
 
 Finally, we conclude our test document. The translation system has been designed
 to handle documents much larger than this, but for integration testing, we want
-to keep the processing time reasonable.
+to keep the processing time reasonable while still validating all core functionality.
 
-This completes our test document.`;
+This completes our test document with sufficient content for validation testing.`;
 
 // Helper types
 interface AuthTokens {
@@ -68,9 +72,10 @@ interface AuthTokens {
 }
 
 interface UploadResponse {
-  jobId: string;
   uploadUrl: string;
-  uploadFields: Record<string, string>;
+  fileId: string;
+  expiresIn: number;
+  requiredHeaders: Record<string, string>;
 }
 
 interface TranslationStatus {
@@ -178,7 +183,7 @@ const uploadDocument = async (
   authToken: string,
   content: string,
   fileName: string = 'test-document.txt'
-): Promise<UploadResponse> => {
+): Promise<{ jobId: string; fileId: string }> => {
   // Step 1: Request upload with legal attestation
   const uploadRequestResponse = await apiRequest(
     '/jobs/upload',
@@ -204,30 +209,29 @@ const uploadDocument = async (
     );
   }
 
-  const { jobId, uploadUrl, uploadFields } = uploadRequestResponse.data;
+  const uploadData: UploadResponse = uploadRequestResponse.data.data;
+  const { uploadUrl, fileId, requiredHeaders } = uploadData;
 
-  // Step 2: Upload to S3 using presigned URL
-  const formData = new FormData();
+  // Extract jobId from presigned URL metadata
+  const urlParams = new URLSearchParams(uploadUrl.split('?')[1]);
+  const jobId = urlParams.get('x-amz-meta-jobid');
 
-  // Add all fields from uploadFields
-  Object.entries(uploadFields).forEach(([key, value]) => {
-    formData.append(key, value as string);
-  });
+  if (!jobId) {
+    throw new Error('Job ID not found in upload URL');
+  }
 
-  // Add file content
-  const blob = new Blob([content], { type: 'text/plain' });
-  formData.append('file', blob, fileName);
-
+  // Step 2: Upload to S3 using presigned PUT URL
   const uploadResponse = await fetch(uploadUrl, {
-    method: 'POST',
-    body: formData,
+    method: 'PUT',
+    headers: requiredHeaders,
+    body: content,
   });
 
-  if (uploadResponse.status !== 204 && uploadResponse.status !== 200) {
+  if (uploadResponse.status !== 200) {
     throw new Error(`S3 upload failed: ${uploadResponse.status}`);
   }
 
-  return { jobId, uploadUrl, uploadFields };
+  return { jobId, fileId };
 };
 
 const waitForChunking = async (
@@ -240,7 +244,7 @@ const waitForChunking = async (
 
   while (Date.now() - startTime < maxWaitTime) {
     const statusResponse = await apiRequest(
-      `/jobs/${jobId}`,
+      `/jobs/${jobId}/translation-status`,
       'GET',
       undefined,
       authToken
@@ -357,12 +361,18 @@ describe('End-to-End Translation Flow Integration Tests', () => {
         // Step 1: Register and login
         console.log('Step 1: Authenticating...');
         authTokens = await registerAndLogin(testEmail, testPassword);
+        console.log('Auth tokens received:', {
+          hasAccessToken: !!authTokens.accessToken,
+          hasRefreshToken: !!authTokens.refreshToken,
+          hasIdToken: !!authTokens.idToken,
+          accessTokenPrefix: authTokens.accessToken?.substring(0, 20),
+        });
         expect(authTokens.accessToken).toBeTruthy();
 
         // Step 2: Upload document
         console.log('Step 2: Uploading document...');
         const { jobId } = await uploadDocument(
-          authTokens.accessToken,
+          authTokens.idToken,
           TEST_DOCUMENT_CONTENT,
           'integration-test.txt'
         );
@@ -371,18 +381,18 @@ describe('End-to-End Translation Flow Integration Tests', () => {
 
         // Step 3: Wait for chunking
         console.log('Step 3: Waiting for chunking...');
-        await waitForChunking(authTokens.accessToken, jobId, 60000);
+        await waitForChunking(authTokens.idToken, jobId, 60000);
         console.log('Chunking complete!');
 
         // Step 4: Start translation
         console.log('Step 4: Starting translation...');
-        await startTranslation(authTokens.accessToken, jobId, 'es', 'formal');
+        await startTranslation(authTokens.idToken, jobId, 'es', 'formal');
         console.log('Translation started!');
 
         // Step 5: Check initial translation status
         console.log('Step 5: Checking translation status...');
         const initialStatus = await getTranslationStatus(
-          authTokens.accessToken,
+          authTokens.idToken,
           jobId
         );
         expect(initialStatus.jobId).toBe(jobId);
@@ -396,7 +406,7 @@ describe('End-to-End Translation Flow Integration Tests', () => {
         // Step 6: Wait for translation completion
         console.log('Step 6: Waiting for translation to complete...');
         const finalStatus = await waitForTranslation(
-          authTokens.accessToken,
+          authTokens.idToken,
           jobId,
           180000
         );
@@ -427,13 +437,13 @@ describe('End-to-End Translation Flow Integration Tests', () => {
 
         // Upload and chunk document
         const { jobId } = await uploadDocument(
-          authTokens.accessToken,
+          authTokens.idToken,
           TEST_DOCUMENT_CONTENT
         );
-        await waitForChunking(authTokens.accessToken, jobId);
+        await waitForChunking(authTokens.idToken, jobId);
 
         // Start translation
-        await startTranslation(authTokens.accessToken, jobId, 'fr', 'neutral');
+        await startTranslation(authTokens.idToken, jobId, 'fr', 'neutral');
 
         // Poll for progress updates
         const progressSnapshots: number[] = [];
@@ -441,7 +451,7 @@ describe('End-to-End Translation Flow Integration Tests', () => {
         let pollCount = 0;
 
         while (pollCount < maxPolls) {
-          const status = await getTranslationStatus(authTokens.accessToken, jobId);
+          const status = await getTranslationStatus(authTokens.idToken, jobId);
 
           // Record progress
           if (status.progressPercentage !== undefined) {
@@ -490,15 +500,15 @@ describe('End-to-End Translation Flow Integration Tests', () => {
 
           // Upload and chunk document
           const { jobId } = await uploadDocument(
-            authTokens.accessToken,
+            authTokens.idToken,
             TEST_DOCUMENT_CONTENT,
             `test-${language}.txt`
           );
-          await waitForChunking(authTokens.accessToken, jobId);
+          await waitForChunking(authTokens.idToken, jobId);
 
           // Start translation
           await startTranslation(
-            authTokens.accessToken,
+            authTokens.idToken,
             jobId,
             language,
             'neutral'
@@ -506,7 +516,7 @@ describe('End-to-End Translation Flow Integration Tests', () => {
 
           // Wait for completion
           const finalStatus = await waitForTranslation(
-            authTokens.accessToken,
+            authTokens.idToken,
             jobId,
             180000
           );
@@ -543,18 +553,18 @@ describe('End-to-End Translation Flow Integration Tests', () => {
 
           // Upload and chunk document
           const { jobId } = await uploadDocument(
-            authTokens.accessToken,
+            authTokens.idToken,
             TEST_DOCUMENT_CONTENT,
             `test-${tone}.txt`
           );
-          await waitForChunking(authTokens.accessToken, jobId);
+          await waitForChunking(authTokens.idToken, jobId);
 
           // Start translation
-          await startTranslation(authTokens.accessToken, jobId, 'es', tone);
+          await startTranslation(authTokens.idToken, jobId, 'es', tone);
 
           // Wait for completion
           const finalStatus = await waitForTranslation(
-            authTokens.accessToken,
+            authTokens.idToken,
             jobId,
             180000
           );
@@ -597,7 +607,7 @@ describe('End-to-End Translation Flow Integration Tests', () => {
           '/jobs/non-existent-job-id/translation-status',
           'GET',
           undefined,
-          authTokens.accessToken
+          authTokens.idToken
         );
 
         expect(response.status).toBe(404);
@@ -613,7 +623,7 @@ describe('End-to-End Translation Flow Integration Tests', () => {
 
         // Upload document but don't wait for chunking
         const { jobId } = await uploadDocument(
-          authTokens.accessToken,
+          authTokens.idToken,
           TEST_DOCUMENT_CONTENT
         );
 
@@ -624,7 +634,7 @@ describe('End-to-End Translation Flow Integration Tests', () => {
           {
             targetLanguage: 'es',
           },
-          authTokens.accessToken
+          authTokens.idToken
         );
 
         // Should either be 400 (not ready) or 409 (conflict) or might succeed if chunking was very fast
@@ -639,10 +649,10 @@ describe('End-to-End Translation Flow Integration Tests', () => {
         authTokens = await registerAndLogin(testEmail, testPassword);
 
         const { jobId } = await uploadDocument(
-          authTokens.accessToken,
+          authTokens.idToken,
           TEST_DOCUMENT_CONTENT
         );
-        await waitForChunking(authTokens.accessToken, jobId);
+        await waitForChunking(authTokens.idToken, jobId);
 
         const response = await apiRequest(
           `/jobs/${jobId}/translate`,
@@ -650,7 +660,7 @@ describe('End-to-End Translation Flow Integration Tests', () => {
           {
             targetLanguage: 'invalid-language',
           },
-          authTokens.accessToken
+          authTokens.idToken
         );
 
         expect(response.status).toBe(400);
@@ -667,16 +677,16 @@ describe('End-to-End Translation Flow Integration Tests', () => {
         authTokens = await registerAndLogin(testEmail, testPassword);
 
         const { jobId } = await uploadDocument(
-          authTokens.accessToken,
+          authTokens.idToken,
           TEST_DOCUMENT_CONTENT
         );
-        await waitForChunking(authTokens.accessToken, jobId);
+        await waitForChunking(authTokens.idToken, jobId);
 
         const startTime = Date.now();
-        await startTranslation(authTokens.accessToken, jobId, 'es', 'neutral');
+        await startTranslation(authTokens.idToken, jobId, 'es', 'neutral');
 
         const finalStatus = await waitForTranslation(
-          authTokens.accessToken,
+          authTokens.idToken,
           jobId,
           180000
         );
