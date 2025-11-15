@@ -99,9 +99,10 @@ export const handler = async (event: S3Event): Promise<void> => {
       }
 
       // Get the job record
+      // DynamoDB table has composite primary key: jobId (HASH) + userId (RANGE)
       const getItemCommand = new GetItemCommand({
         TableName: JOBS_TABLE,
-        Key: marshall({ jobId }),
+        Key: marshall({ jobId, userId }),
       });
 
       const getResult: GetItemCommandOutput = await dynamoClient.send(getItemCommand);
@@ -109,6 +110,7 @@ export const handler = async (event: S3Event): Promise<void> => {
       if (!getResult.Item) {
         logger.error('Job record not found', {
           jobId,
+          userId,
           fileId,
         });
         continue;
@@ -147,7 +149,7 @@ export const handler = async (event: S3Event): Promise<void> => {
         // Update job status to VALIDATION_FAILED
         const updateCommand = new UpdateItemCommand({
           TableName: JOBS_TABLE,
-          Key: marshall({ jobId }),
+          Key: marshall({ jobId, userId }),
           UpdateExpression:
             'SET #status = :status, updatedAt = :updatedAt, errorMessage = :errorMessage',
           ExpressionAttributeNames: {
@@ -167,7 +169,7 @@ export const handler = async (event: S3Event): Promise<void> => {
       // Update job status to UPLOADED
       const updateCommand = new UpdateItemCommand({
         TableName: JOBS_TABLE,
-        Key: marshall({ jobId }),
+        Key: marshall({ jobId, userId }),
         UpdateExpression:
           'SET #status = :status, updatedAt = :updatedAt, uploadedAt = :uploadedAt, actualFileSize = :actualFileSize',
         ExpressionAttributeNames: {

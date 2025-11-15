@@ -632,6 +632,7 @@ describe('uploadComplete Lambda Function - Comprehensive Coverage', () => {
       // Verify error was logged
       expect(mockLoggerError).toHaveBeenCalledWith('Job record not found', {
         jobId,
+        userId,
         fileId,
       });
 
