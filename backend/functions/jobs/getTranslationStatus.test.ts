@@ -54,6 +54,7 @@ describe('getTranslationStatus endpoint', () => {
 
       const body = JSON.parse(result.body);
       expect(body.jobId).toBe('job-123');
+      expect(body.status).toBe('CHUNKED');
       expect(body.translationStatus).toBe('NOT_STARTED');
       expect(body.totalChunks).toBe(10);
       expect(body.chunksTranslated).toBe(0);
@@ -87,6 +88,7 @@ describe('getTranslationStatus endpoint', () => {
 
       const body = JSON.parse(result.body);
       expect(body.jobId).toBe('job-123');
+      expect(body.status).toBe('CHUNKED');
       expect(body.translationStatus).toBe('IN_PROGRESS');
       expect(body.targetLanguage).toBe('es');
       expect(body.tone).toBe('formal');
@@ -126,6 +128,7 @@ describe('getTranslationStatus endpoint', () => {
 
       const body = JSON.parse(result.body);
       expect(body.jobId).toBe('job-123');
+      expect(body.status).toBe('CHUNKED');
       expect(body.translationStatus).toBe('COMPLETED');
       expect(body.targetLanguage).toBe('fr');
       expect(body.totalChunks).toBe(10);
@@ -160,6 +163,7 @@ describe('getTranslationStatus endpoint', () => {
 
       const body = JSON.parse(result.body);
       expect(body.jobId).toBe('job-123');
+      expect(body.status).toBe('CHUNKED');
       expect(body.translationStatus).toBe('TRANSLATION_FAILED');
       expect(body.targetLanguage).toBe('de');
       expect(body.totalChunks).toBe(10);

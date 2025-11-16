@@ -21,6 +21,7 @@ const JOBS_TABLE = getRequiredEnv('JOBS_TABLE');
  */
 interface TranslationStatusResponse {
   jobId: string;
+  status: string; // Overall job status (PENDING_UPLOAD, UPLOADED, CHUNKED, etc.)
   translationStatus: string;
   targetLanguage?: string;
   tone?: string;
@@ -70,6 +71,7 @@ export const handler = async (
     // Build response
     const response: TranslationStatusResponse = {
       jobId,
+      status: job.status, // Overall job status (PENDING_UPLOAD, UPLOADED, CHUNKED, etc.)
       translationStatus: job.translationStatus || 'NOT_STARTED',
       targetLanguage: job.targetLanguage,
       tone: job.translationTone,
