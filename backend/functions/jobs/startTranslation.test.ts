@@ -4,9 +4,8 @@
 
 // Set environment variables BEFORE imports
 process.env.JOBS_TABLE = 'test-jobs-table';
-process.env.STATE_MACHINE_NAME = 'test-state-machine';
+process.env.STATE_MACHINE_ARN = 'arn:aws:states:us-east-1:123456789012:stateMachine:test-state-machine';
 process.env.AWS_REGION = 'us-east-1';
-process.env.AWS_ACCOUNT_ID = '123456789012';
 
 import { APIGatewayProxyEvent } from 'aws-lambda';
 import { mockClient } from 'aws-sdk-client-mock';
