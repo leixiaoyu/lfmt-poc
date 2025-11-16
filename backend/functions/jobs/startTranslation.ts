@@ -23,15 +23,7 @@ const dynamoClient = new DynamoDBClient({});
 const sfnClient = new SFNClient({});
 
 const JOBS_TABLE = getRequiredEnv('JOBS_TABLE');
-const STATE_MACHINE_NAME = getRequiredEnv('STATE_MACHINE_NAME');
-
-// Construct state machine ARN from name and region
-// This avoids circular dependency in CDK infrastructure
-const AWS_REGION = process.env.AWS_REGION || 'us-east-1';
-const AWS_ACCOUNT_ID = process.env.AWS_ACCOUNT_ID; // Will be available in Lambda context
-const STATE_MACHINE_ARN = AWS_ACCOUNT_ID
-  ? `arn:aws:states:${AWS_REGION}:${AWS_ACCOUNT_ID}:stateMachine:${STATE_MACHINE_NAME}`
-  : `arn:aws:states:${AWS_REGION}:\${AWS::AccountId}:stateMachine:${STATE_MACHINE_NAME}`;
+const STATE_MACHINE_ARN = getRequiredEnv('STATE_MACHINE_ARN'); // Full ARN provided by CDK infrastructure
 
 /**
  * Request body for starting translation

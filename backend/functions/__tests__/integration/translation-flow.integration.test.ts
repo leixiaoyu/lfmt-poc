@@ -240,9 +240,21 @@ const waitForChunking = async (
   maxWaitTime: number = 30000 // Reduced from 60s to 30s
 ): Promise<void> => {
   const startTime = Date.now();
-  const pollInterval = 1000; // Reduced from 2s to 1s for faster feedback
+  let pollInterval = 2000; // Start with 2s interval
+  let pollCount = 0;
+
+  // Initial delay to allow S3 event notifications to propagate
+  // S3 PUT → uploadComplete Lambda → file copy → chunkDocument Lambda trigger
+  // Typical delay: 2-10 seconds
+  console.log('Waiting 6 seconds for S3 event notifications to propagate...');
+  await sleep(6000);
 
   while (Date.now() - startTime < maxWaitTime) {
+    pollCount++;
+    const elapsed = Date.now() - startTime;
+
+    console.log(`[Poll #${pollCount}] Checking chunking status (elapsed: ${elapsed}ms)...`);
+
     const statusResponse = await apiRequest(
       `/jobs/${jobId}/translation-status`,
       'GET',
@@ -251,25 +263,38 @@ const waitForChunking = async (
     );
 
     if (statusResponse.status !== 200) {
-      throw new Error(
-        `Status check failed: ${statusResponse.status} - ${JSON.stringify(statusResponse.data)}`
-      );
+      const errorMsg = `Status check failed: ${statusResponse.status} - ${JSON.stringify(statusResponse.data)}`;
+      console.error(errorMsg);
+      throw new Error(errorMsg);
     }
 
-    const { status } = statusResponse.data;
+    const { status, jobId: returnedJobId } = statusResponse.data;
+
+    console.log(`[Poll #${pollCount}] Status: ${status}, JobId: ${returnedJobId}`);
 
     if (status === 'CHUNKED') {
+      console.log(`✓ Chunking completed successfully after ${elapsed}ms (${pollCount} polls)`);
       return; // Success
     }
 
     if (status === 'FAILED' || status === 'CHUNKING_FAILED') {
-      throw new Error(`Chunking failed: ${JSON.stringify(statusResponse.data)}`);
+      const errorMsg = `Chunking failed: ${JSON.stringify(statusResponse.data)}`;
+      console.error(errorMsg);
+      throw new Error(errorMsg);
     }
 
+    // Exponential backoff: 2s → 3s → 5s → 5s...
+    if (pollCount === 2) pollInterval = 3000;
+    if (pollCount >= 3) pollInterval = 5000;
+
+    console.log(`Waiting ${pollInterval}ms before next poll...`);
     await sleep(pollInterval);
   }
 
-  throw new Error(`Chunking timeout after ${maxWaitTime}ms`);
+  const finalElapsed = Date.now() - startTime;
+  const errorMsg = `Chunking timeout after ${finalElapsed}ms (${pollCount} polls). Last status may still be PENDING or UPLOADED.`;
+  console.error(errorMsg);
+  throw new Error(errorMsg);
 };
 
 const startTranslation = async (

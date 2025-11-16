@@ -62,7 +62,6 @@ export class LfmtInfrastructureStack extends Stack {
 
   // Step Functions state machine
   public readonly translationStateMachine: stepfunctions.StateMachine;
-  private readonly stateMachineArnPattern: string;
 
   // API Gateway resources
   private authResource?: apigateway.Resource;
@@ -74,10 +73,6 @@ export class LfmtInfrastructureStack extends Stack {
 
     // Removal policy based on environment
     const removalPolicy = retainData ? RemovalPolicy.RETAIN : RemovalPolicy.DESTROY;
-
-    // Initialize state machine ARN pattern for IAM permissions
-    // Use CDK Stack tokens instead of CloudFormation intrinsic functions for managed policies
-    (this as any).stateMachineArnPattern = `arn:aws:states:${Stack.of(this).region}:${Stack.of(this).account}:stateMachine:lfmt-translation-workflow-${this.stackName}`;
 
     // 1. DynamoDB Tables
     this.createDynamoDBTables(removalPolicy);
@@ -780,6 +775,7 @@ export class LfmtInfrastructureStack extends Stack {
     });
 
     // Start Translation Lambda Function (initiates translation process)
+    // Note: STATE_MACHINE_ARN uses Lazy.string() to defer resolution until after Step Functions is created
     this.startTranslationFunction = new NodejsFunction(this, 'StartTranslationFunction', {
       functionName: `lfmt-start-translation-${this.stackName}`,
       entry: '../functions/jobs/startTranslation.ts',
@@ -789,7 +785,10 @@ export class LfmtInfrastructureStack extends Stack {
       environment: {
         ...commonEnv,
         TRANSLATE_CHUNK_FUNCTION_NAME: `lfmt-translate-chunk-${this.stackName}`,
-        STATE_MACHINE_NAME: `lfmt-translation-workflow-${this.stackName}`, // Pass name instead of ARN
+        // Use Lazy.string() to avoid circular dependency (resolved during synthesis after all resources created)
+        STATE_MACHINE_ARN: Lazy.string({
+          produce: () => this.translationStateMachine?.stateMachineArn || ''
+        }),
       },
       timeout: Duration.seconds(30),
       memorySize: 256,
@@ -971,17 +970,21 @@ export class LfmtInfrastructureStack extends Stack {
     this.jobsTable.grantReadWriteData(this.translationStateMachine);
 
     // Grant startTranslation Lambda permission to start state machine executions
-    // Use separate managed policy to avoid IAM policy size limits
-    new iam.ManagedPolicy(this, 'LambdaStepFunctionsPolicy', {
-      roles: [this.lambdaRole!],
-      statements: [
+    // Use manual IAM policy with Lazy.string() to avoid circular dependency
+    // (grantStartExecution() creates State Machine → Lambda dependency)
+    if (this.startTranslationFunction && this.lambdaRole) {
+      this.lambdaRole.addToPrincipalPolicy(
         new iam.PolicyStatement({
           effect: iam.Effect.ALLOW,
           actions: ['states:StartExecution'],
-          resources: [this.stateMachineArnPattern],
-        }),
-      ],
-    });
+          resources: [
+            Lazy.string({
+              produce: () => this.translationStateMachine?.stateMachineArn || ''
+            })
+          ],
+        })
+      );
+    }
   }
 
   private createApiEndpoints() {

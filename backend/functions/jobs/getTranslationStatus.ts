@@ -125,11 +125,13 @@ export const handler = async (
 /**
  * Load job from DynamoDB
  * DynamoDB table has composite primary key: jobId (HASH) + userId (RANGE)
+ * Uses ConsistentRead to ensure we get the latest status updates
  */
 async function loadJob(jobId: string, userId: string): Promise<any | null> {
   const command = new GetItemCommand({
     TableName: JOBS_TABLE,
     Key: marshall({ jobId, userId }),
+    ConsistentRead: true, // Ensure we get the latest data, critical for status polling
   });
 
   const response: GetItemCommandOutput = await dynamoClient.send(command);
