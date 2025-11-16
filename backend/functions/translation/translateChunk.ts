@@ -113,6 +113,9 @@ export const handler = async (
     // Load job metadata from DynamoDB
     const job = await loadJob(event.jobId);
 
+    // Extract userId from job metadata for composite key operations
+    const userId = job.userId;
+
     // Verify job is in correct state
     if (job.status !== 'CHUNKED' && job.translationStatus !== 'IN_PROGRESS') {
       throw new Error(
@@ -199,7 +202,7 @@ export const handler = async (
     );
 
     // Update job progress in DynamoDB
-    await updateJobProgress(event.jobId, {
+    await updateJobProgress(event.jobId, userId, {
       translatedChunks: (job.translatedChunks || 0) + 1,
       totalChunks: job.totalChunks,
       tokensUsed: (job.tokensUsed || 0) + result.tokensUsed.total,
@@ -232,10 +235,19 @@ export const handler = async (
 
     // Update job status if error is not retryable and we have a valid jobId
     if (!retryable && event.jobId) {
-      await updateJobStatus(event.jobId, 'TRANSLATION_FAILED', {
-        error: error instanceof Error ? error.message : 'Unknown error',
-        failedAt: new Date().toISOString(),
-      });
+      // Load job to get userId for composite key (in error path)
+      try {
+        const job = await loadJob(event.jobId);
+        await updateJobStatus(event.jobId, job.userId, 'TRANSLATION_FAILED', {
+          error: error instanceof Error ? error.message : 'Unknown error',
+          failedAt: new Date().toISOString(),
+        });
+      } catch (updateError) {
+        logger.error('Failed to update job status after translation error', {
+          jobId: event.jobId,
+          updateError: updateError instanceof Error ? updateError.message : 'Unknown error',
+        });
+      }
     }
 
     return {
@@ -378,6 +390,7 @@ async function storeTranslatedChunk(
  */
 async function updateJobProgress(
   jobId: string,
+  userId: string,
   progress: {
     translatedChunks: number;
     totalChunks: number;
@@ -392,7 +405,7 @@ async function updateJobProgress(
 
   const command = new UpdateItemCommand({
     TableName: JOBS_TABLE,
-    Key: marshall({ jobId }),
+    Key: marshall({ jobId, userId }),
     UpdateExpression:
       'SET translationStatus = :status, translatedChunks = :translated, tokensUsed = :tokens, estimatedCost = :cost, updatedAt = :updatedAt',
     ExpressionAttributeValues: marshall({
@@ -408,6 +421,7 @@ async function updateJobProgress(
 
   logger.info('Job progress updated', {
     jobId,
+    userId,
     translatedChunks: progress.translatedChunks,
     totalChunks: progress.totalChunks,
     translationStatus,
@@ -419,6 +433,7 @@ async function updateJobProgress(
  */
 async function updateJobStatus(
   jobId: string,
+  userId: string,
   status: string,
   additionalData: Record<string, any> = {}
 ): Promise<void> {
@@ -440,7 +455,7 @@ async function updateJobStatus(
 
   const command = new UpdateItemCommand({
     TableName: JOBS_TABLE,
-    Key: marshall({ jobId }),
+    Key: marshall({ jobId, userId }),
     UpdateExpression: updateExpression.join(', '),
     ExpressionAttributeNames: expressionAttributeNames,
     ExpressionAttributeValues: marshall(expressionAttributeValues),
@@ -448,5 +463,5 @@ async function updateJobStatus(
 
   await dynamoClient.send(command);
 
-  logger.info('Job status updated', { jobId, status });
+  logger.info('Job status updated', { jobId, userId, status });
 }

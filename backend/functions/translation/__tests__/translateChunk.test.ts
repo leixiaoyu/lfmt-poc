@@ -75,6 +75,7 @@ describe('translateChunk Lambda', () => {
       dynamoMock.on(GetItemCommand).resolves({
         Item: {
           jobId: { S: 'job-123' },
+          userId: { S: 'user-123' },
           status: { S: 'CHUNKED' },
           totalChunks: { N: '5' },
           translatedChunks: { N: '0' },
@@ -129,6 +130,7 @@ describe('translateChunk Lambda', () => {
       dynamoMock.on(GetItemCommand).resolves({
         Item: {
           jobId: { S: 'job-123' },
+          userId: { S: 'user-123' },
           status: { S: 'CHUNKED' },
           translationStatus: { S: 'IN_PROGRESS' },
           totalChunks: { N: '5' },
@@ -191,6 +193,7 @@ describe('translateChunk Lambda', () => {
       dynamoMock.on(GetItemCommand).resolves({
         Item: {
           jobId: { S: 'job-123' },
+          userId: { S: 'user-123' },
           status: { S: 'CHUNKED' },
           translationStatus: { S: 'IN_PROGRESS' },
           totalChunks: { N: '5' },
@@ -287,6 +290,7 @@ describe('translateChunk Lambda', () => {
         dynamoMock.on(GetItemCommand).resolves({
           Item: {
             jobId: { S: 'job-123' },
+            userId: { S: 'user-123' },
             status: { S: 'CHUNKED' },
             totalChunks: { N: '1' },
           },
@@ -355,6 +359,7 @@ describe('translateChunk Lambda', () => {
       dynamoMock.on(GetItemCommand).resolves({
         Item: {
           jobId: { S: 'job-123' },
+          userId: { S: 'user-123' },
           status: { S: 'CHUNKED' },
         },
       } as any);
@@ -378,6 +383,7 @@ describe('translateChunk Lambda', () => {
       dynamoMock.on(GetItemCommand).resolves({
         Item: {
           jobId: { S: 'job-123' },
+          userId: { S: 'user-123' },
           status: { S: 'CHUNKED' },
           totalChunks: { N: '1' },
         },
@@ -414,6 +420,7 @@ describe('translateChunk Lambda', () => {
       dynamoMock.on(GetItemCommand).resolves({
         Item: {
           jobId: { S: 'job-123' },
+          userId: { S: 'user-123' },
           status: { S: 'CHUNKED' },
           totalChunks: { N: '3' },
         },
@@ -457,6 +464,7 @@ describe('translateChunk Lambda', () => {
       dynamoMock.on(GetItemCommand).resolves({
         Item: {
           jobId: { S: 'job-123' },
+          userId: { S: 'user-123' },
           status: { S: 'CHUNKED' },
           translationStatus: { S: 'IN_PROGRESS' },
           totalChunks: { N: '5' },
@@ -510,6 +518,7 @@ describe('translateChunk Lambda', () => {
       dynamoMock.on(GetItemCommand).resolves({
         Item: {
           jobId: { S: 'job-123' },
+          userId: { S: 'user-123' },
           status: { S: 'CHUNKED' },
           translationStatus: { S: 'IN_PROGRESS' },
           totalChunks: { N: '5' },
@@ -556,6 +565,7 @@ describe('translateChunk Lambda', () => {
       dynamoMock.on(GetItemCommand).resolves({
         Item: {
           jobId: { S: 'job-123' },
+          userId: { S: 'user-123' },
           status: { S: 'CHUNKED' },
           translationStatus: { S: 'IN_PROGRESS' },
           totalChunks: { N: '10' },
@@ -607,6 +617,7 @@ describe('translateChunk Lambda', () => {
       dynamoMock.on(GetItemCommand).resolves({
         Item: {
           jobId: { S: 'job-123' },
+          userId: { S: 'user-123' },
           status: { S: 'CHUNKED' },
           translationStatus: { S: 'IN_PROGRESS' },
           totalChunks: { N: '10' },
@@ -652,6 +663,7 @@ describe('translateChunk Lambda', () => {
       dynamoMock.on(GetItemCommand).resolves({
         Item: {
           jobId: { S: 'job-123' },
+          userId: { S: 'user-123' },
           status: { S: 'CHUNKED' },
           totalChunks: { N: '1' },
         },
@@ -689,6 +701,7 @@ describe('translateChunk Lambda', () => {
       dynamoMock.on(GetItemCommand).resolves({
         Item: {
           jobId: { S: 'job-123' },
+          userId: { S: 'user-123' },
           status: { S: 'CHUNKED' },
           translationStatus: { S: 'IN_PROGRESS' },
           totalChunks: { N: '5' },
@@ -754,6 +767,7 @@ describe('translateChunk Lambda', () => {
       dynamoMock.on(GetItemCommand).resolves({
         Item: {
           jobId: { S: 'job-123' },
+          userId: { S: 'user-123' },
           status: { S: 'CHUNKED' },
           translationStatus: { S: 'IN_PROGRESS' },
           totalChunks: { N: '5' },
@@ -782,6 +796,7 @@ describe('translateChunk Lambda', () => {
       dynamoMock.on(GetItemCommand).resolves({
         Item: {
           jobId: { S: 'job-123' },
+          userId: { S: 'user-123' },
           status: { S: 'CHUNKED' },
           translationStatus: { S: 'IN_PROGRESS' },
           totalChunks: { N: '5' },
@@ -807,6 +822,7 @@ describe('translateChunk Lambda', () => {
       dynamoMock.on(GetItemCommand).resolves({
         Item: {
           jobId: { S: 'job-123' },
+          userId: { S: 'user-123' },
           status: { S: 'CHUNKED' },
           translationStatus: { S: 'IN_PROGRESS' },
           totalChunks: { N: '5' },
@@ -837,6 +853,7 @@ describe('translateChunk Lambda', () => {
       dynamoMock.on(GetItemCommand).resolves({
         Item: {
           jobId: { S: 'job-parallel' },
+          userId: { S: 'user-123' },
           status: { S: 'CHUNKED' },
           translationStatus: { S: 'IN_PROGRESS' },
           totalChunks: { N: '10' },
@@ -884,6 +901,7 @@ describe('translateChunk Lambda', () => {
       dynamoMock.on(GetItemCommand).resolves({
         Item: {
           jobId: { S: 'job-concurrent' },
+          userId: { S: 'user-123' },
           status: { S: 'CHUNKED' },
           translationStatus: { S: 'IN_PROGRESS' },
           totalChunks: { N: '10' },

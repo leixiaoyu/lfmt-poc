@@ -78,7 +78,7 @@ export const handler = async (
     }
 
     // Load job from DynamoDB
-    const job = await loadJob(jobId);
+    const job = await loadJob(jobId, userId);
 
     // Verify job exists
     if (!job) {
@@ -132,7 +132,7 @@ export const handler = async (
     });
 
     // Initialize translation in DynamoDB
-    await initializeTranslation(jobId, {
+    await initializeTranslation(jobId, userId, {
       targetLanguage: body.targetLanguage as TargetLanguage,
       tone: body.tone,
       contextChunks: body.contextChunks ?? 2,
@@ -230,10 +230,10 @@ function validateRequest(body: StartTranslationRequest): {
 /**
  * Load job from DynamoDB
  */
-async function loadJob(jobId: string): Promise<any | null> {
+async function loadJob(jobId: string, userId: string): Promise<any | null> {
   const command = new GetItemCommand({
     TableName: JOBS_TABLE,
-    Key: marshall({ jobId }),
+    Key: marshall({ jobId, userId }),
   });
 
   const response: GetItemCommandOutput = await dynamoClient.send(command);
@@ -250,6 +250,7 @@ async function loadJob(jobId: string): Promise<any | null> {
  */
 async function initializeTranslation(
   jobId: string,
+  userId: string,
   params: {
     targetLanguage: TargetLanguage;
     tone?: string;
@@ -259,7 +260,7 @@ async function initializeTranslation(
 ): Promise<void> {
   const command = new UpdateItemCommand({
     TableName: JOBS_TABLE,
-    Key: marshall({ jobId }),
+    Key: marshall({ jobId, userId }),
     UpdateExpression:
       'SET translationStatus = :status, targetLanguage = :lang, translationTone = :tone, translationContextChunks = :context, translatedChunks = :translated, translationStartedAt = :startedAt, tokensUsed = :tokens, estimatedCost = :cost, updatedAt = :updatedAt',
     ExpressionAttributeValues: marshall({
@@ -279,6 +280,7 @@ async function initializeTranslation(
 
   logger.info('Translation initialized in DynamoDB', {
     jobId,
+    userId,
     targetLanguage: params.targetLanguage,
     totalChunks: params.totalChunks,
   });
