@@ -197,7 +197,9 @@ async function updateJobStatus(
 
   if (chunkData) {
     updateExpression.push('chunkingMetadata = :chunkingMetadata');
+    updateExpression.push('totalChunks = :totalChunks');
     expressionAttributeValues[':chunkingMetadata'] = chunkData;
+    expressionAttributeValues[':totalChunks'] = chunkData.totalChunks;
   }
 
   if (errorMessage) {
