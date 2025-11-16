@@ -14,7 +14,7 @@
  * - API_BASE_URL environment variable set
  */
 
-const API_BASE_URL = process.env.API_BASE_URL || 'https://8brwlwf68h.execute-api.us-east-1.amazonaws.com/v1';
+import { API_BASE_URL } from './helpers/test-helpers';
 
 describe('Real API Integration Tests', () => {
   describe('GET /auth/me - Response Format Validation', () => {

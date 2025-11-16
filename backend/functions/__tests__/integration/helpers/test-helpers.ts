@@ -339,8 +339,8 @@ export const waitForJobStatus = async (
   authToken: string,
   jobId: string,
   targetStatus: string | string[],
-  maxWaitTime: number = 60000,
-  pollInterval: number = 2000
+  maxWaitTime: number = 30000, // Reduced from 60s to 30s for faster failure detection
+  pollInterval: number = 1000 // Reduced from 2s to 1s for faster feedback
 ): Promise<JobStatus> => {
   const startTime = Date.now();
   const targetStatuses = Array.isArray(targetStatus) ? targetStatus : [targetStatus];
@@ -370,7 +370,7 @@ export const waitForJobStatus = async (
 export const waitForChunking = async (
   authToken: string,
   jobId: string,
-  maxWaitTime: number = 60000
+  maxWaitTime: number = 30000 // Reduced from 60s to 30s
 ): Promise<JobStatus> => {
   return waitForJobStatus(authToken, jobId, 'CHUNKED', maxWaitTime);
 };
@@ -430,8 +430,8 @@ export const getTranslationStatus = async (
 export const waitForTranslation = async (
   authToken: string,
   jobId: string,
-  maxWaitTime: number = 180000,
-  pollInterval: number = 5000
+  maxWaitTime: number = 90000, // Reduced from 180s (3min) to 90s (1.5min) for faster tests
+  pollInterval: number = 2000 // Reduced from 5s to 2s for faster feedback
 ): Promise<TranslationStatus> => {
   const startTime = Date.now();
 
@@ -463,7 +463,7 @@ export const completeTranslationWorkflow = async (
   fileName: string,
   targetLanguage: string = 'es',
   tone: 'formal' | 'informal' | 'neutral' = 'neutral',
-  maxWaitTime: number = 300000
+  maxWaitTime: number = 120000 // Reduced from 300s (5min) to 120s (2min) for faster tests
 ): Promise<{
   jobId: string;
   jobStatus: JobStatus;
