@@ -26,43 +26,43 @@
  */
 
 import { randomBytes } from 'crypto';
+import { API_BASE_URL, DEFAULT_TEST_TIMEOUT } from './helpers/test-helpers';
 
 // Configuration
-const API_BASE_URL =
-  process.env.API_BASE_URL ||
-  'https://8brwlwf68h.execute-api.us-east-1.amazonaws.com/v1';
-const TEST_TIMEOUT = parseInt(process.env.TEST_TIMEOUT || '300000', 10); // 5 minutes
+const TEST_TIMEOUT = parseInt(process.env.TEST_TIMEOUT || `${DEFAULT_TEST_TIMEOUT}`, 10);
 const TEST_EMAIL_DOMAIN = '@example.org'; // Using .org for better Cognito compatibility
 
-// Test document content (small text for fast testing, minimum 1000 bytes)
-const TEST_DOCUMENT_CONTENT = `Chapter 1: The Beginning
+// Test document content (minimal text for fast testing, exactly 1000+ bytes)
+// IMPORTANT: Keep this short to minimize translation API calls and test execution time
+const TEST_DOCUMENT_CONTENT = `Integration Test Document
 
-This is a test document for the LFMT translation service integration tests.
-It contains enough text to test the chunking and translation process while
-meeting the minimum file size requirement of 1000 bytes.
+This is a minimal test document for the LFMT translation service integration tests.
+The purpose of this document is to validate that the translation workflow functions
+correctly while minimizing API call costs and test execution time. This document
+contains exactly enough text to meet the minimum file size requirement of 1000 bytes
+without exceeding it significantly.
 
-The document includes multiple paragraphs to ensure proper chunk boundaries
-are detected and maintained during the translation process. The translation
-system is designed to handle documents much larger than this sample.
+The translation system processes this document through the following stages:
+1. Upload to S3 storage
+2. Document chunking based on token limits
+3. Translation via Gemini API
+4. Chunk reassembly and formatting preservation
 
-Chapter 2: The Journey
+This short document allows us to test all core functionality including:
+- Authentication and authorization
+- File upload with legal attestation
+- Document chunking algorithm
+- Translation API integration
+- Progress tracking and status updates
+- Error handling and validation
 
-In the second chapter, we explore the translation capabilities of the system.
-This section will be translated along with the first chapter to verify that
-context is maintained across chunk boundaries. The engine preserves formatting
-and paragraph structure throughout the translation process.
+By keeping the document minimal, we reduce:
+- Translation API costs (fewer tokens processed)
+- Test execution time (faster translation completion)
+- Cloud resource usage (smaller S3 storage, faster Lambda execution)
 
-The translation engine should preserve formatting, paragraph structure, and
-the overall flow of the narrative. This ensures that the final translated
-document maintains the same quality and readability as the original text.
-
-Chapter 3: The Conclusion
-
-Finally, we conclude our test document. The translation system has been designed
-to handle documents much larger than this, but for integration testing, we want
-to keep the processing time reasonable while still validating all core functionality.
-
-This completes our test document with sufficient content for validation testing.`;
+This approach ensures our integration tests run quickly while still validating
+all critical system functionality. End padding text to reach minimum size requirement.`;
 
 // Helper types
 interface AuthTokens {
@@ -237,10 +237,10 @@ const uploadDocument = async (
 const waitForChunking = async (
   authToken: string,
   jobId: string,
-  maxWaitTime: number = 60000
+  maxWaitTime: number = 30000 // Reduced from 60s to 30s
 ): Promise<void> => {
   const startTime = Date.now();
-  const pollInterval = 2000; // 2 seconds
+  const pollInterval = 1000; // Reduced from 2s to 1s for faster feedback
 
   while (Date.now() - startTime < maxWaitTime) {
     const statusResponse = await apiRequest(
@@ -318,10 +318,10 @@ const getTranslationStatus = async (
 const waitForTranslation = async (
   authToken: string,
   jobId: string,
-  maxWaitTime: number = 180000
+  maxWaitTime: number = 90000 // Reduced from 180s (3min) to 90s (1.5min) for minimal test document
 ): Promise<TranslationStatus> => {
   const startTime = Date.now();
-  const pollInterval = 5000; // 5 seconds
+  const pollInterval = 2000; // Reduced from 5s to 2s for faster feedback
 
   while (Date.now() - startTime < maxWaitTime) {
     const status = await getTranslationStatus(authToken, jobId);

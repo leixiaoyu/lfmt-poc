@@ -7,9 +7,7 @@
  * Run with: npm run test:integration -- health-check.integration.test.ts
  */
 
-const API_BASE_URL =
-  process.env.API_BASE_URL ||
-  'https://8brwlwf68h.execute-api.us-east-1.amazonaws.com/v1';
+import { API_BASE_URL } from './helpers/test-helpers';
 
 interface HealthCheckResult {
   endpoint: string;
