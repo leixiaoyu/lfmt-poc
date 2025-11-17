@@ -23,7 +23,22 @@ const dynamoClient = new DynamoDBClient({});
 const sfnClient = new SFNClient({});
 
 const JOBS_TABLE = getRequiredEnv('JOBS_TABLE');
-const STATE_MACHINE_ARN = getRequiredEnv('STATE_MACHINE_ARN'); // Full ARN provided by CDK infrastructure
+const STATE_MACHINE_NAME = getRequiredEnv('STATE_MACHINE_NAME'); // State machine name (ARN constructed dynamically)
+const AWS_REGION = process.env.AWS_REGION || 'us-east-1';
+
+/**
+ * Construct State Machine ARN dynamically to avoid circular dependency in CDK
+ * ARN format: arn:aws:states:<region>:<account-id>:stateMachine:<name>
+ */
+const getStateMachineArn = async (): Promise<string> => {
+  // Get account ID from STS (cached after first call)
+  const { STSClient, GetCallerIdentityCommand } = await import('@aws-sdk/client-sts');
+  const stsClient = new STSClient({});
+  const identity = await stsClient.send(new GetCallerIdentityCommand({}));
+  const accountId = identity.Account;
+
+  return `arn:aws:states:${AWS_REGION}:${accountId}:stateMachine:${STATE_MACHINE_NAME}`;
+};
 
 /**
  * Request body for starting translation
@@ -308,8 +323,11 @@ async function startStateMachineExecution(
     chunks,
   };
 
+  // Construct state machine ARN dynamically
+  const stateMachineArn = await getStateMachineArn();
+
   const command = new StartExecutionCommand({
-    stateMachineArn: STATE_MACHINE_ARN,
+    stateMachineArn,
     name: `${jobId}-${Date.now()}`, // Unique execution name
     input: JSON.stringify(input),
   });

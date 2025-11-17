@@ -4,7 +4,7 @@
 
 // Set environment variables BEFORE imports
 process.env.JOBS_TABLE = 'test-jobs-table';
-process.env.STATE_MACHINE_ARN = 'arn:aws:states:us-east-1:123456789012:stateMachine:test-state-machine';
+process.env.STATE_MACHINE_NAME = 'test-state-machine'; // State machine name (ARN constructed dynamically)
 process.env.AWS_REGION = 'us-east-1';
 
 import { APIGatewayProxyEvent } from 'aws-lambda';
@@ -15,11 +15,13 @@ import {
   UpdateItemCommand,
 } from '@aws-sdk/client-dynamodb';
 import { SFNClient, StartExecutionCommand } from '@aws-sdk/client-sfn';
+import { STSClient, GetCallerIdentityCommand } from '@aws-sdk/client-sts';
 import { handler } from './startTranslation';
 
 // Create mocks
 const dynamoMock = mockClient(DynamoDBClient);
 const sfnMock = mockClient(SFNClient);
+const stsMock = mockClient(STSClient);
 
 // No need to mock getCurrentUser since we're using requestContext directly
 
@@ -27,7 +29,15 @@ describe('startTranslation endpoint', () => {
   beforeEach(() => {
     dynamoMock.reset();
     sfnMock.reset();
+    stsMock.reset();
     jest.clearAllMocks();
+
+    // Mock STS GetCallerIdentity to return test account ID
+    stsMock.on(GetCallerIdentityCommand).resolves({
+      Account: '123456789012',
+      UserId: 'test-user-id',
+      Arn: 'arn:aws:iam::123456789012:user/test-user',
+    });
   });
 
   const createEvent = (
@@ -94,8 +104,9 @@ describe('startTranslation endpoint', () => {
       // Verify Step Functions execution started
       const sfnCalls = sfnMock.commandCalls(StartExecutionCommand);
       expect(sfnCalls.length).toBe(1);
-      // Check that state machine ARN matches the environment variable
-      expect(sfnCalls[0].args[0].input.stateMachineArn).toBe(process.env.STATE_MACHINE_ARN);
+      // Check that state machine ARN is correctly constructed from STATE_MACHINE_NAME
+      const expectedArn = `arn:aws:states:${process.env.AWS_REGION}:123456789012:stateMachine:${process.env.STATE_MACHINE_NAME}`;
+      expect(sfnCalls[0].args[0].input.stateMachineArn).toBe(expectedArn);
     });
 
     it('should start translation with custom tone', async () => {

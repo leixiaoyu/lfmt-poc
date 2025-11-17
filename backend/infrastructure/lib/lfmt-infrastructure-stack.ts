@@ -3,8 +3,7 @@ import {
   StackProps,
   RemovalPolicy,
   Duration,
-  CfnOutput,
-  Lazy
+  CfnOutput
 } from 'aws-cdk-lib';
 import { Construct } from 'constructs';
 
@@ -775,7 +774,7 @@ export class LfmtInfrastructureStack extends Stack {
     });
 
     // Start Translation Lambda Function (initiates translation process)
-    // Note: STATE_MACHINE_ARN uses Lazy.string() to defer resolution until after Step Functions is created
+    // Note: STATE_MACHINE_NAME provided as env var; Lambda constructs full ARN dynamically to avoid circular dependency
     this.startTranslationFunction = new NodejsFunction(this, 'StartTranslationFunction', {
       functionName: `lfmt-start-translation-${this.stackName}`,
       entry: '../functions/jobs/startTranslation.ts',
@@ -785,10 +784,8 @@ export class LfmtInfrastructureStack extends Stack {
       environment: {
         ...commonEnv,
         TRANSLATE_CHUNK_FUNCTION_NAME: `lfmt-translate-chunk-${this.stackName}`,
-        // Use Lazy.string() to avoid circular dependency (resolved during synthesis after all resources created)
-        STATE_MACHINE_ARN: Lazy.string({
-          produce: () => this.translationStateMachine?.stateMachineArn || ''
-        }),
+        // Pass state machine name only; Lambda constructs full ARN to avoid circular dependency
+        STATE_MACHINE_NAME: `lfmt-translation-workflow-${this.stackName}`,
       },
       timeout: Duration.seconds(30),
       memorySize: 256,
@@ -970,20 +967,24 @@ export class LfmtInfrastructureStack extends Stack {
     this.jobsTable.grantReadWriteData(this.translationStateMachine);
 
     // Grant startTranslation Lambda permission to start state machine executions
-    // Use manual IAM policy with Lazy.string() to avoid circular dependency
-    // (grantStartExecution() creates State Machine → Lambda dependency)
-    if (this.startTranslationFunction && this.lambdaRole) {
-      this.lambdaRole.addToPrincipalPolicy(
-        new iam.PolicyStatement({
-          effect: iam.Effect.ALLOW,
-          actions: ['states:StartExecution'],
-          resources: [
-            Lazy.string({
-              produce: () => this.translationStateMachine?.stateMachineArn || ''
-            })
-          ],
-        })
-      );
+    // Create managed policy with constructed ARN to avoid circular dependency
+    // (grantStartExecution() creates State Machine → Lambda dependency even when called here)
+    if (this.lambdaRole) {
+      new iam.ManagedPolicy(this, 'LambdaStepFunctionsPolicy', {
+        roles: [this.lambdaRole],
+        statements: [
+          new iam.PolicyStatement({
+            effect: iam.Effect.ALLOW,
+            actions: [
+              'states:StartExecution',
+            ],
+            resources: [
+              // Construct ARN pattern without referencing the state machine resource
+              `arn:aws:states:${Stack.of(this).region}:${Stack.of(this).account}:stateMachine:lfmt-translation-workflow-${this.stackName}`
+            ],
+          }),
+        ],
+      });
     }
   }
 
