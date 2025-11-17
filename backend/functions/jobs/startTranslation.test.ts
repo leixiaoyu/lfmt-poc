@@ -94,9 +94,8 @@ describe('startTranslation endpoint', () => {
       // Verify Step Functions execution started
       const sfnCalls = sfnMock.commandCalls(StartExecutionCommand);
       expect(sfnCalls.length).toBe(1);
-      // Check that state machine ARN was constructed correctly from name and region
-      expect(sfnCalls[0].args[0].input.stateMachineArn).toContain(process.env.STATE_MACHINE_NAME);
-      expect(sfnCalls[0].args[0].input.stateMachineArn).toContain(process.env.AWS_REGION);
+      // Check that state machine ARN matches the environment variable
+      expect(sfnCalls[0].args[0].input.stateMachineArn).toBe(process.env.STATE_MACHINE_ARN);
     });
 
     it('should start translation with custom tone', async () => {
