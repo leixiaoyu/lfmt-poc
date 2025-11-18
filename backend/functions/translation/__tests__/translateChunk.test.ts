@@ -101,6 +101,7 @@ describe('translateChunk Lambda', () => {
 
       const event: TranslateChunkEvent = {
         jobId: 'job-123',
+        userId: 'user-123',
         chunkIndex: 0,
         targetLanguage: 'es',
       };
@@ -164,6 +165,7 @@ describe('translateChunk Lambda', () => {
 
       const event: TranslateChunkEvent = {
         jobId: 'job-123',
+        userId: 'user-123',
         chunkIndex: 2,
         targetLanguage: 'es',
         contextChunks: 2,
@@ -220,6 +222,7 @@ describe('translateChunk Lambda', () => {
 
       const event: TranslateChunkEvent = {
         jobId: 'job-123',
+        userId: 'user-123',
         chunkIndex: 4,
         targetLanguage: 'es',
       };
@@ -253,6 +256,7 @@ describe('translateChunk Lambda', () => {
     it('should reject negative chunkIndex', async () => {
       const event: TranslateChunkEvent = {
         jobId: 'job-123',
+        userId: 'user-123',
         chunkIndex: -1,
         targetLanguage: 'es',
       };
@@ -266,6 +270,7 @@ describe('translateChunk Lambda', () => {
     it('should reject invalid targetLanguage', async () => {
       const event = {
         jobId: 'job-123',
+        userId: 'user-123',
         chunkIndex: 0,
         targetLanguage: 'invalid',
       } as any;
@@ -282,6 +287,7 @@ describe('translateChunk Lambda', () => {
       for (const lang of validLanguages) {
         const event = {
           jobId: 'job-123',
+          userId: 'user-123',
           chunkIndex: 0,
           targetLanguage: lang,
         } as any;
@@ -327,6 +333,7 @@ describe('translateChunk Lambda', () => {
 
       const event: TranslateChunkEvent = {
         jobId: 'job-123',
+        userId: 'user-123',
         chunkIndex: 0,
         targetLanguage: 'es',
       };
@@ -345,6 +352,7 @@ describe('translateChunk Lambda', () => {
 
       const event: TranslateChunkEvent = {
         jobId: 'nonexistent',
+        userId: 'user-123',
         chunkIndex: 0,
         targetLanguage: 'es',
       };
@@ -368,6 +376,7 @@ describe('translateChunk Lambda', () => {
 
       const event: TranslateChunkEvent = {
         jobId: 'job-123',
+        userId: 'user-123',
         chunkIndex: 999,
         targetLanguage: 'es',
       };
@@ -404,6 +413,7 @@ describe('translateChunk Lambda', () => {
 
       const event: TranslateChunkEvent = {
         jobId: 'job-123',
+        userId: 'user-123',
         chunkIndex: 0,
         targetLanguage: 'es',
       };
@@ -444,6 +454,7 @@ describe('translateChunk Lambda', () => {
 
       const event: TranslateChunkEvent = {
         jobId: 'job-123',
+        userId: 'user-123',
         chunkIndex: 0,
         targetLanguage: 'es',
         contextChunks: 2,
@@ -492,6 +503,7 @@ describe('translateChunk Lambda', () => {
 
       const event: TranslateChunkEvent = {
         jobId: 'job-123',
+        userId: 'user-123',
         chunkIndex: 3,
         targetLanguage: 'es',
         contextChunks: 1, // Legacy parameter - ignored in parallel mode
@@ -547,6 +559,7 @@ describe('translateChunk Lambda', () => {
 
       const event: TranslateChunkEvent = {
         jobId: 'job-123',
+        userId: 'user-123',
         chunkIndex: 0,
         targetLanguage: 'es',
       };
@@ -594,6 +607,7 @@ describe('translateChunk Lambda', () => {
 
       const event: TranslateChunkEvent = {
         jobId: 'job-123',
+        userId: 'user-123',
         chunkIndex: 6,
         targetLanguage: 'fr',
       };
@@ -646,6 +660,7 @@ describe('translateChunk Lambda', () => {
 
       const event: TranslateChunkEvent = {
         jobId: 'job-123',
+        userId: 'user-123',
         chunkIndex: 8,
         targetLanguage: 'de',
       };
@@ -683,6 +698,7 @@ describe('translateChunk Lambda', () => {
 
       const event: TranslateChunkEvent = {
         jobId: 'job-123',
+        userId: 'user-123',
         chunkIndex: 0,
         targetLanguage: 'es',
         tone: 'formal',
@@ -721,6 +737,7 @@ describe('translateChunk Lambda', () => {
 
       const event: TranslateChunkEvent = {
         jobId: 'job-123',
+        userId: 'user-123',
         chunkIndex: 0,
         targetLanguage: 'es',
       };
@@ -737,6 +754,7 @@ describe('translateChunk Lambda', () => {
     it('should return error for missing targetLanguage', async () => {
       const event = {
         jobId: 'job-123',
+        userId: 'user-123',
         chunkIndex: 0,
         targetLanguage: '',
       } as TranslateChunkEvent;
@@ -751,6 +769,7 @@ describe('translateChunk Lambda', () => {
     it('should return error for undefined targetLanguage', async () => {
       const event = {
         jobId: 'job-123',
+        userId: 'user-123',
         chunkIndex: 0,
       } as any;
 
@@ -781,6 +800,7 @@ describe('translateChunk Lambda', () => {
 
       const event: TranslateChunkEvent = {
         jobId: 'job-123',
+        userId: 'user-123',
         chunkIndex: 0,
         targetLanguage: 'es',
       };
@@ -807,6 +827,7 @@ describe('translateChunk Lambda', () => {
 
       const event: TranslateChunkEvent = {
         jobId: 'job-123',
+        userId: 'user-123',
         chunkIndex: 0,
         targetLanguage: 'es',
       };
@@ -836,6 +857,7 @@ describe('translateChunk Lambda', () => {
 
       const event: TranslateChunkEvent = {
         jobId: 'job-123',
+        userId: 'user-123',
         chunkIndex: 0,
         targetLanguage: 'es',
       };
@@ -878,6 +900,7 @@ describe('translateChunk Lambda', () => {
 
       const event: TranslateChunkEvent = {
         jobId: 'job-parallel',
+        userId: 'user-123',
         chunkIndex: 5,
         targetLanguage: 'fr',
       };
@@ -933,6 +956,7 @@ describe('translateChunk Lambda', () => {
       // Process two chunks "simultaneously"
       const event1: TranslateChunkEvent = {
         jobId: 'job-concurrent',
+        userId: 'user-123',
         chunkIndex: 4,
         targetLanguage: 'es',
       };
@@ -948,6 +972,7 @@ describe('translateChunk Lambda', () => {
 
       const event2: TranslateChunkEvent = {
         jobId: 'job-concurrent',
+        userId: 'user-123',
         chunkIndex: 7,
         targetLanguage: 'es',
       };
