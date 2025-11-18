@@ -868,9 +868,10 @@ export class LfmtInfrastructureStack extends Stack {
     // Define the Translate Chunk task with retry logic
     const translateChunkTask = new tasks.LambdaInvoke(this, 'TranslateChunkTask', {
       lambdaFunction: this.translateChunkFunction,
-      // Input: { jobId, chunkIndex, targetLanguage, tone, contextChunks }
+      // Input: { jobId, userId, chunkIndex, targetLanguage, tone, contextChunks }
       payload: stepfunctions.TaskInput.fromObject({
         jobId: stepfunctions.JsonPath.stringAt('$.jobId'),
+        userId: stepfunctions.JsonPath.stringAt('$.userId'),
         chunkIndex: stepfunctions.JsonPath.numberAt('$.chunkIndex'),
         targetLanguage: stepfunctions.JsonPath.stringAt('$.targetLanguage'),
         tone: stepfunctions.JsonPath.stringAt('$.tone'),

@@ -51,6 +51,7 @@ export function resetClients(): void {
  */
 export interface TranslateChunkEvent {
   jobId: string;
+  userId: string;
   chunkIndex: number;
   targetLanguage: string;
   tone?: 'formal' | 'informal' | 'neutral';
@@ -111,10 +112,7 @@ export const handler = async (
     validateEvent(event);
 
     // Load job metadata from DynamoDB
-    const job = await loadJob(event.jobId);
-
-    // Extract userId from job metadata for composite key operations
-    const userId = job.userId;
+    const job = await loadJob(event.jobId, event.userId);
 
     // Verify job is in correct state
     if (job.status !== 'CHUNKED' && job.translationStatus !== 'IN_PROGRESS') {
@@ -202,7 +200,7 @@ export const handler = async (
     );
 
     // Update job progress in DynamoDB
-    await updateJobProgress(event.jobId, userId, {
+    await updateJobProgress(event.jobId, event.userId, {
       translatedChunks: (job.translatedChunks || 0) + 1,
       totalChunks: job.totalChunks,
       tokensUsed: (job.tokensUsed || 0) + result.tokensUsed.total,
@@ -233,12 +231,10 @@ export const handler = async (
     const retryable =
       error instanceof GeminiApiError ? error.retryable : false;
 
-    // Update job status if error is not retryable and we have a valid jobId
-    if (!retryable && event.jobId) {
-      // Load job to get userId for composite key (in error path)
+    // Update job status if error is not retryable and we have a valid jobId and userId
+    if (!retryable && event.jobId && event.userId) {
       try {
-        const job = await loadJob(event.jobId);
-        await updateJobStatus(event.jobId, job.userId, 'TRANSLATION_FAILED', {
+        await updateJobStatus(event.jobId, event.userId, 'TRANSLATION_FAILED', {
           error: error instanceof Error ? error.message : 'Unknown error',
           failedAt: new Date().toISOString(),
         });
@@ -269,6 +265,10 @@ function validateEvent(event: TranslateChunkEvent): void {
     throw new Error('jobId is required');
   }
 
+  if (!event.userId) {
+    throw new Error('userId is required');
+  }
+
   if (event.chunkIndex === undefined || event.chunkIndex < 0) {
     throw new Error('chunkIndex must be a non-negative integer');
   }
@@ -287,11 +287,12 @@ function validateEvent(event: TranslateChunkEvent): void {
 
 /**
  * Load job metadata from DynamoDB
+ * Uses composite primary key (jobId, userId)
  */
-async function loadJob(jobId: string): Promise<any> {
+async function loadJob(jobId: string, userId: string): Promise<any> {
   const command = new GetItemCommand({
     TableName: JOBS_TABLE,
-    Key: marshall({ jobId }),
+    Key: marshall({ jobId, userId }),
   });
 
   const response: GetItemCommandOutput = await dynamoClient.send(command);
