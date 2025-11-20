@@ -60,9 +60,9 @@ const mockJobs: TranslationJob[] = [
     createdAt: '2025-01-15T10:00:00Z',
     updatedAt: '2025-01-15T10:30:00Z',
     fileSize: 1024,
+    contentType: 'text/plain',
     totalChunks: 5,
-    translatedChunks: 5,
-    estimatedCost: 0.50,
+    completedChunks: 5,
   },
   {
     jobId: 'job-2',
@@ -74,9 +74,9 @@ const mockJobs: TranslationJob[] = [
     createdAt: '2025-01-16T09:00:00Z',
     updatedAt: '2025-01-16T09:15:00Z',
     fileSize: 2048,
+    contentType: 'text/plain',
     totalChunks: 10,
-    translatedChunks: 3,
-    estimatedCost: 1.00,
+    completedChunks: 3,
   },
   {
     jobId: 'job-3',
@@ -87,9 +87,9 @@ const mockJobs: TranslationJob[] = [
     createdAt: '2025-01-17T08:00:00Z',
     updatedAt: '2025-01-17T08:05:00Z',
     fileSize: 512,
+    contentType: 'text/plain',
     totalChunks: 2,
-    translatedChunks: 0,
-    estimatedCost: 0.25,
+    completedChunks: 0,
   },
   {
     jobId: 'job-4',
@@ -101,9 +101,9 @@ const mockJobs: TranslationJob[] = [
     createdAt: '2025-01-18T07:00:00Z',
     updatedAt: '2025-01-18T07:00:00Z',
     fileSize: 4096,
+    contentType: 'text/plain',
     totalChunks: 15,
-    translatedChunks: 0,
-    estimatedCost: 2.00,
+    completedChunks: 0,
   },
 ];
 
@@ -468,10 +468,10 @@ describe('TranslationHistory', () => {
       // Mock URL methods
       const mockCreateObjectURL = vi.fn(() => 'blob:mock-url');
       const mockRevokeObjectURL = vi.fn();
-      const originalCreateObjectURL = global.URL.createObjectURL;
-      const originalRevokeObjectURL = global.URL.revokeObjectURL;
-      global.URL.createObjectURL = mockCreateObjectURL;
-      global.URL.revokeObjectURL = mockRevokeObjectURL;
+      const originalCreateObjectURL = URL.createObjectURL;
+      const originalRevokeObjectURL = URL.revokeObjectURL;
+      URL.createObjectURL = mockCreateObjectURL;
+      URL.revokeObjectURL = mockRevokeObjectURL;
 
       renderComponent();
 
@@ -488,8 +488,8 @@ describe('TranslationHistory', () => {
       });
 
       // Cleanup
-      global.URL.createObjectURL = originalCreateObjectURL;
-      global.URL.revokeObjectURL = originalRevokeObjectURL;
+      URL.createObjectURL = originalCreateObjectURL;
+      URL.revokeObjectURL = originalRevokeObjectURL;
     });
 
     it('should show error when download fails', async () => {
@@ -635,9 +635,9 @@ describe('TranslationHistory', () => {
           createdAt: '2025-01-19T07:00:00Z',
           updatedAt: '2025-01-19T07:00:00Z',
           fileSize: 100,
+          contentType: 'text/plain',
           totalChunks: 1,
-          translatedChunks: 0,
-          estimatedCost: 0.10,
+          completedChunks: 0,
         },
       ];
 

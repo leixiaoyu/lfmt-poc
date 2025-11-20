@@ -367,24 +367,33 @@ describe('TranslationUpload', () => {
         acceptCopyrightOwnership: true,
         acceptTranslationRights: true,
         acceptLiabilityTerms: true,
-        ipAddress: '127.0.0.1',
+        userIPAddress: '127.0.0.1',
         userAgent: 'test-agent',
         timestamp: new Date().toISOString(),
       });
 
       vi.mocked(translationService.uploadDocument).mockResolvedValue({
         jobId: 'test-job-123',
+        userId: 'user-123',
         status: 'PENDING',
         fileName: 'test-document.txt',
         fileSize: 12,
-        uploadedAt: new Date().toISOString(),
+        contentType: 'text/plain',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
       });
 
       vi.mocked(translationService.startTranslation).mockResolvedValue({
         jobId: 'test-job-123',
+        userId: 'user-123',
+        fileName: 'test-document.txt',
+        fileSize: 12,
+        contentType: 'text/plain',
         status: 'CHUNKING',
         targetLanguage: 'es',
         tone: 'formal',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
       });
 
       const submitButton = screen.getByRole('button', { name: /Submit & Start Translation/i });
@@ -406,7 +415,7 @@ describe('TranslationUpload', () => {
           acceptCopyrightOwnership: true,
           acceptTranslationRights: true,
           acceptLiabilityTerms: true,
-          ipAddress: '127.0.0.1',
+          userIPAddress: '127.0.0.1',
           userAgent: 'test-agent',
           timestamp: new Date().toISOString(),
         }), 100))

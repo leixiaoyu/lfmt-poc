@@ -17,7 +17,7 @@
  */
 
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen, fireEvent, within } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom';
 import { TranslationConfig, type TranslationConfigData, type TranslationConfigProps } from '../TranslationConfig';

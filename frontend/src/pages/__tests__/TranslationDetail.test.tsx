@@ -52,7 +52,7 @@ vi.mock('../../services/translationService', () => ({
 
 // Mock TranslationProgress component
 vi.mock('../../components/Translation/TranslationProgress', () => ({
-  TranslationProgress: ({ jobId, onComplete, onError }: any) => (
+  TranslationProgress: ({ jobId }: any) => (
     <div data-testid="translation-progress">
       TranslationProgress Component (jobId: {jobId})
     </div>
@@ -73,37 +73,35 @@ const mockCompletedJob: TranslationJob = {
   fileSize: 2048,
   contentType: 'text/plain',
   totalChunks: 5,
-  translatedChunks: 5,
-  estimatedCost: 0.50,
-  tokensUsed: 1000,
+  completedChunks: 5,
 };
 
 const mockInProgressJob: TranslationJob = {
   ...mockCompletedJob,
   status: 'IN_PROGRESS',
   completedAt: undefined,
-  translatedChunks: 3,
+  completedChunks: 3,
 };
 
 const mockChunkedJob: TranslationJob = {
   ...mockCompletedJob,
   status: 'CHUNKED',
   completedAt: undefined,
-  translatedChunks: 0,
+  completedChunks: 0,
 };
 
 const mockFailedJob: TranslationJob = {
   ...mockCompletedJob,
   status: 'FAILED',
   completedAt: undefined,
-  translatedChunks: 0,
+  completedChunks: 0,
 };
 
 const mockPendingJob: TranslationJob = {
   ...mockCompletedJob,
   status: 'PENDING',
   completedAt: undefined,
-  translatedChunks: 0,
+  completedChunks: 0,
   totalChunks: 0,
 };
 
@@ -337,10 +335,10 @@ describe('TranslationDetail', () => {
       // Mock URL methods
       const mockCreateObjectURL = vi.fn(() => 'blob:mock-url');
       const mockRevokeObjectURL = vi.fn();
-      const originalCreateObjectURL = global.URL.createObjectURL;
-      const originalRevokeObjectURL = global.URL.revokeObjectURL;
-      global.URL.createObjectURL = mockCreateObjectURL;
-      global.URL.revokeObjectURL = mockRevokeObjectURL;
+      const originalCreateObjectURL = URL.createObjectURL;
+      const originalRevokeObjectURL = URL.revokeObjectURL;
+      URL.createObjectURL = mockCreateObjectURL;
+      URL.revokeObjectURL = mockRevokeObjectURL;
 
       renderComponent();
 
@@ -357,8 +355,8 @@ describe('TranslationDetail', () => {
       });
 
       // Cleanup
-      global.URL.createObjectURL = originalCreateObjectURL;
-      global.URL.revokeObjectURL = originalRevokeObjectURL;
+      URL.createObjectURL = originalCreateObjectURL;
+      URL.revokeObjectURL = originalRevokeObjectURL;
     });
 
     it('should show error when download fails', async () => {
