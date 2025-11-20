@@ -119,4 +119,74 @@ export class TranslationDetailPage extends BasePage {
     }
     return null;
   }
+
+  /**
+   * Get job status from API
+   */
+  async getJobStatus(): Promise<string> {
+    const statusElement = this.page.locator('text=/Status/i').locator('..').locator('p').first();
+    const status = await statusElement.textContent();
+    return status || '';
+  }
+
+  /**
+   * Get progress percentage
+   */
+  async getProgressPercentage(): Promise<number> {
+    const progressText = await this.page.locator('text=/%/').first().textContent();
+    if (!progressText) return 0;
+    const match = progressText.match(/(\d+)%/);
+    return match ? parseInt(match[1]) : 0;
+  }
+
+  /**
+   * Get processed chunks count
+   */
+  async getProcessedChunks(): Promise<{ processed: number; total: number }> {
+    const chunksText = await this.page.locator('text=/Chunks:/').first().textContent();
+    if (!chunksText) return { processed: 0, total: 0 };
+    const match = chunksText.match(/(\d+)\s*\/\s*(\d+)/);
+    return match ? { processed: parseInt(match[1]), total: parseInt(match[2]) } : { processed: 0, total: 0 };
+  }
+
+  /**
+   * Get job info (fileName, targetLanguage, etc.)
+   */
+  async getJobInfo(): Promise<{
+    fileName: string;
+    targetLanguage: string;
+    fileSize?: string;
+  }> {
+    const fileName = await this.page.locator('text=/File Name/i').locator('..').locator('p').first().textContent() || '';
+    const targetLanguage = await this.page.locator('text=/Target Language/i').locator('..').locator('p').first().textContent() || '';
+    const fileSize = await this.page.locator('text=/File Size/i').locator('..').locator('p').first().textContent();
+
+    return {
+      fileName: fileName.trim(),
+      targetLanguage: targetLanguage.trim(),
+      fileSize: fileSize?.trim()
+    };
+  }
+
+  /**
+   * Wait for status to change from current status
+   */
+  async waitForStatusChange(currentStatus: string, timeout: number = 30000): Promise<string> {
+    const startTime = Date.now();
+    while (Date.now() - startTime < timeout) {
+      const newStatus = await this.getJobStatus();
+      if (newStatus && newStatus !== currentStatus) {
+        return newStatus;
+      }
+      await this.page.waitForTimeout(1000);
+    }
+    throw new Error(`Status did not change from ${currentStatus} within ${timeout}ms`);
+  }
+
+  /**
+   * Wait for specific status
+   */
+  async waitForStatus(expectedStatus: string, timeout: number = 300000): Promise<void> {
+    await this.page.waitForSelector(`text="${expectedStatus}"`, { timeout });
+  }
 }

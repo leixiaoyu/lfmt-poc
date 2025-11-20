@@ -37,14 +37,15 @@ export default defineConfig({
   // Shared settings for all the projects below
   use: {
     // Base URL for tests
+    // Use PLAYWRIGHT_BASE_URL for deployed environments, otherwise localhost
     baseURL: process.env.PLAYWRIGHT_BASE_URL || 'http://localhost:3000',
-    
+
     // Collect trace when retrying the failed test
     trace: 'on-first-retry',
-    
+
     // Screenshot on failure
     screenshot: 'only-on-failure',
-    
+
     // Video on failure
     video: 'retain-on-failure',
   },
@@ -55,7 +56,7 @@ export default defineConfig({
       name: 'chromium',
       use: { ...devices['Desktop Chrome'] },
     },
-    
+
     // Uncomment to test on Firefox and WebKit
     // {
     //   name: 'firefox',
@@ -65,7 +66,7 @@ export default defineConfig({
     //   name: 'webkit',
     //   use: { ...devices['Desktop Safari'] },
     // },
-    
+
     // Mobile viewports
     // {
     //   name: 'Mobile Chrome',
@@ -78,10 +79,12 @@ export default defineConfig({
   ],
 
   // Run your local dev server before starting the tests
-  webServer: process.env.CI ? undefined : {
+  // Only start dev server if PLAYWRIGHT_BASE_URL is not set (i.e., local/CI testing)
+  // Skip dev server if testing against deployed environment (has PLAYWRIGHT_BASE_URL)
+  webServer: process.env.PLAYWRIGHT_BASE_URL ? undefined : {
     command: 'npm run dev',
     url: 'http://localhost:3000',
     reuseExistingServer: !process.env.CI,
-    timeout: 120 * 1000,
+    timeout: 180 * 1000, // 3 minutes - CI needs more time for dev server startup
   },
 });
