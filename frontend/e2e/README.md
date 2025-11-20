@@ -48,7 +48,7 @@ npx playwright install chromium
 The Playwright configuration is in `playwright.config.ts` at the project root. Key settings:
 
 - **Test Directory**: `./e2e/tests`
-- **Base URL**: `http://localhost:5173` (configurable via `PLAYWRIGHT_BASE_URL` env var)
+- **Base URL**: `http://localhost:3000` (configurable via `PLAYWRIGHT_BASE_URL` env var)
 - **Browsers**: Chromium, Firefox, WebKit, Mobile Chrome, Mobile Safari
 - **Auto-start dev server**: Runs `npm run dev` before tests
 - **Retries**: 2 retries on CI, 0 locally
@@ -96,14 +96,14 @@ npm run test:e2e:report
 
 ### Environment Variables
 
-- `PLAYWRIGHT_BASE_URL`: Override base URL (default: `http://localhost:5173`)
+- `PLAYWRIGHT_BASE_URL`: Override base URL (default: `http://localhost:3000`)
 - `API_BASE_URL`: Backend API URL for API calls (default: `http://localhost:3000`)
 - `CI`: Set to `true` to enable CI mode (retries, parallel execution)
 
 Example:
 
 ```bash
-PLAYWRIGHT_BASE_URL=http://localhost:5173 npm run test:e2e
+PLAYWRIGHT_BASE_URL=http://localhost:3000 npm run test:e2e
 ```
 
 ## Page Object Model (POM)
@@ -339,7 +339,7 @@ E2E tests are fully integrated into CI/CD pipeline:
     retention-days: 30
 ```
 
-**Behavior**: Tests run against local dev server (`http://localhost:5173`) automatically started by Playwright.
+**Behavior**: Tests run against local dev server (`http://localhost:3000`) automatically started by Playwright.
 
 ### Post-Deployment Testing (`.github/workflows/deploy.yml`)
 
@@ -358,7 +358,7 @@ E2E tests are fully integrated into CI/CD pipeline:
 ### Configuration
 
 Playwright config automatically detects environment:
-- **No `PLAYWRIGHT_BASE_URL`**: Start local dev server on `localhost:5173`
+- **No `PLAYWRIGHT_BASE_URL`**: Start local dev server on `localhost:3000`
 - **Has `PLAYWRIGHT_BASE_URL`**: Skip dev server, test against deployed URL
 
 ### Artifacts
@@ -402,7 +402,7 @@ This opens an interactive HTML report with:
 
 If tests fail because dev server doesn't start:
 
-1. Verify port 5173 is available
+1. Verify port 3000 is available
 2. Check `npm run dev` works independently
 3. Increase timeout in `playwright.config.ts`:
    ```typescript

@@ -38,7 +38,7 @@ export default defineConfig({
   use: {
     // Base URL for tests
     // Use PLAYWRIGHT_BASE_URL for deployed environments, otherwise localhost
-    baseURL: process.env.PLAYWRIGHT_BASE_URL || 'http://localhost:5173',
+    baseURL: process.env.PLAYWRIGHT_BASE_URL || 'http://localhost:3000',
 
     // Collect trace when retrying the failed test
     trace: 'on-first-retry',
@@ -83,8 +83,8 @@ export default defineConfig({
   // Skip dev server if testing against deployed environment (has PLAYWRIGHT_BASE_URL)
   webServer: process.env.PLAYWRIGHT_BASE_URL ? undefined : {
     command: 'npm run dev',
-    url: 'http://localhost:5173',
+    url: 'http://localhost:3000',
     reuseExistingServer: !process.env.CI,
-    timeout: 120 * 1000,
+    timeout: 180 * 1000, // 3 minutes - CI needs more time for dev server startup
   },
 });

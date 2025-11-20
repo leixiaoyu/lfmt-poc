@@ -134,7 +134,7 @@ npm run test:e2e
 ```
 
 **What happens**:
-1. Playwright starts dev server on `http://localhost:5173`
+1. Playwright starts dev server on `http://localhost:3000`
 2. Runs all 58 E2E tests in Chromium
 3. Generates HTML report
 4. Stops dev server
@@ -336,9 +336,9 @@ npx playwright install chromium
 
 #### Issue: Dev server fails to start
 
-**Solution**: Check if port 5173 is available
+**Solution**: Check if port 3000 is available
 ```bash
-lsof -i :5173  # Check if port is in use
+lsof -i :3000  # Check if port is in use
 kill -9 <PID>  # Kill process if needed
 ```
 

@@ -13,7 +13,7 @@ export class LoginPage extends BasePage {
   private readonly passwordInput = '[name="password"]';
   private readonly loginButton = 'button[type="submit"]';
   private readonly registerLink = 'a[href="/register"]';
-  private readonly pageHeading = 'h4:has-text("Login")';
+  private readonly pageHeading = 'h1:has-text("Log In")';
 
   constructor(page: Page) {
     super(page);
