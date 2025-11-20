@@ -64,7 +64,7 @@ npm test
 # Start frontend development server
 cd frontend
 npm run dev
-# Access at http://localhost:5173
+# Access at http://localhost:3000
 
 # Run frontend tests
 npm test
@@ -169,25 +169,29 @@ npm run test:coverage      # Coverage report
 ### Frontend Tests
 ```bash
 cd frontend
-npm test                    # Run all tests
-npm run test:coverage      # Coverage report
+npm test                    # Run all unit tests (499 tests)
+npm run test:coverage      # Coverage report (99% on translation components)
 npm run test:ui            # Interactive test UI
+npm run test:e2e           # Run E2E tests (58 tests, requires local dev server)
+npm run test:e2e:ui        # Interactive E2E testing with Playwright UI
 ```
 
 ### CI/CD Pipeline Tests
 All pull requests automatically run:
 - Shared-types validation (11 tests)
-- Function unit tests with coverage (209+ tests)
-- Infrastructure TypeScript compilation
-- Infrastructure tests (25+ tests)
+- Backend function unit tests (328 tests)
+- Infrastructure tests (33 tests)
+- Frontend unit tests (499 tests)
 - Linting and format checks
 - Security audits (npm audit)
+- E2E tests (temporarily disabled - requires backend API or mock API setup)
 - Pre-push validation hooks enforce local testing
 
 ## Documentation
 
 ### Core Documentation
 - **[PROGRESS.md](PROGRESS.md)** - Detailed implementation status and progress tracking
+- **[TESTING-GUIDE.md](TESTING-GUIDE.md)** - Comprehensive local testing guide (unit, integration, E2E)
 - **[DEVELOPMENT-ROADMAP.md](DEVELOPMENT-ROADMAP.md)** - Project roadmap and priorities
 - **[Production Setup Checklist](PRODUCTION-SETUP-CHECKLIST.md)** - Complete production deployment guide
 - **[Production Deployment Guide](PRODUCTION-DEPLOYMENT-GUIDE.md)** - Detailed deployment procedures
@@ -195,6 +199,7 @@ All pull requests automatically run:
 - **[Security Policy](SECURITY.md)** - Security practices and reporting
 - **[API Reference](API-REFERENCE.md)** - API endpoint documentation
 - **[Testing Strategy](TESTING.md)** - Comprehensive testing guidelines
+- **[frontend/e2e/README.md](frontend/e2e/README.md)** - E2E testing with Playwright guide
 
 ### External References
 - **[Implementation Plan v2](../LFMT%20Implementation%20Plan%20v2.md)** - Detailed implementation roadmap
@@ -304,6 +309,6 @@ This is a proof-of-concept project. All rights reserved.
 
 ---
 
-**Last Updated**: 2025-11-04
+**Last Updated**: 2025-11-20
 **Repository**: https://github.com/leixiaoyu/lfmt-poc
 **Current Status**: See [PROGRESS.md](PROGRESS.md) for detailed status
