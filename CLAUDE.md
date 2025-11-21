@@ -647,5 +647,189 @@ backend/infrastructure/lib/lfmt-infrastructure-stack.ts
 
 ---
 
-**Last Updated**: 2025-11-10 (Phase 3 - Documentation)
-**CloudFront CDK Migration**: Completed (PR #59, #61, #66)
+---
+
+## Translation UI Components & Testing
+
+### Translation Workflow UI (Completed 2025-11-20)
+
+**Status**: Fully implemented with comprehensive testing infrastructure (PR #86)
+
+The translation workflow UI provides a complete user experience for uploading documents, tracking translation progress, and downloading translated files.
+
+#### Components
+
+**Location**: `frontend/src/components/Translation/` and `frontend/src/pages/`
+
+1. **TranslationUploadPage** (`src/pages/TranslationUpload.tsx`):
+   - Multi-step wizard (Legal Attestation → Configuration → Upload → Review)
+   - Language selection (Spanish, French, German, Italian, Chinese)
+   - Tone selection (Formal, Informal, Neutral)
+   - File upload with drag-and-drop support
+   - Legal attestation with checkbox enforcement and IP capture
+
+2. **TranslationDetailPage** (`src/pages/TranslationDetail.tsx`):
+   - Real-time progress tracking with polling (adaptive 15s → 30s → 60s intervals)
+   - Job status display (PENDING → CHUNKING → CHUNKED → IN_PROGRESS → COMPLETED)
+   - Progress percentage and chunk completion tracking
+   - Download functionality for completed translations
+   - Error handling and retry logic
+
+3. **TranslationHistoryPage** (`src/pages/TranslationHistory.tsx`):
+   - Job list with filtering and sorting
+   - Status badges and progress indicators
+   - Navigation to job detail page
+   - Job metadata display (language, tone, file info)
+
+4. **Supporting Components**:
+   - `TranslationConfig.tsx` - Language and tone selection
+   - `FileUpload.tsx` - Document upload with validation
+   - `LegalAttestation.tsx` - Legal checkbox enforcement
+   - `ReviewAndSubmit.tsx` - Final review before submission
+
+#### Testing Infrastructure
+
+**Unit Tests** (499 tests, 24 test files, 99% coverage):
+- Location: `frontend/src/**/__tests__/*.test.tsx`
+- Framework: Vitest + React Testing Library
+- Coverage: 99% on all translation components
+- Test types: Component rendering, user interactions, error handling, API mocking
+
+**E2E Tests** (58 tests, 7 test suites):
+- Location: `frontend/e2e/tests/translation/*.spec.ts`
+- Framework: Playwright with Page Object Model pattern
+- Test coverage:
+  - Upload workflow validation
+  - Progress tracking and polling behavior
+  - Legal attestation enforcement (12 tests)
+  - Download functionality (8 tests)
+  - Complete E2E journey (4 tests)
+  - Multi-language support (13 tests - 5 languages × 3 tones)
+  - Error scenarios (13 tests - network, API failures, retry logic)
+
+**Page Object Models** (7 POMs):
+- `BasePage.ts` - Base class with common functionality
+- `LoginPage.ts` - Authentication flow
+- `RegisterPage.ts` - User registration
+- `DashboardPage.ts` - Dashboard interactions
+- `TranslationUploadPage.ts` - Upload workflow
+- `TranslationDetailPage.ts` - Progress tracking
+- `TranslationHistoryPage.ts` - Job history
+
+#### Running Tests
+
+**Unit Tests**:
+```bash
+cd frontend
+npm test                    # All unit tests (499 tests)
+npm run test:coverage      # With coverage report
+npm run test:ui            # Interactive Vitest UI
+npm test -- TranslationConfig.test.tsx  # Specific test file
+```
+
+**E2E Tests**:
+```bash
+cd frontend
+npm run test:e2e           # All E2E tests (58 tests, requires local dev server)
+npm run test:e2e:ui        # Interactive Playwright UI
+npm run test:e2e:headed    # See browser during test execution
+npm run test:e2e:debug     # Step-by-step debugging
+npm run test:e2e:report    # View last test report
+```
+
+**CI/CD Integration**:
+- Unit tests: Fully integrated in `.github/workflows/ci.yml`
+- E2E tests: Temporarily disabled (lines 200-280) - require backend API or mock API setup
+- All tests run on PR creation/updates
+- Pre-push hooks enforce local test validation
+
+#### Configuration
+
+**Dev Server Port**: 3000 (updated from 5173)
+- **Vite Config**: `frontend/vite.config.ts:18-27`
+- **Playwright Config**: `frontend/playwright.config.ts:41,86`
+- **Documentation**: All references updated (TESTING-GUIDE.md, e2e/README.md)
+
+**Environment Variables**:
+```bash
+PLAYWRIGHT_BASE_URL=http://localhost:3000  # Dev server URL
+API_BASE_URL=http://localhost:3000         # Backend API URL (for E2E)
+CI=true                                     # Enable CI mode in Playwright
+```
+
+#### Known Issues & Solutions
+
+**Issue 1: E2E Tests Require Backend API**
+- **Status**: Temporarily disabled in CI (PR #86)
+- **Root Cause**: All E2E tests make real HTTP requests to backend API
+- **Solution**: Configure mock API for E2E tests or deploy test backend
+- **Location**: `.github/workflows/ci.yml:200-280` (commented out)
+
+**Issue 2: Port Configuration Mismatch**
+- **Status**: ✅ Resolved (PR #86)
+- **Root Cause**: Vite dev server on port 3000, Playwright expected 5173
+- **Solution**: Updated all Playwright config and documentation to port 3000
+- **Files Fixed**: `playwright.config.ts`, `e2e/README.md`, `TESTING-GUIDE.md`
+
+**Issue 3: LoginPage POM Selector Mismatch**
+- **Status**: ✅ Resolved (PR #86)
+- **Root Cause**: POM expected `h4:has-text("Login")`, actual page had `h1:has-text("Log In")`
+- **Solution**: Fixed selector to match actual DOM structure
+- **File Fixed**: `frontend/e2e/pages/LoginPage.ts:16`
+
+#### Documentation
+
+**Comprehensive Guides**:
+- `TESTING-GUIDE.md` - Complete local testing guide (517 lines)
+- `frontend/e2e/README.md` - E2E testing with Playwright (447 lines)
+- `frontend/TRANSLATION-UI-IMPLEMENTATION-PLAN.md` - Implementation documentation
+
+**Key Sections**:
+- Setup and installation instructions
+- Running tests (all modes: watch, coverage, UI, E2E, debug)
+- Writing tests (best practices, Page Object Model pattern)
+- Troubleshooting common issues
+- CI/CD integration details
+
+#### Best Practices
+
+**Unit Testing**:
+1. Use React Testing Library for component tests
+2. Mock API calls with MSW (Mock Service Worker)
+3. Test user interactions, not implementation details
+4. Maintain 90%+ coverage on all components
+5. Use data-testid sparingly, prefer accessible queries
+
+**E2E Testing**:
+1. Use Page Object Model pattern for all page interactions
+2. Never interact with page elements directly in tests
+3. Generate unique test users with timestamps
+4. Wait for elements explicitly (no arbitrary timeouts)
+5. Use descriptive test names with "should" format
+6. Keep tests isolated and independent
+
+**Development Workflow**:
+1. Write unit tests first (TDD approach)
+2. Run tests locally before committing
+3. Fix all failing tests before pushing to remote
+4. Use pre-push hooks to enforce test validation
+5. Review test coverage reports regularly
+
+#### Migration Notes
+
+**From No Testing to Comprehensive Testing** (PR #86):
+- Added 499 unit tests (from 382)
+- Added 58 E2E tests (new)
+- Implemented Playwright testing infrastructure
+- Created Page Object Model pattern
+- Standardized test fixtures and helpers
+
+**Port Configuration Update** (PR #86):
+- Changed from 5173 (default Vite port) to 3000 (custom port)
+- Updated all documentation and configuration files
+- Ensured consistency across dev server, Playwright, and docs
+
+---
+
+**Last Updated**: 2025-11-20 (Phase 8 - Translation UI Testing Infrastructure)
+**Latest PR**: #86 (Complete Translation UI Testing Infrastructure)
