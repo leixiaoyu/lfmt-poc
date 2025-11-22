@@ -55,6 +55,8 @@ interface StartTranslationRequest {
 export const handler = async (
   event: APIGatewayProxyEvent
 ): Promise<APIGatewayProxyResult> => {
+  const requestOrigin = event.headers.origin || event.headers.Origin;
+
   logger.info('Starting translation request', {
     path: event.path,
     method: event.httpMethod,
@@ -64,13 +66,13 @@ export const handler = async (
     // Get authenticated user from Cognito claims
     const userId = event.requestContext?.authorizer?.claims?.sub;
     if (!userId) {
-      return createErrorResponse(401, 'Unauthorized', undefined);
+      return createErrorResponse(401, 'Unauthorized', undefined, undefined, requestOrigin);
     }
 
     // Extract jobId from path
     const jobId = event.pathParameters?.jobId;
     if (!jobId) {
-      return createErrorResponse(400, 'Missing jobId in path', 'MISSING_JOB_ID');
+      return createErrorResponse(400, "Missing jobId in path", "MISSING_JOB_ID", undefined, requestOrigin);
     }
 
     // Parse request body
@@ -81,7 +83,7 @@ export const handler = async (
     // Validate request
     const validation = validateRequest(body);
     if (!validation.valid) {
-      return createErrorResponse(400, validation.error!, 'INVALID_REQUEST');
+      return createErrorResponse(400, validation.error!, "INVALID_REQUEST", undefined, requestOrigin);
     }
 
     // Load job from DynamoDB
@@ -89,7 +91,7 @@ export const handler = async (
 
     // Verify job exists
     if (!job) {
-      return createErrorResponse(404, `Job not found: ${jobId}`, 'JOB_NOT_FOUND');
+      return createErrorResponse(404, `Job not found: ${jobId}`, "JOB_NOT_FOUND", undefined, requestOrigin);
     }
 
     // Verify user owns the job
@@ -97,7 +99,9 @@ export const handler = async (
       return createErrorResponse(
         403,
         'You do not have permission to translate this job',
-        'FORBIDDEN'
+        'FORBIDDEN',
+        undefined,
+        requestOrigin
       );
     }
 
@@ -106,7 +110,9 @@ export const handler = async (
       return createErrorResponse(
         400,
         `Job must be in CHUNKED status to start translation. Current status: ${job.status}`,
-        'INVALID_JOB_STATUS'
+        'INVALID_JOB_STATUS',
+        undefined,
+        requestOrigin
       );
     }
 
@@ -118,7 +124,9 @@ export const handler = async (
       return createErrorResponse(
         400,
         `Translation already ${job.translationStatus.toLowerCase()} for this job`,
-        'TRANSLATION_ALREADY_STARTED'
+        'TRANSLATION_ALREADY_STARTED',
+        undefined,
+        requestOrigin
       );
     }
 
@@ -127,7 +135,9 @@ export const handler = async (
       return createErrorResponse(
         400,
         'Job has no chunks to translate',
-        'NO_CHUNKS_AVAILABLE'
+        'NO_CHUNKS_AVAILABLE',
+        undefined,
+        requestOrigin
       );
     }
 
@@ -178,7 +188,7 @@ export const handler = async (
       estimatedCompletion,
       estimatedCost: calculateEstimatedCost(job.totalChunks, 3500), // Assume 3500 tokens per chunk
       executionArn, // Step Functions execution ARN for tracking
-    });
+    }, undefined, requestOrigin);
   } catch (error) {
     logger.error('Failed to start translation', {
       error: error instanceof Error ? error.message : 'Unknown error',
@@ -188,7 +198,9 @@ export const handler = async (
     return createErrorResponse(
       500,
       'Failed to start translation',
-      undefined
+      undefined,
+      undefined,
+      requestOrigin
     );
   }
 };

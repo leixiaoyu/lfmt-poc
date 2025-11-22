@@ -42,6 +42,8 @@ interface TranslationStatusResponse {
 export const handler = async (
   event: APIGatewayProxyEvent
 ): Promise<APIGatewayProxyResult> => {
+  const requestOrigin = event.headers.origin || event.headers.Origin;
+
   logger.info('Translation status request', {
     path: event.path,
     method: event.httpMethod,
@@ -51,13 +53,13 @@ export const handler = async (
     // Get authenticated user from Cognito claims
     const userId = event.requestContext?.authorizer?.claims?.sub;
     if (!userId) {
-      return createErrorResponse(401, 'Unauthorized', undefined);
+      return createErrorResponse(401, 'Unauthorized', undefined, undefined, requestOrigin);
     }
 
     // Extract jobId from path
     const jobId = event.pathParameters?.jobId;
     if (!jobId) {
-      return createErrorResponse(400, 'Missing jobId in path', undefined);
+      return createErrorResponse(400, 'Missing jobId in path', undefined, undefined, requestOrigin);
     }
 
     // Load job from DynamoDB (requires both jobId and userId as composite key)
@@ -65,7 +67,7 @@ export const handler = async (
 
     // Verify job exists
     if (!job) {
-      return createErrorResponse(404, `Job not found: ${jobId}`, undefined);
+      return createErrorResponse(404, `Job not found: ${jobId}`, undefined, undefined, requestOrigin);
     }
 
     // Build response
@@ -107,7 +109,7 @@ export const handler = async (
       progressPercentage: response.progressPercentage,
     });
 
-    return createSuccessResponse(200, response);
+    return createSuccessResponse(200, response, undefined, requestOrigin);
   } catch (error) {
     logger.error('Failed to get translation status', {
       error: error instanceof Error ? error.message : 'Unknown error',
@@ -117,7 +119,9 @@ export const handler = async (
     return createErrorResponse(
       500,
       'Failed to get translation status',
-      undefined
+      undefined,
+      undefined,
+      requestOrigin
     );
   }
 };

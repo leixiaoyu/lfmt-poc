@@ -65,6 +65,33 @@ export class LfmtInfrastructureStack extends Stack {
   // API Gateway resources
   private authResource?: apigateway.Resource;
 
+  /**
+   * Get allowed API origins for CORS configuration
+   * Returns array of allowed origins including localhost and CloudFront URL
+   */
+  private getAllowedApiOrigins(): string[] {
+    const origins: string[] = [];
+
+    switch (this.node.tryGetContext('environment')) {
+      case 'prod':
+        origins.push('https://lfmt.yourcompany.com'); // Replace with actual production domain
+        break;
+      case 'staging':
+        origins.push('https://staging.lfmt.yourcompany.com'); // Replace with actual staging domain
+        break;
+      default:
+        origins.push('http://localhost:3000');
+        origins.push('https://localhost:3000');
+    }
+
+    // Add CloudFront distribution URL if it exists (after createFrontendHosting() is called)
+    if (this.frontendDistribution) {
+      origins.push(`https://${this.frontendDistribution.distributionDomainName}`);
+    }
+
+    return origins;
+  }
+
   constructor(scope: Construct, id: string, props: LfmtInfrastructureStackProps) {
     super(scope, id, props);
 
@@ -87,17 +114,17 @@ export class LfmtInfrastructureStack extends Stack {
       this.createLogGroups(removalPolicy);
     }
 
-    // 5. IAM Roles and Policies
+    // 5. Frontend Hosting (CloudFront + S3) - Create early to get CloudFront URL for CORS
+    this.createFrontendHosting(removalPolicy);
+
+    // 6. IAM Roles and Policies
     this.createIamRoles();
 
-    // 6. Lambda Functions
+    // 7. Lambda Functions - Created after CloudFront to include CloudFront URL in ALLOWED_ORIGINS
     this.createLambdaFunctions();
 
-    // 7. Step Functions State Machine
+    // 8. Step Functions State Machine
     this.createStepFunctions();
-
-    // 8. Frontend Hosting (CloudFront + S3) - Create before API Gateway to get CloudFront URL for CORS
-    this.createFrontendHosting(removalPolicy);
 
     // 9. API Gateway - Create after CloudFront to include CloudFront URL in CORS origins
     this.createApiGateway();
@@ -339,32 +366,8 @@ export class LfmtInfrastructureStack extends Stack {
   }
 
   private createApiGateway() {
-    // Environment-specific CORS origins
-    // NOTE: CloudFront URL will be added after createFrontendHosting() is called
-    const getAllowedApiOrigins = () => {
-      const origins = [];
-
-      switch (this.node.tryGetContext('environment')) {
-        case 'prod':
-          origins.push('https://lfmt.yourcompany.com'); // Replace with actual production domain
-          break;
-        case 'staging':
-          origins.push('https://staging.lfmt.yourcompany.com'); // Replace with actual staging domain
-          break;
-        default:
-          origins.push('http://localhost:3000');
-          origins.push('https://localhost:3000');
-      }
-
-      // Add CloudFront distribution URL if it exists (after createFrontendHosting() is called)
-      if (this.frontendDistribution) {
-        origins.push(`https://${this.frontendDistribution.distributionDomainName}`);
-      }
-
-      return origins;
-    };
-
     // Create API Gateway - From Document 3 (API Gateway & Lambda Functions)
+    // NOTE: CloudFront URL will be included in CORS origins after createFrontendHosting() is called
     (this as any).api = new apigateway.RestApi(this, 'LfmtApi', {
       restApiName: `lfmt-api-${this.stackName}`,
       description: 'LFMT Translation Service API',
@@ -372,7 +375,7 @@ export class LfmtInfrastructureStack extends Stack {
         types: [apigateway.EndpointType.REGIONAL],
       },
       defaultCorsPreflightOptions: {
-        allowOrigins: getAllowedApiOrigins(),
+        allowOrigins: this.getAllowedApiOrigins(),
         allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
         allowHeaders: [
           'Content-Type',
@@ -594,9 +597,8 @@ export class LfmtInfrastructureStack extends Stack {
       DOCUMENT_BUCKET: this.documentBucket.bucketName,
       CHUNKS_BUCKET: this.documentBucket.bucketName, // Chunks stored in same bucket as documents
       GEMINI_API_KEY_SECRET_NAME: `lfmt/gemini-api-key-${this.stackName}`,
-      ALLOWED_ORIGIN: this.node.tryGetContext('environment') === 'prod'
-        ? 'https://lfmt.yourcompany.com'
-        : 'http://localhost:3000',
+      // Pass all allowed origins as comma-separated list (includes localhost + CloudFront URL)
+      ALLOWED_ORIGINS: this.getAllowedApiOrigins().join(','),
     };
 
     // Register Lambda Function - using NodejsFunction with local esbuild
@@ -1065,9 +1067,7 @@ export class LfmtInfrastructureStack extends Stack {
     const jobsResource = this.api.root.resourceForPath('jobs');
     const uploadResource = jobsResource.addResource('upload', {
       defaultCorsPreflightOptions: {
-        allowOrigins: this.node.tryGetContext('environment') === 'prod'
-          ? ['https://lfmt.yourcompany.com']
-          : ['http://localhost:3000', 'https://localhost:3000'],
+        allowOrigins: this.getAllowedApiOrigins(),
         allowMethods: ['POST', 'OPTIONS'],
         allowHeaders: [
           'Content-Type',
@@ -1105,9 +1105,7 @@ export class LfmtInfrastructureStack extends Stack {
 
     const translateResource = jobResource.addResource('translate', {
       defaultCorsPreflightOptions: {
-        allowOrigins: this.node.tryGetContext('environment') === 'prod'
-          ? ['https://lfmt.yourcompany.com']
-          : ['http://localhost:3000', 'https://localhost:3000'],
+        allowOrigins: this.getAllowedApiOrigins(),
         allowMethods: ['POST', 'OPTIONS'],
         allowHeaders: [
           'Content-Type',
@@ -1134,9 +1132,7 @@ export class LfmtInfrastructureStack extends Stack {
     // GET /jobs/{jobId}/translation-status - Get Translation Status (requires authentication)
     const translationStatusResource = jobResource.addResource('translation-status', {
       defaultCorsPreflightOptions: {
-        allowOrigins: this.node.tryGetContext('environment') === 'prod'
-          ? ['https://lfmt.yourcompany.com']
-          : ['http://localhost:3000', 'https://localhost:3000'],
+        allowOrigins: this.getAllowedApiOrigins(),
         allowMethods: ['GET', 'OPTIONS'],
         allowHeaders: [
           'Content-Type',
@@ -1155,15 +1151,15 @@ export class LfmtInfrastructureStack extends Stack {
     });
 
     // Add Gateway Responses to include CORS headers on errors
-    const allowedOrigins = this.node.tryGetContext('environment') === 'prod'
-      ? 'https://lfmt.yourcompany.com'
-      : 'http://localhost:3000';
+    // Note: Gateway Response headers must be static strings, cannot use dynamic origins
+    // For dynamic CORS support, Lambda functions extract requestOrigin and return appropriate headers
+    // These Gateway Responses are only for error cases where Lambda doesn't execute
 
     // Add CORS headers to 401 Unauthorized responses
     this.api.addGatewayResponse('Unauthorized', {
       type: apigateway.ResponseType.UNAUTHORIZED,
       responseHeaders: {
-        'Access-Control-Allow-Origin': `'${allowedOrigins}'`,
+        'Access-Control-Allow-Origin': "'*'",
         'Access-Control-Allow-Headers': "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,X-Request-ID'",
         'Access-Control-Allow-Methods': "'OPTIONS,GET,POST,PUT,DELETE'",
         'Access-Control-Allow-Credentials': "'true'",
@@ -1174,7 +1170,7 @@ export class LfmtInfrastructureStack extends Stack {
     this.api.addGatewayResponse('AccessDenied', {
       type: apigateway.ResponseType.ACCESS_DENIED,
       responseHeaders: {
-        'Access-Control-Allow-Origin': `'${allowedOrigins}'`,
+        'Access-Control-Allow-Origin': "'*'",
         'Access-Control-Allow-Headers': "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,X-Request-ID'",
         'Access-Control-Allow-Methods': "'OPTIONS,GET,POST,PUT,DELETE'",
         'Access-Control-Allow-Credentials': "'true'",
@@ -1185,7 +1181,7 @@ export class LfmtInfrastructureStack extends Stack {
     this.api.addGatewayResponse('BadRequestBody', {
       type: apigateway.ResponseType.BAD_REQUEST_BODY,
       responseHeaders: {
-        'Access-Control-Allow-Origin': `'${allowedOrigins}'`,
+        'Access-Control-Allow-Origin': "'*'",
         'Access-Control-Allow-Headers': "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,X-Request-ID'",
         'Access-Control-Allow-Methods': "'OPTIONS,GET,POST,PUT,DELETE'",
         'Access-Control-Allow-Credentials': "'true'",
@@ -1196,7 +1192,7 @@ export class LfmtInfrastructureStack extends Stack {
     this.api.addGatewayResponse('DefaultServerError', {
       type: apigateway.ResponseType.DEFAULT_5XX,
       responseHeaders: {
-        'Access-Control-Allow-Origin': `'${allowedOrigins}'`,
+        'Access-Control-Allow-Origin': "'*'",
         'Access-Control-Allow-Headers': "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,X-Request-ID'",
         'Access-Control-Allow-Methods': "'OPTIONS,GET,POST,PUT,DELETE'",
         'Access-Control-Allow-Credentials': "'true'",
