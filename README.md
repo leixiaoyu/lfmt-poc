@@ -76,9 +76,9 @@ npm test
 
 ### Deployment
 
-#### Manual Deployment
+#### Infrastructure Deployment
 ```bash
-# Deploy to development
+# Deploy backend infrastructure to development
 cd backend/infrastructure
 npx cdk deploy --context environment=dev
 
@@ -89,11 +89,32 @@ npx cdk deploy --context environment=staging
 npx cdk deploy --context environment=prod
 ```
 
+#### Frontend Deployment
+```bash
+# Deploy frontend to development environment
+./scripts/deploy-frontend.sh LfmtPocDev .env.dev
+
+# Deploy to production environment
+./scripts/deploy-frontend.sh LfmtPocProd .env.production
+```
+
+**Manual Frontend Deployment Steps**:
+1. Configure environment variables (`.env.dev` or `.env.production`)
+2. Build frontend: `cd frontend && npm run build`
+3. Deploy to S3: `aws s3 sync dist/ s3://lfmt-frontend-<env>/ --delete`
+4. Invalidate CloudFront: `aws cloudfront create-invalidation --distribution-id <ID> --paths "/*"`
+
+**Deployed Environments**:
+- **Development**: https://d39xcun7144jgl.cloudfront.net (LfmtPocDev)
+- **Production**: TBD (LfmtPocProd)
+
+For detailed deployment instructions, see:
+- [DEPLOYMENT-GUIDE.md](DEPLOYMENT-GUIDE.md) - Complete frontend deployment guide
+- [PRODUCTION-SETUP-CHECKLIST.md](PRODUCTION-SETUP-CHECKLIST.md) - Production setup checklist
+
 #### Automated Deployment (GitHub Actions)
 - **Development**: Automatic deployment on push to `main` branch
 - **Staging/Production**: Manual workflow dispatch from GitHub Actions UI
-
-For detailed deployment instructions, see [PRODUCTION-SETUP-CHECKLIST.md](PRODUCTION-SETUP-CHECKLIST.md)
 
 ## Project Structure
 ```
