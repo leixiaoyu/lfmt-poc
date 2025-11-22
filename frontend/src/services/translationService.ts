@@ -8,7 +8,7 @@
 import axios, { AxiosError } from 'axios';
 import { getAuthToken } from '../utils/api';
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/v1';
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/v1';
 
 /**
  * Translation Job Status
@@ -117,22 +117,50 @@ const handleError = (error: unknown): never => {
  */
 export const uploadDocument = async (request: UploadDocumentRequest): Promise<TranslationJob> => {
   try {
-    const formData = new FormData();
-    formData.append('file', request.file);
-    formData.append('legalAttestation', JSON.stringify(request.legalAttestation));
-
-    const response = await axios.post<{ data: TranslationJob }>(
-      `${API_BASE_URL}/translation/upload`,
-      formData,
+    // Step 1: Request presigned URL from backend
+    const presignedResponse = await axios.post<{
+      data: {
+        uploadUrl: string;
+        fileId: string;
+        expiresIn: number;
+        requiredHeaders: Record<string, string>;
+      };
+    }>(
+      `${API_BASE_URL}/jobs/upload`,
       {
-        headers: {
-          ...getAuthHeaders(),
-          'Content-Type': 'multipart/form-data',
-        },
+        fileName: request.file.name,
+        fileSize: request.file.size,
+        contentType: request.file.type,
+        legalAttestation: request.legalAttestation,
+      },
+      {
+        headers: getAuthHeaders(),
       }
     );
 
-    return response.data.data;
+    const { uploadUrl, fileId, requiredHeaders } = presignedResponse.data.data;
+
+    // Step 2: Upload file directly to S3 using presigned URL
+    await axios.put(uploadUrl, request.file, {
+      headers: {
+        ...requiredHeaders,
+        'Content-Type': request.file.type,
+      },
+    });
+
+    // Step 3: Return job information
+    // Note: The backend creates the job record but doesn't return it immediately
+    // The job will be retrieved later when starting translation
+    return {
+      jobId: fileId,
+      userId: '', // Will be populated by backend
+      fileName: request.file.name,
+      fileSize: request.file.size,
+      contentType: request.file.type,
+      status: 'PENDING' as const,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
   } catch (error) {
     return handleError(error);
   }
@@ -147,7 +175,7 @@ export const startTranslation = async (
 ): Promise<TranslationJob> => {
   try {
     const response = await axios.post<{ data: TranslationJob }>(
-      `${API_BASE_URL}/translation/${jobId}/start`,
+      `${API_BASE_URL}/jobs/${jobId}/translate`,
       {
         targetLanguage: config.targetLanguage,
         tone: config.tone,
@@ -169,7 +197,7 @@ export const startTranslation = async (
 export const getJobStatus = async (jobId: string): Promise<TranslationJob> => {
   try {
     const response = await axios.get<{ data: TranslationJob }>(
-      `${API_BASE_URL}/translation/${jobId}/status`,
+      `${API_BASE_URL}/jobs/${jobId}/translation-status`,
       {
         headers: getAuthHeaders(),
       }
@@ -187,7 +215,7 @@ export const getJobStatus = async (jobId: string): Promise<TranslationJob> => {
 export const getTranslationJobs = async (): Promise<TranslationJob[]> => {
   try {
     const response = await axios.get<{ data: TranslationJob[] }>(
-      `${API_BASE_URL}/translation/jobs`,
+      `${API_BASE_URL}/jobs`,
       {
         headers: getAuthHeaders(),
       }
@@ -217,17 +245,12 @@ export const downloadTranslation = async (jobId: string): Promise<Blob> => {
 
 /**
  * Get user's IP address for legal attestation
+ * Note: IP address is now captured on the backend from request headers
+ * This function returns a placeholder that will be replaced by the backend
  */
 export const getUserIPAddress = async (): Promise<string> => {
-  try {
-    // Use a public IP API service
-    const response = await axios.get('https://api.ipify.org?format=json');
-    return response.data.ip;
-  } catch (error) {
-    // Fallback to unknown if service is unavailable
-    console.warn('Failed to get IP address:', error);
-    return 'unknown';
-  }
+  // Backend will capture the actual IP from API Gateway event headers
+  return 'captured-by-backend';
 };
 
 /**
