@@ -80,8 +80,10 @@ export class LfmtInfrastructureStack extends Stack {
         origins.push('https://staging.lfmt.yourcompany.com'); // Replace with actual staging domain
         break;
       default:
+        // Dev environment: local development + CDK-managed CloudFront
         origins.push('http://localhost:3000');
         origins.push('https://localhost:3000');
+        origins.push('https://d39xcun7144jgl.cloudfront.net'); // CDK-managed CloudFront distribution
     }
 
     // Add CloudFront distribution URL if it exists (after createFrontendHosting() is called)
