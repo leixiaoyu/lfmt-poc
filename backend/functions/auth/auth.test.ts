@@ -22,6 +22,9 @@ const cognitoMock = mockClient(CognitoIdentityProviderClient);
 // Helper function to create a mock API Gateway event
 const createMockEvent = (body: any): any => ({
   body: JSON.stringify(body),
+  headers: {
+    origin: 'http://localhost:3000',
+  },
   requestContext: {
     requestId: 'test-request-id',
   },
