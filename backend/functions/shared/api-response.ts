@@ -23,13 +23,20 @@ export interface ApiSuccessResponse<T = any> {
 }
 
 /**
- * Get CORS headers based on environment
+ * Get CORS headers based on request origin and environment
+ * Supports multiple allowed origins from ALLOWED_ORIGINS environment variable
  */
-export function getCorsHeaders(): Record<string, string> {
-  const allowedOrigin = process.env.ALLOWED_ORIGIN ||
-    (process.env.ENVIRONMENT === 'prod'
-      ? 'https://lfmt.yourcompany.com'
-      : 'http://localhost:3000');
+export function getCorsHeaders(requestOrigin?: string): Record<string, string> {
+  // Get allowed origins from environment variable (comma-separated list)
+  const allowedOriginsEnv = process.env.ALLOWED_ORIGINS || process.env.ALLOWED_ORIGIN;
+  const allowedOrigins = allowedOriginsEnv
+    ? allowedOriginsEnv.split(',').map(origin => origin.trim())
+    : ['http://localhost:3000']; // Fallback to localhost
+
+  // If requestOrigin matches an allowed origin, use it; otherwise use first allowed origin
+  const allowedOrigin = requestOrigin && allowedOrigins.includes(requestOrigin)
+    ? requestOrigin
+    : allowedOrigins[0];
 
   return {
     'Content-Type': 'application/json',
@@ -46,11 +53,12 @@ export function getCorsHeaders(): Record<string, string> {
 export function createSuccessResponse<T = any>(
   statusCode: number,
   data: ApiSuccessResponse<T>,
-  requestId?: string
+  requestId?: string,
+  requestOrigin?: string
 ): ApiResponse {
   return {
     statusCode,
-    headers: getCorsHeaders(),
+    headers: getCorsHeaders(requestOrigin),
     body: JSON.stringify({
       ...data,
       requestId,
@@ -65,7 +73,8 @@ export function createErrorResponse(
   statusCode: number,
   message: string,
   requestId?: string,
-  errors?: Record<string, string[]>
+  errors?: Record<string, string[]>,
+  requestOrigin?: string
 ): ApiResponse {
   const response: ApiErrorResponse = {
     message,
@@ -78,7 +87,7 @@ export function createErrorResponse(
 
   return {
     statusCode,
-    headers: getCorsHeaders(),
+    headers: getCorsHeaders(requestOrigin),
     body: JSON.stringify(response),
   };
 }
