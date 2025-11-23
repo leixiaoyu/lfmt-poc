@@ -166,6 +166,9 @@ describe('startTranslation endpoint', () => {
         path: '/jobs/translate',
         pathParameters: {},
         body: JSON.stringify({ targetLanguage: 'es' }),
+        headers: {
+          origin: 'http://localhost:3000',
+        },
         requestContext: {
           authorizer: {
             claims: { sub: 'user-123' },

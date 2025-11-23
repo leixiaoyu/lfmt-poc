@@ -42,6 +42,7 @@ export const handler = async (
   event: APIGatewayProxyEvent
 ): Promise<APIGatewayProxyResult> => {
   const requestId = event.requestContext.requestId;
+  const requestOrigin = event.headers.origin || event.headers.Origin;
 
   logger.info('Processing upload request', { requestId });
 
@@ -54,7 +55,9 @@ export const handler = async (
       return createErrorResponse(
         401,
         'Unauthorized - user ID not found',
-        requestId
+        requestId,
+        undefined,
+        requestOrigin
       );
     }
 
@@ -77,7 +80,8 @@ export const handler = async (
         400,
         'File validation failed',
         requestId,
-        validationResult.error.flatten().fieldErrors
+        validationResult.error.flatten().fieldErrors,
+        requestOrigin
       );
     }
 
@@ -88,7 +92,9 @@ export const handler = async (
       return createErrorResponse(
         400,
         `File size exceeds maximum allowed size of ${MAX_FILE_SIZE / (1024 * 1024)}MB`,
-        requestId
+        requestId,
+        undefined,
+        requestOrigin
       );
     }
 
@@ -96,7 +102,9 @@ export const handler = async (
       return createErrorResponse(
         400,
         `File size is below minimum required size of ${MIN_FILE_SIZE} bytes`,
-        requestId
+        requestId,
+        undefined,
+        requestOrigin
       );
     }
 
@@ -104,7 +112,9 @@ export const handler = async (
       return createErrorResponse(
         400,
         `Invalid content type. Only ${ALLOWED_CONTENT_TYPE} is allowed`,
-        requestId
+        requestId,
+        undefined,
+        requestOrigin
       );
     }
 
@@ -112,7 +122,9 @@ export const handler = async (
       return createErrorResponse(
         400,
         `Invalid file extension. Only ${ALLOWED_FILE_EXTENSION} files are allowed`,
-        requestId
+        requestId,
+        undefined,
+        requestOrigin
       );
     }
 
@@ -201,7 +213,8 @@ export const handler = async (
         message: 'Upload URL generated successfully',
         data: response,
       },
-      requestId
+      requestId,
+      requestOrigin
     );
   } catch (error) {
     logger.error('Unexpected error during upload request processing', {
@@ -213,7 +226,9 @@ export const handler = async (
     return createErrorResponse(
       500,
       'Failed to generate upload URL. Please try again later.',
-      requestId
+      requestId,
+      undefined,
+      requestOrigin
     );
   }
 };

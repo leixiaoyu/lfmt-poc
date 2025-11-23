@@ -210,6 +210,9 @@ describe('getTranslationStatus endpoint', () => {
         httpMethod: 'GET',
         path: '/jobs/job-123/translation-status',
         pathParameters: { jobId: 'job-123' },
+        headers: {
+          origin: 'http://localhost:3000',
+        },
         requestContext: {} as any,
       };
 
@@ -242,6 +245,9 @@ describe('getTranslationStatus endpoint', () => {
         httpMethod: 'GET',
         path: '/jobs//translation-status',
         pathParameters: {},
+        headers: {
+          origin: 'http://localhost:3000',
+        },
         requestContext: {
           authorizer: {
             claims: { sub: 'user-123' },
