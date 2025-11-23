@@ -42,12 +42,18 @@ vi.mock('axios', () => {
     default: {
       post: vi.fn(),
       get: vi.fn(),
+      put: vi.fn(),
       isAxiosError: vi.fn((error: any) => error && error.isAxiosError === true),
     },
   };
 });
 
-const mockedAxios = axios as unknown as { post: ReturnType<typeof vi.fn>, get: ReturnType<typeof vi.fn>, isAxiosError: (error: any) => boolean };
+const mockedAxios = axios as unknown as {
+  post: ReturnType<typeof vi.fn>,
+  get: ReturnType<typeof vi.fn>,
+  put: ReturnType<typeof vi.fn>,
+  isAxiosError: (error: any) => boolean
+};
 
 describe('TranslationService - uploadDocument', () => {
   beforeEach(() => {
@@ -60,34 +66,36 @@ describe('TranslationService - uploadDocument', () => {
   });
 
   describe('Success Scenarios', () => {
-    it('should upload document successfully with correct form data', async () => {
+    it('should upload document successfully with presigned URL flow', async () => {
       // Arrange
       const mockFile = new File(['test content'], 'test.txt', { type: 'text/plain' });
       const mockLegalAttestation: LegalAttestation = {
         acceptCopyrightOwnership: true,
         acceptTranslationRights: true,
         acceptLiabilityTerms: true,
-        userIPAddress: '192.168.1.1',
+        userIPAddress: 'captured-by-backend',
         userAgent: 'Mozilla/5.0',
         timestamp: '2024-10-31T12:00:00Z',
       };
 
-      const mockResponse = {
+      // Mock presigned URL response from backend
+      const mockPresignedResponse = {
         data: {
           data: {
-            jobId: 'job-123',
-            userId: 'user-456',
-            status: 'PENDING' as const,
-            fileName: 'test.txt',
-            fileSize: 1024,
-            contentType: 'text/plain',
-            createdAt: '2024-10-31T12:00:00Z',
-            updatedAt: '2024-10-31T12:00:00Z',
+            uploadUrl: 'https://s3.amazonaws.com/bucket/presigned-url',
+            fileId: 'job-123',
+            requiredHeaders: {
+              'x-amz-server-side-encryption': 'AES256',
+            },
           },
         },
       };
 
-      mockedAxios.post.mockResolvedValueOnce(mockResponse);
+      // Step 1: Mock POST to /jobs/upload (request presigned URL)
+      mockedAxios.post.mockResolvedValueOnce(mockPresignedResponse);
+
+      // Step 2: Mock PUT to S3 presigned URL (upload file)
+      mockedAxios.put.mockResolvedValueOnce({ data: null });
 
       const request: UploadDocumentRequest = {
         file: mockFile,
@@ -97,31 +105,50 @@ describe('TranslationService - uploadDocument', () => {
       // Act
       const result = await uploadDocument(request);
 
-      // Assert
+      // Assert - Step 1: Request presigned URL
       expect(mockedAxios.post).toHaveBeenCalledTimes(1);
       expect(mockedAxios.post).toHaveBeenCalledWith(
-        expect.stringContaining('/translation/upload'),
-        expect.any(FormData),
+        expect.stringContaining('/jobs/upload'),
+        {
+          fileName: 'test.txt',
+          fileSize: mockFile.size,
+          contentType: 'text/plain',
+          legalAttestation: mockLegalAttestation,
+        },
         expect.objectContaining({
           headers: expect.objectContaining({
             Authorization: 'Bearer mock-token-123',
-            'Content-Type': 'multipart/form-data',
           }),
         })
       );
-      expect(result).toEqual(mockResponse.data.data);
+
+      // Assert - Step 2: Upload to S3
+      expect(mockedAxios.put).toHaveBeenCalledTimes(1);
+      expect(mockedAxios.put).toHaveBeenCalledWith(
+        'https://s3.amazonaws.com/bucket/presigned-url',
+        mockFile,
+        expect.objectContaining({
+          headers: expect.objectContaining({
+            'Content-Type': 'text/plain',
+            'x-amz-server-side-encryption': 'AES256',
+          }),
+        })
+      );
+
+      // Assert - Result
       expect(result.jobId).toBe('job-123');
       expect(result.fileName).toBe('test.txt');
+      expect(result.status).toBe('PENDING');
     });
 
-    it('should include legal attestation in form data', async () => {
+    it('should include legal attestation in JSON payload to backend', async () => {
       // Arrange
       const mockFile = new File(['test'], 'test.txt', { type: 'text/plain' });
       const mockLegalAttestation: LegalAttestation = {
         acceptCopyrightOwnership: true,
         acceptTranslationRights: true,
         acceptLiabilityTerms: true,
-        userIPAddress: '192.168.1.1',
+        userIPAddress: 'captured-by-backend',
         userAgent: 'Mozilla/5.0',
         timestamp: '2024-10-31T12:00:00Z',
       };
@@ -129,17 +156,14 @@ describe('TranslationService - uploadDocument', () => {
       mockedAxios.post.mockResolvedValueOnce({
         data: {
           data: {
-            jobId: 'job-123',
-            userId: 'user-456',
-            status: 'PENDING' as const,
-            fileName: 'test.txt',
-            fileSize: 1024,
-            contentType: 'text/plain',
-            createdAt: '2024-10-31T12:00:00Z',
-            updatedAt: '2024-10-31T12:00:00Z',
+            uploadUrl: 'https://s3.amazonaws.com/bucket/presigned-url',
+            fileId: 'job-123',
+            requiredHeaders: {},
           },
         },
       });
+
+      mockedAxios.put.mockResolvedValueOnce({ data: null });
 
       // Act
       await uploadDocument({
@@ -147,14 +171,16 @@ describe('TranslationService - uploadDocument', () => {
         legalAttestation: mockLegalAttestation,
       });
 
-      // Assert
+      // Assert - Legal attestation is sent in JSON payload
       const callArgs = mockedAxios.post.mock.calls[0];
-      const formData = callArgs[1] as FormData;
+      const payload = callArgs[1];
 
-      expect(formData.get('file')).toBe(mockFile);
-      expect(formData.get('legalAttestation')).toBe(
-        JSON.stringify(mockLegalAttestation)
-      );
+      expect(payload).toEqual({
+        fileName: 'test.txt',
+        fileSize: mockFile.size,
+        contentType: 'text/plain',
+        legalAttestation: mockLegalAttestation,
+      });
     });
   });
 
@@ -325,7 +351,7 @@ describe('TranslationService - uploadDocument', () => {
         acceptCopyrightOwnership: true,
         acceptTranslationRights: true,
         acceptLiabilityTerms: true,
-        userIPAddress: '192.168.1.1',
+        userIPAddress: 'captured-by-backend',
         userAgent: 'Mozilla/5.0',
         timestamp: '2024-10-31T12:00:00Z',
       };
@@ -335,17 +361,14 @@ describe('TranslationService - uploadDocument', () => {
       mockedAxios.post.mockResolvedValueOnce({
         data: {
           data: {
-            jobId: 'job-123',
-            userId: 'user-456',
-            status: 'PENDING' as const,
-            fileName: 'test.txt',
-            fileSize: 1024,
-            contentType: 'text/plain',
-            createdAt: '2024-10-31T12:00:00Z',
-            updatedAt: '2024-10-31T12:00:00Z',
+            uploadUrl: 'https://s3.amazonaws.com/bucket/presigned-url',
+            fileId: 'job-123',
+            requiredHeaders: {},
           },
         },
       });
+
+      mockedAxios.put.mockResolvedValueOnce({ data: null });
 
       // Act
       await uploadDocument({
@@ -353,10 +376,10 @@ describe('TranslationService - uploadDocument', () => {
         legalAttestation: mockLegalAttestation,
       });
 
-      // Assert
+      // Assert - Auth token is sent to backend API
       expect(mockedAxios.post).toHaveBeenCalledWith(
         expect.any(String),
-        expect.any(FormData),
+        expect.any(Object),
         expect.objectContaining({
           headers: expect.objectContaining({
             Authorization: 'Bearer specific-token-456',
@@ -407,7 +430,7 @@ describe('TranslationService - startTranslation', () => {
       // Assert
       expect(mockedAxios.post).toHaveBeenCalledTimes(1);
       expect(mockedAxios.post).toHaveBeenCalledWith(
-        expect.stringContaining(`/translation/${jobId}/start`),
+        expect.stringContaining(`/jobs/${jobId}/translate`),
         request,
         expect.objectContaining({
           headers: expect.objectContaining({
@@ -507,7 +530,7 @@ describe('TranslationService - getJobStatus', () => {
       // Assert
       expect(mockedAxios.get).toHaveBeenCalledTimes(1);
       expect(mockedAxios.get).toHaveBeenCalledWith(
-        expect.stringContaining(`/translation/${jobId}`),
+        expect.stringContaining(`/jobs/${jobId}/translation-status`),
         expect.objectContaining({
           headers: expect.objectContaining({
             Authorization: 'Bearer mock-token-123',
@@ -621,7 +644,7 @@ describe('TranslationService - getTranslationJobs', () => {
       // Assert
       expect(mockedAxios.get).toHaveBeenCalledTimes(1);
       expect(mockedAxios.get).toHaveBeenCalledWith(
-        expect.stringContaining('/translation'),
+        expect.stringContaining('/jobs'),
         expect.objectContaining({
           headers: expect.objectContaining({
             Authorization: 'Bearer mock-token-123',
@@ -752,7 +775,7 @@ describe('TranslationService - createLegalAttestation', () => {
     expect(result.acceptCopyrightOwnership).toBe(true);
     expect(result.acceptTranslationRights).toBe(true);
     expect(result.acceptLiabilityTerms).toBe(true);
-    expect(result.userIPAddress).toBe('192.168.1.1'); // Mocked value
+    expect(result.userIPAddress).toBe('captured-by-backend'); // Backend captures IP
     expect(result.userAgent).toBe(navigator.userAgent);
     expect(result.timestamp).toBeDefined();
     expect(new Date(result.timestamp)).toBeInstanceOf(Date);
@@ -793,14 +816,14 @@ describe('TranslationService - createLegalAttestation', () => {
     expect(resultTime).toBeLessThanOrEqual(afterTime);
   });
 
-  it('should fallback to "unknown" IP if service fails', async () => {
+  it('should use "captured-by-backend" when IP fetch fails (backend captures IP)', async () => {
     // Arrange
     mockedAxios.get.mockRejectedValueOnce(new Error('Network error'));
 
     // Act
     const result = await createLegalAttestation(true, true, true);
 
-    // Assert
-    expect(result.userIPAddress).toBe('unknown');
+    // Assert - Backend now captures IP, frontend doesn't fetch from external service
+    expect(result.userIPAddress).toBe('captured-by-backend');
   });
 });
