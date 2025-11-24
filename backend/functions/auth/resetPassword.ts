@@ -25,6 +25,7 @@ export const handler = async (
   event: APIGatewayProxyEvent
 ): Promise<APIGatewayProxyResult> => {
   const requestId = event.requestContext.requestId;
+  const requestOrigin = event.headers.origin || event.headers.Origin;
 
   logger.info('Processing password reset request', { requestId });
 
@@ -42,7 +43,8 @@ export const handler = async (
         400,
         'Validation failed',
         requestId,
-        validationResult.error.flatten().fieldErrors
+        validationResult.error.flatten().fieldErrors,
+        requestOrigin
       );
     }
 
@@ -70,7 +72,8 @@ export const handler = async (
       {
         message: 'If an account with this email exists, a password reset link has been sent.',
       },
-      requestId
+      requestId,
+      requestOrigin
     );
   } catch (error) {
     if (error instanceof UserNotFoundException) {
@@ -84,7 +87,8 @@ export const handler = async (
         {
           message: 'If an account with this email exists, a password reset link has been sent.',
         },
-        requestId
+        requestId,
+        requestOrigin
       );
     }
 
@@ -97,7 +101,9 @@ export const handler = async (
       return createErrorResponse(
         400,
         'Invalid email address provided',
-        requestId
+        requestId,
+        undefined,
+        requestOrigin
       );
     }
 
@@ -110,7 +116,9 @@ export const handler = async (
       return createErrorResponse(
         429,
         'Too many password reset attempts. Please try again later.',
-        requestId
+        requestId,
+        undefined,
+        requestOrigin
       );
     }
 
@@ -123,7 +131,9 @@ export const handler = async (
       return createErrorResponse(
         429,
         'Password reset limit exceeded. Please try again later.',
-        requestId
+        requestId,
+        undefined,
+        requestOrigin
       );
     }
 
@@ -136,7 +146,9 @@ export const handler = async (
     return createErrorResponse(
       500,
       'Password reset failed due to an internal error. Please try again later.',
-      requestId
+      requestId,
+      undefined,
+      requestOrigin
     );
   }
 };
