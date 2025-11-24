@@ -2,454 +2,835 @@
 
 Complete guide to testing the LFMT POC application locally and in CI/CD.
 
+---
+
 ## Table of Contents
 
-- [Overview](#overview)
-- [Test Types](#test-types)
-- [Running Tests Locally](#running-tests-locally)
-- [CI/CD Pipeline](#cicd-pipeline)
-- [E2E Tests](#e2e-tests)
-- [Integration Tests](#integration-tests)
-- [Troubleshooting](#troubleshooting)
+1. [Overview](#overview)
+2. [Prerequisites](#prerequisites)
+3. [Frontend Tests](#frontend-tests)
+4. [Backend Tests](#backend-tests)
+5. [E2E Tests](#e2e-tests)
+6. [CI/CD Pipeline](#cicd-pipeline)
+7. [Quick Commands Reference](#quick-commands-reference)
+8. [Troubleshooting](#troubleshooting)
+9. [Best Practices](#best-practices)
+
+---
 
 ## Overview
 
 The LFMT POC includes comprehensive testing at multiple levels:
 
-- **Unit Tests**: Test individual components and functions
-- **Integration Tests**: Test backend API endpoints and workflows
-- **E2E Tests**: Test complete user journeys from registration to translation
-- **Pre-push Validation**: Local validation before pushing to GitHub
+- **Frontend Unit Tests**: 499 tests with Vitest + React Testing Library (99% coverage)
+- **Backend Unit Tests**: Jest tests for Lambda functions
+- **Integration Tests**: End-to-end API workflow testing
+- **E2E Tests**: 58 Playwright tests with Page Object Model pattern
 - **CI/CD Tests**: Automated testing on pull requests and deployments
 
-## Test Types
+**Test Coverage**:
+- Frontend: 99% (Translation components)
+- Backend: Comprehensive Lambda function coverage
+- E2E: Critical user journeys and workflows
 
-### 1. Frontend Unit Tests (Vitest)
+---
 
-Located in: `frontend/src/**/__tests__/*.test.ts(x)`
+## Prerequisites
 
-**Coverage:**
-- React components
-- Services and utilities  
-- Context providers
-- Form validation
-- API client
+### Required Software
 
-**Run:**
+- **Node.js**: v20+ (check: `node --version`)
+- **npm**: v9+ (check: `npm --version`)
+- **Git**: Latest version
+- **Playwright** (for E2E tests): Auto-installed with `npm ci`
+
+### Initial Setup
+
+```bash
+# From project root
+cd "/Users/raymondl/Documents/LFMT POC/LFMT/lfmt-poc"
+
+# Install dependencies for all packages
+cd shared-types && npm ci && cd ..
+cd backend/functions && npm ci && cd ../..
+cd backend/infrastructure && npm ci && cd ../..
+cd frontend && npm ci && cd ..
+```
+
+---
+
+## Frontend Tests
+
+### 1. Unit Tests (Vitest)
+
+**Test Suite**: 24 test files, 499 tests (27 skipped)
+**Coverage**: 99% average across Translation components
+**Location**: `frontend/src/**/__tests__/*.test.tsx`
+
+#### Run All Unit Tests
+
 ```bash
 cd frontend
 npm test                    # Run in watch mode
-npm test -- --run          # Run once
-npm run test:coverage      # With coverage report
-npm run test:ui            # Visual UI mode
+npm test -- --run          # Run once (CI mode)
 ```
 
-### 2. Backend Unit Tests (Jest)
+#### Run Tests with Coverage
 
-Located in: `backend/functions/__tests__/unit/*.test.ts`
-
-**Coverage:**
-- Lambda function handlers
-- Business logic
-- Utility functions
-- Error handling
-
-**Run:**
 ```bash
-cd backend/functions
-npm test                    # Run all tests
-npm run test:coverage      # With coverage (90%+ required)
+npm run test:coverage
+
+# View coverage report
+open coverage/index.html
 ```
 
-### 3. Integration Tests
+#### Run Specific Test File
 
-Located in: `backend/functions/__tests__/integration/*.test.ts`
+```bash
+npm test -- TranslationConfig.test.tsx
+npm test -- --run FileUpload.test.tsx
+```
 
-**Tests:**
-- `health-check.integration.test.ts` - API health endpoints
-- `api-integration.test.ts` - Authentication and file upload
-- `auth.integration.test.ts` - Complete auth flows
-- `translation-flow.integration.test.ts` - End-to-end translation workflow
+#### Run Tests in UI Mode
 
-**Run:**
+```bash
+npm run test:ui
+```
+
+**Watch Mode** (default):
+- Press `a` to run all tests
+- Press `f` to run only failed tests
+- Press `p` to filter by filename
+- Press `t` to filter by test name
+- Press `q` to quit
+
+### 2. E2E Tests (Playwright)
+
+**Test Suite**: 7 test suites, 58 tests
+**Framework**: Playwright with Page Object Model
+**Location**: `frontend/e2e/tests/**/*.spec.ts`
+
+#### First-Time Setup: Install Browsers
+
+```bash
+cd frontend
+npx playwright install chromium
+```
+
+#### Run All E2E Tests
+
+**Prerequisites**: Dev server must be running on port 3000
+
+```bash
+# Terminal 1: Start dev server
+cd frontend
+npm run dev
+
+# Terminal 2: Run E2E tests
+cd frontend
+npm run test:e2e           # Headless mode
+```
+
+#### Run E2E Tests in Interactive UI Mode
+
+```bash
+npm run test:e2e:ui
+```
+
+Benefits:
+- ✅ Visual test execution
+- ✅ Step-by-step debugging
+- ✅ Time travel through test steps
+- ✅ Watch mode with auto-rerun
+
+#### Run E2E Tests in Headed Mode (See Browser)
+
+```bash
+npm run test:e2e:headed
+```
+
+#### Debug E2E Tests (Step-by-Step)
+
+```bash
+npm run test:e2e:debug
+```
+
+Features:
+- Pauses before each action
+- Opens Playwright Inspector
+- Allows breakpoints and step-through
+- Console logging
+
+#### Run Specific E2E Test File
+
+```bash
+npx playwright test e2e/tests/translation/upload.spec.ts
+npx playwright test e2e/tests/auth/login.spec.ts
+```
+
+#### Run Specific Test by Name
+
+```bash
+npx playwright test -g "should upload file successfully"
+```
+
+#### View Last Test Report
+
+```bash
+npm run test:e2e:report
+```
+
+---
+
+## Backend Tests
+
+### 1. Unit Tests (Jest)
+
+**Location**: `backend/functions/**/__tests__/unit/*.test.ts`
+
+#### Run All Backend Unit Tests
+
 ```bash
 cd backend/functions
-export API_BASE_URL=https://8brwlwf68h.execute-api.us-east-1.amazonaws.com/v1
+npm test                   # Run all tests
+npm test -- --coverage     # With coverage
+```
+
+#### Run Specific Test File
+
+```bash
+npm test -- auth/register.test.ts
+npm test -- translation/uploadDocument.test.ts
+```
+
+#### Watch Mode
+
+```bash
+npm test -- --watch
+```
+
+### 2. Integration Tests
+
+**Location**: `backend/functions/**/__tests__/integration/*.test.ts`
+
+**Prerequisites**:
+- AWS credentials configured
+- Backend stack deployed to dev environment
+- API Gateway endpoint available
+
+#### Run Integration Tests
+
+```bash
+cd backend/functions
 npm run test:integration
 ```
 
-### 4. E2E Tests (Playwright)
+**What Integration Tests Cover**:
+- Complete translation workflow (upload → chunk → translate → download)
+- Auth flow (register → login → protected endpoints)
+- File upload and S3 integration
+- DynamoDB operations
+- API Gateway routing
 
-Located in: `frontend/e2e/*.spec.ts`
-
-**Coverage:**
-- User registration journey
-- Login/logout flows
-- Protected route access
-- Form validation
-- Responsive design
-- Accessibility (a11y)
-
-**Run:**
-```bash
-cd frontend
-npm run test:e2e            # Run all E2E tests
-npm run test:e2e:ui         # Interactive UI mode
-npm run test:e2e:headed     # See browser
-npm run test:e2e:debug      # Debug mode
-npm run test:e2e:report     # View last report
-```
-
-## Running Tests Locally
-
-### ⚠️ IMPORTANT: Local vs CI Test Differences
-
-**Tests pass locally but fail in CI?** Here's why:
-
-| Environment | Command | Behavior |
-|------------|---------|----------|
-| **Local (default)** | `npm test` | Watch mode, doesn't exit, ignores some warnings |
-| **CI / Pre-push** | `npm test -- --run` | Runs once, exits, strict mode |
-
-**Solution:** Always use CI simulation before pushing!
-
-### 🚀 CI Simulation (Recommended Before Pushing)
-
-**Run this to catch CI failures locally:**
+#### Run Against Specific Environment
 
 ```bash
-# Simulate exact CI environment
-./scripts/simulate-ci.sh
-
-# Test only frontend (matches CI exactly!)
-./scripts/simulate-ci.sh --frontend
-
-# Test only backend
-./scripts/simulate-ci.sh --backend
+API_BASE_URL=https://your-api-id.execute-api.us-east-1.amazonaws.com/v1 \
+npm run test:integration
 ```
 
-This simulates the **exact** GitHub Actions environment including:
-- Same test flags (`--run` for frontend)
-- Same build process
-- Same linting and security checks
-- Immediate feedback before pushing
-
-**Time:** ~3-5 minutes for full suite
-
-### Quick Smoke Tests
-
-Run the most critical tests before pushing:
-
-```bash
-./scripts/run-integration-tests.sh --quick
-```
-
-This runs:
-- Backend health check
-- Frontend E2E smoke test
-
-**Time:** ~2 minutes
-
-### Full Local Test Suite
-
-Run all tests locally to catch issues before CI/CD:
-
-```bash
-./scripts/run-integration-tests.sh
-```
-
-This runs:
-- All backend integration tests
-- All frontend E2E tests
-
-**Time:** ~15-20 minutes
-
-### Backend Tests Only
-
-```bash
-./scripts/run-integration-tests.sh --backend
-```
-
-### E2E Tests Only
-
-```bash
-./scripts/run-integration-tests.sh --e2e
-```
-
-### Pre-Push Validation
-
-The pre-push git hook automatically runs:
-
-1. Shared-types tests
-2. Backend function tests (with 90%+ coverage check)
-3. Infrastructure TypeScript compilation
-4. Infrastructure tests
-5. Frontend TypeScript compilation and build
-6. Frontend unit tests
-7. Security checks (no hardcoded credentials)
-
-**To bypass** (not recommended):
-```bash
-git push --no-verify
-```
-
-## CI/CD Pipeline
-
-### Pull Request Workflow (ci.yml)
-
-Runs on every PR to `main` or `develop`:
-
-**Jobs:**
-1. `test` - Backend unit tests + coverage
-2. `build-infrastructure` - Infrastructure compilation + CDK synth
-3. `lint-and-format` - Code quality checks
-4. `security-scan` - Dependency audit
-5. `test-frontend` - Frontend tests + build
-6. `ci-summary` - Overall status
-
-**Required for merge:** `test`, `build-infrastructure`, `test-frontend`
-
-### Deployment Workflow (deploy.yml)
-
-Runs on merge to `main`:
-
-**Jobs:**
-1. `test` - Run backend tests
-2. `build-infrastructure` - Validate infrastructure
-3. `build-frontend` - Build and test frontend
-4. `deploy-dev` - Deploy to AWS dev environment
-   - Deploy backend infrastructure (CDK)
-   - Deploy frontend to S3 + CloudFront
-   - Invalidate CloudFront cache
-5. `integration-tests` - Backend API integration tests
-6. `e2e-tests` - Frontend E2E tests against deployed environment
-
-**Deployment Flow:**
-```
-Code Push → Build → Deploy Backend → Deploy Frontend → Integration Tests → E2E Tests
-```
+---
 
 ## E2E Tests
 
 ### Test Scenarios
 
-1. **User Registration Flow**
-   - Load home page
-   - Navigate to registration
-   - Fill registration form
-   - Accept terms
-   - Submit and verify success
+**Authentication** (`frontend/e2e/tests/auth/*.spec.ts`):
+- User registration
+- Login/logout
+- Protected routes
 
-2. **Authentication Flow**
-   - Login with credentials
-   - Access protected routes
-   - Logout successfully
+**Translation Workflow** (`frontend/e2e/tests/translation/*.spec.ts`):
+- Document upload with legal attestation
+- Progress tracking and polling
+- Download completed translations
+- Error handling and retry logic
 
-3. **Protected Routes**
-   - Redirect unauthenticated users
-   - Allow authenticated access
+**Multi-Language Support**:
+- 5 languages (Spanish, French, German, Italian, Chinese)
+- 3 tones (Formal, Informal, Neutral)
+- 15 total combinations tested
 
-4. **Form Validation**
-   - Email validation
-   - Password strength
-   - Password confirmation
-   - Required fields
-
-5. **Responsive Design**
-   - Mobile (iPhone)
-   - Tablet (iPad)
-   - Desktop
-
-### Running Specific Tests
+### Running Specific Test Suites
 
 ```bash
-# Run tests matching pattern
-npm run test:e2e -- -g "should register"
+# Auth tests only
+npx playwright test e2e/tests/auth
 
-# Run on specific browser
-npm run test:e2e:chromium
-npm run test:e2e:firefox
-npm run test:e2e:webkit
+# Translation tests only
+npx playwright test e2e/tests/translation
 
-# Run against deployed environment
-PLAYWRIGHT_BASE_URL=https://d1yysvwo9eg20b.cloudfront.net npm run test:e2e
+# Specific feature
+npx playwright test e2e/tests/translation/upload.spec.ts
 ```
 
 ### Debugging E2E Tests
 
+**Step 1**: Run in debug mode
 ```bash
-# Debug mode - step through tests
 npm run test:e2e:debug
-
-# Headed mode - see browser
-npm run test:e2e:headed
-
-# View trace from failed tests
-npx playwright show-trace test-results/*/trace.zip
 ```
 
-## Integration Tests
+**Step 2**: Use Playwright Inspector
+- Set breakpoints
+- Step through actions
+- Inspect element selectors
+- View console logs
 
-### Backend Integration Tests
-
-Test real API endpoints in deployed environment.
-
-**Prerequisites:**
+**Step 3**: View screenshots/videos
 ```bash
-export API_BASE_URL=https://8brwlwf68h.execute-api.us-east-1.amazonaws.com/v1
+# Screenshots saved to:
+frontend/test-results/**/*-screenshot.png
+
+# Videos (if enabled):
+frontend/test-results/**/*.webm
 ```
-
-**Test Categories:**
-
-1. **Health Check** (`health-check.integration.test.ts`)
-   - Basic connectivity
-   - Auth endpoint availability
-
-2. **API Integration** (`api-integration.test.ts`)
-   - User registration
-   - User login
-   - Token refresh
-   - File upload request
-   - Error handling
-
-3. **Auth Integration** (`auth.integration.test.ts`)
-   - Complete registration flow
-   - Login/logout cycle
-   - Session management
-
-4. **Translation Flow** (`translation-flow.integration.test.ts`)
-   - Upload document
-   - Start translation job
-   - Poll for status
-   - Download result
-
-### Running Against Local Backend
-
-If running backend locally (e.g., SAM local):
-
-```bash
-export API_BASE_URL=http://localhost:3001
-npm run test:integration
-```
-
-## Troubleshooting
-
-### Frontend Tests Pass Locally But Fail in CI
-
-**Problem:** Tests run in watch mode locally but CI uses `--run` flag (strict mode).
-
-**Solution:**
-```bash
-# Option 1: Run CI simulation (recommended)
-./scripts/simulate-ci.sh --frontend
-
-# Option 2: Run tests exactly like CI
-cd frontend
-npm test -- --run
-```
-
-**Why this happens:**
-- Local: `npm test` runs in watch mode (permissive)
-- CI: `npm test -- --run` exits after running (strict)
-- Pre-push hook now matches CI with `--run` flag
-
-### Frontend Tests Failing
-
-```bash
-# Clear cache and reinstall
-cd frontend
-rm -rf node_modules dist .vite
-npm ci
-npm test -- --run
-```
-
-### E2E Tests Timing Out
-
-```bash
-# Increase timeout in playwright.config.ts
-timeout: 120 * 1000  # 2 minutes instead of 1
-
-# Or run with longer timeout
-npm run test:e2e -- --timeout=120000
-```
-
-### Playwright Browser Issues
-
-```bash
-# Reinstall browsers
-npx playwright install --with-deps chromium
-```
-
-### Integration Tests Can't Reach API
-
-1. Check API is deployed:
-   ```bash
-   curl https://8brwlwf68h.execute-api.us-east-1.amazonaws.com/v1/auth/me
-   ```
-
-2. Verify API_BASE_URL is set:
-   ```bash
-   echo $API_BASE_URL
-   ```
-
-3. Check AWS credentials:
-   ```bash
-   aws sts get-caller-identity
-   ```
-
-### Pre-Push Hook Failing
-
-If pre-push hook fails on unrelated tests:
-
-```bash
-# Option 1: Fix the failing tests
-npm test
-
-# Option 2: Bypass for emergency (not recommended)
-git push --no-verify
-```
-
-## Test Coverage Requirements
-
-- **Backend Functions**: 90%+ code coverage required
-- **Frontend Components**: No minimum (recommended 80%+)
-- **Integration Tests**: All critical user paths
-- **E2E Tests**: Complete user journeys
-
-## Continuous Improvement
-
-### Adding New Tests
-
-1. **Unit Test**: Add to `__tests__` folder next to source file
-2. **Integration Test**: Add to `backend/functions/__tests__/integration/`
-3. **E2E Test**: Add to `frontend/e2e/`
-
-### Test Naming Conventions
-
-- **Unit**: `component-name.test.ts(x)`
-- **Integration**: `feature-name.integration.test.ts`
-- **E2E**: `user-journey.spec.ts`
-
-### Best Practices
-
-✅ **DO:**
-- Write tests before implementation (TDD)
-- Test user behavior, not implementation
-- Use descriptive test names
-- Keep tests isolated and independent
-- Clean up test data after each test
-
-❌ **DON'T:**
-- Test implementation details
-- Share state between tests
-- Hardcode test data
-- Skip flaky tests (fix them!)
-- Commit commented-out tests
 
 ---
 
-For questions or issues, check:
-- GitHub Actions logs
-- `frontend/playwright-report/`
-- `frontend/test-results/`
-- `backend/functions/coverage/`
+## CI/CD Pipeline
+
+### Pull Request Workflow (`.github/workflows/ci.yml`)
+
+**Triggered On**:
+- Pull request creation
+- Pull request updates
+- Push to `main` branch
+
+**Test Steps**:
+
+1. **Shared Types**:
+   ```bash
+   cd shared-types
+   npm ci
+   npm run build
+   npm test
+   ```
+
+2. **Backend Functions**:
+   ```bash
+   cd backend/functions
+   npm ci
+   npm test
+   npm run type-check
+   ```
+
+3. **Backend Infrastructure**:
+   ```bash
+   cd backend/infrastructure
+   npm ci
+   npm test
+   npm run cdk:synth
+   ```
+
+4. **Frontend**:
+   ```bash
+   cd frontend
+   npm ci
+   npm test -- --run
+   npm run type-check
+   npm run build
+   ```
+
+5. **E2E Tests**: ⚠️ Temporarily disabled
+   - Reason: Require live backend API
+   - Status: Run manually before deployment
+
+### Deployment Workflow (`.github/workflows/deploy.yml`)
+
+**Triggered On**:
+- Push to `main` branch (after PR merge)
+
+**Steps**:
+1. Run all CI tests (same as PR workflow)
+2. Deploy backend infrastructure (CDK)
+3. Deploy Lambda functions
+4. Deploy frontend to S3/CloudFront
+5. Invalidate CloudFront cache
+
+### ⚠️ IMPORTANT: Local vs CI Test Differences
+
+**CI Environment**:
+- ✅ Fresh `npm ci` install (lock file)
+- ✅ Runs in headless mode
+- ✅ Strict TypeScript checks
+- ✅ No cached test results
+
+**Local Environment**:
+- ⚠️ May have `node_modules` cache
+- ⚠️ May run in watch mode
+- ⚠️ Incremental test runs
+
+**Best Practice**: Simulate CI before pushing:
+```bash
+# Clean install
+rm -rf node_modules
+npm ci
+
+# Run tests in CI mode
+npm test -- --run
+npm run type-check
+```
+
+---
+
+## Quick Commands Reference
+
+### Frontend Unit Tests
+
+```bash
+cd frontend
+npm test                    # Watch mode
+npm test -- --run          # CI mode (run once)
+npm run test:coverage      # With coverage report
+npm run test:ui            # Interactive UI mode
+npm test -- TranslationConfig.test.tsx  # Specific file
+```
+
+### Frontend E2E Tests
+
+```bash
+cd frontend
+npm run test:e2e           # Headless mode
+npm run test:e2e:ui        # Interactive UI mode
+npm run test:e2e:headed    # See browser
+npm run test:e2e:debug     # Step-by-step debugging
+npm run test:e2e:report    # View last report
+npx playwright test e2e/tests/auth  # Specific suite
+```
+
+### Backend Tests
+
+```bash
+cd backend/functions
+npm test                   # Unit tests
+npm test -- --coverage     # With coverage
+npm run test:integration   # Integration tests
+npm test -- auth/register.test.ts  # Specific file
+```
+
+### Pre-Push Validation
+
+```bash
+# Run from project root
+.githooks/pre-push origin refs/heads/main
+```
+
+---
+
+## Troubleshooting
+
+### Frontend Unit Tests
+
+#### Issue: Tests fail with "Cannot find module '@lfmt/shared-types'"
+
+**Solution**:
+```bash
+# Build shared types first
+cd shared-types
+npm ci
+npm run build
+
+# Then run frontend tests
+cd ../frontend
+npm test
+```
+
+#### Issue: Tests timeout
+
+**Symptoms**: Tests hang or timeout after 5000ms
+
+**Solutions**:
+```bash
+# Increase timeout globally
+npm test -- --testTimeout=10000
+
+# Or in specific test file:
+// Add to test file
+jest.setTimeout(10000);
+```
+
+#### Issue: Coverage reports are stale
+
+**Solution**:
+```bash
+# Clean coverage cache
+rm -rf coverage
+npm run test:coverage
+```
+
+### E2E Tests
+
+#### Issue: "Executable doesn't exist" error
+
+**Solution**:
+```bash
+npx playwright install chromium
+```
+
+#### Issue: Dev server fails to start
+
+**Symptoms**: `EADDRINUSE: address already in use :::3000`
+
+**Solution**:
+```bash
+# Find and kill process on port 3000
+lsof -ti:3000 | xargs kill -9
+
+# Or use different port
+PORT=3001 npm run dev
+```
+
+#### Issue: Tests fail with "Navigation timeout"
+
+**Symptoms**: `page.goto: Timeout 30000ms exceeded`
+
+**Solutions**:
+1. **Check dev server is running**: `curl http://localhost:3000`
+2. **Increase timeout**:
+   ```typescript
+   await page.goto('/', { timeout: 60000 });
+   ```
+3. **Wait for page load**:
+   ```typescript
+   await page.waitForLoadState('networkidle');
+   ```
+
+#### Issue: Tests fail with "Cannot connect to backend API"
+
+**Symptoms**: E2E tests make real API calls that fail
+
+**Solution** (Temporary):
+- E2E tests currently disabled in CI
+- Run with local backend or mock API
+- Or skip E2E tests: `npm test -- --run` (unit tests only)
+
+### Backend Integration Tests
+
+#### Issue: "API_BASE_URL is not defined"
+
+**Solution**:
+```bash
+export API_BASE_URL=https://8brwlwf68h.execute-api.us-east-1.amazonaws.com/v1
+npm run test:integration
+```
+
+#### Issue: "Stack LfmtPocDev does not exist"
+
+**Solution**:
+```bash
+# Deploy backend first
+cd backend/infrastructure
+npx cdk deploy --context environment=dev
+
+# Then run integration tests
+cd ../functions
+npm run test:integration
+```
+
+#### Issue: Integration tests timeout
+
+**Solution**:
+```bash
+# Increase Jest timeout
+npm run test:integration -- --testTimeout=30000
+```
+
+### Pre-Push Hook Failing
+
+**Symptoms**: Git push rejected by pre-push hook
+
+**Solutions**:
+```bash
+# Fix test failures
+npm test -- --run
+
+# Or bypass hook (NOT RECOMMENDED)
+git push --no-verify
+```
+
+---
+
+## Best Practices
+
+### Before Committing Code
+
+1. ✅ Run unit tests locally
+   ```bash
+   npm test -- --run
+   ```
+
+2. ✅ Check TypeScript compilation
+   ```bash
+   npm run type-check
+   ```
+
+3. ✅ Review test coverage
+   ```bash
+   npm run test:coverage
+   ```
+
+### Before Creating a PR
+
+1. ✅ Run full test suite
+   ```bash
+   # Frontend
+   cd frontend
+   npm ci
+   npm test -- --run
+   npm run type-check
+   npm run build
+
+   # Backend
+   cd ../backend/functions
+   npm ci
+   npm test
+   npm run type-check
+   ```
+
+2. ✅ Test E2E flows manually
+   ```bash
+   cd frontend
+   npm run test:e2e:headed
+   ```
+
+3. ✅ Simulate CI environment
+   ```bash
+   rm -rf node_modules
+   npm ci
+   npm test -- --run
+   ```
+
+### Debugging Failed Tests
+
+1. **Read the error message carefully**
+   - Note the file, line number, and assertion that failed
+
+2. **Run single test in watch mode**
+   ```bash
+   npm test -- --run TranslationConfig.test.tsx
+   ```
+
+3. **Add console.log statements**
+   ```typescript
+   console.log('Component state:', component.debug());
+   ```
+
+4. **Use Playwright Inspector for E2E**
+   ```bash
+   npm run test:e2e:debug
+   ```
+
+5. **Check test artifacts**
+   - Screenshots: `frontend/test-results/`
+   - Coverage: `frontend/coverage/`
+   - E2E reports: `frontend/playwright-report/`
+
+### Test Naming Conventions
+
+```typescript
+// ✅ GOOD: Descriptive "should" format
+test('should upload file successfully when all fields valid', async () => {
+  // ...
+});
+
+// ❌ BAD: Vague or imperative
+test('upload file', async () => {
+  // ...
+});
+```
+
+### Adding New Tests
+
+1. **Create test file next to source file**:
+   ```
+   src/components/NewFeature.tsx
+   src/components/__tests__/NewFeature.test.tsx
+   ```
+
+2. **Follow existing patterns**:
+   - Use React Testing Library for component tests
+   - Use Page Object Model for E2E tests
+   - Mock external dependencies
+
+3. **Run tests to ensure they pass**:
+   ```bash
+   npm test -- NewFeature.test.tsx
+   ```
+
+4. **Update coverage threshold if needed**:
+   ```javascript
+   // vite.config.ts
+   coverage: {
+     thresholds: {
+       global: {
+         lines: 90,
+         functions: 90,
+         branches: 90,
+         statements: 90,
+       },
+     },
+   }
+   ```
+
+---
+
+## Test Coverage Requirements
+
+**Minimum Coverage**:
+- **Lines**: 90%
+- **Functions**: 90%
+- **Branches**: 90%
+- **Statements**: 90%
+
+**Current Coverage**:
+- **Frontend**: 99% (Translation components)
+- **Backend**: Comprehensive Lambda coverage
+
+**Check Coverage**:
+```bash
+cd frontend
+npm run test:coverage
+
+# View detailed report
+open coverage/index.html
+```
+
+---
+
+## Test Artifacts
+
+### Unit Test Coverage
+
+**Location**: `frontend/coverage/`
+
+**Files**:
+- `coverage/index.html` - Interactive coverage report
+- `coverage/lcov-report/` - Detailed line-by-line coverage
+- `coverage/coverage-final.json` - Coverage data
+
+### E2E Test Reports
+
+**Location**: `frontend/playwright-report/`
+
+**View Report**:
+```bash
+cd frontend
+npm run test:e2e:report
+```
+
+### E2E Screenshots/Videos
+
+**Location**: `frontend/test-results/`
+
+**Configuration** (`playwright.config.ts`):
+```typescript
+use: {
+  screenshot: 'only-on-failure',
+  video: 'retain-on-failure',
+}
+```
+
+**Access**:
+```bash
+ls frontend/test-results/**/*-screenshot.png
+ls frontend/test-results/**/*.webm
+```
+
+---
+
+## Running All Tests
+
+### Complete Test Suite (Sequential)
+
+```bash
+#!/bin/bash
+# Run from project root
+
+# Shared Types
+cd shared-types
+npm ci
+npm run build
+npm test
+
+# Backend Functions
+cd ../backend/functions
+npm ci
+npm test
+
+# Backend Infrastructure
+cd ../infrastructure
+npm ci
+npm test
+
+# Frontend
+cd ../../frontend
+npm ci
+npm test -- --run
+npm run test:e2e
+
+echo "✅ All tests complete!"
+```
+
+### Parallel Execution (Faster)
+
+```bash
+# Terminal 1: Shared types
+cd shared-types && npm ci && npm test
+
+# Terminal 2: Backend functions
+cd backend/functions && npm ci && npm test
+
+# Terminal 3: Backend infrastructure
+cd backend/infrastructure && npm ci && npm test
+
+# Terminal 4: Frontend unit tests
+cd frontend && npm ci && npm test -- --run
+
+# Terminal 5: Frontend E2E tests (requires dev server)
+cd frontend && npm run dev &
+npm run test:e2e
+```
+
+---
+
+## Summary
+
+**Test Execution Flow**:
+1. Install dependencies: `npm ci`
+2. Run unit tests: `npm test`
+3. Check TypeScript: `npm run type-check`
+4. Run E2E tests: `npm run test:e2e`
+5. Build application: `npm run build`
+
+**Key Commands**:
+- `npm test` - Run all tests (watch mode)
+- `npm test -- --run` - Run once (CI mode)
+- `npm run test:coverage` - With coverage
+- `npm run test:e2e` - E2E tests
+- `npm run type-check` - TypeScript validation
+
+**Best Practices**:
+- ✅ Run tests before committing
+- ✅ Maintain 90%+ coverage
+- ✅ Use descriptive test names
+- ✅ Keep tests isolated
+- ✅ Mock external dependencies
+
+---
+
+**Last Updated**: 2025-11-23 (Merged from TESTING.md + TESTING-GUIDE.md)
+**Related Documentation**:
+- `frontend/e2e/README.md` - Playwright E2E testing details
+- `docs/TRANSLATION-UI-REFERENCE.md` - Translation UI testing
+- `.github/workflows/ci.yml` - CI/CD pipeline configuration

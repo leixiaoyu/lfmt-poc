@@ -1,0 +1,22 @@
+# Archive folder - historical documents not needed for active development
+docs/archive/
+
+# Serena AI tool cache
+.serena/
+
+# Build outputs and dependencies
+node_modules/
+dist/
+build/
+coverage/
+cdk.out/
+
+# Logs and temporary files
+*.log
+tmp/
+temp/
+
+# IDE and OS files
+.vscode/
+.idea/
+.DS_Store
