@@ -9,7 +9,6 @@
 
 import { S3Client, GetObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s3';
 import { DynamoDBClient, GetItemCommand } from '@aws-sdk/client-dynamodb';
-import axios from 'axios';
 
 describe('Upload Presigned URL - Integration Tests', () => {
   const API_BASE_URL = process.env.API_BASE_URL || 'https://8brwlwf68h.execute-api.us-east-1.amazonaws.com/v1';
@@ -29,42 +28,46 @@ describe('Upload Presigned URL - Integration Tests', () => {
       const fileName = `integration-test-${Date.now()}.txt`;
 
       // Step 1: Request presigned URL
-      const presignedResponse = await axios.post(
+      const presignedResponse = await fetch(
         `${API_BASE_URL}/jobs/upload`,
         {
-          fileName,
-          fileSize: testFile.length,
-          contentType: 'text/plain',
-          legalAttestation: {
-            acceptCopyrightOwnership: true,
-            acceptTranslationRights: true,
-            acceptLiabilityTerms: true,
-            userIPAddress: '127.0.0.1',
-            userAgent: 'Integration Test',
-            timestamp: new Date().toISOString(),
-          },
-        },
-        {
+          method: 'POST',
           headers: {
             Authorization: `Bearer ${TEST_USER_TOKEN}`,
             'Content-Type': 'application/json',
           },
+          body: JSON.stringify({
+            fileName,
+            fileSize: testFile.length,
+            contentType: 'text/plain',
+            legalAttestation: {
+              acceptCopyrightOwnership: true,
+              acceptTranslationRights: true,
+              acceptLiabilityTerms: true,
+              userIPAddress: '127.0.0.1',
+              userAgent: 'Integration Test',
+              timestamp: new Date().toISOString(),
+            },
+          }),
         }
       );
 
       expect(presignedResponse.status).toBe(200);
-      expect(presignedResponse.data.data).toHaveProperty('uploadUrl');
-      expect(presignedResponse.data.data).toHaveProperty('fileId');
-      expect(presignedResponse.data.data).toHaveProperty('expiresIn');
+      const presignedData = await presignedResponse.json();
+      expect(presignedData.data).toHaveProperty('uploadUrl');
+      expect(presignedData.data).toHaveProperty('fileId');
+      expect(presignedData.data).toHaveProperty('expiresIn');
 
-      const { uploadUrl, fileId, requiredHeaders } = presignedResponse.data.data;
+      const { uploadUrl, fileId, requiredHeaders } = presignedData.data;
 
       // Step 2: Upload file to S3
-      const s3Response = await axios.put(uploadUrl, testFile, {
+      const s3Response = await fetch(uploadUrl, {
+        method: 'PUT',
         headers: {
           ...requiredHeaders,
           'Content-Type': 'text/plain',
         },
+        body: testFile,
       });
 
       expect(s3Response.status).toBe(200);
@@ -96,78 +99,91 @@ describe('Upload Presigned URL - Integration Tests', () => {
     }, 30000); // 30 second timeout
 
     it('should include correct CORS headers in presigned URL response', async () => {
-      const response = await axios.post(
+      const response = await fetch(
         `${API_BASE_URL}/jobs/upload`,
         {
-          fileName: 'test.txt',
-          fileSize: 1024,
-          contentType: 'text/plain',
-          legalAttestation: {
-            acceptCopyrightOwnership: true,
-            acceptTranslationRights: true,
-            acceptLiabilityTerms: true,
-            userIPAddress: '127.0.0.1',
-            userAgent: 'Integration Test',
-            timestamp: new Date().toISOString(),
-          },
-        },
-        {
+          method: 'POST',
           headers: {
             Authorization: `Bearer ${TEST_USER_TOKEN}`,
             Origin: 'https://d39xcun7144jgl.cloudfront.net',
+            'Content-Type': 'application/json',
           },
+          body: JSON.stringify({
+            fileName: 'test.txt',
+            fileSize: 1024,
+            contentType: 'text/plain',
+            legalAttestation: {
+              acceptCopyrightOwnership: true,
+              acceptTranslationRights: true,
+              acceptLiabilityTerms: true,
+              userIPAddress: '127.0.0.1',
+              userAgent: 'Integration Test',
+              timestamp: new Date().toISOString(),
+            },
+          }),
         }
       );
 
       // Verify CORS headers
-      expect(response.headers['access-control-allow-origin']).toBeDefined();
-      expect(response.headers['access-control-allow-credentials']).toBe('true');
+      expect(response.headers.get('access-control-allow-origin')).toBeDefined();
+      expect(response.headers.get('access-control-allow-credentials')).toBe('true');
     });
 
     it('should reject request without authentication token', async () => {
-      try {
-        await axios.post(`${API_BASE_URL}/jobs/upload`, {
-          fileName: 'test.txt',
-          fileSize: 1024,
-          contentType: 'text/plain',
-        });
-        fail('Should have thrown 401 error');
-      } catch (error: any) {
-        expect(error.response.status).toBe(401);
-        // Verify CORS headers are present even in error response
-        expect(error.response.headers['access-control-allow-origin']).toBeDefined();
-      }
+      const response = await fetch(
+        `${API_BASE_URL}/jobs/upload`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            fileName: 'test.txt',
+            fileSize: 1024,
+            contentType: 'text/plain',
+          }),
+        }
+      );
+
+      expect(response.status).toBe(401);
+      // Verify CORS headers are present even in error response
+      expect(response.headers.get('access-control-allow-origin')).toBeDefined();
     });
 
     it('should reject invalid file validation', async () => {
-      try {
-        await axios.post(
-          `${API_BASE_URL}/jobs/upload`,
-          {
+      const response = await fetch(
+        `${API_BASE_URL}/jobs/upload`,
+        {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${TEST_USER_TOKEN}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
             fileName: '', // Invalid: empty filename
             fileSize: 1024,
             contentType: 'text/plain',
-          },
-          {
-            headers: {
-              Authorization: `Bearer ${TEST_USER_TOKEN}`,
-            },
-          }
-        );
-        fail('Should have thrown 400 error');
-      } catch (error: any) {
-        expect(error.response.status).toBe(400);
-        expect(error.response.data.message).toContain('validation');
-      }
+          }),
+        }
+      );
+
+      expect(response.status).toBe(400);
+      const data = await response.json();
+      expect(data.message).toContain('validation');
     });
 
     it('should reject oversized files', async () => {
       const MAX_FILE_SIZE = 100 * 1024 * 1024; // 100MB
 
-      try {
-        await axios.post(
-          `${API_BASE_URL}/jobs/upload`,
-          {
+      const response = await fetch(
+        `${API_BASE_URL}/jobs/upload`,
+        {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${TEST_USER_TOKEN}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
             fileName: 'huge-file.txt',
             fileSize: MAX_FILE_SIZE + 1, // Exceed limit
             contentType: 'text/plain',
@@ -179,25 +195,25 @@ describe('Upload Presigned URL - Integration Tests', () => {
               userAgent: 'Integration Test',
               timestamp: new Date().toISOString(),
             },
-          },
-          {
-            headers: {
-              Authorization: `Bearer ${TEST_USER_TOKEN}`,
-            },
-          }
-        );
-        fail('Should have thrown 400 error for oversized file');
-      } catch (error: any) {
-        expect(error.response.status).toBe(400);
-        expect(error.response.data.message).toContain('exceeds maximum');
-      }
+          }),
+        }
+      );
+
+      expect(response.status).toBe(400);
+      const data = await response.json();
+      expect(data.message).toContain('exceeds maximum');
     });
 
     it('should reject wrong content type', async () => {
-      try {
-        await axios.post(
-          `${API_BASE_URL}/jobs/upload`,
-          {
+      const response = await fetch(
+        `${API_BASE_URL}/jobs/upload`,
+        {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${TEST_USER_TOKEN}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
             fileName: 'test.pdf',
             fileSize: 1024,
             contentType: 'application/pdf', // Not allowed (only text/plain)
@@ -209,46 +225,44 @@ describe('Upload Presigned URL - Integration Tests', () => {
               userAgent: 'Integration Test',
               timestamp: new Date().toISOString(),
             },
-          },
-          {
-            headers: {
-              Authorization: `Bearer ${TEST_USER_TOKEN}`,
-            },
-          }
-        );
-        fail('Should have thrown 400 error for invalid content type');
-      } catch (error: any) {
-        expect(error.response.status).toBe(400);
-        expect(error.response.data.message).toContain('content type');
-      }
+          }),
+        }
+      );
+
+      expect(response.status).toBe(400);
+      const data = await response.json();
+      expect(data.message).toContain('content type');
     });
   });
 
   describeOrSkip('Presigned URL Security', () => {
     it('should expire presigned URL after 15 minutes', async () => {
-      const response = await axios.post(
+      const response = await fetch(
         `${API_BASE_URL}/jobs/upload`,
         {
-          fileName: 'test.txt',
-          fileSize: 1024,
-          contentType: 'text/plain',
-          legalAttestation: {
-            acceptCopyrightOwnership: true,
-            acceptTranslationRights: true,
-            acceptLiabilityTerms: true,
-            userIPAddress: '127.0.0.1',
-            userAgent: 'Integration Test',
-            timestamp: new Date().toISOString(),
-          },
-        },
-        {
+          method: 'POST',
           headers: {
             Authorization: `Bearer ${TEST_USER_TOKEN}`,
+            'Content-Type': 'application/json',
           },
+          body: JSON.stringify({
+            fileName: 'test.txt',
+            fileSize: 1024,
+            contentType: 'text/plain',
+            legalAttestation: {
+              acceptCopyrightOwnership: true,
+              acceptTranslationRights: true,
+              acceptLiabilityTerms: true,
+              userIPAddress: '127.0.0.1',
+              userAgent: 'Integration Test',
+              timestamp: new Date().toISOString(),
+            },
+          }),
         }
       );
 
-      const { uploadUrl, expiresIn } = response.data.data;
+      const data = await response.json();
+      const { uploadUrl, expiresIn } = data.data;
 
       // Verify expiration time
       expect(expiresIn).toBe(900); // 15 minutes in seconds
@@ -262,35 +276,40 @@ describe('Upload Presigned URL - Integration Tests', () => {
       const fileName = `metadata-test-${Date.now()}.txt`;
 
       // Request presigned URL
-      const presignedResponse = await axios.post(
+      const presignedResponse = await fetch(
         `${API_BASE_URL}/jobs/upload`,
         {
-          fileName,
-          fileSize: testFile.length,
-          contentType: 'text/plain',
-          legalAttestation: {
-            acceptCopyrightOwnership: true,
-            acceptTranslationRights: true,
-            acceptLiabilityTerms: true,
-            userIPAddress: '127.0.0.1',
-            userAgent: 'Integration Test',
-            timestamp: new Date().toISOString(),
-          },
-        },
-        {
+          method: 'POST',
           headers: {
             Authorization: `Bearer ${TEST_USER_TOKEN}`,
+            'Content-Type': 'application/json',
           },
+          body: JSON.stringify({
+            fileName,
+            fileSize: testFile.length,
+            contentType: 'text/plain',
+            legalAttestation: {
+              acceptCopyrightOwnership: true,
+              acceptTranslationRights: true,
+              acceptLiabilityTerms: true,
+              userIPAddress: '127.0.0.1',
+              userAgent: 'Integration Test',
+              timestamp: new Date().toISOString(),
+            },
+          }),
         }
       );
 
-      const { uploadUrl, fileId } = presignedResponse.data.data;
+      const presignedData = await presignedResponse.json();
+      const { uploadUrl, fileId } = presignedData.data;
 
       // Upload to S3
-      await axios.put(uploadUrl, testFile, {
+      await fetch(uploadUrl, {
+        method: 'PUT',
         headers: {
           'Content-Type': 'text/plain',
         },
+        body: testFile,
       });
 
       // Verify metadata
