@@ -450,7 +450,9 @@ async function updateJobStatus(
   // Add additional fields
   Object.entries(additionalData).forEach(([key, value], index) => {
     const placeholder = `:val${index}`;
-    updateExpression.push(`${key} = ${placeholder}`);
+    const attributeName = `#attr${index}`;
+    updateExpression.push(`${attributeName} = ${placeholder}`);
+    expressionAttributeNames[attributeName] = key;
     expressionAttributeValues[placeholder] = value;
   });
 

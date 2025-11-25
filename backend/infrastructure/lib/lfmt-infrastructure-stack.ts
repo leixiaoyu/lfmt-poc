@@ -507,6 +507,16 @@ export class LfmtInfrastructureStack extends Stack {
             `${this.resultsBucket.bucketArn}/*`,
           ],
         }),
+        new iam.PolicyStatement({
+          effect: iam.Effect.ALLOW,
+          actions: [
+            's3:ListBucket',
+          ],
+          resources: [
+            this.documentBucket.bucketArn,
+            this.resultsBucket.bucketArn,
+          ],
+        }),
       ],
     });
 
@@ -913,6 +923,7 @@ export class LfmtInfrastructureStack extends Stack {
       itemsPath: stepfunctions.JsonPath.stringAt('$.chunks'),
       parameters: {
         'jobId.$': '$.jobId',
+        'userId.$': '$.userId',
         'chunkIndex.$': '$$.Map.Item.Value.chunkIndex',
         'targetLanguage.$': '$.targetLanguage',
         'tone.$': '$.tone',
