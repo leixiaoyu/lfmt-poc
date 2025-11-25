@@ -92,7 +92,7 @@ export const handler = async (
     if (!geminiClient) {
       geminiClient = new GeminiClient({
         apiKeySecretName: GEMINI_API_KEY_SECRET,
-        model: 'gemini-1.5-pro',
+        model: 'gemini-2.5-flash',
         maxRetries: 3,
       });
       await geminiClient.initialize();

@@ -32,7 +32,7 @@ describe('GeminiClient', () => {
   const mockApiKey = 'AIzaSyTest123ApiKey456';
   const mockConfig = {
     apiKeySecretName: 'test-gemini-api-key',
-    model: 'gemini-1.5-pro',
+    model: 'gemini-2.5-flash',
     maxRetries: 3,
     initialRetryDelayMs: 100, // Faster for tests
   };

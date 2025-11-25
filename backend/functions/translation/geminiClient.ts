@@ -33,7 +33,7 @@ export interface GeminiClientConfig {
 
   /**
    * Model to use for translation
-   * @default 'gemini-1.5-pro'
+   * @default 'gemini-2.5-flash'
    */
   model?: string;
 
@@ -62,7 +62,7 @@ export class GeminiClient {
   constructor(config: GeminiClientConfig) {
     this.config = {
       apiKeySecretName: config.apiKeySecretName,
-      model: config.model || 'gemini-1.5-pro',
+      model: config.model || 'gemini-2.5-flash',
       maxRetries: config.maxRetries ?? 3,
       initialRetryDelayMs: config.initialRetryDelayMs ?? 1000,
     };
