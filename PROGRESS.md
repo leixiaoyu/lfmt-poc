@@ -1,6 +1,6 @@
 # LFMT POC - Current Progress
 
-**Last Updated**: 2025-11-24
+**Last Updated**: 2025-11-25
 **Project**: Long-Form Translation Service POC
 **Repository**: https://github.com/leixiaoyu/lfmt-poc
 **Owner**: Raymond Lei (leixiaoyu@github)
@@ -16,12 +16,16 @@ The LFMT POC has completed **Phases 1-9** (foundation through translation UI dep
 - **Current Phase**: Phase 10 - Investor Demo & Production Readiness
 - **Overall Progress**: ~80% (core workflow complete, optimization and polish pending)
 
-### Recent Milestone (2025-11-23 to 2025-11-24)
+### Recent Milestone (2025-11-23 to 2025-11-25)
 - ✅ Documentation consolidation complete (PR #93)
 - ✅ CORS fixes for all Lambda functions (PR #94)
 - ✅ Integration test axios dependency fixed (PR #95)
-- ✅ **Gemini API key configured in AWS Secrets Manager** (2025-11-24)
-- 🔄 Translation flow integration tests validation in progress
+- ✅ Gemini API key configured in AWS Secrets Manager (2025-11-24)
+- ✅ **Translation workflow critical fixes deployed** (2025-11-25)
+  - Step Functions userId parameter fix
+  - S3 ListBucket permission added
+  - DynamoDB reserved keyword handling
+- 🔄 Chunking issue investigation in progress
 
 ---
 
@@ -78,8 +82,44 @@ The LFMT POC has completed **Phases 1-9** (foundation through translation UI dep
 
 ## Recent Updates (Last 7 Days)
 
-### 2025-11-24: Gemini API Integration ✅ IN PROGRESS
-**Status**: AWS Secrets Manager configured, integration tests running
+### 2025-11-25: Translation Workflow Critical Fixes ✅ DEPLOYED
+**Status**: Three critical bugs fixed and deployed, chunking issue discovered
+
+#### Actions Completed
+1. **Fix #1: Step Functions userId Parameter Missing** (`backend/infrastructure/lib/lfmt-infrastructure-stack.ts:916`)
+   - **Problem**: Map state was not passing `userId` to translateChunk Lambda and updateJobCompleted task
+   - **Error**: `The JSONPath '$.userId' specified for the field 'userId.$' could not be found in the input`
+   - **Fix**: Added `'userId.$': '$.userId'` to Map state parameters
+   - **Result**: Step Functions now executing successfully (3-second runtime, SUCCEEDED status)
+
+2. **Fix #2: S3 ListBucket Permission Missing** (`backend/infrastructure/lib/lfmt-infrastructure-stack.ts:510-519`)
+   - **Problem**: translateChunk Lambda missing `s3:ListBucket` permission
+   - **Error**: `AccessDenied: User is not authorized to perform: s3:ListBucket on resource: "arn:aws:s3:::lfmt-documents-lfmtpocdev"`
+   - **Fix**: Added separate PolicyStatement for `s3:ListBucket` action on document and results buckets
+   - **Result**: S3 permission errors eliminated
+
+3. **Fix #3: DynamoDB Reserved Keyword** (`backend/functions/translation/translateChunk.ts:450-457`)
+   - **Problem**: Using `error` as attribute name in UpdateExpression (DynamoDB reserved keyword)
+   - **Error**: `Invalid UpdateExpression: Attribute name is a reserved keyword; reserved keyword: error`
+   - **Fix**: Modified `updateJobStatus()` to use ExpressionAttributeNames for all dynamic attributes
+   - **Result**: Job status updates working, error messages properly stored in DynamoDB
+
+#### New Issue Discovered
+**Chunking Process Not Creating Files in S3**
+- **Symptom**: Job status shows `CHUNKED` but no chunk files exist in S3
+- **Error**: `NoSuchKey: The specified key does not exist.` when translateChunk tries to read chunk
+- **Evidence**:
+  - Job `baf10e5d-aa6f-49b7-b2ad-561991dfc0b5` completed chunking in 6 seconds
+  - No files found in `s3://lfmt-documents-lfmtpocdev/chunks/{userId}/{jobId}/`
+  - Historical chunks exist with correct structure, suggesting recent regression
+- **Next Steps**:
+  - Investigate chunkDocument Lambda CloudWatch logs
+  - Check S3 event notifications are triggering chunking
+  - Verify chunk file creation logic in `backend/functions/chunking/chunkDocument.ts`
+  - Check if chunks bucket environment variable is correct
+
+### 2025-11-24: Gemini API Integration ✅ COMPLETED
+**Status**: AWS Secrets Manager configured, integration tests validated infrastructure
 
 #### Actions Completed
 1. **Gemini API Key Configuration**
@@ -88,18 +128,10 @@ The LFMT POC has completed **Phases 1-9** (foundation through translation UI dep
    - Environment variables confirmed in translateChunk Lambda
 
 2. **Root Cause Analysis**: Translation Test Timeouts
-   - Identified missing Gemini API key as blocker
-   - All translation infrastructure deployed and operational
-   - Step Functions, rate limiting, and Lambda functions working
-
-3. **Manual Test Trigger**
-   - Workflow #19638263772 triggered to validate fix
-   - Monitoring CI/CD pipeline for integration test results
-
-**Next Steps**:
-- Wait for integration test results
-- Validate end-to-end translation with real documents
-- Monitor CloudWatch logs for any Gemini API issues
+   - Identified missing Gemini API key as initial blocker
+   - Discovered Step Functions userId parameter bug
+   - Discovered S3 permissions gap
+   - Discovered DynamoDB reserved keyword issue
 
 ---
 

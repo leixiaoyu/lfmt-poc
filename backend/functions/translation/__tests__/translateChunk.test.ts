@@ -51,6 +51,35 @@ function createMockStream(content: string) {
   return sdkStreamMixin(stream);
 }
 
+// Helper to create mock job data with chunkingMetadata
+function createMockJob(overrides: any = {}) {
+  const jobId = overrides.jobId || 'job-123';
+  const userId = overrides.userId || 'user-123';
+  const chunkIndex = overrides.chunkIndex !== undefined ? overrides.chunkIndex : 0;
+  const totalChunks = overrides.totalChunks || 5;
+
+  return {
+    jobId: { S: jobId },
+    userId: { S: userId },
+    status: { S: overrides.status || 'CHUNKED' },
+    totalChunks: { N: totalChunks.toString() },
+    translatedChunks: { N: (overrides.translatedChunks || 0).toString() },
+    tokensUsed: { N: (overrides.tokensUsed || 0).toString() },
+    estimatedCost: { N: (overrides.estimatedCost || 0).toString() },
+    chunkingMetadata: {
+      M: {
+        totalChunks: { N: totalChunks.toString() },
+        chunkKeys: {
+          L: Array.from({ length: totalChunks }, (_, i) => ({
+            S: `chunks/${userId}/${jobId}/chunk-${String(i).padStart(4, '0')}-of-${String(totalChunks).padStart(4, '0')}.json`
+          }))
+        }
+      }
+    },
+    ...(overrides.extraFields || {})
+  };
+}
+
 describe('translateChunk Lambda', () => {
   const mockApiKey = 'AIzaSyTest123ApiKey456';
 
@@ -73,15 +102,7 @@ describe('translateChunk Lambda', () => {
     it('should translate first chunk without context', async () => {
       // Mock job data
       dynamoMock.on(GetItemCommand).resolves({
-        Item: {
-          jobId: { S: 'job-123' },
-          userId: { S: 'user-123' },
-          status: { S: 'CHUNKED' },
-          totalChunks: { N: '5' },
-          translatedChunks: { N: '0' },
-          tokensUsed: { N: '0' },
-          estimatedCost: { N: '0' },
-        },
+        Item: createMockJob({ chunkIndex: 0 }),
       } as any);
 
       // Mock chunk data
@@ -129,16 +150,18 @@ describe('translateChunk Lambda', () => {
     it('should translate chunk with previousSummary context (parallel-safe)', async () => {
       // Mock job data
       dynamoMock.on(GetItemCommand).resolves({
-        Item: {
-          jobId: { S: 'job-123' },
-          userId: { S: 'user-123' },
-          status: { S: 'CHUNKED' },
-          translationStatus: { S: 'IN_PROGRESS' },
-          totalChunks: { N: '5' },
-          translatedChunks: { N: '2' },
-          tokensUsed: { N: '300' },
-          estimatedCost: { N: '0.000015' },
-        },
+        Item: createMockJob({
+          jobId: 'job-123',
+          userId: 'user-123',
+          status: 'CHUNKED',
+          totalChunks: 5,
+          translatedChunks: 2,
+          tokensUsed: 300,
+          estimatedCost: 0.000015,
+          extraFields: {
+            translationStatus: { S: 'IN_PROGRESS' },
+          },
+        }),
       } as any);
 
       // Mock current chunk WITH pre-calculated previousSummary (NEW parallel-safe behavior)
@@ -151,14 +174,10 @@ describe('translateChunk Lambda', () => {
       });
 
       // Mock ONLY the current chunk (no calls to translated/ directory)
-      s3Mock
-        .on(GetObjectCommand, {
-          Bucket: 'test-chunks-bucket',
-          Key: 'chunks/job-123/chunk-2.json',
-        })
-        .resolves({
-          Body: createMockStream(chunkContent),
-        } as any);
+      // Use generic S3 mock since the key comes from job.chunkingMetadata.chunkKeys
+      s3Mock.on(GetObjectCommand).resolves({
+        Body: createMockStream(chunkContent),
+      } as any);
 
       s3Mock.on(PutObjectCommand).resolves({} as any);
       dynamoMock.on(UpdateItemCommand).resolves({} as any);
@@ -193,16 +212,18 @@ describe('translateChunk Lambda', () => {
     it('should mark job as COMPLETED when last chunk is translated', async () => {
       // Mock job data
       dynamoMock.on(GetItemCommand).resolves({
-        Item: {
-          jobId: { S: 'job-123' },
-          userId: { S: 'user-123' },
-          status: { S: 'CHUNKED' },
-          translationStatus: { S: 'IN_PROGRESS' },
-          totalChunks: { N: '5' },
-          translatedChunks: { N: '4' },
-          tokensUsed: { N: '600' },
-          estimatedCost: { N: '0.000045' },
-        },
+        Item: createMockJob({
+          jobId: 'job-123',
+          userId: 'user-123',
+          status: 'CHUNKED',
+          totalChunks: 5,
+          translatedChunks: 4,
+          tokensUsed: 600,
+          estimatedCost: 0.000045,
+          extraFields: {
+            translationStatus: { S: 'IN_PROGRESS' },
+          },
+        }),
       } as any);
 
       // Mock last chunk
@@ -294,12 +315,12 @@ describe('translateChunk Lambda', () => {
 
         // Mock necessary data
         dynamoMock.on(GetItemCommand).resolves({
-          Item: {
-            jobId: { S: 'job-123' },
-            userId: { S: 'user-123' },
-            status: { S: 'CHUNKED' },
-            totalChunks: { N: '1' },
-          },
+        Item: createMockJob({
+          jobId: 'job-123',
+          userId: 'user-123',
+          status: 'CHUNKED',
+          totalChunks: 1,
+        }),
         } as any);
 
         const chunkContent = JSON.stringify({
@@ -325,10 +346,10 @@ describe('translateChunk Lambda', () => {
   describe('error handling', () => {
     it('should reject translation for non-chunked job', async () => {
       dynamoMock.on(GetItemCommand).resolves({
-        Item: {
-          jobId: { S: 'job-123' },
-          status: { S: 'PENDING_UPLOAD' },
-        },
+        Item: createMockJob({
+          jobId: 'job-123',
+          status: 'PENDING_UPLOAD',
+        }),
       } as any);
 
       const event: TranslateChunkEvent = {
@@ -390,12 +411,12 @@ describe('translateChunk Lambda', () => {
     it('should handle rate limit with retryable error', async () => {
       // Mock job and chunk data
       dynamoMock.on(GetItemCommand).resolves({
-        Item: {
-          jobId: { S: 'job-123' },
-          userId: { S: 'user-123' },
-          status: { S: 'CHUNKED' },
-          totalChunks: { N: '1' },
-        },
+        Item: createMockJob({
+          jobId: 'job-123',
+          userId: 'user-123',
+          status: 'CHUNKED',
+          totalChunks: 1,
+        }),
       } as any);
 
       const chunkContent = JSON.stringify({
@@ -428,12 +449,12 @@ describe('translateChunk Lambda', () => {
   describe('context management', () => {
     it('should load no context for first chunk', async () => {
       dynamoMock.on(GetItemCommand).resolves({
-        Item: {
-          jobId: { S: 'job-123' },
-          userId: { S: 'user-123' },
-          status: { S: 'CHUNKED' },
-          totalChunks: { N: '3' },
-        },
+        Item: createMockJob({
+          jobId: 'job-123',
+          userId: 'user-123',
+          status: 'CHUNKED',
+          totalChunks: 3,
+        }),
       } as any);
 
       const chunkContent = JSON.stringify({
@@ -441,13 +462,10 @@ describe('translateChunk Lambda', () => {
         chunkId: 'chunk-0',
       });
 
-      s3Mock
-        .on(GetObjectCommand, {
-          Key: 'chunks/job-123/chunk-0.json',
-        })
-        .resolves({
-          Body: createMockStream(chunkContent),
-        } as any);
+      // Use generic S3 mock since the key comes from job.chunkingMetadata.chunkKeys
+      s3Mock.on(GetObjectCommand).resolves({
+        Body: createMockStream(chunkContent),
+      } as any);
 
       s3Mock.on(PutObjectCommand).resolves({} as any);
       dynamoMock.on(UpdateItemCommand).resolves({} as any);
@@ -473,14 +491,16 @@ describe('translateChunk Lambda', () => {
       // With parallel translation, contextChunks parameter is now a legacy parameter
       // Context is always pre-calculated in previousSummary during chunking phase
       dynamoMock.on(GetItemCommand).resolves({
-        Item: {
-          jobId: { S: 'job-123' },
-          userId: { S: 'user-123' },
-          status: { S: 'CHUNKED' },
-          translationStatus: { S: 'IN_PROGRESS' },
-          totalChunks: { N: '5' },
-          translatedChunks: { N: '3' },
-        },
+        Item: createMockJob({
+          jobId: 'job-123',
+          userId: 'user-123',
+          status: 'CHUNKED',
+          totalChunks: 5,
+          translatedChunks: 3,
+          extraFields: {
+            translationStatus: { S: 'IN_PROGRESS' },
+          },
+        }),
       } as any);
 
       const chunkContent = JSON.stringify({
@@ -490,13 +510,10 @@ describe('translateChunk Lambda', () => {
       });
 
       // Mock ONLY current chunk
-      s3Mock
-        .on(GetObjectCommand, {
-          Key: 'chunks/job-123/chunk-3.json',
-        })
-        .resolves({
-          Body: createMockStream(chunkContent),
-        } as any);
+      // Use generic S3 mock since the key comes from job.chunkingMetadata.chunkKeys
+      s3Mock.on(GetObjectCommand).resolves({
+        Body: createMockStream(chunkContent),
+      } as any);
 
       s3Mock.on(PutObjectCommand).resolves({} as any);
       dynamoMock.on(UpdateItemCommand).resolves({} as any);
@@ -528,14 +545,16 @@ describe('translateChunk Lambda', () => {
   describe('parallel translation behavior', () => {
     it('should handle chunk with empty previousSummary (first chunk)', async () => {
       dynamoMock.on(GetItemCommand).resolves({
-        Item: {
-          jobId: { S: 'job-123' },
-          userId: { S: 'user-123' },
-          status: { S: 'CHUNKED' },
-          translationStatus: { S: 'IN_PROGRESS' },
-          totalChunks: { N: '5' },
-          translatedChunks: { N: '0' },
-        },
+        Item: createMockJob({
+          jobId: 'job-123',
+          userId: 'user-123',
+          status: 'CHUNKED',
+          totalChunks: 5,
+          translatedChunks: 0,
+          extraFields: {
+            translationStatus: { S: 'IN_PROGRESS' },
+          },
+        }),
       } as any);
 
       const chunkContent = JSON.stringify({
@@ -546,13 +565,10 @@ describe('translateChunk Lambda', () => {
         previousSummary: '', // Empty for first chunk
       });
 
-      s3Mock
-        .on(GetObjectCommand, {
-          Key: 'chunks/job-123/chunk-0.json',
-        })
-        .resolves({
-          Body: createMockStream(chunkContent),
-        } as any);
+      // Use generic S3 mock since the key comes from job.chunkingMetadata.chunkKeys
+      s3Mock.on(GetObjectCommand).resolves({
+        Body: createMockStream(chunkContent),
+      } as any);
 
       s3Mock.on(PutObjectCommand).resolves({} as any);
       dynamoMock.on(UpdateItemCommand).resolves({} as any);
@@ -576,14 +592,16 @@ describe('translateChunk Lambda', () => {
 
     it('should not access translated/ directory during translation', async () => {
       dynamoMock.on(GetItemCommand).resolves({
-        Item: {
-          jobId: { S: 'job-123' },
-          userId: { S: 'user-123' },
-          status: { S: 'CHUNKED' },
-          translationStatus: { S: 'IN_PROGRESS' },
-          totalChunks: { N: '10' },
-          translatedChunks: { N: '5' },
-        },
+        Item: createMockJob({
+          jobId: 'job-123',
+          userId: 'user-123',
+          status: 'CHUNKED',
+          totalChunks: 10,
+          translatedChunks: 5,
+          extraFields: {
+            translationStatus: { S: 'IN_PROGRESS' },
+          },
+        }),
       } as any);
 
       const chunkContent = JSON.stringify({
@@ -594,13 +612,10 @@ describe('translateChunk Lambda', () => {
         previousSummary: 'Context from chunks 0-5',
       });
 
-      s3Mock
-        .on(GetObjectCommand, {
-          Key: 'chunks/job-123/chunk-6.json',
-        })
-        .resolves({
-          Body: createMockStream(chunkContent),
-        } as any);
+      // Use generic S3 mock since the key comes from job.chunkingMetadata.chunkKeys
+      s3Mock.on(GetObjectCommand).resolves({
+        Body: createMockStream(chunkContent),
+      } as any);
 
       s3Mock.on(PutObjectCommand).resolves({} as any);
       dynamoMock.on(UpdateItemCommand).resolves({} as any);
@@ -629,14 +644,16 @@ describe('translateChunk Lambda', () => {
     it('should handle chunks that can be processed out-of-order', async () => {
       // Test that chunk 8 can be processed even if chunks 6-7 haven't completed yet
       dynamoMock.on(GetItemCommand).resolves({
-        Item: {
-          jobId: { S: 'job-123' },
-          userId: { S: 'user-123' },
-          status: { S: 'CHUNKED' },
-          translationStatus: { S: 'IN_PROGRESS' },
-          totalChunks: { N: '10' },
-          translatedChunks: { N: '5' }, // Only 0-5 completed
-        },
+        Item: createMockJob({
+          jobId: 'job-123',
+          userId: 'user-123',
+          status: 'CHUNKED',
+          totalChunks: 10,
+          translatedChunks: 5, // Only 0-5 completed
+          extraFields: {
+            translationStatus: { S: 'IN_PROGRESS' },
+          },
+        }),
       } as any);
 
       const chunkContent = JSON.stringify({
@@ -647,13 +664,10 @@ describe('translateChunk Lambda', () => {
         previousSummary: 'Context from original document chunks 0-7',
       });
 
-      s3Mock
-        .on(GetObjectCommand, {
-          Key: 'chunks/job-123/chunk-8.json',
-        })
-        .resolves({
-          Body: createMockStream(chunkContent),
-        } as any);
+      // Use generic S3 mock since the key comes from job.chunkingMetadata.chunkKeys
+      s3Mock.on(GetObjectCommand).resolves({
+        Body: createMockStream(chunkContent),
+      } as any);
 
       s3Mock.on(PutObjectCommand).resolves({} as any);
       dynamoMock.on(UpdateItemCommand).resolves({} as any);
@@ -676,12 +690,12 @@ describe('translateChunk Lambda', () => {
   describe('tone option', () => {
     it('should pass tone to translation options', async () => {
       dynamoMock.on(GetItemCommand).resolves({
-        Item: {
-          jobId: { S: 'job-123' },
-          userId: { S: 'user-123' },
-          status: { S: 'CHUNKED' },
-          totalChunks: { N: '1' },
-        },
+        Item: createMockJob({
+          jobId: 'job-123',
+          userId: 'user-123',
+          status: 'CHUNKED',
+          totalChunks: 1,
+        }),
       } as any);
 
       const chunkContent = JSON.stringify({
@@ -715,13 +729,15 @@ describe('translateChunk Lambda', () => {
       // This test verifies rate limiter integration during normal operation
       // Rate limit failure scenarios are tested in distributedRateLimiter.test.ts
       dynamoMock.on(GetItemCommand).resolves({
-        Item: {
-          jobId: { S: 'job-123' },
-          userId: { S: 'user-123' },
-          status: { S: 'CHUNKED' },
-          translationStatus: { S: 'IN_PROGRESS' },
-          totalChunks: { N: '5' },
-        },
+        Item: createMockJob({
+          jobId: 'job-123',
+          userId: 'user-123',
+          status: 'CHUNKED',
+          totalChunks: 5,
+          extraFields: {
+            translationStatus: { S: 'IN_PROGRESS' },
+          },
+        }),
       } as any);
 
       const chunkContent = JSON.stringify({
@@ -784,13 +800,11 @@ describe('translateChunk Lambda', () => {
   describe('CRITICAL: S3 failure scenarios', () => {
     it('should return error when S3 body is missing (chunk not found)', async () => {
       dynamoMock.on(GetItemCommand).resolves({
-        Item: {
-          jobId: { S: 'job-123' },
-          userId: { S: 'user-123' },
-          status: { S: 'CHUNKED' },
-          translationStatus: { S: 'IN_PROGRESS' },
-          totalChunks: { N: '5' },
-        },
+        Item: createMockJob({
+          extraFields: {
+            translationStatus: { S: 'IN_PROGRESS' },
+          },
+        }),
       } as any);
 
       // Mock S3 response with no Body
@@ -814,13 +828,11 @@ describe('translateChunk Lambda', () => {
 
     it('should handle S3 access denied error', async () => {
       dynamoMock.on(GetItemCommand).resolves({
-        Item: {
-          jobId: { S: 'job-123' },
-          userId: { S: 'user-123' },
-          status: { S: 'CHUNKED' },
-          translationStatus: { S: 'IN_PROGRESS' },
-          totalChunks: { N: '5' },
-        },
+        Item: createMockJob({
+          extraFields: {
+            translationStatus: { S: 'IN_PROGRESS' },
+          },
+        }),
       } as any);
 
       s3Mock.on(GetObjectCommand).rejects(new Error('AccessDenied'));
@@ -841,13 +853,15 @@ describe('translateChunk Lambda', () => {
 
     it('should handle corrupted chunk JSON', async () => {
       dynamoMock.on(GetItemCommand).resolves({
-        Item: {
-          jobId: { S: 'job-123' },
-          userId: { S: 'user-123' },
-          status: { S: 'CHUNKED' },
-          translationStatus: { S: 'IN_PROGRESS' },
-          totalChunks: { N: '5' },
-        },
+        Item: createMockJob({
+          jobId: 'job-123',
+          userId: 'user-123',
+          status: 'CHUNKED',
+          totalChunks: 5,
+          extraFields: {
+            translationStatus: { S: 'IN_PROGRESS' },
+          },
+        }),
       } as any);
 
       // Return invalid JSON
@@ -873,14 +887,16 @@ describe('translateChunk Lambda', () => {
     it('should process chunks independently without cross-dependencies', async () => {
       // Simulate processing chunk 5 while chunks 0-4 are still in progress
       dynamoMock.on(GetItemCommand).resolves({
-        Item: {
-          jobId: { S: 'job-parallel' },
-          userId: { S: 'user-123' },
-          status: { S: 'CHUNKED' },
-          translationStatus: { S: 'IN_PROGRESS' },
-          totalChunks: { N: '10' },
-          translatedChunks: { N: '0' }, // None translated yet
-        },
+        Item: createMockJob({
+          jobId: 'job-parallel',
+          userId: 'user-123',
+          status: 'CHUNKED',
+          totalChunks: 10,
+          translatedChunks: 0, // None translated yet
+          extraFields: {
+            translationStatus: { S: 'IN_PROGRESS' },
+          },
+        }),
       } as any);
 
       const chunkContent = JSON.stringify({
@@ -922,14 +938,16 @@ describe('translateChunk Lambda', () => {
     it('should handle concurrent chunk processing without race conditions', async () => {
       // Test that multiple chunks can update job progress concurrently
       dynamoMock.on(GetItemCommand).resolves({
-        Item: {
-          jobId: { S: 'job-concurrent' },
-          userId: { S: 'user-123' },
-          status: { S: 'CHUNKED' },
-          translationStatus: { S: 'IN_PROGRESS' },
-          totalChunks: { N: '10' },
-          translatedChunks: { N: '3' },
-        },
+        Item: createMockJob({
+          jobId: 'job-concurrent',
+          userId: 'user-123',
+          status: 'CHUNKED',
+          totalChunks: 10,
+          translatedChunks: 3,
+          extraFields: {
+            translationStatus: { S: 'IN_PROGRESS' },
+          },
+        }),
       } as any);
 
       const chunk1 = JSON.stringify({
