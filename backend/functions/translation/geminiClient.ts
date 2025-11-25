@@ -153,13 +153,13 @@ export class GeminiClient {
       const processingTimeMs = Date.now() - startTime;
 
       // Extract translated text from response
-      const translatedText = result.response.text();
+      const translatedText = result.text;
 
       // Calculate token usage and cost
       const tokensUsed = {
-        input: result.response.usageMetadata?.promptTokenCount ?? 0,
-        output: result.response.usageMetadata?.candidatesTokenCount ?? 0,
-        total: result.response.usageMetadata?.totalTokenCount ?? 0,
+        input: result.usageMetadata?.promptTokenCount ?? 0,
+        output: result.usageMetadata?.candidatesTokenCount ?? 0,
+        total: result.usageMetadata?.totalTokenCount ?? 0,
       };
 
       // Gemini 1.5 Pro pricing: $0.075 per 1M input tokens (free tier)
