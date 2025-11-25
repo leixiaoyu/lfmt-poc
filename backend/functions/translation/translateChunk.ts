@@ -122,7 +122,7 @@ export const handler = async (
     }
 
     // Load current chunk from S3 (includes pre-calculated previousSummary)
-    const chunk = await loadChunk(event.jobId, event.chunkIndex);
+    const chunk = await loadChunk(job, event.chunkIndex);
 
     // Use pre-calculated context from chunk metadata (parallel-safe)
     // This eliminates sequential dependency on previous chunk translations
@@ -306,14 +306,22 @@ async function loadJob(jobId: string, userId: string): Promise<any> {
 
 /**
  * Load chunk content from S3
+ * Uses the actual S3 key from job.chunkingMetadata.chunkKeys array
  */
 async function loadChunk(
-  jobId: string,
+  job: any,
   chunkIndex: number
 ): Promise<{ primaryContent: string; chunkId: string; previousSummary: string }> {
-  const key = `chunks/${jobId}/chunk-${chunkIndex}.json`;
+  // Get the actual S3 key from job metadata
+  const chunkKeys = job.chunkingMetadata?.chunkKeys || [];
 
-  logger.debug('Loading chunk from S3', { key });
+  if (!chunkKeys[chunkIndex]) {
+    throw new Error(`Chunk key not found for index ${chunkIndex}. Job may not be fully chunked.`);
+  }
+
+  const key = chunkKeys[chunkIndex];
+
+  logger.debug('Loading chunk from S3', { key, chunkIndex });
 
   const command = new GetObjectCommand({
     Bucket: CHUNKS_BUCKET,
