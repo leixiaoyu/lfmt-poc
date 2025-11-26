@@ -32,13 +32,11 @@ jest.mock('@google/genai', () => ({
   GoogleGenAI: jest.fn().mockImplementation(() => ({
     models: {
       generateContent: jest.fn().mockResolvedValue({
-        response: {
-          text: () => 'Texto traducido al español',
-          usageMetadata: {
-            promptTokenCount: 100,
-            candidatesTokenCount: 50,
-            totalTokenCount: 150,
-          },
+        text: 'Texto traducido al español',
+        usageMetadata: {
+          promptTokenCount: 100,
+          candidatesTokenCount: 50,
+          totalTokenCount: 150,
         },
       }),
     },

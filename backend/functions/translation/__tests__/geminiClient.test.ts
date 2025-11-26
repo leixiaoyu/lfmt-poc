@@ -32,7 +32,7 @@ describe('GeminiClient', () => {
   const mockApiKey = 'AIzaSyTest123ApiKey456';
   const mockConfig = {
     apiKeySecretName: 'test-gemini-api-key',
-    model: 'gemini-1.5-pro',
+    model: 'gemini-2.5-flash',
     maxRetries: 3,
     initialRetryDelayMs: 100, // Faster for tests
   };
@@ -113,13 +113,11 @@ describe('GeminiClient', () => {
 
     it('should translate text successfully', async () => {
       const mockResponse = {
-        response: {
-          text: () => 'Hola, mundo!',
-          usageMetadata: {
-            promptTokenCount: 10,
-            candidatesTokenCount: 5,
-            totalTokenCount: 15,
-          },
+        text: 'Hola, mundo!',
+        usageMetadata: {
+          promptTokenCount: 10,
+          candidatesTokenCount: 5,
+          totalTokenCount: 15,
         },
       };
 
@@ -140,13 +138,11 @@ describe('GeminiClient', () => {
 
     it('should include context in translation prompt', async () => {
       const mockResponse = {
-        response: {
-          text: () => 'Traducción con contexto',
-          usageMetadata: {
-            promptTokenCount: 100,
-            candidatesTokenCount: 20,
-            totalTokenCount: 120,
-          },
+        text: 'Traducción con contexto',
+        usageMetadata: {
+          promptTokenCount: 100,
+          candidatesTokenCount: 20,
+          totalTokenCount: 120,
         },
       };
 
@@ -174,13 +170,11 @@ describe('GeminiClient', () => {
 
     it('should respect tone option in prompt', async () => {
       const mockResponse = {
-        response: {
-          text: () => 'Formal translation',
-          usageMetadata: {
-            promptTokenCount: 10,
-            candidatesTokenCount: 5,
-            totalTokenCount: 15,
-          },
+        text: 'Formal translation',
+        usageMetadata: {
+          promptTokenCount: 10,
+          candidatesTokenCount: 5,
+          totalTokenCount: 15,
         },
       };
 
@@ -307,13 +301,11 @@ describe('GeminiClient', () => {
       (error as any).status = 500;
 
       const successResponse = {
-        response: {
-          text: () => 'Success after retry',
-          usageMetadata: {
-            promptTokenCount: 10,
-            candidatesTokenCount: 5,
-            totalTokenCount: 15,
-          },
+        text: 'Success after retry',
+        usageMetadata: {
+          promptTokenCount: 10,
+          candidatesTokenCount: 5,
+          totalTokenCount: 15,
         },
       };
 
@@ -337,13 +329,11 @@ describe('GeminiClient', () => {
       (error as any).status = 429;
 
       const successResponse = {
-        response: {
-          text: () => 'Success after rate limit retry',
-          usageMetadata: {
-            promptTokenCount: 10,
-            candidatesTokenCount: 5,
-            totalTokenCount: 15,
-          },
+        text: 'Success after rate limit retry',
+        usageMetadata: {
+          promptTokenCount: 10,
+          candidatesTokenCount: 5,
+          totalTokenCount: 15,
         },
       };
 
@@ -430,13 +420,11 @@ describe('GeminiClient', () => {
 
     it('should calculate cost correctly for translation', async () => {
       const mockResponse = {
-        response: {
-          text: () => 'Translated',
-          usageMetadata: {
-            promptTokenCount: 10000, // 10K tokens
-            candidatesTokenCount: 5000,
-            totalTokenCount: 15000,
-          },
+        text: 'Translated',
+        usageMetadata: {
+          promptTokenCount: 10000, // 10K tokens
+          candidatesTokenCount: 5000,
+          totalTokenCount: 15000,
         },
       };
 
