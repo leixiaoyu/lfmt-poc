@@ -941,10 +941,12 @@ export class LfmtInfrastructureStack extends Stack {
         jobId: tasks.DynamoAttributeValue.fromString(stepfunctions.JsonPath.stringAt('$.jobId')),
         userId: tasks.DynamoAttributeValue.fromString(stepfunctions.JsonPath.stringAt('$.userId')),
       },
-      updateExpression: 'SET translationStatus = :status, completedAt = :completedAt',
+      updateExpression: 'SET translationStatus = :status, translationCompletedAt = :completedAt, translatedChunks = :totalChunks, updatedAt = :updatedAt',
       expressionAttributeValues: {
         ':status': tasks.DynamoAttributeValue.fromString('COMPLETED'),
         ':completedAt': tasks.DynamoAttributeValue.fromString(stepfunctions.JsonPath.stringAt('$$.State.EnteredTime')),
+        ':totalChunks': tasks.DynamoAttributeValue.numberFromString(stepfunctions.JsonPath.stringAt('States.ArrayLength($.chunks)')),
+        ':updatedAt': tasks.DynamoAttributeValue.fromString(stepfunctions.JsonPath.stringAt('$$.State.EnteredTime')),
       },
       resultPath: stepfunctions.JsonPath.DISCARD,
     });

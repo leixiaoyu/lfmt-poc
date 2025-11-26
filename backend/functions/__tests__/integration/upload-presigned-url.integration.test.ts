@@ -10,6 +10,20 @@
 import { S3Client, GetObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s3';
 import { DynamoDBClient, GetItemCommand } from '@aws-sdk/client-dynamodb';
 
+// Type definitions for API responses
+interface PresignedUrlResponse {
+  data: {
+    uploadUrl: string;
+    fileId: string;
+    expiresIn: number;
+    requiredHeaders: Record<string, string>;
+  };
+}
+
+interface ErrorResponse {
+  message: string;
+}
+
 describe('Upload Presigned URL - Integration Tests', () => {
   const API_BASE_URL = process.env.API_BASE_URL || 'https://8brwlwf68h.execute-api.us-east-1.amazonaws.com/v1';
   const TEST_USER_TOKEN = process.env.TEST_USER_TOKEN; // Set in CI/CD
@@ -53,7 +67,7 @@ describe('Upload Presigned URL - Integration Tests', () => {
       );
 
       expect(presignedResponse.status).toBe(200);
-      const presignedData = await presignedResponse.json();
+      const presignedData = await presignedResponse.json() as PresignedUrlResponse;
       expect(presignedData.data).toHaveProperty('uploadUrl');
       expect(presignedData.data).toHaveProperty('fileId');
       expect(presignedData.data).toHaveProperty('expiresIn');
@@ -168,7 +182,7 @@ describe('Upload Presigned URL - Integration Tests', () => {
       );
 
       expect(response.status).toBe(400);
-      const data = await response.json();
+      const data = await response.json() as ErrorResponse;
       expect(data.message).toContain('validation');
     });
 
@@ -200,7 +214,7 @@ describe('Upload Presigned URL - Integration Tests', () => {
       );
 
       expect(response.status).toBe(400);
-      const data = await response.json();
+      const data = await response.json() as ErrorResponse;
       expect(data.message).toContain('exceeds maximum');
     });
 
@@ -230,7 +244,7 @@ describe('Upload Presigned URL - Integration Tests', () => {
       );
 
       expect(response.status).toBe(400);
-      const data = await response.json();
+      const data = await response.json() as ErrorResponse;
       expect(data.message).toContain('content type');
     });
   });
@@ -261,7 +275,7 @@ describe('Upload Presigned URL - Integration Tests', () => {
         }
       );
 
-      const data = await response.json();
+      const data = await response.json() as PresignedUrlResponse;
       const { uploadUrl, expiresIn } = data.data;
 
       // Verify expiration time
@@ -300,7 +314,7 @@ describe('Upload Presigned URL - Integration Tests', () => {
         }
       );
 
-      const presignedData = await presignedResponse.json();
+      const presignedData = await presignedResponse.json() as PresignedUrlResponse;
       const { uploadUrl, fileId } = presignedData.data;
 
       // Upload to S3
