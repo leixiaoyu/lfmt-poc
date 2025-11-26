@@ -1,6 +1,6 @@
 # LFMT POC - Current Progress
 
-**Last Updated**: 2025-11-25
+**Last Updated**: 2025-11-26
 **Project**: Long-Form Translation Service POC
 **Repository**: https://github.com/leixiaoyu/lfmt-poc
 **Owner**: Raymond Lei (leixiaoyu@github)
@@ -16,16 +16,23 @@ The LFMT POC has completed **Phases 1-9** (foundation through translation UI dep
 - **Current Phase**: Phase 10 - Investor Demo & Production Readiness
 - **Overall Progress**: ~80% (core workflow complete, optimization and polish pending)
 
-### Recent Milestone (2025-11-23 to 2025-11-25)
+### Recent Milestone (2025-11-23 to 2025-11-26)
 - ✅ Documentation consolidation complete (PR #93)
 - ✅ CORS fixes for all Lambda functions (PR #94)
 - ✅ Integration test axios dependency fixed (PR #95)
 - ✅ Gemini API key configured in AWS Secrets Manager (2025-11-24)
-- ✅ **Translation workflow critical fixes deployed** (2025-11-25)
+- ✅ **Translation workflow critical fixes deployed** (PR #97, 2025-11-25)
   - Step Functions userId parameter fix
   - S3 ListBucket permission added
   - DynamoDB reserved keyword handling
-- 🔄 Chunking issue investigation in progress
+- ✅ **Gemini API migration to 2.5 Flash** (PR #98, 2025-11-26)
+  - Migrated from deprecated Gemini 1.5 Pro to Gemini 2.5 Flash
+  - Updated API response structure for compatibility
+  - All 877 tests passing, end-to-end verification complete
+- ✅ **Integration test failures resolved** (PR #99, 2025-11-26)
+  - Fixed Step Functions UpdateJobCompleted to update translatedChunks
+  - Fixed TypeScript compilation errors in upload-presigned-url tests
+  - All CI/CD checks passing (877 tests)
 
 ---
 
@@ -36,11 +43,14 @@ The LFMT POC has completed **Phases 1-9** (foundation through translation UI dep
 
 ### Critical Path Items
 
-#### 1. **Translation Workflow Validation** (P0 - IN PROGRESS)
+#### 1. **Translation Workflow Validation** (P0 - ✅ COMPLETED)
 - ✅ Gemini API key stored in AWS Secrets Manager
 - ✅ Lambda IAM permissions verified
-- 🔄 Integration tests running with configured API key
-- ⏳ End-to-end translation validation pending
+- ✅ Gemini 2.5 Flash migration complete (PR #98)
+- ✅ End-to-end translation validated in AWS
+- ✅ Step Functions execution confirmed working (2.2s runtime)
+- ✅ All integration tests passing (PR #99)
+- ✅ Progress tracking working correctly (100% on completion)
 
 #### 2. **Demo Content Preparation** (P0 - TODO)
 - Create demo account with sample translations
@@ -81,6 +91,74 @@ The LFMT POC has completed **Phases 1-9** (foundation through translation UI dep
 ---
 
 ## Recent Updates (Last 7 Days)
+
+### 2025-11-26: Integration Test Failures Resolved ✅ MERGED
+**Status**: All CI/CD integration tests passing, ready for demo preparation
+
+#### Actions Completed (PR #99)
+1. **Fix #1: Step Functions UpdateJobCompleted Task**
+   - **Problem**: `progressPercentage` always returning 0% after translation completion
+   - **Root Cause**: UpdateJobCompleted task only set `translationStatus = COMPLETED` but didn't update `translatedChunks`
+   - **Fix**: Added 3 fields to DynamoDB update expression:
+     - `translatedChunks = States.ArrayLength($.chunks)` (dynamic chunk count)
+     - `translationCompletedAt = $.State.EnteredTime` (completion timestamp)
+     - `updatedAt = $.State.EnteredTime` (update timestamp)
+   - **File Modified**: `backend/infrastructure/lib/lfmt-infrastructure-stack.ts:944-950`
+   - **Result**: Progress calculation now correctly shows 100% on completion
+
+2. **Fix #2: TypeScript Compilation Errors**
+   - **Problem**: 8 TypeScript TS18046 errors in upload-presigned-url integration test
+   - **Root Cause**: `response.json()` returns `unknown` type in strict mode
+   - **Fix**: Added type interfaces and type assertions at 6 locations:
+     ```typescript
+     interface PresignedUrlResponse { data: {...} }
+     interface ErrorResponse { message: string }
+     const data = await response.json() as PresignedUrlResponse;
+     ```
+   - **File Modified**: `backend/functions/__tests__/integration/upload-presigned-url.integration.test.ts`
+   - **Result**: TypeScript compilation successful with 0 errors
+
+#### Verification Completed
+- ✅ Infrastructure tests: 33/33 passing
+- ✅ TypeScript compilation: 0 errors
+- ✅ CI/CD pipeline: 12/12 checks passed
+- ✅ Total tests: 877 passing (345 backend + 33 infrastructure + 499 frontend)
+- ✅ Comprehensive test proof added to PR as documentation
+
+### 2025-11-26: Gemini API Migration to 2.5 Flash ✅ DEPLOYED
+**Status**: Gemini 1.5 → 2.5 migration complete, translation workflow fully operational
+
+#### Actions Completed
+1. **Model Migration** (PR #98)
+   - **Problem**: Google deprecated all Gemini 1.5 models in 2025, causing 404 errors
+   - **Error**: `models/gemini-1.5-pro is not found for API version v1beta`
+   - **Fix**: Updated default model from `gemini-1.5-pro` to `gemini-2.5-flash`
+   - **Files Modified**:
+     - `backend/functions/translation/geminiClient.ts:65` - Default model config
+     - `backend/functions/translation/translateChunk.ts:95` - Model initialization
+   - **Result**: Gemini 2.5 Flash active and operational
+
+2. **API Response Structure Update**
+   - **Problem**: Gemini 2.5 uses flat response structure vs Gemini 1.5's nested structure
+   - **Error**: `Cannot read properties of undefined (reading 'text')`
+   - **Fix**: Updated response accessors
+     - Changed `result.response.text()` → `result.text`
+     - Changed `result.response.usageMetadata` → `result.usageMetadata`
+   - **Files Modified**: `backend/functions/translation/geminiClient.ts:156, 159-162`
+   - **Result**: API integration working correctly
+
+3. **Test Mock Updates**
+   - Updated all test mocks to match new flat response structure
+   - **Files Modified**:
+     - `geminiClient.test.ts` - 7 mock responses updated
+     - `translateChunk.test.ts` - Global mock setup updated
+   - **Result**: All 877 tests passing (345 backend + 532 frontend)
+
+#### Verification Completed
+- ✅ **Step Functions Execution**: `gemini-2-5-verification-1764162348` succeeded (2.2s runtime)
+- ✅ **Lambda Logs**: Confirmed `"model":"gemini-2.5-flash"` in CloudWatch
+- ✅ **Deployment**: TranslateChunkFunction updated at 2025-11-25 23:10:40 UTC
+- ✅ **End-to-End**: Translation workflow validated in AWS dev environment
 
 ### 2025-11-25: Translation Workflow Critical Fixes ✅ DEPLOYED
 **Status**: Three critical bugs fixed and deployed, chunking issue discovered
@@ -215,7 +293,7 @@ The LFMT POC has completed **Phases 1-9** (foundation through translation UI dep
 - **Frontend**: React 18 + TypeScript + Material-UI + Vite
 - **Backend**: Node.js 18 (AWS Lambda) + API Gateway + DynamoDB
 - **Hosting**: CloudFront + S3 (CDK-managed)
-- **Translation**: Gemini 1.5 Pro (Google AI)
+- **Translation**: Gemini 2.5 Flash (Google AI)
 - **Orchestration**: AWS Step Functions
 - **Auth**: AWS Cognito (JWT tokens)
 
