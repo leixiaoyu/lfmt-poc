@@ -934,7 +934,7 @@ export class LfmtInfrastructureStack extends Stack {
 
     processChunksMap.iterator(translateChunkTask);
 
-    // Update job status to COMPLETED
+    // Update job status to COMPLETED (fixed translatedChunks type bug)
     const updateJobCompleted = new tasks.DynamoUpdateItem(this, 'UpdateJobCompleted', {
       table: this.jobsTable,
       key: {
@@ -945,7 +945,7 @@ export class LfmtInfrastructureStack extends Stack {
       expressionAttributeValues: {
         ':status': tasks.DynamoAttributeValue.fromString('COMPLETED'),
         ':completedAt': tasks.DynamoAttributeValue.fromString(stepfunctions.JsonPath.stringAt('$$.State.EnteredTime')),
-        ':totalChunks': tasks.DynamoAttributeValue.numberFromString(stepfunctions.JsonPath.stringAt('States.ArrayLength($.chunks)')),
+        ':totalChunks': tasks.DynamoAttributeValue.fromNumber(stepfunctions.JsonPath.numberAt('States.ArrayLength($.chunks)')),
         ':updatedAt': tasks.DynamoAttributeValue.fromString(stepfunctions.JsonPath.stringAt('$$.State.EnteredTime')),
       },
       resultPath: stepfunctions.JsonPath.DISCARD,
@@ -953,7 +953,7 @@ export class LfmtInfrastructureStack extends Stack {
 
     // Success state
     const successState = new stepfunctions.Succeed(this, 'TranslationSuccess', {
-      comment: 'All chunks translated successfully',
+      comment: 'All chunks translated successfully - hotfix v1',
     });
 
     // Define the state machine workflow
@@ -965,7 +965,7 @@ export class LfmtInfrastructureStack extends Stack {
     (this as any).translationStateMachine = new stepfunctions.StateMachine(this, 'TranslationStateMachine', {
       stateMachineName: `lfmt-translation-workflow-${this.stackName}`,
       definition,
-      timeout: Duration.hours(6), // Max 6 hours for large documents (400K words)
+      timeout: Duration.hours(6), // Max 6 hours for large documents (400K words) - hotfix applied
       logs: {
         destination: new logs.LogGroup(this, 'TranslationStateMachineLogGroup', {
           logGroupName: `/aws/stepfunctions/lfmt-translation-${this.stackName}`,
