@@ -57,6 +57,54 @@ describe('Auth Service', () => {
       expect(result.statusCode).toBe(400);
     });
 
+    it('should return 400 if passwords do not match', async () => {
+      const event = createMockEvent({
+        email: 'test@test.com',
+        password: 'Password123!',
+        confirmPassword: 'DifferentPassword123!',
+        firstName: 'Test',
+        lastName: 'User',
+        acceptedTerms: true,
+        acceptedPrivacy: true,
+      });
+      const result = await registerHandler(event);
+      expect(result.statusCode).toBe(400);
+      const body = JSON.parse(result.body);
+      expect(body.errors.confirmPassword).toContain("Passwords don't match");
+    });
+
+    it('should return 400 if email is invalid', async () => {
+      const event = createMockEvent({
+        email: 'invalid-email',
+        password: 'Password123!',
+        confirmPassword: 'Password123!',
+        firstName: 'Test',
+        lastName: 'User',
+        acceptedTerms: true,
+        acceptedPrivacy: true,
+      });
+      const result = await registerHandler(event);
+      expect(result.statusCode).toBe(400);
+      const body = JSON.parse(result.body);
+      expect(body.errors.email).toBeDefined();
+    });
+
+    it('should return 400 if password is too weak', async () => {
+      const event = createMockEvent({
+        email: 'test@test.com',
+        password: 'weak',
+        confirmPassword: 'weak',
+        firstName: 'Test',
+        lastName: 'User',
+        acceptedTerms: true,
+        acceptedPrivacy: true,
+      });
+      const result = await registerHandler(event);
+      expect(result.statusCode).toBe(400);
+      const body = JSON.parse(result.body);
+      expect(body.errors.password).toBeDefined();
+    });
+
     it('should return 409 if user already exists', async () => {
       cognitoMock.on(SignUpCommand).rejects(
         new UsernameExistsException({ $metadata: {}, message: 'User already exists' })
@@ -73,6 +121,24 @@ describe('Auth Service', () => {
       const result = await registerHandler(event);
       expect(result.statusCode).toBe(409);
       expect(JSON.parse(result.body).message).toBe('An account with this email already exists');
+    });
+
+    it('should return 500 for unexpected Cognito errors', async () => {
+      cognitoMock.on(SignUpCommand).rejects(
+        new Error('Service temporarily unavailable')
+      );
+      const event = createMockEvent({
+        email: 'test@test.com',
+        password: 'Password123!',
+        confirmPassword: 'Password123!',
+        firstName: 'Test',
+        lastName: 'User',
+        acceptedTerms: true,
+        acceptedPrivacy: true,
+      });
+      const result = await registerHandler(event);
+      expect(result.statusCode).toBe(500);
+      expect(JSON.parse(result.body).message).toBe('Registration failed due to an internal error. Please try again later.');
     });
   });
 
@@ -121,6 +187,45 @@ describe('Auth Service', () => {
       expect(JSON.parse(result.body).message).toBe('Incorrect email or password');
     });
 
+    it('should return 401 for user not found', async () => {
+      cognitoMock.on(InitiateAuthCommand).rejects(
+        new UserNotFoundException({ $metadata: {}, message: 'User does not exist' })
+      );
+      const event = createMockEvent({
+        email: 'notfound@test.com',
+        password: 'password',
+      });
+      const result = await loginHandler(event);
+      expect(result.statusCode).toBe(401);
+      expect(JSON.parse(result.body).message).toBe('Incorrect email or password');
+    });
+
+    it('should return 500 when authentication succeeds but no tokens returned', async () => {
+      cognitoMock.on(InitiateAuthCommand).resolves({
+        AuthenticationResult: undefined,
+      });
+      const event = createMockEvent({
+        email: 'test@test.com',
+        password: 'password',
+      });
+      const result = await loginHandler(event);
+      expect(result.statusCode).toBe(500);
+      expect(JSON.parse(result.body).message).toBe('Authentication failed unexpectedly');
+    });
+
+    it('should return 500 for unexpected Cognito errors', async () => {
+      cognitoMock.on(InitiateAuthCommand).rejects(
+        new Error('Service temporarily unavailable')
+      );
+      const event = createMockEvent({
+        email: 'test@test.com',
+        password: 'password',
+      });
+      const result = await loginHandler(event);
+      expect(result.statusCode).toBe(500);
+      expect(JSON.parse(result.body).message).toBe('Login failed due to an internal error. Please try again later.');
+    });
+
     it('should return 400 if required fields are missing', async () => {
       const event = createMockEvent({});
       const result = await loginHandler(event);
@@ -159,6 +264,30 @@ describe('Auth Service', () => {
       expect(JSON.parse(result.body).message).toBe('Invalid or expired refresh token. Please log in again.');
     });
 
+    it('should return 401 for an expired refresh token', async () => {
+      cognitoMock.on(InitiateAuthCommand).rejects(
+        new NotAuthorizedException({ $metadata: {}, message: 'Refresh Token has expired' })
+      );
+      const event = createMockEvent({
+        refreshToken: 'expiredtoken',
+      });
+      const result = await refreshTokenHandler(event);
+      expect(result.statusCode).toBe(401);
+      expect(JSON.parse(result.body).message).toBe('Invalid or expired refresh token. Please log in again.');
+    });
+
+    it('should return 500 for unexpected Cognito errors', async () => {
+      cognitoMock.on(InitiateAuthCommand).rejects(
+        new Error('Service temporarily unavailable')
+      );
+      const event = createMockEvent({
+        refreshToken: 'refreshtoken',
+      });
+      const result = await refreshTokenHandler(event);
+      expect(result.statusCode).toBe(500);
+      expect(JSON.parse(result.body).message).toBe('Token refresh failed due to an internal error. Please try again later.');
+    });
+
     it('should return 400 if refresh token is missing', async () => {
       const event = createMockEvent({});
       const result = await refreshTokenHandler(event);
@@ -182,6 +311,16 @@ describe('Auth Service', () => {
       expect(result.statusCode).toBe(400);
     });
 
+    it('should return 400 if email is invalid', async () => {
+      const event = createMockEvent({
+        email: 'invalid-email',
+      });
+      const result = await resetPasswordHandler(event);
+      expect(result.statusCode).toBe(400);
+      const body = JSON.parse(result.body);
+      expect(body.errors.email).toBeDefined();
+    });
+
     it('should return 200 even if user does not exist', async () => {
       cognitoMock.on(ForgotPasswordCommand).rejects(
         new UserNotFoundException({ $metadata: {}, message: 'User not found' })
@@ -191,6 +330,18 @@ describe('Auth Service', () => {
       });
       const result = await resetPasswordHandler(event);
       expect(result.statusCode).toBe(200);
+    });
+
+    it('should return 500 for unexpected Cognito errors', async () => {
+      cognitoMock.on(ForgotPasswordCommand).rejects(
+        new Error('Service temporarily unavailable')
+      );
+      const event = createMockEvent({
+        email: 'test@test.com',
+      });
+      const result = await resetPasswordHandler(event);
+      expect(result.statusCode).toBe(500);
+      expect(JSON.parse(result.body).message).toBe('Password reset failed due to an internal error. Please try again later.');
     });
   });
 });
