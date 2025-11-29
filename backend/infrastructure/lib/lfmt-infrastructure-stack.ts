@@ -945,7 +945,9 @@ export class LfmtInfrastructureStack extends Stack {
       expressionAttributeValues: {
         ':status': tasks.DynamoAttributeValue.fromString('COMPLETED'),
         ':completedAt': tasks.DynamoAttributeValue.fromString(stepfunctions.JsonPath.stringAt('$$.State.EnteredTime')),
-        ':totalChunks': tasks.DynamoAttributeValue.fromNumber(stepfunctions.JsonPath.numberAt('States.ArrayLength($.chunks)')),
+        // CRITICAL FIX: DynamoDB NUMBER attributes in Step Functions MUST be provided as strings
+        // Using States.Format() to convert the number result from States.ArrayLength() to a string
+        ':totalChunks': tasks.DynamoAttributeValue.fromString(stepfunctions.JsonPath.stringAt("States.Format('{}', States.ArrayLength($.chunks))")),
         ':updatedAt': tasks.DynamoAttributeValue.fromString(stepfunctions.JsonPath.stringAt('$$.State.EnteredTime')),
       },
       resultPath: stepfunctions.JsonPath.DISCARD,
@@ -965,15 +967,15 @@ export class LfmtInfrastructureStack extends Stack {
     (this as any).translationStateMachine = new stepfunctions.StateMachine(this, 'TranslationStateMachine', {
       stateMachineName: `lfmt-translation-workflow-${this.stackName}`,
       definition,
-      timeout: Duration.hours(6), // Max 6 hours for large documents (400K words) - hotfix applied
+      timeout: Duration.hours(6), // Max 6 hours for large documents (400K words)
       logs: {
         destination: new logs.LogGroup(this, 'TranslationStateMachineLogGroup', {
           logGroupName: `/aws/stepfunctions/lfmt-translation-${this.stackName}`,
           removalPolicy: RemovalPolicy.DESTROY,
           retention: logs.RetentionDays.ONE_WEEK,
         }),
-        level: stepfunctions.LogLevel.ALL,
-        includeExecutionData: true,
+        level: stepfunctions.LogLevel.ALL, // Restore to ALL for better debugging
+        includeExecutionData: true, // Restore to true for complete execution logs
       },
       tracingEnabled: true,
     });
