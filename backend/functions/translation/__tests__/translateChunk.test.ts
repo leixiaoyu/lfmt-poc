@@ -272,6 +272,21 @@ describe('translateChunk Lambda', () => {
       expect(result.retryable).toBe(false);
     });
 
+    it('should reject missing userId', async () => {
+      const event = {
+        jobId: 'job-123',
+        // userId missing
+        chunkIndex: 0,
+        targetLanguage: 'es',
+      } as any;
+
+      const result = await handler(event);
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('userId is required');
+      expect(result.retryable).toBe(false);
+    });
+
     it('should reject negative chunkIndex', async () => {
       const event: TranslateChunkEvent = {
         jobId: 'job-123',
@@ -878,6 +893,48 @@ describe('translateChunk Lambda', () => {
 
       expect(result.success).toBe(false);
       expect(result.retryable).toBe(false);
+    });
+
+    it('should handle job status update failure during error handling', async () => {
+      // Setup: Trigger non-retryable translation error (corrupted JSON)
+      dynamoMock.on(GetItemCommand).resolves({
+        Item: createMockJob({
+          jobId: 'job-123',
+          userId: 'user-123',
+          status: 'CHUNKED',
+          totalChunks: 1,
+          extraFields: {
+            translationStatus: { S: 'IN_PROGRESS' },
+          },
+        }),
+      } as any);
+
+      // Return invalid JSON to trigger non-retryable error
+      s3Mock.on(GetObjectCommand).resolves({
+        Body: createMockStream('{ invalid json }'),
+      } as any);
+
+      // Mock DynamoDB to fail on UpdateItemCommand (status update)
+      dynamoMock.on(UpdateItemCommand).rejects(
+        new Error('DynamoDB connection timeout')
+      );
+
+      const event: TranslateChunkEvent = {
+        jobId: 'job-123',
+        userId: 'user-123',
+        chunkIndex: 0,
+        targetLanguage: 'es',
+      };
+
+      const result = await handler(event);
+
+      // Main error should still be JSON parse error
+      expect(result.success).toBe(false);
+      expect(result.retryable).toBe(false);
+
+      // Verify DynamoDB update was attempted (even though it failed)
+      const updateCalls = dynamoMock.commandCalls(UpdateItemCommand);
+      expect(updateCalls.length).toBeGreaterThan(0);
     });
   });
 
