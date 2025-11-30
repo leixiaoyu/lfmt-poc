@@ -75,9 +75,12 @@ export interface TranslateChunkResponse {
 
 /**
  * Lambda handler for translating a single chunk
+ * @param event - Translation event
+ * @param _rateLimiter - Optional rate limiter for testing (uses singleton if not provided)
  */
 export const handler = async (
-  event: TranslateChunkEvent
+  event: TranslateChunkEvent,
+  _rateLimiter?: DistributedRateLimiter
 ): Promise<TranslateChunkResponse> => {
   const startTime = Date.now();
 
@@ -98,14 +101,21 @@ export const handler = async (
       await geminiClient.initialize();
     }
 
-    if (!distributedRateLimiter) {
-      distributedRateLimiter = new DistributedRateLimiter({
-        tableName: RATE_LIMIT_BUCKETS_TABLE,
-        apiId: GEMINI_RATE_LIMITS.apiId,
-        rpm: GEMINI_RATE_LIMITS.rpm,
-        tpm: GEMINI_RATE_LIMITS.tpm,
-        rpd: GEMINI_RATE_LIMITS.rpd,
-      });
+    // Use provided rate limiter or initialize singleton
+    let rateLimiter: DistributedRateLimiter;
+    if (_rateLimiter) {
+      rateLimiter = _rateLimiter;
+    } else {
+      if (!distributedRateLimiter) {
+        distributedRateLimiter = new DistributedRateLimiter({
+          tableName: RATE_LIMIT_BUCKETS_TABLE,
+          apiId: GEMINI_RATE_LIMITS.apiId,
+          rpm: GEMINI_RATE_LIMITS.rpm,
+          tpm: GEMINI_RATE_LIMITS.tpm,
+          rpd: GEMINI_RATE_LIMITS.rpd,
+        });
+      }
+      rateLimiter = distributedRateLimiter;
     }
 
     // Validate input
@@ -142,7 +152,7 @@ export const handler = async (
     });
 
     // Acquire rate limit tokens before making API call
-    const rateLimitAcquire = await distributedRateLimiter.acquire(
+    const rateLimitAcquire = await rateLimiter.acquire(
       estimatedTokens,
       RateLimitType.TPM
     );
