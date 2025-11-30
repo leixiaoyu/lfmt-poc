@@ -938,6 +938,64 @@ describe('translateChunk Lambda', () => {
     });
   });
 
+  describe('rate limiting', () => {
+    it('should return retryable error when rate limit is exceeded', async () => {
+      // Mock job and chunk data
+      dynamoMock.on(GetItemCommand).resolves({
+        Item: createMockJob({
+          jobId: 'job-123',
+          userId: 'user-123',
+          status: 'CHUNKED',
+          totalChunks: 5,
+          extraFields: {
+            translationStatus: { S: 'IN_PROGRESS' },
+          },
+        }),
+      } as any);
+
+      const chunkContent = JSON.stringify({
+        primaryContent: 'Test content for rate limit scenario',
+        chunkId: 'chunk-0',
+        chunkIndex: 0,
+        totalChunks: 5,
+      });
+
+      s3Mock.on(GetObjectCommand).resolves({
+        Body: createMockStream(chunkContent),
+      } as any);
+
+      // Create mock rate limiter that returns failure
+      const mockRateLimiter = {
+        acquire: jest.fn().mockResolvedValue({
+          success: false,
+          error: 'Token bucket exhausted',
+          retryAfterMs: 5000,
+          tokensRemaining: 0,
+        }),
+      } as any;
+
+      const event: TranslateChunkEvent = {
+        jobId: 'job-123',
+        userId: 'user-123',
+        chunkIndex: 0,
+        targetLanguage: 'es',
+      };
+
+      // Pass mock rate limiter to handler
+      const result = await handler(event, mockRateLimiter);
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('Rate limit exceeded');
+      expect(result.error).toContain('Token bucket exhausted');
+      expect(result.retryable).toBe(true);
+      expect(result.jobId).toBe('job-123');
+      expect(result.chunkIndex).toBe(0);
+
+      // Verify rate limiter was called
+      expect(mockRateLimiter.acquire).toHaveBeenCalled();
+    });
+  });
+
   describe('CRITICAL: parallel translation safety', () => {
     it('should process chunks independently without cross-dependencies', async () => {
       // Simulate processing chunk 5 while chunks 0-4 are still in progress
