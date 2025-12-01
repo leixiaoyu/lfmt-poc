@@ -321,6 +321,42 @@ describe('Tokenizer Utilities', () => {
   });
 
   describe('Tokenizer Error Handling and Fallback', () => {
+    it('should use fallback estimation when encoding fails', async () => {
+      // Spy on console.warn to verify fallback is triggered
+      const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+
+      // Reset modules to allow re-importing with mocks
+      jest.resetModules();
+
+      // Mock gpt-tokenizer to throw an error
+      jest.doMock('gpt-tokenizer', () => ({
+        encode: jest.fn(() => {
+          throw new Error('Encoding failed');
+        })
+      }));
+
+      // Re-import countTokens with the mock in place
+      const { countTokens: mockCountTokens } = await import('../tokenizer');
+
+      const text = 'This is a test text for fallback estimation';
+      const count = mockCountTokens(text);
+
+      // Should use fallback: Math.ceil(text.length / 4)
+      const expectedCount = Math.ceil(text.length / 4);
+      expect(count).toBe(expectedCount);
+
+      // Verify console.warn was called for fallback
+      expect(warnSpy).toHaveBeenCalledWith(
+        'Token encoding failed, using fallback estimation',
+        expect.any(Error)
+      );
+
+      // Restore original implementation
+      warnSpy.mockRestore();
+      jest.dontMock('gpt-tokenizer');
+      jest.resetModules();
+    });
+
     it('should handle null input gracefully', () => {
       // @ts-expect-error Testing runtime behavior with null
       const count = countTokens(null);
