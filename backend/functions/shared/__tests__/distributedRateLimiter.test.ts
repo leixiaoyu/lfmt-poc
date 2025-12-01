@@ -14,7 +14,7 @@ import {
   UpdateItemCommand,
   PutItemCommand,
 } from '@aws-sdk/client-dynamodb';
-import { marshall } from '@aws-sdk/util-dynamodb';
+import { marshall, unmarshall } from '@aws-sdk/util-dynamodb';
 import { mockClient } from 'aws-sdk-client-mock';
 import { DistributedRateLimiter } from '../distributedRateLimiter';
 import { GEMINI_RATE_LIMITS, RateLimitType } from '../types/rateLimiting';
@@ -759,6 +759,54 @@ describe('DistributedRateLimiter', () => {
       expect(result.success).toBe(true);
       expect(result.tokensAcquired).toBe(5);
       expect(result.tokensRemaining).toBe(20); // 25 - 5
+    });
+  });
+
+  describe('Bucket Creation Error Handling', () => {
+    /**
+     * Coverage Test: Successful bucket creation path
+     * Tests line 294: return bucket after successful PutItemCommand
+     * Tests lines 415, 429: getMaxCapacity and getRefillRate for RPD type during bucket creation
+     * GIVEN: No existing bucket for RPD limit type
+     * WHEN: Acquiring tokens for the first time
+     * THEN: Should create new bucket and return it (line 294)
+     */
+    it('should successfully create a new bucket for RPD limit type', async () => {
+      const rateLimiter = new DistributedRateLimiter({
+        tableName: 'test-table',
+        apiId: 'test-api',
+        rpm: 5,
+        tpm: 250_000,
+        rpd: 25,
+      });
+
+      // Mock GetItemCommand to return no existing bucket (first call)
+      // This ensures we go through the bucket creation path
+      ddbMock.on(GetItemCommand).resolvesOnce({});
+
+      // Mock PutItemCommand to succeed (creates bucket)
+      // This triggers the successful path that returns the bucket (line 294)
+      ddbMock.on(PutItemCommand).resolvesOnce({});
+
+      // Mock UpdateItemCommand for the actual acquire operation
+      ddbMock.on(UpdateItemCommand).resolves({});
+
+      // This should create a new RPD bucket
+      // During creation, getMaxCapacity() and getRefillRate() are called with RPD type
+      // which covers lines 415 and 429
+      const result = await rateLimiter.acquire(1, RateLimitType.RPD);
+
+      expect(result.success).toBe(true);
+
+      // Verify PutItemCommand was called (bucket creation)
+      const putCalls = ddbMock.commandCalls(PutItemCommand);
+      expect(putCalls.length).toBeGreaterThan(0);
+
+      // Verify the bucket was created with correct RPD values
+      const createCall = putCalls[0];
+      const createdBucket = unmarshall(createCall.args[0].input.Item as any);
+      expect(createdBucket.maxCapacity).toBe(25); // RPD limit (line 415)
+      expect(createdBucket.refillRate).toBe(25 / 86400); // RPD refill rate (line 429)
     });
   });
 });

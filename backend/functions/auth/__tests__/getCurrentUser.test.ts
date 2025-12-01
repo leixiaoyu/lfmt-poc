@@ -323,6 +323,36 @@ describe('getCurrentUser Lambda Function', () => {
 
       expect(response.statusCode).toBe(200);
     });
+
+    it('should successfully decode JWT token and extract sub claim', async () => {
+      // Create a valid JWT-formatted token with a sub claim
+      // JWT format: header.payload.signature (we only care about payload for this test)
+      const payload = { sub: 'cognito-user-sub-123', email: 'test@example.com' };
+      const encodedPayload = Buffer.from(JSON.stringify(payload)).toString('base64');
+      const mockJwtToken = `header.${encodedPayload}.signature`;
+
+      cognitoMock.on(GetUserCommand).resolves({
+        Username: 'fallback-username',
+        UserAttributes: [
+          { Name: 'email', Value: 'test@example.com' },
+          { Name: 'given_name', Value: 'Test' },
+          { Name: 'family_name', Value: 'User' },
+        ],
+      });
+
+      const event = createMockEvent({
+        headers: { Authorization: `Bearer ${mockJwtToken}` },
+      });
+
+      const response = await handler(event);
+
+      expect(response.statusCode).toBe(200);
+      const body = JSON.parse(response.body);
+
+      // Verify that the sub claim from JWT is used as user.id
+      expect(body.user.id).toBe('cognito-user-sub-123');
+      expect(body.user.email).toBe('test@example.com');
+    });
   });
 });
 
