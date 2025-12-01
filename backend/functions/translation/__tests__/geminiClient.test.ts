@@ -32,7 +32,7 @@ describe('GeminiClient', () => {
   const mockApiKey = 'AIzaSyTest123ApiKey456';
   const mockConfig = {
     apiKeySecretName: 'test-gemini-api-key',
-    model: 'gemini-1.5-pro',
+    model: 'gemini-2.5-flash',
     maxRetries: 3,
     initialRetryDelayMs: 100, // Faster for tests
   };
@@ -113,13 +113,11 @@ describe('GeminiClient', () => {
 
     it('should translate text successfully', async () => {
       const mockResponse = {
-        response: {
-          text: () => 'Hola, mundo!',
-          usageMetadata: {
-            promptTokenCount: 10,
-            candidatesTokenCount: 5,
-            totalTokenCount: 15,
-          },
+        text: 'Hola, mundo!',
+        usageMetadata: {
+          promptTokenCount: 10,
+          candidatesTokenCount: 5,
+          totalTokenCount: 15,
         },
       };
 
@@ -140,13 +138,11 @@ describe('GeminiClient', () => {
 
     it('should include context in translation prompt', async () => {
       const mockResponse = {
-        response: {
-          text: () => 'Traducción con contexto',
-          usageMetadata: {
-            promptTokenCount: 100,
-            candidatesTokenCount: 20,
-            totalTokenCount: 120,
-          },
+        text: 'Traducción con contexto',
+        usageMetadata: {
+          promptTokenCount: 100,
+          candidatesTokenCount: 20,
+          totalTokenCount: 120,
         },
       };
 
@@ -174,13 +170,11 @@ describe('GeminiClient', () => {
 
     it('should respect tone option in prompt', async () => {
       const mockResponse = {
-        response: {
-          text: () => 'Formal translation',
-          usageMetadata: {
-            promptTokenCount: 10,
-            candidatesTokenCount: 5,
-            totalTokenCount: 15,
-          },
+        text: 'Formal translation',
+        usageMetadata: {
+          promptTokenCount: 10,
+          candidatesTokenCount: 5,
+          totalTokenCount: 15,
         },
       };
 
@@ -197,6 +191,56 @@ describe('GeminiClient', () => {
       const promptText = callArgs.contents;
 
       expect(promptText).toContain('formal');
+    });
+
+    it('should use informal tone in translation prompt', async () => {
+      const mockResponse = {
+        text: 'Traducción informal',
+        usageMetadata: {
+          promptTokenCount: 10,
+          candidatesTokenCount: 5,
+          totalTokenCount: 15,
+        },
+      };
+
+      mockGenerateContent.mockResolvedValue(mockResponse);
+
+      const options: TranslationOptions = {
+        targetLanguage: 'es',
+        tone: 'informal',
+      };
+
+      await client.translate('Text', options);
+
+      const callArgs = mockGenerateContent.mock.calls[0][0];
+      const promptText = callArgs.contents;
+
+      expect(promptText).toContain('casual');
+    });
+
+    it('should include custom additional instructions in prompt', async () => {
+      const mockResponse = {
+        text: 'Traducción personalizada',
+        usageMetadata: {
+          promptTokenCount: 10,
+          candidatesTokenCount: 5,
+          totalTokenCount: 15,
+        },
+      };
+
+      mockGenerateContent.mockResolvedValue(mockResponse);
+
+      const options: TranslationOptions = {
+        targetLanguage: 'es',
+        additionalInstructions: 'Preserve all proper nouns and technical terms.',
+      };
+
+      await client.translate('Text', options);
+
+      const callArgs = mockGenerateContent.mock.calls[0][0];
+      const promptText = callArgs.contents;
+
+      expect(promptText).toContain('Preserve all proper nouns');
     });
 
     it('should throw error if client not initialized', async () => {
@@ -278,6 +322,23 @@ describe('GeminiClient', () => {
         GeminiApiError
       );
     });
+
+    it('should handle unknown error status codes (418)', async () => {
+      const error = new Error('I am a teapot');
+      (error as any).status = 418; // Uncommon status code not handled by specific cases
+
+      mockGenerateContent.mockRejectedValue(error);
+
+      const options: TranslationOptions = {
+        targetLanguage: 'es',
+      };
+
+      await expect(client.translate('Text', options)).rejects.toMatchObject({
+        message: expect.stringContaining('Translation failed'),
+        errorCode: 'UNKNOWN_ERROR',
+        retryable: false,
+      });
+    });
   });
 
   describe('retry logic', () => {
@@ -307,13 +368,11 @@ describe('GeminiClient', () => {
       (error as any).status = 500;
 
       const successResponse = {
-        response: {
-          text: () => 'Success after retry',
-          usageMetadata: {
-            promptTokenCount: 10,
-            candidatesTokenCount: 5,
-            totalTokenCount: 15,
-          },
+        text: 'Success after retry',
+        usageMetadata: {
+          promptTokenCount: 10,
+          candidatesTokenCount: 5,
+          totalTokenCount: 15,
         },
       };
 
@@ -337,13 +396,11 @@ describe('GeminiClient', () => {
       (error as any).status = 429;
 
       const successResponse = {
-        response: {
-          text: () => 'Success after rate limit retry',
-          usageMetadata: {
-            promptTokenCount: 10,
-            candidatesTokenCount: 5,
-            totalTokenCount: 15,
-          },
+        text: 'Success after rate limit retry',
+        usageMetadata: {
+          promptTokenCount: 10,
+          candidatesTokenCount: 5,
+          totalTokenCount: 15,
         },
       };
 
@@ -396,6 +453,26 @@ describe('GeminiClient', () => {
       // Should only try once (no retries for auth errors)
       expect(mockGenerateContent).toHaveBeenCalledTimes(1);
     });
+
+    it('should throw RateLimitError after exhausting all retries on 429', async () => {
+      const error = new Error('Rate limit exceeded');
+      (error as any).status = 429;
+
+      // Fail all attempts (initial + 3 retries = 4 total)
+      mockGenerateContent.mockRejectedValue(error);
+
+      const options: TranslationOptions = {
+        targetLanguage: 'es',
+      };
+
+      await expect(client.translate('Text', options)).rejects.toMatchObject({
+        message: expect.stringContaining('Rate limit exceeded'),
+        retryable: true,
+      });
+
+      // Should have tried: initial + 3 retries = 4 times
+      expect(mockGenerateContent).toHaveBeenCalledTimes(4);
+    });
   });
 
   describe('createGeminiClient factory', () => {
@@ -430,13 +507,11 @@ describe('GeminiClient', () => {
 
     it('should calculate cost correctly for translation', async () => {
       const mockResponse = {
-        response: {
-          text: () => 'Translated',
-          usageMetadata: {
-            promptTokenCount: 10000, // 10K tokens
-            candidatesTokenCount: 5000,
-            totalTokenCount: 15000,
-          },
+        text: 'Translated',
+        usageMetadata: {
+          promptTokenCount: 10000, // 10K tokens
+          candidatesTokenCount: 5000,
+          totalTokenCount: 15000,
         },
       };
 

@@ -554,3 +554,19 @@ const allowedOrigin = requestOrigin && allowedOrigins.includes(requestOrigin)
 - #88 - Deploy Translation UI to dev environment
 - #87 - Fix CORS configuration for CloudFront URL support
 **Status**: ✅ Implemented and tested
+
+---
+
+## Case Study: PR #92 CORS Fix (2025-11-23)
+
+**Problem**: Lambda functions returned hardcoded `localhost:3000` origin instead of request origin
+**Root Cause**: Lambdas not extracting `event.headers.origin` parameter
+**Solution**: Pass request origin to all response helper functions
+
+📖 **Full Investigation Report**: See [`docs/archive/CORS-TROUBLESHOOTING.md`](docs/archive/CORS-TROUBLESHOOTING.md)
+
+**Key Learnings**:
+- ✅ Always extract request origin from `event.headers.origin`
+- ✅ Pass origin to all response helpers (success AND error)
+- ✅ Test with Playwright before/after comparison
+- ✅ Use case-insensitive header lookup

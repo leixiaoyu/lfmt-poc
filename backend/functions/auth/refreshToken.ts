@@ -24,6 +24,7 @@ export const handler = async (
   event: APIGatewayProxyEvent
 ): Promise<APIGatewayProxyResult> => {
   const requestId = event.requestContext.requestId;
+  const requestOrigin = event.headers.origin || event.headers.Origin;
 
   logger.info('Processing token refresh request', { requestId });
 
@@ -41,7 +42,8 @@ export const handler = async (
         400,
         'Validation failed',
         requestId,
-        validationResult.error.flatten().fieldErrors
+        validationResult.error.flatten().fieldErrors,
+        requestOrigin
       );
     }
 
@@ -67,7 +69,9 @@ export const handler = async (
       return createErrorResponse(
         500,
         'Token refresh failed unexpectedly',
-        requestId
+        requestId,
+        undefined,
+        requestOrigin
       );
     }
 
@@ -83,7 +87,8 @@ export const handler = async (
           expiresIn: response.AuthenticationResult.ExpiresIn,
         },
       },
-      requestId
+      requestId,
+      requestOrigin
     );
   } catch (error) {
     if (error instanceof NotAuthorizedException) {
@@ -95,7 +100,9 @@ export const handler = async (
       return createErrorResponse(
         401,
         'Invalid or expired refresh token. Please log in again.',
-        requestId
+        requestId,
+        undefined,
+        requestOrigin
       );
     }
 
@@ -108,7 +115,9 @@ export const handler = async (
       return createErrorResponse(
         429,
         'Too many refresh attempts. Please try again later.',
-        requestId
+        requestId,
+        undefined,
+        requestOrigin
       );
     }
 
@@ -121,7 +130,9 @@ export const handler = async (
     return createErrorResponse(
       500,
       'Token refresh failed due to an internal error. Please try again later.',
-      requestId
+      requestId,
+      undefined,
+      requestOrigin
     );
   }
 };

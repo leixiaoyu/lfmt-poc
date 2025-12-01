@@ -14,7 +14,7 @@ import {
   TooManyRequestsException,
 } from '@aws-sdk/client-cognito-identity-provider';
 import { loginRequestSchema } from '@lfmt/shared-types';
-import { createSuccessResponse, createErrorResponse } from '../shared/api-response';
+import { createSuccessResponse, createErrorResponse, getCorsHeaders } from '../shared/api-response';
 import Logger from '../shared/logger';
 import { getRequiredEnv } from '../shared/env';
 
@@ -40,8 +40,10 @@ export const handler = async (
   event: APIGatewayProxyEvent
 ): Promise<APIGatewayProxyResult> => {
   const requestId = event.requestContext.requestId;
+  // Extract request origin for CORS handling (case-insensitive header lookup)
+  const requestOrigin = event.headers.origin || event.headers.Origin;
 
-  logger.info('Processing login request', { requestId });
+  logger.info('Processing login request', { requestId, requestOrigin });
 
   try {
     // Handle both string and object body (API Gateway integration differences)
@@ -60,7 +62,8 @@ export const handler = async (
         400,
         'Validation failed',
         requestId,
-        validationResult.error.flatten().fieldErrors
+        validationResult.error.flatten().fieldErrors,
+        requestOrigin
       );
     }
 
@@ -91,7 +94,9 @@ export const handler = async (
       return createErrorResponse(
         500,
         'Authentication failed unexpectedly',
-        requestId
+        requestId,
+        undefined,
+        requestOrigin
       );
     }
 
@@ -112,16 +117,10 @@ export const handler = async (
       userId: user.id,
     });
 
-    // Return response matching AuthResponse interface
+    // Return response matching AuthResponse interface using getCorsHeaders
     return {
       statusCode: 200,
-      headers: {
-        'Content-Type': 'application/json',
-        'Access-Control-Allow-Origin': process.env.ALLOWED_ORIGIN || 'http://localhost:3000',
-        'Access-Control-Allow-Credentials': 'true',
-        'Access-Control-Allow-Headers': 'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,X-Request-ID',
-        'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS',
-      },
+      headers: getCorsHeaders(requestOrigin),
       body: JSON.stringify({
         user,
         accessToken: response.AuthenticationResult.AccessToken,
@@ -139,7 +138,9 @@ export const handler = async (
       return createErrorResponse(
         401,
         'Incorrect email or password',
-        requestId
+        requestId,
+        undefined,
+        requestOrigin
       );
     }
 
@@ -152,7 +153,9 @@ export const handler = async (
       return createErrorResponse(
         401,
         'Incorrect email or password',
-        requestId
+        requestId,
+        undefined,
+        requestOrigin
       );
     }
 
@@ -165,7 +168,9 @@ export const handler = async (
       return createErrorResponse(
         403,
         'Please verify your email address before logging in. Check your inbox for the verification link.',
-        requestId
+        requestId,
+        undefined,
+        requestOrigin
       );
     }
 
@@ -178,7 +183,9 @@ export const handler = async (
       return createErrorResponse(
         429,
         'Too many login attempts. Please try again later.',
-        requestId
+        requestId,
+        undefined,
+        requestOrigin
       );
     }
 
@@ -191,7 +198,9 @@ export const handler = async (
     return createErrorResponse(
       500,
       'Login failed due to an internal error. Please try again later.',
-      requestId
+      requestId,
+      undefined,
+      requestOrigin
     );
   }
 };

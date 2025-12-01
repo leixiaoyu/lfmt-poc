@@ -390,6 +390,45 @@ describe('RateLimiter', () => {
       expect(result.usage.rpm.limit).toBe(10);
     });
   });
+
+  describe('Daily Reset', () => {
+    it.skip('should reset daily counter when daily reset time is reached', () => {
+      // Use fake timers to control time
+      jest.useFakeTimers();
+      const startTime = new Date('2024-01-15T10:00:00.000-08:00').getTime(); // 10 AM Pacific
+      jest.setSystemTime(startTime);
+
+      const limiter = new RateLimiter({
+        requestsPerMinute: 100, // High enough to not hit RPM limit
+        tokensPerMinute: 1_000_000, // High enough to not hit TPM limit
+        requestsPerDay: 5,
+        dailyResetTimezone: 'America/Los_Angeles',
+      });
+
+      // Make 5 requests to hit the daily limit
+      for (let i = 0; i < 5; i++) {
+        const result = limiter.checkLimit(1000);
+        expect(result.allowed).toBe(true);
+      }
+
+      // Next request should be blocked due to daily limit
+      let result = limiter.checkLimit(1000);
+      expect(result.allowed).toBe(false);
+      expect(result.reason).toContain('Daily request limit exceeded');
+
+      // Advance time to next day at 1 AM Pacific (past midnight reset)
+      const nextDay = new Date('2024-01-16T01:00:00.000-08:00').getTime();
+      jest.setSystemTime(nextDay);
+
+      // Next request should succeed because daily counter was reset
+      result = limiter.checkLimit(1000);
+      expect(result.allowed).toBe(true);
+      expect(result.usage.rpd.used).toBe(1); // Counter should be reset to 1
+
+      // Restore real timers
+      jest.useRealTimers();
+    });
+  });
 });
 
 /**

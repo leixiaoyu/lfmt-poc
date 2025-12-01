@@ -33,7 +33,7 @@ export interface GeminiClientConfig {
 
   /**
    * Model to use for translation
-   * @default 'gemini-1.5-pro'
+   * @default 'gemini-2.5-flash'
    */
   model?: string;
 
@@ -62,7 +62,7 @@ export class GeminiClient {
   constructor(config: GeminiClientConfig) {
     this.config = {
       apiKeySecretName: config.apiKeySecretName,
-      model: config.model || 'gemini-1.5-pro',
+      model: config.model || 'gemini-2.5-flash',
       maxRetries: config.maxRetries ?? 3,
       initialRetryDelayMs: config.initialRetryDelayMs ?? 1000,
     };
@@ -153,13 +153,13 @@ export class GeminiClient {
       const processingTimeMs = Date.now() - startTime;
 
       // Extract translated text from response
-      const translatedText = result.response.text();
+      const translatedText = result.text;
 
       // Calculate token usage and cost
       const tokensUsed = {
-        input: result.response.usageMetadata?.promptTokenCount ?? 0,
-        output: result.response.usageMetadata?.candidatesTokenCount ?? 0,
-        total: result.response.usageMetadata?.totalTokenCount ?? 0,
+        input: result.usageMetadata?.promptTokenCount ?? 0,
+        output: result.usageMetadata?.candidatesTokenCount ?? 0,
+        total: result.usageMetadata?.totalTokenCount ?? 0,
       };
 
       // Gemini 1.5 Pro pricing: $0.075 per 1M input tokens (free tier)

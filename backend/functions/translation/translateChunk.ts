@@ -75,9 +75,12 @@ export interface TranslateChunkResponse {
 
 /**
  * Lambda handler for translating a single chunk
+ * @param event - Translation event
+ * @param _rateLimiter - Optional rate limiter for testing (uses singleton if not provided)
  */
 export const handler = async (
-  event: TranslateChunkEvent
+  event: TranslateChunkEvent,
+  _rateLimiter?: DistributedRateLimiter
 ): Promise<TranslateChunkResponse> => {
   const startTime = Date.now();
 
@@ -92,20 +95,27 @@ export const handler = async (
     if (!geminiClient) {
       geminiClient = new GeminiClient({
         apiKeySecretName: GEMINI_API_KEY_SECRET,
-        model: 'gemini-1.5-pro',
+        model: 'gemini-2.5-flash',
         maxRetries: 3,
       });
       await geminiClient.initialize();
     }
 
-    if (!distributedRateLimiter) {
-      distributedRateLimiter = new DistributedRateLimiter({
-        tableName: RATE_LIMIT_BUCKETS_TABLE,
-        apiId: GEMINI_RATE_LIMITS.apiId,
-        rpm: GEMINI_RATE_LIMITS.rpm,
-        tpm: GEMINI_RATE_LIMITS.tpm,
-        rpd: GEMINI_RATE_LIMITS.rpd,
-      });
+    // Use provided rate limiter or initialize singleton
+    let rateLimiter: DistributedRateLimiter;
+    if (_rateLimiter) {
+      rateLimiter = _rateLimiter;
+    } else {
+      if (!distributedRateLimiter) {
+        distributedRateLimiter = new DistributedRateLimiter({
+          tableName: RATE_LIMIT_BUCKETS_TABLE,
+          apiId: GEMINI_RATE_LIMITS.apiId,
+          rpm: GEMINI_RATE_LIMITS.rpm,
+          tpm: GEMINI_RATE_LIMITS.tpm,
+          rpd: GEMINI_RATE_LIMITS.rpd,
+        });
+      }
+      rateLimiter = distributedRateLimiter;
     }
 
     // Validate input
@@ -122,7 +132,7 @@ export const handler = async (
     }
 
     // Load current chunk from S3 (includes pre-calculated previousSummary)
-    const chunk = await loadChunk(event.jobId, event.chunkIndex);
+    const chunk = await loadChunk(job, event.chunkIndex);
 
     // Use pre-calculated context from chunk metadata (parallel-safe)
     // This eliminates sequential dependency on previous chunk translations
@@ -142,7 +152,7 @@ export const handler = async (
     });
 
     // Acquire rate limit tokens before making API call
-    const rateLimitAcquire = await distributedRateLimiter.acquire(
+    const rateLimitAcquire = await rateLimiter.acquire(
       estimatedTokens,
       RateLimitType.TPM
     );
@@ -306,14 +316,22 @@ async function loadJob(jobId: string, userId: string): Promise<any> {
 
 /**
  * Load chunk content from S3
+ * Uses the actual S3 key from job.chunkingMetadata.chunkKeys array
  */
 async function loadChunk(
-  jobId: string,
+  job: any,
   chunkIndex: number
 ): Promise<{ primaryContent: string; chunkId: string; previousSummary: string }> {
-  const key = `chunks/${jobId}/chunk-${chunkIndex}.json`;
+  // Get the actual S3 key from job metadata
+  const chunkKeys = job.chunkingMetadata?.chunkKeys || [];
 
-  logger.debug('Loading chunk from S3', { key });
+  if (!chunkKeys[chunkIndex]) {
+    throw new Error(`Chunk key not found for index ${chunkIndex}. Job may not be fully chunked.`);
+  }
+
+  const key = chunkKeys[chunkIndex];
+
+  logger.debug('Loading chunk from S3', { key, chunkIndex });
 
   const command = new GetObjectCommand({
     Bucket: CHUNKS_BUCKET,
@@ -450,7 +468,9 @@ async function updateJobStatus(
   // Add additional fields
   Object.entries(additionalData).forEach(([key, value], index) => {
     const placeholder = `:val${index}`;
-    updateExpression.push(`${key} = ${placeholder}`);
+    const attributeName = `#attr${index}`;
+    updateExpression.push(`${attributeName} = ${placeholder}`);
+    expressionAttributeNames[attributeName] = key;
     expressionAttributeValues[placeholder] = value;
   });
 

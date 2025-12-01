@@ -507,6 +507,16 @@ export class LfmtInfrastructureStack extends Stack {
             `${this.resultsBucket.bucketArn}/*`,
           ],
         }),
+        new iam.PolicyStatement({
+          effect: iam.Effect.ALLOW,
+          actions: [
+            's3:ListBucket',
+          ],
+          resources: [
+            this.documentBucket.bucketArn,
+            this.resultsBucket.bucketArn,
+          ],
+        }),
       ],
     });
 
@@ -913,6 +923,7 @@ export class LfmtInfrastructureStack extends Stack {
       itemsPath: stepfunctions.JsonPath.stringAt('$.chunks'),
       parameters: {
         'jobId.$': '$.jobId',
+        'userId.$': '$.userId',
         'chunkIndex.$': '$$.Map.Item.Value.chunkIndex',
         'targetLanguage.$': '$.targetLanguage',
         'tone.$': '$.tone',
@@ -923,24 +934,28 @@ export class LfmtInfrastructureStack extends Stack {
 
     processChunksMap.iterator(translateChunkTask);
 
-    // Update job status to COMPLETED
+    // Update job status to COMPLETED (fixed translatedChunks type bug)
     const updateJobCompleted = new tasks.DynamoUpdateItem(this, 'UpdateJobCompleted', {
       table: this.jobsTable,
       key: {
         jobId: tasks.DynamoAttributeValue.fromString(stepfunctions.JsonPath.stringAt('$.jobId')),
         userId: tasks.DynamoAttributeValue.fromString(stepfunctions.JsonPath.stringAt('$.userId')),
       },
-      updateExpression: 'SET translationStatus = :status, completedAt = :completedAt',
+      updateExpression: 'SET translationStatus = :status, translationCompletedAt = :completedAt, translatedChunks = :totalChunks, updatedAt = :updatedAt',
       expressionAttributeValues: {
         ':status': tasks.DynamoAttributeValue.fromString('COMPLETED'),
         ':completedAt': tasks.DynamoAttributeValue.fromString(stepfunctions.JsonPath.stringAt('$$.State.EnteredTime')),
+        // CRITICAL FIX: DynamoDB NUMBER attributes in Step Functions MUST be provided as strings
+        // Using States.Format() to convert the number result from States.ArrayLength() to a string
+        ':totalChunks': tasks.DynamoAttributeValue.fromString(stepfunctions.JsonPath.stringAt("States.Format('{}', States.ArrayLength($.chunks))")),
+        ':updatedAt': tasks.DynamoAttributeValue.fromString(stepfunctions.JsonPath.stringAt('$$.State.EnteredTime')),
       },
       resultPath: stepfunctions.JsonPath.DISCARD,
     });
 
     // Success state
     const successState = new stepfunctions.Succeed(this, 'TranslationSuccess', {
-      comment: 'All chunks translated successfully',
+      comment: 'All chunks translated successfully - hotfix v1',
     });
 
     // Define the state machine workflow
@@ -959,8 +974,8 @@ export class LfmtInfrastructureStack extends Stack {
           removalPolicy: RemovalPolicy.DESTROY,
           retention: logs.RetentionDays.ONE_WEEK,
         }),
-        level: stepfunctions.LogLevel.ALL,
-        includeExecutionData: true,
+        level: stepfunctions.LogLevel.ALL, // Restore to ALL for better debugging
+        includeExecutionData: true, // Restore to true for complete execution logs
       },
       tracingEnabled: true,
     });

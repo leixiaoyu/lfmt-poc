@@ -39,6 +39,7 @@ export const handler = async (
   event: APIGatewayProxyEvent
 ): Promise<APIGatewayProxyResult> => {
   const requestId = event.requestContext.requestId;
+  const requestOrigin = event.headers.origin || event.headers.Origin;
 
   logger.info('Processing registration request', { requestId });
 
@@ -67,7 +68,8 @@ export const handler = async (
         400,
         'Validation failed',
         requestId,
-        validationResult.error.flatten().fieldErrors
+        validationResult.error.flatten().fieldErrors,
+        requestOrigin
       );
     }
 
@@ -135,7 +137,8 @@ export const handler = async (
           ? 'User registered successfully. You can now log in.'
           : 'User registered successfully. Please check your email to verify your account.',
       },
-      requestId
+      requestId,
+      requestOrigin
     );
   } catch (error) {
     // Type-safe error handling
@@ -148,7 +151,9 @@ export const handler = async (
       return createErrorResponse(
         409,
         'An account with this email already exists',
-        requestId
+        requestId,
+        undefined,
+        requestOrigin
       );
     }
 
@@ -161,7 +166,9 @@ export const handler = async (
       return createErrorResponse(
         400,
         'Password does not meet security requirements. Must be at least 8 characters with uppercase, lowercase, numbers, and symbols.',
-        requestId
+        requestId,
+        undefined,
+        requestOrigin
       );
     }
 
@@ -174,7 +181,9 @@ export const handler = async (
       return createErrorResponse(
         400,
         'Invalid registration data provided',
-        requestId
+        requestId,
+        undefined,
+        requestOrigin
       );
     }
 
@@ -188,7 +197,9 @@ export const handler = async (
     return createErrorResponse(
       500,
       'Registration failed due to an internal error. Please try again later.',
-      requestId
+      requestId,
+      undefined,
+      requestOrigin
     );
   }
 };

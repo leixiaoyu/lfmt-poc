@@ -55,6 +55,7 @@ export const handler = async (
   event: APIGatewayProxyEvent
 ): Promise<APIGatewayProxyResult> => {
   const requestId = event.requestContext.requestId;
+  const requestOrigin = event.headers.origin || event.headers.Origin;
 
   logger.info('Processing getCurrentUser request', { requestId });
 
@@ -69,7 +70,9 @@ export const handler = async (
       return createErrorResponse(
         401,
         'Missing or invalid Authorization header. Expected format: "Bearer <token>"',
-        requestId
+        requestId,
+        undefined,
+        requestOrigin
       );
     }
 
@@ -120,7 +123,8 @@ export const handler = async (
       {
         user,
       },
-      requestId
+      requestId,
+      requestOrigin
     );
   } catch (error) {
     if (error instanceof NotAuthorizedException) {
@@ -132,7 +136,9 @@ export const handler = async (
       return createErrorResponse(
         401,
         'Access token is invalid or expired',
-        requestId
+        requestId,
+        undefined,
+        requestOrigin
       );
     }
 
@@ -145,7 +151,9 @@ export const handler = async (
       return createErrorResponse(
         404,
         'User not found',
-        requestId
+        requestId,
+        undefined,
+        requestOrigin
       );
     }
 
@@ -158,7 +166,9 @@ export const handler = async (
     return createErrorResponse(
       500,
       'Failed to retrieve user information. Please try again later.',
-      requestId
+      requestId,
+      undefined,
+      requestOrigin
     );
   }
 };

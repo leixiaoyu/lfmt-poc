@@ -32,12 +32,6 @@ const DOCUMENT_BUCKET = getRequiredEnv('DOCUMENT_BUCKET');
 const JOBS_TABLE = getRequiredEnv('JOBS_TABLE');
 const PRESIGNED_URL_EXPIRATION = 900; // 15 minutes
 
-// File validation constants
-const MAX_FILE_SIZE = 100 * 1024 * 1024; // 100MB
-const MIN_FILE_SIZE = 1000; // 1KB
-const ALLOWED_CONTENT_TYPE = 'text/plain';
-const ALLOWED_FILE_EXTENSION = '.txt';
-
 export const handler = async (
   event: APIGatewayProxyEvent
 ): Promise<APIGatewayProxyResult> => {
@@ -86,47 +80,6 @@ export const handler = async (
     }
 
     const { filename, fileSize, contentType } = validationResult.data;
-
-    // Additional validation
-    if (fileSize > MAX_FILE_SIZE) {
-      return createErrorResponse(
-        400,
-        `File size exceeds maximum allowed size of ${MAX_FILE_SIZE / (1024 * 1024)}MB`,
-        requestId,
-        undefined,
-        requestOrigin
-      );
-    }
-
-    if (fileSize < MIN_FILE_SIZE) {
-      return createErrorResponse(
-        400,
-        `File size is below minimum required size of ${MIN_FILE_SIZE} bytes`,
-        requestId,
-        undefined,
-        requestOrigin
-      );
-    }
-
-    if (contentType !== ALLOWED_CONTENT_TYPE) {
-      return createErrorResponse(
-        400,
-        `Invalid content type. Only ${ALLOWED_CONTENT_TYPE} is allowed`,
-        requestId,
-        undefined,
-        requestOrigin
-      );
-    }
-
-    if (!filename.endsWith(ALLOWED_FILE_EXTENSION)) {
-      return createErrorResponse(
-        400,
-        `Invalid file extension. Only ${ALLOWED_FILE_EXTENSION} files are allowed`,
-        requestId,
-        undefined,
-        requestOrigin
-      );
-    }
 
     // Generate unique IDs for file and job
     const fileId = randomUUID();

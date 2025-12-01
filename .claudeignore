@@ -1,0 +1,36 @@
+# Archive folder - historical documents not needed for active development
+# Saves ~7,500 tokens by excluding 17+ archived documents
+docs/archive/
+
+# Serena AI tool cache
+.serena/
+
+# Build outputs and dependencies
+node_modules/
+dist/
+build/
+coverage/
+cdk.out/
+.aws-sam/
+
+# Test outputs
+playwright-report/
+test-results/
+.nyc_output/
+
+# Logs and temporary files
+*.log
+tmp/
+temp/
+
+# IDE and OS files
+.vscode/
+.idea/
+.DS_Store
+
+# Package lock files (large, not needed for context)
+package-lock.json
+**/package-lock.json
+
+# OpenSpec archive (completed changes)
+openspec/changes/archive/
