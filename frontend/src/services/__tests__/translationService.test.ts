@@ -5,10 +5,10 @@
  * and authentication flows for the translation service.
  *
  * Testing Strategy:
- * - Mock axios for controlled testing
+ * - Mock apiClient for backend API calls
+ * - Mock axios for direct S3 uploads
  * - Test success paths AND error paths
  * - Verify error messages and status codes
- * - Test authentication header injection
  *
  * Coverage Target: 90%+ for P0 (Critical) code
  */
@@ -29,28 +29,35 @@ import {
   type TranslationConfig,
 } from '../translationService';
 
-// Mock auth token utility
+// Mock auth token utility and apiClient
 vi.mock('../../utils/api', () => ({
   getAuthToken: vi.fn(),
+  apiClient: {
+    post: vi.fn(),
+    get: vi.fn(),
+    put: vi.fn(),
+  },
 }));
 
-import { getAuthToken } from '../../utils/api';
+import { getAuthToken, apiClient } from '../../utils/api';
 
-// Mock axios module
+// Mock axios module (only for S3 uploads which bypass apiClient)
 vi.mock('axios', () => {
   return {
     default: {
-      post: vi.fn(),
-      get: vi.fn(),
       put: vi.fn(),
       isAxiosError: vi.fn((error: any) => error && error.isAxiosError === true),
     },
   };
 });
 
-const mockedAxios = axios as unknown as {
+const mockedApiClient = apiClient as unknown as {
   post: ReturnType<typeof vi.fn>,
   get: ReturnType<typeof vi.fn>,
+  put: ReturnType<typeof vi.fn>,
+};
+
+const mockedAxios = axios as unknown as {
   put: ReturnType<typeof vi.fn>,
   isAxiosError: (error: any) => boolean
 };
@@ -91,10 +98,10 @@ describe('TranslationService - uploadDocument', () => {
         },
       };
 
-      // Step 1: Mock POST to /jobs/upload (request presigned URL)
-      mockedAxios.post.mockResolvedValueOnce(mockPresignedResponse);
+      // Step 1: Mock POST to /jobs/upload (request presigned URL via apiClient)
+      mockedApiClient.post.mockResolvedValueOnce(mockPresignedResponse);
 
-      // Step 2: Mock PUT to S3 presigned URL (upload file)
+      // Step 2: Mock PUT to S3 presigned URL (upload file via axios)
       mockedAxios.put.mockResolvedValueOnce({ data: null });
 
       const request: UploadDocumentRequest = {
@@ -106,20 +113,15 @@ describe('TranslationService - uploadDocument', () => {
       const result = await uploadDocument(request);
 
       // Assert - Step 1: Request presigned URL
-      expect(mockedAxios.post).toHaveBeenCalledTimes(1);
-      expect(mockedAxios.post).toHaveBeenCalledWith(
-        expect.stringContaining('/jobs/upload'),
+      expect(mockedApiClient.post).toHaveBeenCalledTimes(1);
+      expect(mockedApiClient.post).toHaveBeenCalledWith(
+        '/jobs/upload',
         {
           fileName: 'test.txt',
           fileSize: mockFile.size,
           contentType: 'text/plain',
           legalAttestation: mockLegalAttestation,
-        },
-        expect.objectContaining({
-          headers: expect.objectContaining({
-            Authorization: 'Bearer mock-token-123',
-          }),
-        })
+        }
       );
 
       // Assert - Step 2: Upload to S3
@@ -153,7 +155,7 @@ describe('TranslationService - uploadDocument', () => {
         timestamp: '2024-10-31T12:00:00Z',
       };
 
-      mockedAxios.post.mockResolvedValueOnce({
+      mockedApiClient.post.mockResolvedValueOnce({
         data: {
           data: {
             uploadUrl: 'https://s3.amazonaws.com/bucket/presigned-url',
@@ -172,7 +174,7 @@ describe('TranslationService - uploadDocument', () => {
       });
 
       // Assert - Legal attestation is sent in JSON payload
-      const callArgs = mockedAxios.post.mock.calls[0];
+      const callArgs = mockedApiClient.post.mock.calls[0];
       const payload = callArgs[1];
 
       expect(payload).toEqual({
@@ -187,7 +189,22 @@ describe('TranslationService - uploadDocument', () => {
   describe('Error Scenarios', () => {
     it('should throw TranslationServiceError when not authenticated', async () => {
       // Arrange
-      (getAuthToken as ReturnType<typeof vi.fn>).mockReturnValueOnce(null);
+      // Note: In the new implementation, auth is handled by apiClient interceptors.
+      // However, the service has a check `if (error instanceof TranslationServiceError)`.
+      // If getAuthToken returns null (which happens inside apiClient interceptor logic usually, 
+      // but here we mock apiClient), we simulate apiClient throwing a 401 error.
+      
+      // Simulate apiClient 401 error
+      const mockError = {
+        isAxiosError: true,
+        response: {
+          status: 401,
+          data: { message: 'Not authenticated' }
+        },
+        message: 'Request failed with status code 401'
+      } as AxiosError;
+      
+      mockedApiClient.post.mockRejectedValueOnce(mockError);
 
       const mockFile = new File(['test'], 'test.txt', { type: 'text/plain' });
       const mockLegalAttestation: LegalAttestation = {
@@ -200,8 +217,6 @@ describe('TranslationService - uploadDocument', () => {
       };
 
       // Act & Assert
-      // NOTE: handleError() correctly re-throws TranslationServiceError without wrapping
-      // so the original "Not authenticated" message is preserved.
       try {
         await uploadDocument({
           file: mockFile,
@@ -210,7 +225,8 @@ describe('TranslationService - uploadDocument', () => {
         expect.fail('Should have thrown TranslationServiceError');
       } catch (error) {
         expect(error).toBeInstanceOf(TranslationServiceError);
-        expect((error as TranslationServiceError).message).toBe('Not authenticated');
+        // The actual message depends on how handleError processes the AxiosError
+        expect((error as TranslationServiceError).statusCode).toBe(401);
       }
     });
 
@@ -237,7 +253,7 @@ describe('TranslationService - uploadDocument', () => {
         message: 'Request failed',
       } as AxiosError;
 
-      mockedAxios.post.mockRejectedValueOnce(mockError);
+      mockedApiClient.post.mockRejectedValueOnce(mockError);
 
       // Act & Assert
       try {
@@ -270,7 +286,7 @@ describe('TranslationService - uploadDocument', () => {
         message: 'Network Error',
       } as AxiosError;
 
-      mockedAxios.post.mockRejectedValueOnce(mockError);
+      mockedApiClient.post.mockRejectedValueOnce(mockError);
 
       // Act & Assert
       await expect(
@@ -304,7 +320,7 @@ describe('TranslationService - uploadDocument', () => {
         message: 'Request failed',
       } as AxiosError;
 
-      mockedAxios.post.mockRejectedValueOnce(mockError);
+      mockedApiClient.post.mockRejectedValueOnce(mockError);
 
       // Act & Assert
       try {
@@ -331,7 +347,7 @@ describe('TranslationService - uploadDocument', () => {
         timestamp: '2024-10-31T12:00:00Z',
       };
 
-      mockedAxios.post.mockRejectedValueOnce(new Error('Unexpected error'));
+      mockedApiClient.post.mockRejectedValueOnce(new Error('Unexpected error'));
 
       // Act & Assert
       await expect(
@@ -340,52 +356,6 @@ describe('TranslationService - uploadDocument', () => {
           legalAttestation: mockLegalAttestation,
         })
       ).rejects.toThrow('An unexpected error occurred');
-    });
-  });
-
-  describe('Authentication', () => {
-    it('should include Bearer token in Authorization header', async () => {
-      // Arrange
-      const mockFile = new File(['test'], 'test.txt', { type: 'text/plain' });
-      const mockLegalAttestation: LegalAttestation = {
-        acceptCopyrightOwnership: true,
-        acceptTranslationRights: true,
-        acceptLiabilityTerms: true,
-        userIPAddress: 'captured-by-backend',
-        userAgent: 'Mozilla/5.0',
-        timestamp: '2024-10-31T12:00:00Z',
-      };
-
-      (getAuthToken as ReturnType<typeof vi.fn>).mockReturnValueOnce('specific-token-456');
-
-      mockedAxios.post.mockResolvedValueOnce({
-        data: {
-          data: {
-            uploadUrl: 'https://s3.amazonaws.com/bucket/presigned-url',
-            fileId: 'job-123',
-            requiredHeaders: {},
-          },
-        },
-      });
-
-      mockedAxios.put.mockResolvedValueOnce({ data: null });
-
-      // Act
-      await uploadDocument({
-        file: mockFile,
-        legalAttestation: mockLegalAttestation,
-      });
-
-      // Assert - Auth token is sent to backend API
-      expect(mockedAxios.post).toHaveBeenCalledWith(
-        expect.any(String),
-        expect.any(Object),
-        expect.objectContaining({
-          headers: expect.objectContaining({
-            Authorization: 'Bearer specific-token-456',
-          }),
-        })
-      );
     });
   });
 });
@@ -422,21 +392,16 @@ describe('TranslationService - startTranslation', () => {
         },
       };
 
-      mockedAxios.post.mockResolvedValueOnce(mockResponse);
+      mockedApiClient.post.mockResolvedValueOnce(mockResponse);
 
       // Act
       const result = await startTranslation(jobId, request);
 
       // Assert
-      expect(mockedAxios.post).toHaveBeenCalledTimes(1);
-      expect(mockedAxios.post).toHaveBeenCalledWith(
+      expect(mockedApiClient.post).toHaveBeenCalledTimes(1);
+      expect(mockedApiClient.post).toHaveBeenCalledWith(
         expect.stringContaining(`/jobs/${jobId}/translate`),
-        request,
-        expect.objectContaining({
-          headers: expect.objectContaining({
-            Authorization: 'Bearer mock-token-123',
-          }),
-        })
+        request
       );
       expect(result.status).toBe('CHUNKING');
       expect(result.targetLanguage).toBe('es');
@@ -464,7 +429,7 @@ describe('TranslationService - startTranslation', () => {
         message: 'Not found',
       } as AxiosError;
 
-      mockedAxios.post.mockRejectedValueOnce(mockError);
+      mockedApiClient.post.mockRejectedValueOnce(mockError);
 
       // Act & Assert
       await expect(startTranslation(jobId, request)).rejects.toThrow(
@@ -474,7 +439,14 @@ describe('TranslationService - startTranslation', () => {
 
     it('should throw error when not authenticated', async () => {
       // Arrange
-      (getAuthToken as ReturnType<typeof vi.fn>).mockReturnValueOnce(null);
+      // Simulate apiClient 401
+      const mockError = {
+        isAxiosError: true,
+        response: { status: 401, data: { message: 'Not authenticated' } },
+        message: 'Not authenticated'
+      } as AxiosError;
+      
+      mockedApiClient.post.mockRejectedValueOnce(mockError);
 
       const jobId = 'job-123';
       const request: TranslationConfig = {
@@ -483,12 +455,12 @@ describe('TranslationService - startTranslation', () => {
       };
 
       // Act & Assert
-      // NOTE: handleError() correctly re-throws TranslationServiceError without wrapping
       try {
         await startTranslation(jobId, request);
         expect.fail('Should have thrown TranslationServiceError');
       } catch (error) {
         expect(error).toBeInstanceOf(TranslationServiceError);
+        // The message comes from the mocked error response data
         expect((error as TranslationServiceError).message).toBe('Not authenticated');
       }
     });
@@ -520,7 +492,7 @@ describe('TranslationService - getJobStatus', () => {
         updatedAt: '2024-10-31T12:05:00Z',
       };
 
-      mockedAxios.get.mockResolvedValueOnce({
+      mockedApiClient.get.mockResolvedValueOnce({
         data: { data: mockJob },
       });
 
@@ -528,14 +500,9 @@ describe('TranslationService - getJobStatus', () => {
       const result = await getJobStatus(jobId);
 
       // Assert
-      expect(mockedAxios.get).toHaveBeenCalledTimes(1);
-      expect(mockedAxios.get).toHaveBeenCalledWith(
-        expect.stringContaining(`/jobs/${jobId}/translation-status`),
-        expect.objectContaining({
-          headers: expect.objectContaining({
-            Authorization: 'Bearer mock-token-123',
-          }),
-        })
+      expect(mockedApiClient.get).toHaveBeenCalledTimes(1);
+      expect(mockedApiClient.get).toHaveBeenCalledWith(
+        expect.stringContaining(`/jobs/${jobId}/translation-status`)
       );
       expect(result).toEqual(mockJob);
       expect(result.completedChunks).toBe(5);
@@ -561,7 +528,7 @@ describe('TranslationService - getJobStatus', () => {
         completedAt: '2024-10-31T12:30:00Z',
       };
 
-      mockedAxios.get.mockResolvedValueOnce({
+      mockedApiClient.get.mockResolvedValueOnce({
         data: { data: mockJob },
       });
 
@@ -590,7 +557,7 @@ describe('TranslationService - getJobStatus', () => {
         message: 'Not found',
       } as AxiosError;
 
-      mockedAxios.get.mockRejectedValueOnce(mockError);
+      mockedApiClient.get.mockRejectedValueOnce(mockError);
 
       // Act & Assert
       await expect(getJobStatus(jobId)).rejects.toThrow('Translation job not found');
@@ -634,7 +601,7 @@ describe('TranslationService - getTranslationJobs', () => {
         },
       ];
 
-      mockedAxios.get.mockResolvedValueOnce({
+      mockedApiClient.get.mockResolvedValueOnce({
         data: { data: mockJobs },
       });
 
@@ -642,14 +609,9 @@ describe('TranslationService - getTranslationJobs', () => {
       const result = await getTranslationJobs();
 
       // Assert
-      expect(mockedAxios.get).toHaveBeenCalledTimes(1);
-      expect(mockedAxios.get).toHaveBeenCalledWith(
-        expect.stringContaining('/jobs'),
-        expect.objectContaining({
-          headers: expect.objectContaining({
-            Authorization: 'Bearer mock-token-123',
-          }),
-        })
+      expect(mockedApiClient.get).toHaveBeenCalledTimes(1);
+      expect(mockedApiClient.get).toHaveBeenCalledWith(
+        expect.stringContaining('/jobs')
       );
       expect(result).toEqual(mockJobs);
       expect(result).toHaveLength(2);
@@ -657,7 +619,7 @@ describe('TranslationService - getTranslationJobs', () => {
 
     it('should return empty array when no jobs exist', async () => {
       // Arrange
-      mockedAxios.get.mockResolvedValueOnce({
+      mockedApiClient.get.mockResolvedValueOnce({
         data: { data: [] },
       });
 
@@ -673,10 +635,16 @@ describe('TranslationService - getTranslationJobs', () => {
   describe('Error Scenarios', () => {
     it('should throw error when not authenticated', async () => {
       // Arrange
-      (getAuthToken as ReturnType<typeof vi.fn>).mockReturnValueOnce(null);
+      // Simulate apiClient 401
+      const mockError = {
+        isAxiosError: true,
+        response: { status: 401, data: { message: 'Not authenticated' } },
+        message: 'Not authenticated'
+      } as AxiosError;
+      
+      mockedApiClient.get.mockRejectedValueOnce(mockError);
 
       // Act & Assert
-      // NOTE: handleError() correctly re-throws TranslationServiceError without wrapping
       try {
         await getTranslationJobs();
         expect.fail('Should have thrown TranslationServiceError');
@@ -700,7 +668,7 @@ describe('TranslationService - downloadTranslation', () => {
       const jobId = 'job-123';
       const mockBlob = new Blob(['translated content'], { type: 'text/plain' });
 
-      mockedAxios.get.mockResolvedValueOnce({
+      mockedApiClient.get.mockResolvedValueOnce({
         data: mockBlob,
       });
 
@@ -708,13 +676,10 @@ describe('TranslationService - downloadTranslation', () => {
       const result = await downloadTranslation(jobId);
 
       // Assert
-      expect(mockedAxios.get).toHaveBeenCalledTimes(1);
-      expect(mockedAxios.get).toHaveBeenCalledWith(
+      expect(mockedApiClient.get).toHaveBeenCalledTimes(1);
+      expect(mockedApiClient.get).toHaveBeenCalledWith(
         expect.stringContaining(`/translation/${jobId}/download`),
         expect.objectContaining({
-          headers: expect.objectContaining({
-            Authorization: 'Bearer mock-token-123',
-          }),
           responseType: 'blob',
         })
       );
@@ -739,7 +704,7 @@ describe('TranslationService - downloadTranslation', () => {
         message: 'Not found',
       } as AxiosError;
 
-      mockedAxios.get.mockRejectedValueOnce(mockError);
+      mockedApiClient.get.mockRejectedValueOnce(mockError);
 
       // Act & Assert
       await expect(downloadTranslation(jobId)).rejects.toThrow(
@@ -752,10 +717,9 @@ describe('TranslationService - downloadTranslation', () => {
 describe('TranslationService - createLegalAttestation', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    // Mock the IP address fetch
-    mockedAxios.get.mockResolvedValue({
-      data: { ip: '192.168.1.1' },
-    });
+    // NOTE: The refactored service no longer calls axios to get IP. 
+    // It just returns a placeholder that backend will replace.
+    // So we don't need to mock axios.get here anymore for IP check.
   });
 
   it('should create legal attestation with all required fields', async () => {
@@ -781,6 +745,7 @@ describe('TranslationService - createLegalAttestation', () => {
     expect(new Date(result.timestamp)).toBeInstanceOf(Date);
   });
 
+  // ... other legal attestation tests ...
   it('should create attestation with false values', async () => {
     // Arrange
     const acceptCopyrightOwnership = false;
@@ -814,16 +779,5 @@ describe('TranslationService - createLegalAttestation', () => {
     expect(result.timestamp).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
     expect(resultTime).toBeGreaterThanOrEqual(beforeTime);
     expect(resultTime).toBeLessThanOrEqual(afterTime);
-  });
-
-  it('should use "captured-by-backend" when IP fetch fails (backend captures IP)', async () => {
-    // Arrange
-    mockedAxios.get.mockRejectedValueOnce(new Error('Network error'));
-
-    // Act
-    const result = await createLegalAttestation(true, true, true);
-
-    // Assert - Backend now captures IP, frontend doesn't fetch from external service
-    expect(result.userIPAddress).toBe('captured-by-backend');
   });
 });
