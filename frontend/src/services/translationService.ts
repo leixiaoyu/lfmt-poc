@@ -6,9 +6,7 @@
  */
 
 import axios, { AxiosError } from 'axios';
-import { getAuthToken } from '../utils/api';
-
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/v1';
+import { apiClient } from '../utils/api';
 
 /**
  * Translation Job Status
@@ -83,19 +81,6 @@ export class TranslationServiceError extends Error {
 }
 
 /**
- * Get authenticated headers
- */
-const getAuthHeaders = () => {
-  const token = getAuthToken();
-  if (!token) {
-    throw new TranslationServiceError('Not authenticated', 401);
-  }
-  return {
-    Authorization: `Bearer ${token}`,
-  };
-};
-
-/**
  * Handle API errors
  */
 const handleError = (error: unknown): never => {
@@ -118,7 +103,7 @@ const handleError = (error: unknown): never => {
 export const uploadDocument = async (request: UploadDocumentRequest): Promise<TranslationJob> => {
   try {
     // Step 1: Request presigned URL from backend
-    const presignedResponse = await axios.post<{
+    const presignedResponse = await apiClient.post<{
       data: {
         uploadUrl: string;
         fileId: string;
@@ -126,21 +111,19 @@ export const uploadDocument = async (request: UploadDocumentRequest): Promise<Tr
         requiredHeaders: Record<string, string>;
       };
     }>(
-      `${API_BASE_URL}/jobs/upload`,
+      '/jobs/upload',
       {
         fileName: request.file.name,
         fileSize: request.file.size,
         contentType: request.file.type,
         legalAttestation: request.legalAttestation,
-      },
-      {
-        headers: getAuthHeaders(),
       }
     );
 
     const { uploadUrl, fileId, requiredHeaders } = presignedResponse.data.data;
 
     // Step 2: Upload file directly to S3 using presigned URL
+    // Note: We use axios directly here because S3 doesn't need our API interceptors/auth headers
     await axios.put(uploadUrl, request.file, {
       headers: {
         ...requiredHeaders,
@@ -174,14 +157,11 @@ export const startTranslation = async (
   config: TranslationConfig
 ): Promise<TranslationJob> => {
   try {
-    const response = await axios.post<{ data: TranslationJob }>(
-      `${API_BASE_URL}/jobs/${jobId}/translate`,
+    const response = await apiClient.post<{ data: TranslationJob }>(
+      `/jobs/${jobId}/translate`,
       {
         targetLanguage: config.targetLanguage,
         tone: config.tone,
-      },
-      {
-        headers: getAuthHeaders(),
       }
     );
 
@@ -196,11 +176,8 @@ export const startTranslation = async (
  */
 export const getJobStatus = async (jobId: string): Promise<TranslationJob> => {
   try {
-    const response = await axios.get<{ data: TranslationJob }>(
-      `${API_BASE_URL}/jobs/${jobId}/translation-status`,
-      {
-        headers: getAuthHeaders(),
-      }
+    const response = await apiClient.get<{ data: TranslationJob }>(
+      `/jobs/${jobId}/translation-status`
     );
 
     return response.data.data;
@@ -214,11 +191,8 @@ export const getJobStatus = async (jobId: string): Promise<TranslationJob> => {
  */
 export const getTranslationJobs = async (): Promise<TranslationJob[]> => {
   try {
-    const response = await axios.get<{ data: TranslationJob[] }>(
-      `${API_BASE_URL}/jobs`,
-      {
-        headers: getAuthHeaders(),
-      }
+    const response = await apiClient.get<{ data: TranslationJob[] }>(
+      '/jobs'
     );
 
     return response.data.data;
@@ -232,8 +206,7 @@ export const getTranslationJobs = async (): Promise<TranslationJob[]> => {
  */
 export const downloadTranslation = async (jobId: string): Promise<Blob> => {
   try {
-    const response = await axios.get(`${API_BASE_URL}/translation/${jobId}/download`, {
-      headers: getAuthHeaders(),
+    const response = await apiClient.get(`/translation/${jobId}/download`, {
       responseType: 'blob',
     });
 
