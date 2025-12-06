@@ -98,18 +98,32 @@ aws cloudfront create-invalidation --distribution-id E3EV4PBKYTNTRE --paths "/*"
 **Symptom**: Frontend shows "Unauthorized" error when uploading files
 
 **Root Causes**:
-1. **Expired token**: Cognito access tokens expire after 1 hour
-2. **Wrong API endpoint**: Frontend using localhost instead of AWS API Gateway
+1. **Email not verified**: Cognito User Pool requires `email_verified: true` for API authorization
+2. **Expired token**: Cognito access tokens expire after 1 hour
+3. **Wrong API endpoint**: Frontend using localhost instead of AWS API Gateway
 
 **Solutions**:
 
-1. **Check deployed bundle has correct API URL**:
+1. **Email Verification Issue (Primary Fix - Dec 2, 2024)**:
+   - **Root Cause**: Dev environment disabled email auto-verification to avoid AWS SES limits (50 emails/day)
+   - **Solution**: Pre-signup Lambda trigger now auto-verifies email for all new dev users
+   - **Infrastructure**: `/backend/infrastructure/lib/lfmt-infrastructure-stack.ts:339-368`
+   - For existing users with `email_verified: false`:
+     ```bash
+     aws cognito-idp admin-update-user-attributes \
+       --user-pool-id us-east-1_tyG2buO70 \
+       --username <email> \
+       --user-attributes Name=email_verified,Value=true
+     ```
+   - User must log out and log back in after attribute update
+
+2. **Check deployed bundle has correct API URL**:
    ```bash
    curl -s https://d39xcun7144jgl.cloudfront.net/assets/index-*.js | grep -o "execute-api"
    ```
    Should find `execute-api` in the bundle. If not, rebuild with `.env` file.
 
-2. **Clear user tokens**:
+3. **Clear user tokens**:
    - User should log out and log back in
    - Or run in browser console:
      ```javascript
@@ -117,7 +131,7 @@ aws cloudfront create-invalidation --distribution-id E3EV4PBKYTNTRE --paths "/*"
      location.reload();
      ```
 
-3. **Verify .env file was used during build**:
+4. **Verify .env file was used during build**:
    ```bash
    cd frontend
    cat .env  # Should contain VITE_API_URL with execute-api URL
