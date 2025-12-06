@@ -335,6 +335,37 @@ export class LfmtInfrastructureStack extends Stack {
       },
     });
 
+    // Add Pre-Signup Lambda trigger for dev environment
+    // Auto-confirms users and verifies email to avoid SES limits
+    if (isDev) {
+      const preSignUpFunction = new lambda.Function(this, 'PreSignUpTrigger', {
+        runtime: lambda.Runtime.NODEJS_18_X,
+        handler: 'index.handler',
+        code: lambda.Code.fromInline(`
+          exports.handler = async (event) => {
+            const isDev = process.env.ENVIRONMENT === 'dev';
+
+            if (isDev) {
+              // Auto-confirm user (skip email verification)
+              event.response.autoConfirmUser = true;
+
+              // Auto-verify email (set email_verified = true)
+              event.response.autoVerifyEmail = true;
+            }
+
+            return event;
+          };
+        `),
+        description: 'Auto-confirm users and verify email in dev environment',
+        environment: {
+          ENVIRONMENT: isDev ? 'dev' : 'prod',
+        },
+        logRetention: logs.RetentionDays.ONE_WEEK,
+      });
+
+      this.userPool.addTrigger(cognito.UserPoolOperation.PRE_SIGN_UP, preSignUpFunction);
+    }
+
     // Add User Pool Domain (required for Cognito sign-up flow)
     // Create a simple hash from account ID to ensure uniqueness
     const accountHash = Buffer.from(this.account).toString('base64').toLowerCase().replace(/[^a-z0-9]/g, '').substring(0, 8);
