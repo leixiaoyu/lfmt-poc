@@ -50,6 +50,11 @@ shared-types/src/**/*.d.ts.map
 **/secrets.json
 **/config/secrets.*
 
+# Demo credentials (NEVER COMMIT)
+demo/CREDENTIALS.md
+demo/credentials.txt
+demo/*.credentials
+
 # AWS CDK
 cdk.out/
 cdk.context.json
