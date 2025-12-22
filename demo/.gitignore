@@ -1,0 +1,10 @@
+# Demo credentials (do not commit)
+credentials.txt
+*.credentials
+
+# Translation results (large files)
+results/*.txt
+results/*.json
+
+# Metrics reports may contain sensitive data
+results/*-metrics.json
