@@ -173,6 +173,9 @@ stack-outputs.json
 # Serena AI tool cache
 .serena/
 
+# Claude Code context files (session-specific)
+.claude/context/
+
 **/config/local.*
 **/config/dev.*
 **/config/prod.*frontend/.env.local
