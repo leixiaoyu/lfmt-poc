@@ -22,7 +22,7 @@ import {
 import { registerRequestSchema } from '@lfmt/shared-types';
 import { createSuccessResponse, createErrorResponse } from '../shared/api-response';
 import Logger from '../shared/logger';
-import { getRequiredEnv } from '../shared/env';
+import { getRequiredEnv, getOptionalEnv } from '../shared/env';
 
 const logger = new Logger('lfmt-auth-register');
 const cognitoClient = new CognitoIdentityProviderClient({});
@@ -30,7 +30,7 @@ const cognitoClient = new CognitoIdentityProviderClient({});
 // Validate environment variables at cold start
 const COGNITO_CLIENT_ID = getRequiredEnv('COGNITO_CLIENT_ID');
 const COGNITO_USER_POOL_ID = getRequiredEnv('COGNITO_USER_POOL_ID');
-const ENVIRONMENT = process.env.ENVIRONMENT || 'dev';
+const ENVIRONMENT = getOptionalEnv('ENVIRONMENT', 'dev');
 
 // Auto-confirm users in dev environment (email verification disabled)
 const AUTO_CONFIRM_USERS = ENVIRONMENT.includes('Dev');

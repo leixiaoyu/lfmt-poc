@@ -14,7 +14,7 @@ import {
 import { SFNClient, StartExecutionCommand, StartExecutionCommandOutput } from '@aws-sdk/client-sfn';
 import { marshall, unmarshall } from '@aws-sdk/util-dynamodb';
 import Logger from '../shared/logger';
-import { getRequiredEnv } from '../shared/env';
+import { getRequiredEnv, getOptionalEnv } from '../shared/env';
 import { createSuccessResponse, createErrorResponse } from '../shared/api-response';
 import { isValidTargetLanguage, TargetLanguage } from '../translation/types';
 
@@ -24,7 +24,7 @@ const sfnClient = new SFNClient({});
 
 const JOBS_TABLE = getRequiredEnv('JOBS_TABLE');
 const STATE_MACHINE_NAME = getRequiredEnv('STATE_MACHINE_NAME'); // State machine name (ARN constructed dynamically)
-const AWS_REGION = process.env.AWS_REGION || 'us-east-1';
+const AWS_REGION = getOptionalEnv('AWS_REGION', 'us-east-1');
 
 /**
  * Construct State Machine ARN dynamically to avoid circular dependency in CDK
