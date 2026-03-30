@@ -60,6 +60,35 @@ export const handler = async (
   logger.info('Processing getCurrentUser request', { requestId });
 
   try {
+    // Check if user is already authorized by API Gateway Cognito authorizer
+    // If so, the user information is available in the authorizer context
+    const authorizerClaims = event.requestContext.authorizer?.claims;
+
+    if (authorizerClaims) {
+      // User is authenticated via API Gateway Cognito authorizer
+      logger.info('User authenticated via Cognito authorizer', {
+        requestId,
+        userId: authorizerClaims.sub,
+      });
+
+      const user = {
+        id: authorizerClaims.sub,
+        email: authorizerClaims.email || '',
+        firstName: authorizerClaims.given_name || '',
+        lastName: authorizerClaims.family_name || '',
+      };
+
+      return createSuccessResponse(
+        200,
+        {
+          user,
+        },
+        requestId,
+        requestOrigin
+      );
+    }
+
+    // Fallback: Manual token validation (for backwards compatibility)
     // Extract access token from Authorization header
     const authHeader = event.headers.Authorization || event.headers.authorization;
     const accessToken = extractBearerToken(authHeader);
@@ -76,7 +105,7 @@ export const handler = async (
       );
     }
 
-    logger.info('Verifying access token with Cognito', { requestId });
+    logger.info('Verifying access token with Cognito (fallback)', { requestId });
 
     // Verify token and get user attributes from Cognito
     const command = new GetUserCommand({

@@ -488,6 +488,21 @@ export class LfmtInfrastructureStack extends Stack {
   private createIamRoles() {
     // Lambda Execution Role with required permissions
     // IMPORTANT: Use separate managed policies instead of inline policies to avoid AWS IAM size limits
+    //
+    // NOTE: All Lambda functions currently share this role for simplicity.
+    // This follows least-privilege where possible:
+    // - DynamoDB: Scoped to specific tables (no wildcards)
+    // - S3: Scoped to specific buckets (no wildcards)
+    // - Cognito: Scoped to specific User Pool (no wildcards)
+    // - Secrets Manager: Scoped to lfmt/gemini-api-key-* pattern
+    // - Lambda Invoke: Scoped to lfmt-* functions in this account/region
+    //
+    // Future optimization: Create individual roles per Lambda function with minimal permissions
+    // Function-specific permission requirements:
+    // - Auth functions: Cognito only
+    // - Upload functions: S3 + DynamoDB (jobs table)
+    // - Translation functions: S3 + DynamoDB (all tables) + Secrets Manager + Lambda Invoke
+    // - Chunking functions: S3 + DynamoDB (jobs table)
     this.lambdaRole = new iam.Role(this, 'LambdaExecutionRole', {
       assumedBy: new iam.ServicePrincipal('lambda.amazonaws.com'),
       managedPolicies: [
@@ -574,6 +589,13 @@ export class LfmtInfrastructureStack extends Stack {
     });
 
     // Secrets Manager Access Policy (separate managed policy)
+    // NOTE: The Gemini API key secret must be created manually before deployment:
+    //   aws secretsmanager create-secret \
+    //     --name lfmt/gemini-api-key-${this.stackName} \
+    //     --description "Gemini API key for LFMT translation service" \
+    //     --secret-string "YOUR_GEMINI_API_KEY"
+    //
+    // This secret is NOT created by CDK for security reasons (avoid storing secrets in code)
     const secretsPolicy = new iam.ManagedPolicy(this, 'LambdaSecretsPolicy', {
       roles: [this.lambdaRole],
       statements: [
@@ -633,13 +655,13 @@ export class LfmtInfrastructureStack extends Stack {
       COGNITO_USER_POOL_ID: this.userPool.userPoolId,
       ENVIRONMENT: this.stackName,
       JOBS_TABLE: this.jobsTable.tableName,
-      JOBS_TABLE_NAME: this.jobsTable.tableName,
       USERS_TABLE_NAME: this.usersTable.tableName,
       ATTESTATIONS_TABLE_NAME: this.attestationsTable.tableName,
       RATE_LIMIT_BUCKETS_TABLE: (this as any).rateLimitBucketsTable.tableName,
       DOCUMENT_BUCKET: this.documentBucket.bucketName,
       CHUNKS_BUCKET: this.documentBucket.bucketName, // Chunks stored in same bucket as documents
       GEMINI_API_KEY_SECRET_NAME: `lfmt/gemini-api-key-${this.stackName}`,
+      AWS_REGION: this.region, // Explicit AWS region for Step Functions ARN construction
       // Pass all allowed origins as comma-separated list (includes localhost + CloudFront URL)
       ALLOWED_ORIGINS: this.getAllowedApiOrigins().join(','),
     };
@@ -1099,10 +1121,18 @@ export class LfmtInfrastructureStack extends Stack {
       }),
     });
 
-    // GET /auth/me - Get Current User (requires valid access token)
+    // Create Cognito authorizer for protected endpoints
+    const authorizer = new apigateway.CognitoUserPoolsAuthorizer(this, 'CognitoAuthorizer', {
+      cognitoUserPools: [this.userPool],
+      identitySource: 'method.request.header.Authorization',
+      authorizerName: 'cognito-authorizer',
+    });
+
+    // GET /auth/me - Get Current User (requires Cognito authorization)
     const me = auth.addResource('me');
     me.addMethod('GET', new apigateway.LambdaIntegration(this.getCurrentUserFunction), {
-      authorizationType: apigateway.AuthorizationType.NONE,
+      authorizationType: apigateway.AuthorizationType.COGNITO,
+      authorizer: authorizer,
       requestValidator: new apigateway.RequestValidator(this, 'GetCurrentUserRequestValidator', {
         restApi: this.api,
         requestValidatorName: 'get-current-user-validator',
@@ -1127,13 +1157,6 @@ export class LfmtInfrastructureStack extends Stack {
         ],
         allowCredentials: true,
       },
-    });
-
-    // Create Cognito authorizer for protected endpoints
-    const authorizer = new apigateway.CognitoUserPoolsAuthorizer(this, 'CognitoAuthorizer', {
-      cognitoUserPools: [this.userPool],
-      identitySource: 'method.request.header.Authorization',
-      authorizerName: 'cognito-authorizer',
     });
 
     uploadResource.addMethod('POST', new apigateway.LambdaIntegration(this.uploadRequestFunction), {
