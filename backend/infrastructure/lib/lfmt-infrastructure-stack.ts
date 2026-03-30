@@ -661,7 +661,7 @@ export class LfmtInfrastructureStack extends Stack {
       DOCUMENT_BUCKET: this.documentBucket.bucketName,
       CHUNKS_BUCKET: this.documentBucket.bucketName, // Chunks stored in same bucket as documents
       GEMINI_API_KEY_SECRET_NAME: `lfmt/gemini-api-key-${this.stackName}`,
-      AWS_REGION: this.region, // Explicit AWS region for Step Functions ARN construction
+      STACK_REGION: this.region, // Region for Step Functions ARN construction (AWS_REGION is reserved by Lambda runtime)
       // Pass all allowed origins as comma-separated list (includes localhost + CloudFront URL)
       ALLOWED_ORIGINS: this.getAllowedApiOrigins().join(','),
     };

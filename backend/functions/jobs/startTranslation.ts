@@ -24,7 +24,8 @@ const sfnClient = new SFNClient({});
 
 const JOBS_TABLE = getRequiredEnv('JOBS_TABLE');
 const STATE_MACHINE_NAME = getRequiredEnv('STATE_MACHINE_NAME'); // State machine name (ARN constructed dynamically)
-const AWS_REGION = getOptionalEnv('AWS_REGION', 'us-east-1');
+// AWS_REGION is set automatically by Lambda runtime; STACK_REGION is our explicit fallback from CDK
+const AWS_REGION = process.env.AWS_REGION || getOptionalEnv('STACK_REGION', 'us-east-1');
 
 /**
  * Construct State Machine ARN dynamically to avoid circular dependency in CDK
