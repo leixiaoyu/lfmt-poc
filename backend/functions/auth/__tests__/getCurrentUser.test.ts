@@ -354,6 +354,166 @@ describe('getCurrentUser Lambda Function', () => {
       expect(body.user.email).toBe('test@example.com');
     });
   });
+
+  /**
+   * Tests for Cognito Authorizer Code Path (lines 63-107 in getCurrentUser.ts)
+   * This code path is triggered when API Gateway includes authorizer claims in the event
+   */
+  describe('Cognito Authorizer Code Path', () => {
+    it('should return user from authorizer claims without calling GetUserCommand (happy path)', async () => {
+      // Create event with authorizer claims (simulating API Gateway Cognito authorizer)
+      const event = createMockEvent({
+        headers: { Authorization: 'Bearer some-token' },
+        requestContext: {
+          ...createMockEvent().requestContext,
+          authorizer: {
+            claims: {
+              sub: 'authorizer-user-id-123',
+              email: 'authorizer@example.com',
+              given_name: 'John',
+              family_name: 'Authorizer',
+            },
+          },
+        },
+      });
+
+      const response = await handler(event);
+
+      // Verify response is successful
+      expect(response.statusCode).toBe(200);
+      const body = JSON.parse(response.body);
+
+      // Verify user data comes from authorizer claims
+      expect(body.user).toEqual({
+        id: 'authorizer-user-id-123',
+        email: 'authorizer@example.com',
+        firstName: 'John',
+        lastName: 'Authorizer',
+      });
+
+      // CRITICAL: Verify GetUserCommand was NOT called (optimization achieved)
+      const calls = cognitoMock.commandCalls(GetUserCommand);
+      expect(calls).toHaveLength(0);
+    });
+
+    it('should fall back to manual token validation when authorizer claims missing sub claim', async () => {
+      // Create event with authorizer claims but missing required 'sub' field
+      const event = createMockEvent({
+        headers: { Authorization: 'Bearer fallback-token' },
+        requestContext: {
+          ...createMockEvent().requestContext,
+          authorizer: {
+            claims: {
+              // Missing 'sub' claim - should trigger fallback
+              email: 'incomplete@example.com',
+              given_name: 'Incomplete',
+            },
+          },
+        },
+      });
+
+      // Mock fallback Cognito response
+      cognitoMock.on(GetUserCommand).resolves({
+        Username: 'fallback-user-id',
+        UserAttributes: [
+          { Name: 'email', Value: 'fallback@example.com' },
+          { Name: 'given_name', Value: 'Fallback' },
+          { Name: 'family_name', Value: 'User' },
+        ],
+      });
+
+      const response = await handler(event);
+
+      // Verify response is successful
+      expect(response.statusCode).toBe(200);
+      const body = JSON.parse(response.body);
+
+      // Verify fallback to GetUserCommand was used
+      const calls = cognitoMock.commandCalls(GetUserCommand);
+      expect(calls).toHaveLength(1);
+
+      // Verify user data comes from fallback (not from incomplete authorizer claims)
+      expect(body.user.email).toBe('fallback@example.com');
+    });
+
+    it('should fall back gracefully when authorizer claims parsing throws error', async () => {
+      // Create event with authorizer claims that will cause parsing errors
+      const event = createMockEvent({
+        headers: { Authorization: 'Bearer error-recovery-token' },
+        requestContext: {
+          ...createMockEvent().requestContext,
+          authorizer: {
+            claims: {
+              sub: 'error-user-id',
+              // Intentionally create a scenario where accessing claims might fail
+              // by using a getter that throws
+              get email() {
+                throw new Error('Simulated claims parsing error');
+              },
+            },
+          },
+        },
+      });
+
+      // Mock fallback Cognito response
+      cognitoMock.on(GetUserCommand).resolves({
+        Username: 'recovered-user-id',
+        UserAttributes: [
+          { Name: 'email', Value: 'recovered@example.com' },
+          { Name: 'given_name', Value: 'Recovered' },
+          { Name: 'family_name', Value: 'User' },
+        ],
+      });
+
+      const response = await handler(event);
+
+      // Verify response is successful despite parsing error
+      expect(response.statusCode).toBe(200);
+      const body = JSON.parse(response.body);
+
+      // Verify fallback to GetUserCommand was used
+      const calls = cognitoMock.commandCalls(GetUserCommand);
+      expect(calls).toHaveLength(1);
+
+      // Verify user data comes from fallback
+      expect(body.user.email).toBe('recovered@example.com');
+    });
+
+    it('should handle authorizer claims with partial data gracefully', async () => {
+      // Create event with authorizer claims containing only some fields
+      const event = createMockEvent({
+        headers: { Authorization: 'Bearer partial-token' },
+        requestContext: {
+          ...createMockEvent().requestContext,
+          authorizer: {
+            claims: {
+              sub: 'partial-user-id-456',
+              email: 'partial@example.com',
+              // Missing given_name and family_name
+            },
+          },
+        },
+      });
+
+      const response = await handler(event);
+
+      // Verify response is successful
+      expect(response.statusCode).toBe(200);
+      const body = JSON.parse(response.body);
+
+      // Verify user data with empty strings for missing fields
+      expect(body.user).toEqual({
+        id: 'partial-user-id-456',
+        email: 'partial@example.com',
+        firstName: '', // Should default to empty string
+        lastName: '',  // Should default to empty string
+      });
+
+      // Verify GetUserCommand was NOT called (authorizer path used)
+      const calls = cognitoMock.commandCalls(GetUserCommand);
+      expect(calls).toHaveLength(0);
+    });
+  });
 });
 
 /**
