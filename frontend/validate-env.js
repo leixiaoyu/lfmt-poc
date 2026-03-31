@@ -1,6 +1,22 @@
 /**
  * Build-time environment variable validation
  * Ensures required variables are set before building
+ *
+ * IMPORTANT: This script validates the production build pipeline where environment
+ * variables MUST be set in the actual environment (e.g., CI/CD, shell exports).
+ *
+ * For local development:
+ * - Vite automatically loads .env, .env.local, and .env.development files
+ * - This script runs BEFORE Vite starts, so it won't see those .env files
+ * - If you see validation failures locally, export the variable in your shell:
+ *     export VITE_API_URL=https://your-api.example.com
+ * - OR pass it inline when building:
+ *     VITE_API_URL=https://your-api.example.com npm run build
+ *
+ * Why this design?
+ * - CI/CD pipelines should NOT rely on .env files (security risk)
+ * - Explicit environment validation catches deployment misconfigurations early
+ * - Local dev still works seamlessly via Vite's .env file loading
  */
 
 // List of required environment variables for the frontend build
