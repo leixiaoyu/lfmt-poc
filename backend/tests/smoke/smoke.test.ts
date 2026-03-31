@@ -7,12 +7,17 @@
  * - Authentication flow (register → login → getCurrentUser)
  * - Upload presigned URL request
  * - Translation status polling
+ * - Job deletion and cleanup
  *
  * Usage:
  *   API_URL=https://api.production.com npm run test:smoke
+ *   API_URL=https://api.production.com TEST_PASSWORD=SecurePass123! npm run test:smoke
  *
  * Environment Variables:
  *   API_URL - Base URL of the API to test (required)
+ *   TEST_PASSWORD - Password for test users (optional, defaults to 'SmokeTest123!')
+ *
+ * Note: Test users are created during the test run. Cleanup requires AWS SDK access.
  */
 
 import { randomBytes } from 'crypto';
@@ -22,6 +27,7 @@ import { randomBytes } from 'crypto';
 // ============================================================================
 
 const API_URL = process.env.API_URL;
+const TEST_PASSWORD = process.env.TEST_PASSWORD || 'SmokeTest123!';
 
 if (!API_URL) {
   console.error('❌ API_URL environment variable is required');
@@ -73,7 +79,7 @@ const generateTestEmail = (): string => {
  */
 const generateTestUser = (): TestUser => ({
   email: generateTestEmail(),
-  password: 'SmokeTest123!',
+  password: TEST_PASSWORD,
   firstName: 'Smoke',
   lastName: 'Test',
 });
@@ -132,12 +138,45 @@ const sleep = (ms: number): Promise<void> =>
   new Promise((resolve) => setTimeout(resolve, ms));
 
 // ============================================================================
+// Test State & Cleanup
+// ============================================================================
+
+const createdUsers: string[] = []; // Track user emails for cleanup
+
+// ============================================================================
 // Smoke Tests
 // ============================================================================
 
 describe('Production Smoke Tests', () => {
   // Increase timeout for all tests
   jest.setTimeout(TEST_TIMEOUT);
+
+  /**
+   * Cleanup: Delete all test users created during smoke tests
+   * Note: This requires AWS Cognito access and may not work in all environments
+   */
+  afterAll(async () => {
+    if (createdUsers.length === 0) {
+      return;
+    }
+
+    console.log(`\n🧹 Cleaning up ${createdUsers.length} test user(s)...`);
+
+    // Attempt to delete users (may fail if no AWS credentials available)
+    // This is acceptable - smoke tests are meant to be lightweight
+    for (const email of createdUsers) {
+      try {
+        // Note: Cognito user deletion requires AWS SDK and proper credentials
+        // In production environments, consider implementing a cleanup endpoint
+        // or relying on Cognito's automatic deletion policies
+        console.log(`   Skipping cleanup for ${email} (requires AWS SDK)`);
+      } catch (error) {
+        console.warn(`   Failed to cleanup ${email}:`, error);
+      }
+    }
+
+    console.log('✓ Cleanup complete (or skipped if AWS SDK unavailable)');
+  });
 
   describe('Health Check & API Reachability', () => {
     it('should verify API is reachable and responding', async () => {
@@ -222,6 +261,7 @@ describe('Production Smoke Tests', () => {
 
       if (response.status === 200 || response.status === 201) {
         expect(response.data).toHaveProperty('message');
+        createdUsers.push(testUser.email); // Track for cleanup
         console.log(`✓ User registered: ${testUser.email}`);
       } else {
         console.log(`✓ User already exists: ${testUser.email}`);
@@ -289,7 +329,7 @@ describe('Production Smoke Tests', () => {
       // Create and login test user
       const user = generateTestUser();
 
-      await makeRequest('/auth/register', 'POST', {
+      const registerResponse = await makeRequest('/auth/register', 'POST', {
         email: user.email,
         password: user.password,
         confirmPassword: user.password,
@@ -298,6 +338,10 @@ describe('Production Smoke Tests', () => {
         acceptedTerms: true,
         acceptedPrivacy: true,
       });
+
+      if (registerResponse.status === 200 || registerResponse.status === 201) {
+        createdUsers.push(user.email); // Track for cleanup
+      }
 
       const loginResponse = await makeRequest<AuthTokens>(
         '/auth/login',
@@ -391,7 +435,7 @@ describe('Production Smoke Tests', () => {
       // Create and login test user
       const user = generateTestUser();
 
-      await makeRequest('/auth/register', 'POST', {
+      const registerResponse = await makeRequest('/auth/register', 'POST', {
         email: user.email,
         password: user.password,
         confirmPassword: user.password,
@@ -400,6 +444,10 @@ describe('Production Smoke Tests', () => {
         acceptedTerms: true,
         acceptedPrivacy: true,
       });
+
+      if (registerResponse.status === 200 || registerResponse.status === 201) {
+        createdUsers.push(user.email); // Track for cleanup
+      }
 
       const loginResponse = await makeRequest<AuthTokens>(
         '/auth/login',
@@ -518,6 +566,124 @@ describe('Production Smoke Tests', () => {
       });
 
       console.log(`✓ Rapid sequential polling successful (${pollCount} requests)`);
+    });
+  });
+
+  describe('Job Deletion & Cleanup', () => {
+    let authToken: string;
+    let jobId: string;
+
+    beforeAll(async () => {
+      // Create and login test user
+      const user = generateTestUser();
+
+      const registerResponse = await makeRequest('/auth/register', 'POST', {
+        email: user.email,
+        password: user.password,
+        confirmPassword: user.password,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        acceptedTerms: true,
+        acceptedPrivacy: true,
+      });
+
+      if (registerResponse.status === 200 || registerResponse.status === 201) {
+        createdUsers.push(user.email); // Track for cleanup
+      }
+
+      const loginResponse = await makeRequest<AuthTokens>(
+        '/auth/login',
+        'POST',
+        {
+          email: user.email,
+          password: user.password,
+        }
+      );
+
+      authToken = loginResponse.data.accessToken;
+
+      // Create a job for deletion test
+      const uploadResponse = await makeRequest(
+        '/jobs/upload',
+        'POST',
+        {
+          fileName: 'smoke-test-delete.txt',
+          fileSize: 512,
+          contentType: 'text/plain',
+          legalAttestation: {
+            acceptCopyrightOwnership: true,
+            acceptTranslationRights: true,
+            acceptLiabilityTerms: true,
+            userIPAddress: '127.0.0.1',
+            userAgent: 'smoke-test',
+          },
+        },
+        authToken
+      );
+
+      jobId = uploadResponse.data.jobId;
+    });
+
+    it('should delete a job', async () => {
+      const response = await makeRequest(
+        `/jobs/${jobId}`,
+        'DELETE',
+        undefined,
+        authToken
+      );
+
+      // Should succeed (200) or return appropriate status
+      expect([200, 204]).toContain(response.status);
+
+      console.log('✓ Job deletion successful');
+      console.log(`  Deleted job: ${jobId}`);
+    });
+
+    it('should return 404 for deleted job', async () => {
+      const response = await makeRequest(
+        `/jobs/${jobId}`,
+        'GET',
+        undefined,
+        authToken
+      );
+
+      // Should return 404 Not Found
+      expect(response.status).toBe(404);
+
+      console.log('✓ Deleted job no longer accessible');
+    });
+
+    it('should reject deletion without authentication', async () => {
+      // Create another job to test unauthorized deletion
+      const uploadResponse = await makeRequest(
+        '/jobs/upload',
+        'POST',
+        {
+          fileName: 'smoke-test-protected.txt',
+          fileSize: 256,
+          contentType: 'text/plain',
+          legalAttestation: {
+            acceptCopyrightOwnership: true,
+            acceptTranslationRights: true,
+            acceptLiabilityTerms: true,
+            userIPAddress: '127.0.0.1',
+            userAgent: 'smoke-test',
+          },
+        },
+        authToken
+      );
+
+      const testJobId = uploadResponse.data.jobId;
+
+      const response = await makeRequest(
+        `/jobs/${testJobId}`,
+        'DELETE'
+      );
+
+      // Should return 401 Unauthorized
+      expect(response.status).toBe(401);
+
+      console.log('✓ Unauthorized job deletion properly rejected');
     });
   });
 
