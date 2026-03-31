@@ -15,6 +15,10 @@ These tests cover:
 
 ### Prerequisites
 
+**Requirements:**
+- Node.js 18+ (required for native `fetch` API support)
+- AWS credentials (optional, for automatic test user cleanup)
+
 ```bash
 cd backend/tests/smoke
 npm install
@@ -42,6 +46,8 @@ API_URL=http://localhost:3000/api npm test
 | Variable | Required | Description | Example |
 |----------|----------|-------------|---------|
 | `API_URL` | ✅ Yes | Base URL of the API to test | `https://api.example.com` |
+| `TEST_PASSWORD` | ❌ No | Password for test users (default: `SmokeTest123!`) | `SecurePass123!` |
+| `USER_POOL_ID` | ❌ No | Cognito User Pool ID for automatic test user cleanup | `us-east-1_abc123` |
 
 ## Test Coverage
 
@@ -92,7 +98,7 @@ Add to GitHub Actions workflow:
 
 1. **Keep Tests Fast**: Smoke tests should complete in <2 minutes
 2. **Use Unique Test Data**: Each test run generates unique test users
-3. **Don't Clean Up**: Leave test data for debugging (use unique IDs)
+3. **Automatic Cleanup**: Set `USER_POOL_ID` env var to enable automatic test user deletion (requires AWS credentials)
 4. **Parameterize API URL**: Always use `API_URL` env var
 5. **Test Real Endpoints**: Don't mock - test actual API
 

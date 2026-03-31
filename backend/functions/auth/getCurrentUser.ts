@@ -66,26 +66,44 @@ export const handler = async (
 
     if (authorizerClaims) {
       // User is authenticated via API Gateway Cognito authorizer
-      logger.info('User authenticated via Cognito authorizer', {
-        requestId,
-        userId: authorizerClaims.sub,
-      });
+      try {
+        // Validate that required claims are present
+        if (!authorizerClaims.sub) {
+          logger.warn('Authorizer claims present but missing sub claim', {
+            requestId,
+            claims: Object.keys(authorizerClaims),
+          });
+          // Fall through to fallback token validation
+        } else {
+          logger.info('User authenticated via Cognito authorizer', {
+            requestId,
+            userId: authorizerClaims.sub,
+          });
 
-      const user = {
-        id: authorizerClaims.sub,
-        email: authorizerClaims.email || '',
-        firstName: authorizerClaims.given_name || '',
-        lastName: authorizerClaims.family_name || '',
-      };
+          const user = {
+            id: authorizerClaims.sub,
+            email: authorizerClaims.email || '',
+            firstName: authorizerClaims.given_name || '',
+            lastName: authorizerClaims.family_name || '',
+          };
 
-      return createSuccessResponse(
-        200,
-        {
-          user,
-        },
-        requestId,
-        requestOrigin
-      );
+          return createSuccessResponse(
+            200,
+            {
+              user,
+            },
+            requestId,
+            requestOrigin
+          );
+        }
+      } catch (error) {
+        // If claims parsing fails, log warning and fall through to fallback
+        logger.warn('Failed to parse authorizer claims', {
+          requestId,
+          error: error instanceof Error ? error.message : 'Unknown error',
+        });
+        // Continue to fallback token validation below
+      }
     }
 
     // Fallback: Manual token validation (for backwards compatibility)

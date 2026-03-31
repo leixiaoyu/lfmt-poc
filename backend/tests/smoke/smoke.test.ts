@@ -16,18 +16,24 @@
  * Environment Variables:
  *   API_URL - Base URL of the API to test (required)
  *   TEST_PASSWORD - Password for test users (optional, defaults to 'SmokeTest123!')
+ *   USER_POOL_ID - Cognito User Pool ID for automatic user cleanup (optional)
  *
- * Note: Test users are created during the test run. Cleanup requires AWS SDK access.
+ * Note: Test users are created during the test run. Cleanup requires USER_POOL_ID and AWS credentials.
  */
 
 import { randomBytes } from 'crypto';
+import {
+  CognitoIdentityProviderClient,
+  AdminDeleteUserCommand,
+} from '@aws-sdk/client-cognito-identity-provider';
 
 // ============================================================================
 // Configuration
 // ============================================================================
 
-const API_URL = process.env.API_URL;
+const API_URL = process.env.API_URL?.replace(/\/+$/, ''); // Remove trailing slash to prevent double-slash
 const TEST_PASSWORD = process.env.TEST_PASSWORD || 'SmokeTest123!';
+const USER_POOL_ID = process.env.USER_POOL_ID; // Optional: for Cognito user cleanup
 
 if (!API_URL) {
   console.error('❌ API_URL environment variable is required');
@@ -162,20 +168,49 @@ describe('Production Smoke Tests', () => {
 
     console.log(`\n🧹 Cleaning up ${createdUsers.length} test user(s)...`);
 
-    // Attempt to delete users (may fail if no AWS credentials available)
-    // This is acceptable - smoke tests are meant to be lightweight
-    for (const email of createdUsers) {
-      try {
-        // Note: Cognito user deletion requires AWS SDK and proper credentials
-        // In production environments, consider implementing a cleanup endpoint
-        // or relying on Cognito's automatic deletion policies
-        console.log(`   Skipping cleanup for ${email} (requires AWS SDK)`);
-      } catch (error) {
-        console.warn(`   Failed to cleanup ${email}:`, error);
-      }
+    // Attempt to delete users via Cognito AdminDeleteUser API
+    if (!USER_POOL_ID) {
+      console.warn(
+        '⚠️  USER_POOL_ID not set - skipping Cognito user cleanup'
+      );
+      console.warn(
+        '   Set USER_POOL_ID environment variable to enable automatic cleanup'
+      );
+      return;
     }
 
-    console.log('✓ Cleanup complete (or skipped if AWS SDK unavailable)');
+    try {
+      const cognitoClient = new CognitoIdentityProviderClient({});
+
+      for (const email of createdUsers) {
+        try {
+          await cognitoClient.send(
+            new AdminDeleteUserCommand({
+              UserPoolId: USER_POOL_ID,
+              Username: email,
+            })
+          );
+          console.log(`   ✓ Deleted user: ${email}`);
+        } catch (error: any) {
+          // User may not exist or AWS credentials may be unavailable
+          if (error.name === 'UserNotFoundException') {
+            console.log(`   ℹ️  User not found (may be auto-confirmed): ${email}`);
+          } else {
+            console.warn(`   ⚠️  Failed to delete ${email}:`, error.message);
+          }
+        }
+      }
+
+      console.log('✓ Cleanup complete');
+    } catch (error: any) {
+      console.warn(
+        '⚠️  Cognito cleanup failed (AWS credentials may be unavailable):',
+        error.message
+      );
+      console.warn(
+        '   This is acceptable for smoke tests - users can be cleaned up manually if needed'
+      );
+    }
   });
 
   describe('Health Check & API Reachability', () => {
