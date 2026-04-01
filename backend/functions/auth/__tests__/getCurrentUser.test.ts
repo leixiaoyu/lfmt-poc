@@ -44,19 +44,20 @@ describe('getCurrentUser Lambda Function', () => {
    */
   describe('Response Format Validation', () => {
     it('should return a valid API Gateway response with statusCode as number', async () => {
-      // Mock successful Cognito response
-      cognitoMock.on(GetUserCommand).resolves({
-        Username: 'test-user-id',
-        UserAttributes: [
-          { Name: 'email', Value: 'test@example.com' },
-          { Name: 'given_name', Value: 'Test' },
-          { Name: 'family_name', Value: 'User' },
-        ],
-      });
-
       const event = createMockEvent({
         headers: {
           Authorization: 'Bearer valid-token',
+        },
+        requestContext: {
+          ...createMockEvent().requestContext,
+          authorizer: {
+            claims: {
+              sub: 'test-user-id',
+              email: 'test@example.com',
+              given_name: 'Test',
+              family_name: 'User',
+            },
+          },
         },
       });
 
@@ -75,15 +76,17 @@ describe('getCurrentUser Lambda Function', () => {
     });
 
     it('should have statusCode as 200 for successful requests', async () => {
-      cognitoMock.on(GetUserCommand).resolves({
-        Username: 'test-user-id',
-        UserAttributes: [
-          { Name: 'email', Value: 'test@example.com' },
-        ],
-      });
-
       const event = createMockEvent({
         headers: { Authorization: 'Bearer valid-token' },
+        requestContext: {
+          ...createMockEvent().requestContext,
+          authorizer: {
+            claims: {
+              sub: 'test-user-id',
+              email: 'test@example.com',
+            },
+          },
+        },
       });
 
       const response = await handler(event);
@@ -93,17 +96,19 @@ describe('getCurrentUser Lambda Function', () => {
     });
 
     it('should return parseable JSON body', async () => {
-      cognitoMock.on(GetUserCommand).resolves({
-        Username: 'user-123',
-        UserAttributes: [
-          { Name: 'email', Value: 'test@example.com' },
-          { Name: 'given_name', Value: 'John' },
-          { Name: 'family_name', Value: 'Doe' },
-        ],
-      });
-
       const event = createMockEvent({
         headers: { Authorization: 'Bearer valid-token' },
+        requestContext: {
+          ...createMockEvent().requestContext,
+          authorizer: {
+            claims: {
+              sub: 'user-123',
+              email: 'test@example.com',
+              given_name: 'John',
+              family_name: 'Doe',
+            },
+          },
+        },
       });
 
       const response = await handler(event);
@@ -123,13 +128,17 @@ describe('getCurrentUser Lambda Function', () => {
    */
   describe('CORS Headers', () => {
     it('should include required CORS headers', async () => {
-      cognitoMock.on(GetUserCommand).resolves({
-        Username: 'test-user',
-        UserAttributes: [{ Name: 'email', Value: 'test@example.com' }],
-      });
-
       const event = createMockEvent({
         headers: { Authorization: 'Bearer token' },
+        requestContext: {
+          ...createMockEvent().requestContext,
+          authorizer: {
+            claims: {
+              sub: 'test-user',
+              email: 'test@example.com',
+            },
+          },
+        },
       });
 
       const response = await handler(event);
@@ -143,13 +152,17 @@ describe('getCurrentUser Lambda Function', () => {
     it('should allow localhost origin for development', async () => {
       process.env.ALLOWED_ORIGIN = 'http://localhost:3000';
 
-      cognitoMock.on(GetUserCommand).resolves({
-        Username: 'test-user',
-        UserAttributes: [{ Name: 'email', Value: 'test@example.com' }],
-      });
-
       const event = createMockEvent({
         headers: { Authorization: 'Bearer token' },
+        requestContext: {
+          ...createMockEvent().requestContext,
+          authorizer: {
+            claims: {
+              sub: 'test-user',
+              email: 'test@example.com',
+            },
+          },
+        },
       });
 
       const response = await handler(event);
@@ -163,17 +176,19 @@ describe('getCurrentUser Lambda Function', () => {
    */
   describe('Successful User Retrieval', () => {
     it('should return user data with all fields', async () => {
-      cognitoMock.on(GetUserCommand).resolves({
-        Username: 'user-123',
-        UserAttributes: [
-          { Name: 'email', Value: 'john.doe@example.com' },
-          { Name: 'given_name', Value: 'John' },
-          { Name: 'family_name', Value: 'Doe' },
-        ],
-      });
-
       const event = createMockEvent({
         headers: { Authorization: 'Bearer valid-token' },
+        requestContext: {
+          ...createMockEvent().requestContext,
+          authorizer: {
+            claims: {
+              sub: 'user-123',
+              email: 'john.doe@example.com',
+              given_name: 'John',
+              family_name: 'Doe',
+            },
+          },
+        },
       });
 
       const response = await handler(event);
@@ -188,15 +203,17 @@ describe('getCurrentUser Lambda Function', () => {
     });
 
     it('should handle users with missing optional fields', async () => {
-      cognitoMock.on(GetUserCommand).resolves({
-        Username: 'user-456',
-        UserAttributes: [
-          { Name: 'email', Value: 'minimal@example.com' },
-        ],
-      });
-
       const event = createMockEvent({
         headers: { Authorization: 'Bearer valid-token' },
+        requestContext: {
+          ...createMockEvent().requestContext,
+          authorizer: {
+            claims: {
+              sub: 'user-456',
+              email: 'minimal@example.com',
+            },
+          },
+        },
       });
 
       const response = await handler(event);
@@ -215,9 +232,10 @@ describe('getCurrentUser Lambda Function', () => {
    * Tests for error handling
    */
   describe('Error Handling', () => {
-    it('should return 401 for missing Authorization header', async () => {
+    it('should return 401 when authorizer claims are missing', async () => {
       const event = createMockEvent({
-        headers: {},
+        headers: { Authorization: 'Bearer token' },
+        // No authorizer claims - simulates unauthorized request
       });
 
       const response = await handler(event);
@@ -225,56 +243,48 @@ describe('getCurrentUser Lambda Function', () => {
       expect(response.statusCode).toBe(401);
       const body = JSON.parse(response.body);
       expect(body).toHaveProperty('message');
-      expect(body.message).toContain('Authorization');
+      expect(body.message).toContain('Authentication required');
     });
 
-    it('should return 401 for invalid token format', async () => {
+    it('should return 401 when authorizer claims missing sub field', async () => {
       const event = createMockEvent({
-        headers: { Authorization: 'InvalidFormat' },
-      });
-
-      const response = await handler(event);
-
-      expect(response.statusCode).toBe(401);
-    });
-
-    it('should return 401 when Cognito rejects the token', async () => {
-      cognitoMock.on(GetUserCommand).rejects(
-        new NotAuthorizedException({ $metadata: {}, message: 'Invalid Access Token' })
-      );
-
-      const event = createMockEvent({
-        headers: { Authorization: 'Bearer expired-token' },
+        headers: { Authorization: 'Bearer token' },
+        requestContext: {
+          ...createMockEvent().requestContext,
+          authorizer: {
+            claims: {
+              // Missing 'sub' field
+              email: 'test@example.com',
+            },
+          },
+        },
       });
 
       const response = await handler(event);
 
       expect(response.statusCode).toBe(401);
       const body = JSON.parse(response.body);
-      expect(body.message).toContain('invalid or expired');
-    });
-
-    it('should return 404 when user not found', async () => {
-      cognitoMock.on(GetUserCommand).rejects(
-        new UserNotFoundException({ $metadata: {}, message: 'User does not exist' })
-      );
-
-      const event = createMockEvent({
-        headers: { Authorization: 'Bearer valid-token' },
-      });
-
-      const response = await handler(event);
-
-      expect(response.statusCode).toBe(404);
-      const body = JSON.parse(response.body);
-      expect(body.message).toContain('not found');
+      expect(body.message).toContain('Authentication required');
     });
 
     it('should return 500 for unexpected errors', async () => {
-      cognitoMock.on(GetUserCommand).rejects(new Error('Database connection failed'));
-
+      // Create event with valid authorizer claims but force an error in processing
       const event = createMockEvent({
         headers: { Authorization: 'Bearer valid-token' },
+        requestContext: {
+          ...createMockEvent().requestContext,
+          authorizer: {
+            claims: {
+              sub: 'user-123',
+              email: 'test@example.com',
+            },
+          },
+        },
+      });
+
+      // Mock an error in createSuccessResponse or somewhere else
+      jest.spyOn(JSON, 'stringify').mockImplementationOnce(() => {
+        throw new Error('Unexpected error');
       });
 
       const response = await handler(event);
@@ -282,81 +292,39 @@ describe('getCurrentUser Lambda Function', () => {
       expect(response.statusCode).toBe(500);
       const body = JSON.parse(response.body);
       expect(body.message).toContain('Failed to retrieve user information');
+
+      jest.restoreAllMocks();
     });
   });
 
   /**
-   * Tests for request validation
+   * Tests for authorizer integration
    */
-  describe('Request Validation', () => {
-    it('should extract Bearer token correctly', async () => {
-      cognitoMock.on(GetUserCommand).resolves({
-        Username: 'user-123',
-        UserAttributes: [{ Name: 'email', Value: 'test@example.com' }],
-      });
-
+  describe('Cognito Authorizer Integration', () => {
+    it('should use authorizer claims without calling Cognito API', async () => {
       const event = createMockEvent({
         headers: { Authorization: 'Bearer my-test-token' },
+        requestContext: {
+          ...createMockEvent().requestContext,
+          authorizer: {
+            claims: {
+              sub: 'user-123',
+              email: 'test@example.com',
+            },
+          },
+        },
       });
 
       await handler(event);
 
-      // Verify the GetUserCommand was called with the correct access token
+      // Verify the GetUserCommand was NOT called (authorizer path is used)
       const calls = cognitoMock.commandCalls(GetUserCommand);
-      expect(calls).toHaveLength(1);
-      expect(calls[0].args[0].input).toEqual({
-        AccessToken: 'my-test-token',
-      });
-    });
-
-    it('should be case-insensitive for Authorization header', async () => {
-      cognitoMock.on(GetUserCommand).resolves({
-        Username: 'user-123',
-        UserAttributes: [{ Name: 'email', Value: 'test@example.com' }],
-      });
-
-      const event = createMockEvent({
-        headers: { authorization: 'Bearer token' }, // lowercase
-      });
-
-      const response = await handler(event);
-
-      expect(response.statusCode).toBe(200);
-    });
-
-    it('should successfully decode JWT token and extract sub claim', async () => {
-      // Create a valid JWT-formatted token with a sub claim
-      // JWT format: header.payload.signature (we only care about payload for this test)
-      const payload = { sub: 'cognito-user-sub-123', email: 'test@example.com' };
-      const encodedPayload = Buffer.from(JSON.stringify(payload)).toString('base64');
-      const mockJwtToken = `header.${encodedPayload}.signature`;
-
-      cognitoMock.on(GetUserCommand).resolves({
-        Username: 'fallback-username',
-        UserAttributes: [
-          { Name: 'email', Value: 'test@example.com' },
-          { Name: 'given_name', Value: 'Test' },
-          { Name: 'family_name', Value: 'User' },
-        ],
-      });
-
-      const event = createMockEvent({
-        headers: { Authorization: `Bearer ${mockJwtToken}` },
-      });
-
-      const response = await handler(event);
-
-      expect(response.statusCode).toBe(200);
-      const body = JSON.parse(response.body);
-
-      // Verify that the sub claim from JWT is used as user.id
-      expect(body.user.id).toBe('cognito-user-sub-123');
-      expect(body.user.email).toBe('test@example.com');
+      expect(calls).toHaveLength(0);
     });
   });
 
   /**
-   * Tests for Cognito Authorizer Code Path (lines 63-107 in getCurrentUser.ts)
+   * Tests for Cognito Authorizer Code Path
    * This code path is triggered when API Gateway includes authorizer claims in the event
    */
   describe('Cognito Authorizer Code Path', () => {
@@ -394,89 +362,6 @@ describe('getCurrentUser Lambda Function', () => {
       // CRITICAL: Verify GetUserCommand was NOT called (optimization achieved)
       const calls = cognitoMock.commandCalls(GetUserCommand);
       expect(calls).toHaveLength(0);
-    });
-
-    it('should fall back to manual token validation when authorizer claims missing sub claim', async () => {
-      // Create event with authorizer claims but missing required 'sub' field
-      const event = createMockEvent({
-        headers: { Authorization: 'Bearer fallback-token' },
-        requestContext: {
-          ...createMockEvent().requestContext,
-          authorizer: {
-            claims: {
-              // Missing 'sub' claim - should trigger fallback
-              email: 'incomplete@example.com',
-              given_name: 'Incomplete',
-            },
-          },
-        },
-      });
-
-      // Mock fallback Cognito response
-      cognitoMock.on(GetUserCommand).resolves({
-        Username: 'fallback-user-id',
-        UserAttributes: [
-          { Name: 'email', Value: 'fallback@example.com' },
-          { Name: 'given_name', Value: 'Fallback' },
-          { Name: 'family_name', Value: 'User' },
-        ],
-      });
-
-      const response = await handler(event);
-
-      // Verify response is successful
-      expect(response.statusCode).toBe(200);
-      const body = JSON.parse(response.body);
-
-      // Verify fallback to GetUserCommand was used
-      const calls = cognitoMock.commandCalls(GetUserCommand);
-      expect(calls).toHaveLength(1);
-
-      // Verify user data comes from fallback (not from incomplete authorizer claims)
-      expect(body.user.email).toBe('fallback@example.com');
-    });
-
-    it('should fall back gracefully when authorizer claims parsing throws error', async () => {
-      // Create event with authorizer claims that will cause parsing errors
-      const event = createMockEvent({
-        headers: { Authorization: 'Bearer error-recovery-token' },
-        requestContext: {
-          ...createMockEvent().requestContext,
-          authorizer: {
-            claims: {
-              sub: 'error-user-id',
-              // Intentionally create a scenario where accessing claims might fail
-              // by using a getter that throws
-              get email() {
-                throw new Error('Simulated claims parsing error');
-              },
-            },
-          },
-        },
-      });
-
-      // Mock fallback Cognito response
-      cognitoMock.on(GetUserCommand).resolves({
-        Username: 'recovered-user-id',
-        UserAttributes: [
-          { Name: 'email', Value: 'recovered@example.com' },
-          { Name: 'given_name', Value: 'Recovered' },
-          { Name: 'family_name', Value: 'User' },
-        ],
-      });
-
-      const response = await handler(event);
-
-      // Verify response is successful despite parsing error
-      expect(response.statusCode).toBe(200);
-      const body = JSON.parse(response.body);
-
-      // Verify fallback to GetUserCommand was used
-      const calls = cognitoMock.commandCalls(GetUserCommand);
-      expect(calls).toHaveLength(1);
-
-      // Verify user data comes from fallback
-      expect(body.user.email).toBe('recovered@example.com');
     });
 
     it('should handle authorizer claims with partial data gracefully', async () => {

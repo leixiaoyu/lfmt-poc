@@ -24,9 +24,11 @@ const sfnClient = new SFNClient({});
 
 const JOBS_TABLE = getRequiredEnv('JOBS_TABLE');
 const STATE_MACHINE_NAME = getRequiredEnv('STATE_MACHINE_NAME'); // State machine name (ARN constructed dynamically)
-// AWS_REGION is always set by Lambda runtime in production
-// STACK_REGION fallback is only used for local development/testing
-const AWS_REGION = process.env.AWS_REGION || getOptionalEnv('STACK_REGION', 'us-east-1');
+// AWS_REGION is always set by Lambda runtime - no fallback needed
+const AWS_REGION = getRequiredEnv('AWS_REGION');
+
+// Cache account ID at module level to avoid repeated STS calls
+let cachedAccountId: string | undefined;
 
 /**
  * Construct State Machine ARN dynamically to avoid circular dependency in CDK
@@ -34,12 +36,14 @@ const AWS_REGION = process.env.AWS_REGION || getOptionalEnv('STACK_REGION', 'us-
  */
 const getStateMachineArn = async (): Promise<string> => {
   // Get account ID from STS (cached after first call)
-  const { STSClient, GetCallerIdentityCommand } = await import('@aws-sdk/client-sts');
-  const stsClient = new STSClient({});
-  const identity = await stsClient.send(new GetCallerIdentityCommand({}));
-  const accountId = identity.Account;
+  if (!cachedAccountId) {
+    const { STSClient, GetCallerIdentityCommand } = await import('@aws-sdk/client-sts');
+    const stsClient = new STSClient({});
+    const identity = await stsClient.send(new GetCallerIdentityCommand({}));
+    cachedAccountId = identity.Account;
+  }
 
-  return `arn:aws:states:${AWS_REGION}:${accountId}:stateMachine:${STATE_MACHINE_NAME}`;
+  return `arn:aws:states:${AWS_REGION}:${cachedAccountId}:stateMachine:${STATE_MACHINE_NAME}`;
 };
 
 /**

@@ -661,7 +661,6 @@ export class LfmtInfrastructureStack extends Stack {
       DOCUMENT_BUCKET: this.documentBucket.bucketName,
       CHUNKS_BUCKET: this.documentBucket.bucketName, // Chunks stored in same bucket as documents
       GEMINI_API_KEY_SECRET_NAME: `lfmt/gemini-api-key-${this.stackName}`,
-      STACK_REGION: this.region, // Region for Step Functions ARN construction (AWS_REGION is reserved by Lambda runtime)
       // Pass all allowed origins as comma-separated list (includes localhost + CloudFront URL)
       ALLOWED_ORIGINS: this.getAllowedApiOrigins().join(','),
     };
@@ -1233,7 +1232,6 @@ export class LfmtInfrastructureStack extends Stack {
         'Access-Control-Allow-Origin': "'*'",
         'Access-Control-Allow-Headers': "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,X-Request-ID'",
         'Access-Control-Allow-Methods': "'OPTIONS,GET,POST,PUT,DELETE'",
-        'Access-Control-Allow-Credentials': "'true'",
       },
     });
 
@@ -1244,7 +1242,6 @@ export class LfmtInfrastructureStack extends Stack {
         'Access-Control-Allow-Origin': "'*'",
         'Access-Control-Allow-Headers': "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,X-Request-ID'",
         'Access-Control-Allow-Methods': "'OPTIONS,GET,POST,PUT,DELETE'",
-        'Access-Control-Allow-Credentials': "'true'",
       },
     });
 
@@ -1255,7 +1252,6 @@ export class LfmtInfrastructureStack extends Stack {
         'Access-Control-Allow-Origin': "'*'",
         'Access-Control-Allow-Headers': "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,X-Request-ID'",
         'Access-Control-Allow-Methods': "'OPTIONS,GET,POST,PUT,DELETE'",
-        'Access-Control-Allow-Credentials': "'true'",
       },
     });
 
@@ -1266,7 +1262,6 @@ export class LfmtInfrastructureStack extends Stack {
         'Access-Control-Allow-Origin': "'*'",
         'Access-Control-Allow-Headers': "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,X-Request-ID'",
         'Access-Control-Allow-Methods': "'OPTIONS,GET,POST,PUT,DELETE'",
-        'Access-Control-Allow-Credentials': "'true'",
       },
     });
   }

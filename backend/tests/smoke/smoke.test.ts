@@ -329,12 +329,12 @@ describe('Production Smoke Tests', () => {
       console.log('✓ Login successful');
     });
 
-    it('should get current user info with access token', async () => {
+    it('should get current user info with ID token', async () => {
       const response = await makeRequest<{ user: any }>(
         '/auth/me',
         'GET',
         undefined,
-        authTokens.accessToken
+        authTokens.idToken
       );
 
       // Should succeed

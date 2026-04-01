@@ -17,24 +17,12 @@ import { loginRequestSchema } from '@lfmt/shared-types';
 import { createSuccessResponse, createErrorResponse, getCorsHeaders } from '../shared/api-response';
 import Logger from '../shared/logger';
 import { getRequiredEnv } from '../shared/env';
+import { decodeJwtPayload } from '../shared/jwt-utils';
 
 const logger = new Logger('lfmt-auth-login');
 const cognitoClient = new CognitoIdentityProviderClient({});
 
 const COGNITO_CLIENT_ID = getRequiredEnv('COGNITO_CLIENT_ID');
-
-/**
- * Decode JWT payload (without verification - for extracting claims only)
- * In production, use a proper JWT library with signature verification
- */
-function decodeJwtPayload(token: string): any {
-  const parts = token.split('.');
-  if (parts.length !== 3) {
-    throw new Error('Invalid JWT format');
-  }
-  const payload = Buffer.from(parts[1], 'base64').toString('utf8');
-  return JSON.parse(payload);
-}
 
 export const handler = async (
   event: APIGatewayProxyEvent
