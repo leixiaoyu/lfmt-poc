@@ -23,6 +23,14 @@
 // Add new variables here as needed
 const REQUIRED_ENV_VARS = ['VITE_API_URL'];
 
+// Skip validation in CI environment (frontend build step happens before deployment)
+// CI will rebuild with correct API URL after CDK deployment
+if (process.env.CI === 'true') {
+  console.log('\x1b[33m%s\x1b[0m', '⚠️  CI environment detected - skipping env validation');
+  console.log('\x1b[36m%s\x1b[0m', '   (Frontend will be rebuilt with correct API URL after deployment)');
+  process.exit(0);
+}
+
 const missing = REQUIRED_ENV_VARS.filter(key => !process.env[key]);
 
 if (missing.length > 0) {

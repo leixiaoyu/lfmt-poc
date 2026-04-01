@@ -94,6 +94,7 @@ jobs:
         run: npm run build
         env:
           NODE_ENV: production
+          CI: true
 
       - name: Upload frontend build artifacts
         uses: actions/upload-artifact@v4
