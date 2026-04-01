@@ -1,9 +1,23 @@
-import { defineConfig } from 'vite';
+import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
 import path from 'path';
 
 // https://vitejs.dev/config/
-export default defineConfig({
+export default defineConfig(({ command, mode }) => {
+  // Load environment variables
+  const env = loadEnv(mode, process.cwd(), '');
+
+  // Validate required environment variables for production builds
+  // Skip validation in CI during initial build step (will be rebuilt with correct API URL after deployment)
+  if (command === 'build' && process.env.CI !== 'true' && !env.VITE_API_URL) {
+    throw new Error(
+      '❌ Build failed: VITE_API_URL is required for production builds.\n' +
+      '   Please set it in your .env file or environment.\n' +
+      '   See .env.example for reference.'
+    );
+  }
+
+  return {
   plugins: [react()],
   resolve: {
     alias: {
@@ -49,4 +63,5 @@ export default defineConfig({
       ],
     },
   },
+  };
 });
