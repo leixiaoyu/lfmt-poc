@@ -27,7 +27,9 @@ const STATE_MACHINE_NAME = getRequiredEnv('STATE_MACHINE_NAME'); // State machin
 // AWS_REGION is always set by Lambda runtime - no fallback needed
 const AWS_REGION = getRequiredEnv('AWS_REGION');
 
-// Cache account ID at module level to avoid repeated STS calls
+// Cache account ID at module level to avoid repeated STS calls.
+// Lambda container reuse means module-level variables persist across warm invocations,
+// making this an effective and safe cache pattern for immutable data like account ID.
 let cachedAccountId: string | undefined;
 
 /**

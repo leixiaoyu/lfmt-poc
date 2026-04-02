@@ -10,12 +10,11 @@
  * - Job deletion and cleanup
  *
  * Usage:
- *   API_URL=https://api.production.com npm run test:smoke
  *   API_URL=https://api.production.com TEST_PASSWORD=SecurePass123! npm run test:smoke
  *
  * Environment Variables:
  *   API_URL - Base URL of the API to test (required)
- *   TEST_PASSWORD - Password for test users (optional, defaults to 'SmokeTest123!')
+ *   TEST_PASSWORD - Password for test users (required, must come from env/secrets)
  *   USER_POOL_ID - Cognito User Pool ID for automatic user cleanup (optional)
  *
  * Note: Test users are created during the test run. Cleanup requires USER_POOL_ID and AWS credentials.
@@ -32,12 +31,18 @@ import {
 // ============================================================================
 
 const API_URL = process.env.API_URL?.replace(/\/+$/, ''); // Remove trailing slash to prevent double-slash
-const TEST_PASSWORD = process.env.TEST_PASSWORD || 'SmokeTest123!';
+const TEST_PASSWORD = process.env.TEST_PASSWORD;
 const USER_POOL_ID = process.env.USER_POOL_ID; // Optional: for Cognito user cleanup
 
 if (!API_URL) {
   console.error('❌ API_URL environment variable is required');
   console.error('   Usage: API_URL=https://api.example.com npm run test:smoke');
+  process.exit(1);
+}
+
+if (!TEST_PASSWORD) {
+  console.error('❌ TEST_PASSWORD environment variable is required');
+  console.error('   This must be provided via environment variable or CI/CD secrets');
   process.exit(1);
 }
 
