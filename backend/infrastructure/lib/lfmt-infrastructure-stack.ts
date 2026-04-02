@@ -1224,6 +1224,17 @@ export class LfmtInfrastructureStack extends Stack {
     // Note: Gateway Response headers must be static strings, cannot use dynamic origins
     // For dynamic CORS support, Lambda functions extract requestOrigin and return appropriate headers
     // These Gateway Responses are only for error cases where Lambda doesn't execute
+    //
+    // CORS Strategy:
+    // - Error responses (401, 403, 400, 500): Use wildcard '*' origin WITHOUT credentials
+    //   (CORS spec forbids Access-Control-Allow-Credentials: true with wildcard origin)
+    // - Success responses (Lambda): Use specific allowed origin WITH credentials='true'
+    //   (Lambda dynamically selects origin from ALLOWED_ORIGINS based on request)
+    //
+    // This dual strategy ensures:
+    // 1. Error responses work from any origin (developer-friendly)
+    // 2. Success responses use secure, credential-aware CORS (production-ready)
+    // 3. Full CORS spec compliance (no wildcard+credentials violations)
 
     // Add CORS headers to 401 Unauthorized responses
     this.api.addGatewayResponse('Unauthorized', {

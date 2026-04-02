@@ -26,18 +26,25 @@ npm install
 
 ### Running Tests
 
-**Against Dev Environment:**
+**Get API URL from CloudFormation (Recommended):**
 ```bash
-API_URL=https://8brwlwf68h.execute-api.us-east-1.amazonaws.com/v1 npm test
+# For dev environment
+API_URL=$(aws cloudformation describe-stacks \
+  --stack-name LfmtPocDev \
+  --query 'Stacks[0].Outputs[?OutputKey==`ApiUrl`].OutputValue' \
+  --output text)
+npm test
 ```
 
-**Against Production Environment:**
+**Or manually specify API URL:**
 ```bash
-API_URL=https://api.production.example.com npm test
-```
+# Dev environment
+API_URL=https://<your-api-id>.execute-api.us-east-1.amazonaws.com/v1 npm test
 
-**Against Local Development:**
-```bash
+# Production environment
+API_URL=https://<your-api-id>.execute-api.us-east-1.amazonaws.com/v1 npm test
+
+# Local development
 API_URL=http://localhost:3000/api npm test
 ```
 
