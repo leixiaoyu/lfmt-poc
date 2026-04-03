@@ -180,3 +180,4 @@ stack-outputs.json
 **/config/dev.*
 **/config/prod.*frontend/.env.local
 AUTH-FUNCTIONS-COMPLETE.md
+.spec-workflow/

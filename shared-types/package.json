@@ -25,5 +25,8 @@
   },
   "dependencies": {
     "zod": "^3.22.0"
+  },
+  "overrides": {
+    "minimatch": "9.0.5"
   }
 }

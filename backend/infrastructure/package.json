@@ -29,5 +29,9 @@
     "@lfmt/shared-types": "file:../../shared-types",
     "aws-cdk-lib": "^2.100.0",
     "constructs": "^10.3.0"
+  },
+  "overrides": {
+    "minimatch": "9.0.5",
+    "brace-expansion": "^5.0.5"
   }
 }

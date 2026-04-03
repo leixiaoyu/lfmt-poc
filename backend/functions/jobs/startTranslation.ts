@@ -14,7 +14,7 @@ import {
 import { SFNClient, StartExecutionCommand, StartExecutionCommandOutput } from '@aws-sdk/client-sfn';
 import { marshall, unmarshall } from '@aws-sdk/util-dynamodb';
 import Logger from '../shared/logger';
-import { getRequiredEnv } from '../shared/env';
+import { getRequiredEnv, getOptionalEnv } from '../shared/env';
 import { createSuccessResponse, createErrorResponse } from '../shared/api-response';
 import { isValidTargetLanguage, TargetLanguage } from '../translation/types';
 
@@ -24,7 +24,13 @@ const sfnClient = new SFNClient({});
 
 const JOBS_TABLE = getRequiredEnv('JOBS_TABLE');
 const STATE_MACHINE_NAME = getRequiredEnv('STATE_MACHINE_NAME'); // State machine name (ARN constructed dynamically)
-const AWS_REGION = process.env.AWS_REGION || 'us-east-1';
+// AWS_REGION is always set by Lambda runtime - no fallback needed
+const AWS_REGION = getRequiredEnv('AWS_REGION');
+
+// Cache account ID at module level to avoid repeated STS calls.
+// Lambda container reuse means module-level variables persist across warm invocations,
+// making this an effective and safe cache pattern for immutable data like account ID.
+let cachedAccountId: string | undefined;
 
 /**
  * Construct State Machine ARN dynamically to avoid circular dependency in CDK
@@ -32,12 +38,14 @@ const AWS_REGION = process.env.AWS_REGION || 'us-east-1';
  */
 const getStateMachineArn = async (): Promise<string> => {
   // Get account ID from STS (cached after first call)
-  const { STSClient, GetCallerIdentityCommand } = await import('@aws-sdk/client-sts');
-  const stsClient = new STSClient({});
-  const identity = await stsClient.send(new GetCallerIdentityCommand({}));
-  const accountId = identity.Account;
+  if (!cachedAccountId) {
+    const { STSClient, GetCallerIdentityCommand } = await import('@aws-sdk/client-sts');
+    const stsClient = new STSClient({});
+    const identity = await stsClient.send(new GetCallerIdentityCommand({}));
+    cachedAccountId = identity.Account;
+  }
 
-  return `arn:aws:states:${AWS_REGION}:${accountId}:stateMachine:${STATE_MACHINE_NAME}`;
+  return `arn:aws:states:${AWS_REGION}:${cachedAccountId}:stateMachine:${STATE_MACHINE_NAME}`;
 };
 
 /**

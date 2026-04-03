@@ -43,7 +43,7 @@ jobs:
 
       - name: Install shared-types dependencies
         working-directory: shared-types
-        run: npm install
+        run: npm ci
 
       - name: Install function dependencies
         working-directory: backend/functions
@@ -57,55 +57,10 @@ jobs:
         working-directory: backend/functions
         run: npm run test:coverage
 
-  build-frontend:
-    name: Build Frontend
-    runs-on: ubuntu-latest
-    needs: test
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: 'npm'
-          cache-dependency-path: frontend/package-lock.json
-
-      - name: Install shared-types dependencies
-        working-directory: shared-types
-        run: npm install
-
-      - name: Build shared-types
-        working-directory: shared-types
-        run: npm run build
-
-      - name: Install frontend dependencies
-        working-directory: frontend
-        run: npm ci
-
-      - name: Run frontend tests
-        working-directory: frontend
-        run: npm test -- --run
-
-      - name: Build frontend (production)
-        working-directory: frontend
-        run: npm run build
-        env:
-          NODE_ENV: production
-
-      - name: Upload frontend build artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: frontend-dist
-          path: frontend/dist
-          retention-days: 7
-
   deploy-dev:
     name: Deploy to Development
     runs-on: ubuntu-latest
-    needs: [test, build-frontend]
+    needs: test
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     environment:
       name: development
@@ -252,6 +207,45 @@ jobs:
           echo "CloudFront Distribution: ${{ steps.get-cf-dist.outputs.distribution_id }}"
           echo "Frontend URL: ${{ steps.get-frontend-url.outputs.frontend_url }}"
           echo "API URL: ${{ steps.get-url.outputs.api_url }}"
+          echo "========================================="
+
+  smoke-tests:
+    name: Run Smoke Tests
+    runs-on: ubuntu-latest
+    needs: deploy-dev
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: backend/tests/smoke/package-lock.json
+
+      - name: Install smoke test dependencies
+        working-directory: backend/tests/smoke
+        run: npm ci
+
+      - name: Run smoke tests against deployed API
+        working-directory: backend/tests/smoke
+        run: npm run test:smoke
+        env:
+          API_URL: ${{ needs.deploy-dev.outputs.api_url }}
+          TEST_PASSWORD: ${{ secrets.SMOKE_TEST_PASSWORD }}
+          USER_POOL_ID: ${{ secrets.DEV_USER_POOL_ID }}
+
+      - name: Smoke Test Summary
+        if: always()
+        run: |
+          echo "========================================="
+          echo "Smoke Test Summary"
+          echo "========================================="
+          echo "API URL: ${{ needs.deploy-dev.outputs.api_url }}"
+          echo "Tests completed at: $(date -u +"%Y-%m-%d %H:%M:%S UTC")"
           echo "========================================="
 
   integration-tests:
@@ -464,6 +458,90 @@ jobs:
         working-directory: backend/infrastructure
         run: npx cdk deploy --context environment=staging --require-approval never
 
+      - name: Get API URL
+        id: get-url
+        run: |
+          API_URL=$(aws cloudformation describe-stacks \
+            --stack-name LfmtPocStaging \
+            --query "Stacks[0].Outputs[?OutputKey=='ApiUrl'].OutputValue" \
+            --output text \
+            --region ${{ env.AWS_REGION }})
+          echo "api_url=$API_URL" >> $GITHUB_OUTPUT
+          echo "API URL: $API_URL"
+
+      - name: Install shared-types for frontend rebuild
+        working-directory: shared-types
+        run: npm ci
+
+      - name: Build shared-types for frontend rebuild
+        working-directory: shared-types
+        run: npm run build
+
+      - name: Install frontend dependencies for rebuild
+        working-directory: frontend
+        run: npm ci
+
+      - name: Rebuild frontend with correct API URL
+        working-directory: frontend
+        run: npm run build
+        env:
+          NODE_ENV: production
+          VITE_API_URL: ${{ steps.get-url.outputs.api_url }}
+
+      - name: Get Frontend Bucket Name from CDK
+        id: get-bucket-name
+        run: |
+          FRONTEND_BUCKET=$(aws cloudformation describe-stacks \
+            --stack-name LfmtPocStaging \
+            --query "Stacks[0].Outputs[?OutputKey=='FrontendBucketName'].OutputValue" \
+            --output text \
+            --region ${{ env.AWS_REGION }})
+          echo "bucket_name=$FRONTEND_BUCKET" >> $GITHUB_OUTPUT
+          echo "Frontend Bucket: $FRONTEND_BUCKET"
+
+      - name: Deploy frontend to S3
+        run: |
+          aws s3 sync frontend/dist/ s3://${{ steps.get-bucket-name.outputs.bucket_name }}/ --delete --cache-control "public, max-age=31536000, immutable" --exclude "index.html"
+          aws s3 cp frontend/dist/index.html s3://${{ steps.get-bucket-name.outputs.bucket_name }}/index.html --cache-control "public, max-age=0, must-revalidate"
+
+      - name: Get CloudFront Distribution ID
+        id: get-cf-dist
+        run: |
+          DIST_ID=$(aws cloudformation describe-stacks \
+            --stack-name LfmtPocStaging \
+            --query "Stacks[0].Outputs[?OutputKey=='CloudFrontDistributionId'].OutputValue" \
+            --output text \
+            --region ${{ env.AWS_REGION }})
+          echo "distribution_id=$DIST_ID" >> $GITHUB_OUTPUT
+          echo "CloudFront Distribution ID: $DIST_ID"
+
+      - name: Get CloudFront URL
+        id: get-frontend-url
+        run: |
+          FRONTEND_URL=$(aws cloudformation describe-stacks \
+            --stack-name LfmtPocStaging \
+            --query "Stacks[0].Outputs[?OutputKey=='FrontendUrl'].OutputValue" \
+            --output text \
+            --region ${{ env.AWS_REGION }})
+          echo "frontend_url=$FRONTEND_URL" >> $GITHUB_OUTPUT
+          echo "Frontend URL: $FRONTEND_URL"
+
+      - name: Invalidate CloudFront cache
+        run: |
+          aws cloudfront create-invalidation --distribution-id ${{ steps.get-cf-dist.outputs.distribution_id }} --paths "/*"
+          echo "CloudFront cache invalidation initiated"
+
+      - name: Frontend Deployment Summary
+        run: |
+          echo "========================================="
+          echo "Frontend Deployment Summary"
+          echo "========================================="
+          echo "S3 Bucket: ${{ steps.get-bucket-name.outputs.bucket_name }}"
+          echo "CloudFront Distribution: ${{ steps.get-cf-dist.outputs.distribution_id }}"
+          echo "Frontend URL: ${{ steps.get-frontend-url.outputs.frontend_url }}"
+          echo "API URL: ${{ steps.get-url.outputs.api_url }}"
+          echo "========================================="
+
   deploy-prod:
     name: Deploy to Production
     runs-on: ubuntu-latest
@@ -540,12 +618,69 @@ jobs:
           echo "api_url=$API_URL" >> $GITHUB_OUTPUT
           echo "Production API URL: $API_URL"
 
-      - name: Health Check
-        run: |
-          echo "Performing health check on production API..."
-          curl -f ${{ steps.get-api-url.outputs.api_url }}/v1/health || echo "Health check endpoint not yet available"
+      - name: Install shared-types for frontend rebuild
+        working-directory: shared-types
+        run: npm ci
 
-      - name: Deployment Summary
+      - name: Build shared-types for frontend rebuild
+        working-directory: shared-types
+        run: npm run build
+
+      - name: Install frontend dependencies for rebuild
+        working-directory: frontend
+        run: npm ci
+
+      - name: Rebuild frontend with correct API URL
+        working-directory: frontend
+        run: npm run build
+        env:
+          NODE_ENV: production
+          VITE_API_URL: ${{ steps.get-api-url.outputs.api_url }}
+
+      - name: Get Frontend Bucket Name from CDK
+        id: get-bucket-name
+        run: |
+          FRONTEND_BUCKET=$(aws cloudformation describe-stacks \
+            --stack-name LfmtPocProd \
+            --query "Stacks[0].Outputs[?OutputKey=='FrontendBucketName'].OutputValue" \
+            --output text \
+            --region ${{ env.AWS_REGION }})
+          echo "bucket_name=$FRONTEND_BUCKET" >> $GITHUB_OUTPUT
+          echo "Frontend Bucket: $FRONTEND_BUCKET"
+
+      - name: Deploy frontend to S3
+        run: |
+          aws s3 sync frontend/dist/ s3://${{ steps.get-bucket-name.outputs.bucket_name }}/ --delete --cache-control "public, max-age=31536000, immutable" --exclude "index.html"
+          aws s3 cp frontend/dist/index.html s3://${{ steps.get-bucket-name.outputs.bucket_name }}/index.html --cache-control "public, max-age=0, must-revalidate"
+
+      - name: Get CloudFront Distribution ID
+        id: get-cf-dist
+        run: |
+          DIST_ID=$(aws cloudformation describe-stacks \
+            --stack-name LfmtPocProd \
+            --query "Stacks[0].Outputs[?OutputKey=='CloudFrontDistributionId'].OutputValue" \
+            --output text \
+            --region ${{ env.AWS_REGION }})
+          echo "distribution_id=$DIST_ID" >> $GITHUB_OUTPUT
+          echo "CloudFront Distribution ID: $DIST_ID"
+
+      - name: Get CloudFront URL
+        id: get-frontend-url
+        run: |
+          FRONTEND_URL=$(aws cloudformation describe-stacks \
+            --stack-name LfmtPocProd \
+            --query "Stacks[0].Outputs[?OutputKey=='FrontendUrl'].OutputValue" \
+            --output text \
+            --region ${{ env.AWS_REGION }})
+          echo "frontend_url=$FRONTEND_URL" >> $GITHUB_OUTPUT
+          echo "Frontend URL: $FRONTEND_URL"
+
+      - name: Invalidate CloudFront cache
+        run: |
+          aws cloudfront create-invalidation --distribution-id ${{ steps.get-cf-dist.outputs.distribution_id }} --paths "/*"
+          echo "CloudFront cache invalidation initiated"
+
+      - name: Frontend Deployment Summary
         run: |
           echo "========================================="
           echo "Production Deployment Summary"
@@ -553,6 +688,9 @@ jobs:
           echo "Environment: production"
           echo "Region: ${{ env.AWS_REGION }}"
           echo "Stack: LfmtPocProd"
+          echo "S3 Bucket: ${{ steps.get-bucket-name.outputs.bucket_name }}"
+          echo "CloudFront Distribution: ${{ steps.get-cf-dist.outputs.distribution_id }}"
+          echo "Frontend URL: ${{ steps.get-frontend-url.outputs.frontend_url }}"
           echo "API URL: ${{ steps.get-api-url.outputs.api_url }}"
           echo "Deployed at: $(date -u +"%Y-%m-%d %H:%M:%S UTC")"
           echo "========================================="

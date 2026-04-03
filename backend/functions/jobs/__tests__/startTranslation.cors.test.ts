@@ -7,6 +7,7 @@
 // Set required environment variables BEFORE imports
 process.env.JOBS_TABLE = 'test-jobs-table';
 process.env.STATE_MACHINE_NAME = 'test-state-machine';
+process.env.AWS_REGION = 'us-east-1';
 process.env.ALLOWED_ORIGINS = 'http://localhost:3000,https://localhost:3000,https://d39xcun7144jgl.cloudfront.net,https://staging.lfmt.yourcompany.com';
 
 // Mock AWS SDK clients BEFORE importing handler
