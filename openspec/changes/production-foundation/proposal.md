@@ -65,7 +65,7 @@ This change establishes the **minimum production-grade foundation** required bef
 - **CI Quality Gates**:
   - `npm run lint` must pass (0 warnings)
   - `npm run type-check` must pass
-  - Code coverage must meet 95% threshold
+  - Code coverage must meet tiered thresholds (Critical Path 100%, General 80%, Infra 40-50%)
 
 ### 3. Infrastructure Hardening ✅ **REQUIRED**
 - **IAM Least Privilege Audit**:

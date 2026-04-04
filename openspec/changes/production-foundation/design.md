@@ -45,8 +45,7 @@ However, the codebase reflects its POC origins with gaps in production readiness
 1. **NOT adding new features** - this is purely foundational work
 2. **NOT migrating to different cloud provider** - AWS remains the platform
 3. **NOT implementing advanced observability** (X-Ray tracing, third-party APM deferred to P1)
-4. **NOT separating AWS accounts** (dev/staging/prod in same account for now)
-5. **NOT refactoring architecture** - existing design is sound for POC scale
+4. **NOT refactoring architecture** - existing design is sound for POC scale
 
 ---
 
