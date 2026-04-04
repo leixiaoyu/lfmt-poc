@@ -34,20 +34,27 @@ This change establishes the **minimum production-grade foundation** required bef
 
 ## What Changes
 
-### 1. Test Coverage to 95% Across ALL Code ✅ **REQUIRED**
-- **Backend Functions** (`backend/functions/`): 70% → 95% statement coverage
-  - Missing coverage: Error handling paths, edge cases, integration tests
-  - Add unit tests for all Lambda handlers
-- **Frontend** (`frontend/src/`): Unknown → 95% statement coverage
-  - Configure Vitest coverage reporting
-  - Test all React components, hooks, contexts, utilities
-- **Infrastructure** (`backend/infrastructure/`): 0% → 95% (CDK construct testing)
-  - Test CDK stack synthesis and resource creation
-  - Validate IAM policies, environment configurations
-- **Shared Types** (`shared-types/`): Unknown → 95%
-  - Test Zod schema validation edge cases
+### 1. Test Coverage with Tiered Targets ✅ **REQUIRED**
+**Tiered Coverage Approach** (realistic for production quality):
+- **Critical Path (Auth + Translation)**: 100% coverage (zero tolerance for bugs)
+  - `backend/functions/auth/*`: 100% (authentication = security critical)
+  - `backend/functions/translation/*`: 100% (core business logic)
+  - `frontend/src/components/auth/*`: 100%
+  - `frontend/src/components/translation/*`: 100%
+- **General Code**: 80% coverage (pragmatic balance)
+  - All other frontend/backend application code
+  - Shared types and utilities
+- **Infrastructure (CDK)**: 40-50% coverage (avoid testing the framework)
+  - Focus on custom logic, not CDK construct validation
+  - Test IAM policy generation, environment config logic
+  - **Note**: CDK snapshot tests are brittle/noisy — use sparingly, focus on unit tests for custom constructs
 
-**CI Enforcement**: Fail builds if coverage drops below 95% (no exceptions)
+**Why Tiered?**
+- **Reviewer Feedback**: 95% across all code (including infra) is unrealistic for one person in 1 week
+- **95% CDK coverage = testing AWS's framework**, not our logic
+- **Focus effort where it matters**: Security (auth) and business value (translation)
+
+**CI Enforcement**: Fail builds if critical path < 100%, general < 80%, infra < 40%
 
 ### 2. Code Quality Standards ✅ **REQUIRED**
 - **TypeScript Strict Mode**: Enforce `strict: true`, `noImplicitAny: true` in all `tsconfig.json`
@@ -74,30 +81,52 @@ This change establishes the **minimum production-grade foundation** required bef
   - Enable versioning on `documentBucket` and `resultsBucket`
 - **Cognito Hardening**:
   - Enforce password complexity (12+ chars, uppercase, lowercase, numbers, symbols)
+  - **Migration Plan for Existing Users**: Password policy change (8→12 chars) will break existing users
+    - Strategy: Grandfather existing users (allow 8+ chars), enforce 12+ only for new registrations and password resets
+    - Document in migration runbook
   - Enable MFA for admin users (production only)
   - Configure account lockout after 5 failed login attempts
-- **Environment Separation**:
+- **Environment Separation** ⚠️ **CRITICAL CHANGE**:
+  - **Separate AWS Accounts for Production** (not single account)
+    - **Dev/Staging**: Can share one account (lower risk)
+    - **Production**: Dedicated AWS account via AWS Organizations
+    - **Rationale**: Single account = blast radius nightmare (dev bug → prod outage, dev IAM change → prod access leak)
   - Formalize dev/staging/prod CDK context configurations
-  - Separate AWS accounts or resource tagging strategy
   - Environment-specific secrets in AWS Secrets Manager
+- **Secrets Management**:
+  - **Add Secrets Rotation Policy**: Rotate Gemini API key every 90 days
+  - Configure AWS Secrets Manager rotation for production
+  - Document manual rotation procedure for dev/staging
+- **Cost Controls** 🆕 **CRITICAL GAP**:
+  - **AWS Budgets**: Create $50/month budget with 80% notification threshold
+  - **Cost Anomaly Detection**: Enable AWS Cost Anomaly Detection (catch runaway Lambda/Gemini loops)
+  - **Daily cost tracking**: CloudWatch metric for daily spend
+- **Data Privacy & GDPR** 🆕 **CRITICAL GAP**:
+  - **Formal Data Retention Policy**: User-uploaded documents deleted after 30 days (or immediate post-translation)
+  - **S3 Lifecycle Policies**: Enforce retention rules automatically
+  - **User Consent**: Update terms of service with data handling disclosure
+  - **Right to Deletion**: API endpoint for users to request immediate document deletion
 
 ### 4. Monitoring & Observability ✅ **REQUIRED**
-- **CloudWatch Dashboards**:
-  - API Gateway: Request count, 4xx/5xx errors, latency (p50, p99)
-  - Lambda: Invocations, errors, duration, throttles, concurrent executions
-  - DynamoDB: Consumed read/write capacity, throttled requests
-  - S3: Bucket size, request metrics
-  - Step Functions: Execution success/failure rates, duration
-- **CloudWatch Alarms**:
-  - Lambda error rate > 5% (5-minute period)
-  - API Gateway 5xx rate > 1% (5-minute period)
-  - DynamoDB throttled requests > 10 (1-minute period)
-  - Translation job failures > 3 in 1 hour
-  - SNS topic for alarm notifications
-- **Structured Logging**:
-  - Add correlation IDs to all Lambda logs
-  - JSON log format for CloudWatch Insights queries
-  - Log retention: 7 days (dev), 30 days (prod)
+- **Backend Observability (CloudWatch)**:
+  - **Dashboards**: API Gateway, Lambda, DynamoDB, S3, Step Functions
+  - **Alarms**: Lambda errors > 5%, API 5xx > 1%, DynamoDB throttling, translation failures
+  - **Structured Logging**:
+    - **Correlation ID Origin**: Born at **API Gateway** (`event.requestContext.requestId`), propagated through all Lambda layers
+    - JSON log format for CloudWatch Insights queries
+    - Log retention: 7 days (dev), 30 days (prod)
+- **Frontend Observability** 🆕 **CRITICAL GAP**:
+  - **Problem**: Frontend is currently a black hole for errors (no visibility into client-side failures)
+  - **Solution Options**:
+    - **CloudWatch RUM** (AWS native, $1/100K events)
+    - **Sentry** (better UX, free tier 5K events/mo)
+  - **Decision**: CloudWatch RUM for cost consistency with backend
+  - **Metrics**: JS errors, page load time, React component crashes, API call failures
+- **Gemini API Rate Limiting** 🆕 **CRITICAL GAP**:
+  - **Problem**: Current rate limiter (DynamoDB-based) doesn't handle Gemini 429 errors gracefully
+  - **Circuit Breaker Pattern**: Halt translation job after 3 consecutive 429s, exponential backoff
+  - **UI Handling**: Show "Translation paused due to rate limits, retrying in 2 minutes..." (not generic error)
+  - **Metrics**: Track 429 rate, circuit breaker trips
 - **X-Ray Tracing** (Optional P1):
   - Enable AWS X-Ray on Lambda functions
   - Trace API Gateway → Lambda → DynamoDB/S3 flows
@@ -107,10 +136,14 @@ This change establishes the **minimum production-grade foundation** required bef
   - **Dev**: Auto-deploy on `main` push (current behavior)
   - **Staging**: Manual approval via `workflow_dispatch` (new)
   - **Prod**: Requires staging validation + approval (new)
-- **Rollback Procedure**:
-  - Document CDK rollback steps (`cdk deploy --previous-version`)
-  - CloudFormation change sets for production deployments
-  - Database migration rollback strategy
+- **Automated Rollback** ⚠️ **CRITICAL CHANGE**:
+  - **Problem**: Task 4.5.2 is documentation-only (not tested, not automated)
+  - **Solution**: Tested, automated rollback scripts
+    - `scripts/rollback-lambda.sh`: Revert Lambda function to previous version
+    - `scripts/rollback-cdk-stack.sh`: Rollback CloudFormation stack to previous version
+    - `scripts/rollback-database.sh`: Restore DynamoDB from PITR
+  - **Testing**: Execute rollback in dev every sprint (muscle memory + validation)
+  - **Documentation**: Runbooks reference these scripts, not manual steps
 - **Smoke Tests**:
   - Post-deployment health checks (API /health endpoint)
   - Critical path tests: login → upload → translation → download
@@ -164,11 +197,15 @@ This is a **cross-cutting foundational change** affecting all existing capabilit
 ### Breaking Changes
 **NONE** - This change is backward-compatible. All changes are additive or internal improvements.
 
-### Migration Path
-1. **Phase 1 (Week 1)**: Test Coverage - Add missing tests, configure coverage enforcement
-2. **Phase 2 (Week 2)**: Code Quality - Add linters, formatters, pre-commit hooks
-3. **Phase 3 (Week 3)**: Infrastructure Hardening - IAM audit, encryption, backups
-4. **Phase 4 (Week 4)**: Monitoring & CI/CD - Dashboards, alarms, deployment rigor
+### Migration Path ⚠️ **CRITICAL: PHASE REORDERING**
+
+**Reviewer Feedback**: Phase 1 (Test Coverage) before Phase 2 (TypeScript Strict) is backwards — writing tests against incorrect types wastes effort. Fix types FIRST, then write tests.
+
+**REVISED Phase Order**:
+1. **Phase 1 (Week 1)**: Code Quality - TypeScript Strict, ESLint, Prettier (fix foundation first)
+2. **Phase 2 (Week 2)**: Test Coverage - Add missing tests against correct types (realistic timeline, tiered targets)
+3. **Phase 3 (Week 3)**: Infrastructure Hardening - IAM audit, encryption, backups, AWS account separation
+4. **Phase 4 (Week 4)**: Monitoring & CI/CD - Dashboards, alarms, deployment rigor, automated rollback
 
 **Rollout Strategy**: All changes deploy to dev environment first, validate for 1 week before considering staging/prod.
 
@@ -200,13 +237,14 @@ This is a **cross-cutting foundational change** affecting all existing capabilit
 
 ## Risks & Mitigation
 
-### Risk 1: Coverage Target Too Aggressive (95% is High)
-**Probability**: Medium
-**Impact**: Medium (timeline slip)
+### Risk 1: Coverage Target Too Aggressive (95% Uniform is Unrealistic)
+**Probability**: High ⚠️ **REVIEWER CONFIRMED**
+**Impact**: Medium (timeline slip OR meaningless green-wash tests)
+**Reviewer Feedback**: Going from 0% to 95% across frontend + infra in 5 days for one person = recipe for garbage tests just to hit numbers
 **Mitigation**:
-- Break into phases: 80% → 90% → 95% over 4 weeks
-- Focus on critical paths first (authentication, translation workflow)
-- Allow coverage exemptions for unreachable code (with justification)
+- **Tiered Coverage Targets**: Critical 100%, General 80%, Infra 40-50% (see What Changes section)
+- Focus on security-critical code first (auth = 100%), then business logic (translation = 100%)
+- Infrastructure tests focus on custom logic, not CDK framework validation
 
 ### Risk 2: Breaking Changes from Strict TypeScript
 **Probability**: Low
@@ -271,25 +309,31 @@ This is a **cross-cutting foundational change** affecting all existing capabilit
 
 ## Timeline
 
-### Week 1: Test Coverage Foundation
-- Days 1-2: Configure coverage reporting across all packages
-- Days 3-5: Write missing unit tests (backend Lambda handlers)
-- Days 6-7: Write missing frontend component tests
+### Week 1: Code Quality Standards (MOVED TO FIRST - FIX TYPES BEFORE TESTS)
+- Days 1-2: Audit `any` types, enable TypeScript strict mode across all packages
+- Days 3-4: Configure ESLint, Prettier, enforce in CI
+- Days 5: Add pre-commit hooks (Husky + lint-staged)
+- Days 6-7: Fix TypeScript errors incrementally, validate with type-check
 
-### Week 2: Code Quality Standards
-- Days 1-2: Configure ESLint, Prettier, enforce in CI
-- Days 3-4: Add pre-commit hooks (Husky + lint-staged)
-- Days 5-7: Create PR templates, update documentation
+### Week 2: Test Coverage Foundation (REALISTIC TIMELINE, TIERED TARGETS)
+- Days 1-2: Configure coverage reporting with tiered thresholds (Critical 100%, General 80%, Infra 40-50%)
+- Days 3-5: Write missing unit tests for **critical path** (auth 100%, translation 100%)
+- Days 6-7: Write missing tests for general code (80% target), frontend components (80% target)
 
-### Week 3: Infrastructure Hardening
-- Days 1-3: IAM least privilege audit and fixes
-- Days 4-5: Enable DynamoDB backups, S3 encryption
-- Days 6-7: Cognito hardening, environment separation
+### Week 3: Infrastructure Hardening (+ AWS ACCOUNT SEPARATION)
+- Days 1-2: IAM least privilege audit and fixes
+- Days 3: Enable DynamoDB backups, S3 encryption
+- Day 4: Cognito hardening (password policy + migration plan for existing users)
+- Days 5-6: **AWS Organizations setup** - Create prod account, configure cross-account IAM roles
+- Day 7: Deploy prod stack to new account, validate
 
-### Week 4: Monitoring & Deployment
-- Days 1-3: CloudWatch dashboards and alarms
-- Days 4-5: CI/CD hardening (staging, rollback procedures)
-- Days 6-7: Operational runbooks, final validation
+### Week 4: Monitoring & Deployment (+ AUTOMATED ROLLBACK + COST CONTROLS)
+- Day 1: CloudWatch dashboards (backend + **frontend RUM**)
+- Day 2: CloudWatch alarms + SNS notifications
+- Day 3: **AWS Budgets + Cost Anomaly Detection** setup
+- Day 4: **Automated rollback scripts** (Lambda, CDK, DynamoDB PITR restore)
+- Day 5: CI/CD hardening (staging, smoke tests, **Gemini circuit breaker**)
+- Days 6-7: Operational runbooks (reference automated scripts), final validation
 
 **Buffer**: 3 days for unexpected issues
 
@@ -301,8 +345,14 @@ This is a **cross-cutting foundational change** affecting all existing capabilit
    - **Decision**: Unless absolutely necessary, no exemptions. 95% means 95%. The bar is intentionally high. If code can't be tested, question whether the code should exist.
    - Generated code (`cdk.out/`, `.d.ts` files, `node_modules/`) is excluded from coverage reporting (not "exempted" — it's not our code).
 
-2. **Staging Environment AWS Account**: Same account with resource tagging.
-   - **Decision**: Keep dev/staging/prod in the same AWS account. Use resource tags and naming conventions for separation. Migrate to separate accounts if/when scale demands it.
+2. **Production AWS Account Separation**: SEPARATE account via AWS Organizations ⚠️ **CRITICAL CHANGE**
+   - **OLD Decision (REJECTED)**: Keep dev/staging/prod in same account
+   - **Reviewer Feedback**: Single account for prod = "blast radius nightmare" — dev bug can nuke prod, dev IAM leak = prod access compromise
+   - **NEW Decision**:
+     - **Dev + Staging**: Share one AWS account (acceptable risk, both non-prod)
+     - **Production**: Dedicated AWS account via AWS Organizations
+     - **Migration**: Set up AWS Org, create prod account, deploy prod stack in Week 3
+   - **Timeline Impact**: +2 days for AWS Org setup and cross-account IAM roles
 
 3. **Monitoring Tool**: CloudWatch native, cost-conscious.
    - **Decision**: CloudWatch only. Be mindful of metrics costs — basic dashboards and alarms with low-cost configuration given current low traffic. No third-party APM.

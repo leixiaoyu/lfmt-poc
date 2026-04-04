@@ -52,26 +52,33 @@ However, the codebase reflects its POC origins with gaps in production readiness
 
 ## Decisions
 
-### Decision 1: Test Coverage Target = 95% (Not 80% or 100%)
+### Decision 1: Tiered Test Coverage (Not Uniform 95%) ⚠️ **REVISED PER REVIEWER FEEDBACK**
 
-**Rationale**:
-- **Industry Standard**: Production systems typically target 80-95% coverage
-- **Diminishing Returns**: 95% → 100% requires testing unreachable code (e.g., defensive checks)
-- **Pragmatic**: Allows exemptions for generated code, third-party libraries
-- **Confidence**: 95% coverage catches ~99% of real-world bugs in deterministic code
+**Reviewer Feedback**:
+- 95% uniform coverage across all code (including CDK infra) is unrealistic for one person in 1 week
+- Going from 0% → 95% in 5 days = recipe for meaningless green-wash tests
+- 95% CDK coverage = testing AWS's framework, not our custom logic
+
+**NEW Rationale (Tiered Approach)**:
+- **Critical Path (100%)**: Zero tolerance for bugs in auth/translation = security + business value
+- **General Code (80%)**: Pragmatic balance for supporting code
+- **Infrastructure (40-50%)**: Focus on custom logic, not CDK framework validation
+- **CDK Snapshot Tests**: Acknowledged as brittle/noisy — use sparingly, prefer unit tests for custom constructs
 
 **Alternatives Considered**:
-- **80% coverage**: Too low for production (misses critical error paths)
-- **100% coverage**: Unrealistic (requires testing impossible edge cases)
+- **Uniform 95%**: Reviewer rejected as over-engineering infra tests
+- **Uniform 80%**: Too low for critical security code (auth)
 
 **Implementation**:
-- `jest.config.js` and `vitest.config.ts` updated with `coverageThreshold.global: 95%`
-- CI fails builds if coverage drops below threshold
-- Coverage exemptions require code comments with justification
+- `jest.config.js` and `vitest.config.ts` updated with **tiered** `coverageThreshold`:
+  - Critical path: `coverageThreshold.critical: 100%` (auth, translation directories)
+  - General code: `coverageThreshold.global: 80%`
+  - Infrastructure: `coverageThreshold.infrastructure: 40%` (custom CDK logic only)
+- CI fails builds if critical < 100%, general < 80%, infra < 40%
 
 **Risks**:
-- **Risk**: 95% may be too aggressive for 4-week timeline
-- **Mitigation**: Phased approach (80% → 90% → 95% over weeks)
+- **Risk**: Tiered config more complex to maintain
+- **Mitigation**: Document coverage rules clearly in README, enforce in pre-commit hooks
 
 ---
 
@@ -148,29 +155,38 @@ However, the codebase reflects its POC origins with gaps in production readiness
 
 ---
 
-### Decision 5: Staging Environment in Same AWS Account (Not Separate Account)
+### Decision 5: Production in Separate AWS Account (Not Single Account) ⚠️ **CRITICAL CHANGE PER REVIEWER**
 
-**Rationale**:
-- **Simplicity**: Single account reduces administrative overhead
-- **Cost**: Avoid cross-account networking charges
-- **Sufficient for POC**: Staging validated via resource tags, naming conventions
-- **Low Risk**: LFMT is not handling sensitive data (public domain translations)
+**Reviewer Feedback**:
+- **"Blast radius nightmare"**: Single account for dev/staging/prod = dev bug can nuke prod, dev IAM misconfiguration → prod access leak
+- Reviewer STRONGLY REJECTED same-account approach for production
+
+**NEW Rationale (Separate Prod Account)**:
+- **Production Isolation**: Dedicated AWS account via AWS Organizations eliminates blast radius risk
+- **Dev + Staging Share Account**: Acceptable risk (both non-prod environments)
+- **Security Best Practice**: Industry standard for production systems
+- **Compliance Ready**: Required for SOC 2, ISO 27001 (future)
 
 **Alternatives Considered**:
-- **Separate AWS accounts**: Best practice but adds complexity (cross-account roles, VPC peering)
-- **No staging environment**: Too risky, prod deployments untested
+- **OLD Decision (Single Account)**: REJECTED by reviewer as unacceptable risk
+- **All Separate Accounts**: Overkill for POC, dev+staging can share
 
 **Implementation**:
+- **Week 3 Task**: Set up AWS Organizations
+  - Create production AWS account under organization
+  - Configure cross-account IAM roles for deployment (GitHub Actions → Prod account)
+  - Update CDK context: `account` parameter switches based on environment
 - Tag all resources with `Environment: dev|staging|prod`
-- Naming convention: `lfmt-{env}-{resource}` (e.g., `lfmt-staging-jobs-table`)
-- Use CDK context to configure environment-specific settings
-- GitHub Actions workflow for staging deployment (manual trigger)
+- Naming convention: `lfmt-{env}-{resource}`
+- **Cost**: Cross-account data transfer minimal (deployments only, not runtime traffic)
 
 **Risks**:
-- **Risk**: Dev and staging share AWS quotas (potential resource contention)
-- **Mitigation**: Monitor quota usage, separate accounts if needed in Phase B
+- **Risk**: AWS Organizations setup adds 2 days to timeline
+- **Mitigation**: Allocated in revised Week 3 timeline (Days 5-6)
+- **Risk**: Cross-account IAM complexity
+- **Mitigation**: Use AWS CDK's built-in cross-account support, test thoroughly in dev
 
-**Future Migration Path**: When LFMT reaches production scale, migrate to AWS Organizations with separate accounts
+**Migration Impact**: +2 days timeline, Week 3 extended
 
 ---
 
@@ -197,29 +213,202 @@ However, the codebase reflects its POC origins with gaps in production readiness
 
 ---
 
-### Decision 7: Phased Rollout Over 4 Weeks (Not Big-Bang)
+### Decision 7: Phased Rollout Over 4 Weeks with Reordered Phases ⚠️ **CRITICAL CHANGE PER REVIEWER**
 
-**Rationale**:
-- **Risk Management**: Incremental changes easier to debug and rollback
-- **Learning**: Early phases inform later phases (e.g., IAM audit informs monitoring)
-- **Morale**: Weekly milestones provide psychological wins
-- **Validation**: Each phase tested in dev before proceeding
+**Reviewer Feedback**:
+- **BACKWARD ORDERING**: Phase 1 (Test Coverage) before Phase 2 (TypeScript Strict) wastes effort — writing tests against incorrect types, then fixing types, then rewriting tests
+- **Correct Order**: Fix types FIRST (foundation), THEN write tests against correct types
+
+**NEW Rationale (Reordered Phases)**:
+- **Week 1: Code Quality** (TypeScript Strict, ESLint, Prettier) — Fix foundation first
+- **Week 2: Test Coverage** (Tiered targets) — Write tests against correct types
+- **Week 3: Infrastructure Hardening** (IAM, encryption, **AWS Org setup**)
+- **Week 4: Monitoring & CI/CD** (**Automated rollback**, **cost controls**, **frontend observability**)
 
 **Alternatives Considered**:
-- **Big-bang approach**: All changes in 1 week (too risky)
-- **Longer timeline (8 weeks)**: Delays feature development
+- **OLD Order (Tests → Types)**: REJECTED by reviewer as inefficient
+- **Big-bang approach**: Too risky
 
 **Implementation**:
-- **Week 1**: Test coverage (foundation for quality)
-- **Week 2**: Code quality standards (catch errors early)
-- **Week 3**: Infrastructure hardening (security and reliability)
-- **Week 4**: Monitoring and CI/CD (operational readiness)
+- **Week 1**: Audit `any` types, enable strict mode, configure linters, fix errors
+- **Week 2**: Configure tiered coverage, write critical path tests (100%), general tests (80%)
+- **Week 3**: IAM audit, backups, **AWS Organizations + prod account setup**
+- **Week 4**: CloudWatch dashboards + **RUM**, **AWS Budgets**, **automated rollback scripts**
 
-**Phase Gates**: Each phase requires sign-off before proceeding (dev deployment successful, tests passing)
+**Phase Gates**: Each phase requires sign-off before proceeding
 
 **Risks**:
-- **Risk**: Phase 3 IAM changes break Phase 1/2 work
-- **Mitigation**: Comprehensive integration tests after each phase
+- **Risk**: TypeScript strict mode reveals more errors than estimated
+- **Mitigation**: Allocate 2 full days for incremental fixes (Week 1, Days 6-7)
+
+---
+
+### Decision 8: Frontend Observability (CloudWatch RUM) 🆕 **CRITICAL GAP**
+
+**Reviewer Feedback**:
+- Frontend is currently a **black hole** for errors — no visibility into client-side crashes, JS errors, or API failures
+- Cannot debug prod issues without frontend telemetry
+
+**Rationale**:
+- **Problem**: Backend has CloudWatch, frontend has nothing
+- **Solution Options**:
+  - **CloudWatch RUM**: AWS native, $1/100K events, integrates with existing CloudWatch dashboards
+  - **Sentry**: Better UX, free tier 5K events/mo, but another vendor dependency
+- **Decision**: CloudWatch RUM for cost consistency and AWS ecosystem integration
+
+**Implementation**:
+- Add CloudWatch RUM app monitor in CDK stack
+- Inject RUM script into frontend HTML (Vite plugin)
+- Track: JS errors, page load time, React component crashes, API call failures, user sessions
+- Create CloudWatch dashboard for frontend metrics (separate from backend)
+
+**Risks**:
+- **Risk**: RUM adds <10KB to bundle size
+- **Mitigation**: Acceptable tradeoff for production visibility
+
+---
+
+### Decision 9: Cost Controls (AWS Budgets + Anomaly Detection) 🆕 **CRITICAL GAP**
+
+**Reviewer Feedback**:
+- **Runaway Lambda/Gemini loop** could blow entire budget in hours
+- No automated cost monitoring or alerting
+
+**Rationale**:
+- **Problem**: Current setup has zero cost guardrails
+- **Risk Scenario**: Infinite retry loop on Gemini API → 1000 Lambda invocations/sec → $500 bill in 6 hours
+- **Solution**: AWS Budgets + Cost Anomaly Detection
+
+**Implementation**:
+- **AWS Budget**: $50/month threshold, alerts at 80% ($40) and 100% ($50) via SNS
+- **Cost Anomaly Detection**: ML-based anomaly detection (catch unusual spend patterns within hours)
+- **Daily Cost Tracking**: CloudWatch metric for daily spend (visualize in dashboards)
+- **Emergency Kill Switch**: Document procedure to disable API Gateway if runaway detected
+
+**Risks**:
+- **Risk**: Budget alerts lag by 12-24 hours (AWS Billing delay)
+- **Mitigation**: Cost Anomaly Detection detects within 6 hours, faster response
+
+---
+
+### Decision 10: Secrets Rotation Policy 🆕 **CRITICAL GAP**
+
+**Reviewer Feedback**:
+- No rotation policy for Gemini API key — if leaked, remains valid indefinitely
+
+**Rationale**:
+- **Industry Standard**: Rotate secrets every 90 days (NIST, AWS best practices)
+- **Compliance**: Required for SOC 2, ISO 27001
+
+**Implementation**:
+- **Production**: AWS Secrets Manager automatic rotation (90 days)
+  - Configure rotation Lambda (create new Gemini key, update Secrets Manager, invalidate old key)
+- **Dev/Staging**: Manual rotation (90 days), documented in runbook
+- **Key Lifecycle**: Track key age in CloudWatch metric, alarm if >100 days
+
+**Risks**:
+- **Risk**: Rotation breaks translation jobs in-flight
+- **Mitigation**: Graceful cutover — new jobs use new key, old jobs complete with old key (60-second transition window)
+
+---
+
+### Decision 11: Data Privacy & GDPR Compliance 🆕 **CRITICAL GAP**
+
+**Reviewer Feedback**:
+- No formal data retention policy for user-uploaded documents
+- GDPR requires explicit retention rules and user deletion rights
+
+**Rationale**:
+- **Legal Requirement**: GDPR Article 17 (Right to Erasure), Article 5 (Storage Limitation)
+- **Risk**: User uploads sensitive document → stored forever → GDPR violation
+
+**Implementation**:
+- **Data Retention Policy**:
+  - Documents deleted 30 days after translation (or immediately if user opts for instant deletion)
+  - S3 Lifecycle Policies enforce retention rules automatically
+- **User Consent**: Update terms of service with data handling disclosure
+- **Right to Deletion**: New API endpoint `/api/delete-document/:jobId` (immediate S3 deletion)
+- **Audit Trail**: Log all document uploads/deletions in CloudWatch for compliance
+
+**Risks**:
+- **Risk**: User needs document after 30 days
+- **Mitigation**: Allow download during 30-day window, send email reminder at 25 days
+
+---
+
+### Decision 12: Gemini Rate Limiting Circuit Breaker 🆕 **CRITICAL GAP**
+
+**Reviewer Feedback**:
+- Current DynamoDB-based rate limiter doesn't handle Gemini 429 errors gracefully
+- UI shows generic error instead of user-friendly "rate limited, retrying soon" message
+
+**Rationale**:
+- **Problem**: Gemini API returns 429 (Too Many Requests) → translation fails → user confused
+- **Current Behavior**: Translation job marked as failed, no retry
+- **Better UX**: Pause translation, exponential backoff, resume automatically
+
+**Implementation**:
+- **Circuit Breaker Pattern**:
+  - Track consecutive 429 errors per translation job
+  - After 3 consecutive 429s → open circuit (halt job for 2 minutes)
+  - Exponential backoff: 2min → 4min → 8min
+  - After successful request → close circuit (resume normal operation)
+- **UI Handling**:
+  - Show "Translation paused due to rate limits. Retrying in X minutes..." (not generic error)
+  - Display circuit breaker state in job status
+- **Metrics**: Track 429 rate, circuit breaker trips in CloudWatch
+
+**Risks**:
+- **Risk**: Circuit breaker logic adds complexity to Step Functions
+- **Mitigation**: Implement as Lambda layer (reusable across handlers), unit test thoroughly
+
+---
+
+### Decision 13: Automated Rollback Scripts (Not Documentation Only) 🆕 **CRITICAL CHANGE**
+
+**Reviewer Feedback**:
+- Task 4.5.2 is "Create rollback procedure" → documentation only, not tested
+- **Production incident = panic + manual steps = errors**
+
+**Rationale**:
+- **Problem**: Documentation gets stale, manual rollback under pressure = mistakes
+- **Solution**: Automated, tested rollback scripts
+
+**Implementation**:
+- **Rollback Scripts** (in `/scripts/`):
+  - `rollback-lambda.sh <function-name> <version>`: Revert Lambda to previous version
+  - `rollback-cdk-stack.sh <stack-name>`: Rollback CloudFormation stack
+  - `rollback-database.sh <table-name> <timestamp>`: Restore DynamoDB from PITR
+- **Testing Procedure**: Execute rollback in dev **every sprint** (muscle memory + validation)
+- **Runbooks Reference Scripts**: Runbooks say "Run `./scripts/rollback-cdk-stack.sh LfmtPocProd`" (not 20-step manual checklist)
+
+**Risks**:
+- **Risk**: Automated scripts fail during real incident
+- **Mitigation**: Test scripts monthly in dev, alert if script execution fails
+
+---
+
+### Decision 14: Correlation ID Origin Specification 🆕 **REVIEWER CLARIFICATION**
+
+**Reviewer Feedback**:
+- "Add correlation IDs" but didn't specify WHERE the ID is born — frontend or API Gateway?
+
+**Rationale**:
+- **Correlation ID Origin**: **API Gateway** (`event.requestContext.requestId`)
+  - Born when request enters AWS infrastructure
+  - Automatically propagated to Lambda via event context
+  - Consistent across all backend services (Lambda, CloudWatch Logs, X-Ray)
+- **NOT Born in Frontend**: Avoids clock skew, frontend replay issues
+
+**Implementation**:
+- **Backend Lambda**: Extract `correlationId = event.requestContext.requestId` at handler entry
+- **Structured Logging**: Include `correlationId` in every log statement
+- **API Responses**: Return `correlationId` in response headers (`X-Correlation-ID`)
+- **Frontend**: Log `X-Correlation-ID` from response (for support tickets)
+
+**Risks**:
+- **Risk**: API Gateway-generated ID may not be unique across regions (extremely rare)
+- **Mitigation**: Acceptable risk, UUID v4 collision probability negligible
 
 ---
 

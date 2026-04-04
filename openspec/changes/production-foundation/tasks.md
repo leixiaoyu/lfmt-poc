@@ -6,166 +6,67 @@
 
 ---
 
-## Phase 1: Test Coverage Foundation (Week 1 - 40 hours)
+## Phase 1: Code Quality Standards (Week 1 - 40 hours) ⚠️ **REORDERED - FIX TYPES FIRST**
 
-### 1.1 Configure Coverage Reporting Infrastructure
-- [ ] 1.1.1 Update `backend/functions/jest.config.js` coverage threshold to 95%
-  - Modify `coverageThreshold.global` for all metrics (branches, functions, lines, statements)
-  - Add `coveragePathIgnorePatterns` for generated code
-- [ ] 1.1.2 Create `frontend/vitest.config.ts` with coverage configuration
-  - Install `@vitest/coverage-v8` (already in devDependencies)
-  - Configure `coverage.provider: 'v8'`, `coverage.reporter: ['text', 'json', 'html', 'lcov']`
-  - Set `coverage.thresholds` to 95% (lines, functions, branches, statements)
-- [ ] 1.1.3 Update `backend/infrastructure/jest.config.js` for CDK testing
-  - Add coverage thresholds: 95% across all metrics
-  - Configure `testMatch` for CDK construct tests
-- [ ] 1.1.4 Add coverage reporting to CI pipeline (`.github/workflows/deploy.yml`)
-  - Modify `test` job to run `npm run test:coverage` instead of `npm test`
-  - Add coverage report upload as GitHub artifact
-  - Add coverage badge to README.md
-- **Files Modified**: `backend/functions/jest.config.js`, `frontend/vitest.config.ts`, `backend/infrastructure/jest.config.js`, `.github/workflows/deploy.yml`
-- **Estimated Time**: 4 hours
-- **Success Criteria**: Coverage reports generate locally and in CI
+**Reviewer Feedback**: Writing tests before fixing types = wasted effort. Fix foundation first, then test against correct types.
 
-### 1.2 Backend Lambda Function Tests (Critical Path)
-- [ ] 1.2.1 Add missing tests for authentication handlers
-  - `auth/register.ts`: Test validation errors, duplicate email, password hashing
-  - `auth/login.ts`: Test invalid credentials, account lockout, token generation
-  - `auth/refresh-token.ts`: Test expired tokens, invalid tokens, rotation
-  - `auth/reset-password.ts`: Test email validation, password complexity, reset flow
-  - `auth/getCurrentUser.ts`: Test unauthorized access, token validation
-  - **Target Coverage**: 95% for all auth handlers
-  - **Estimated Time**: 8 hours
-- [ ] 1.2.2 Add missing tests for upload handlers
-  - `upload/uploadPresignedUrl.ts`: Test file size limits, file type validation, S3 errors
-  - `upload/uploadComplete.ts`: Test S3 verification, metadata updates, missing files
-  - **Target Coverage**: 95% for upload handlers
-  - **Estimated Time**: 4 hours
-- [ ] 1.2.3 Add missing tests for translation workflow
-  - `translation/chunkDocument.ts`: Test edge cases (empty file, single sentence, 500K words)
-  - `translation/translateChunk.ts`: Test Gemini API errors, rate limiting, retries
-  - `translation/startTranslation.ts`: Test Step Functions errors, invalid job IDs
-  - `translation/getTranslationStatus.ts`: Test missing jobs, corrupted state
-  - **Target Coverage**: 95% for translation handlers
-  - **Estimated Time**: 10 hours
-- [ ] 1.2.4 Add error handling path tests
-  - Test DynamoDB errors (throttling, item not found)
-  - Test S3 errors (access denied, bucket not found, network timeouts)
-  - Test Cognito errors (user not found, password policy violations)
-  - **Target Coverage**: 90%+ branch coverage (error paths)
-  - **Estimated Time**: 6 hours
-- **Files Created**: 20+ new test files in `backend/functions/__tests__/`
-- **Success Criteria**: `npm run test:coverage` shows ≥95% coverage, all tests pass
-
-### 1.3 Frontend Component Tests
-- [ ] 1.3.1 Test authentication components
-  - `src/components/auth/LoginForm.tsx`: Test form validation, submit, error display
-  - `src/components/auth/RegisterForm.tsx`: Test password validation, terms acceptance
-  - `src/components/auth/PasswordResetForm.tsx`: Test email validation, success flow
-  - **Target Coverage**: 95%
-  - **Estimated Time**: 6 hours
-- [ ] 1.3.2 Test translation workflow components
-  - `src/components/translation/UploadForm.tsx`: Test file selection, legal attestation, upload
-  - `src/components/translation/TranslationStatus.tsx`: Test progress display, polling logic
-  - `src/components/translation/JobList.tsx`: Test job filtering, sorting, pagination
-  - **Target Coverage**: 95%
-  - **Estimated Time**: 8 hours
-- [ ] 1.3.3 Test hooks and contexts
-  - `src/hooks/useAuth.tsx`: Test login, logout, token refresh, error handling
-  - `src/contexts/AuthContext.tsx`: Test provider, state updates, persistence
-  - `src/hooks/useTranslation.tsx`: Test job creation, status polling, cancellation
-  - **Target Coverage**: 95%
-  - **Estimated Time**: 6 hours
-- [ ] 1.3.4 Test utility functions
-  - `src/utils/api.ts`: Test request interceptors, error handling, retries
-  - `src/utils/validation.ts`: Test Zod schema edge cases
-  - `src/utils/formatting.ts`: Test date formatting, file size formatting
-  - **Target Coverage**: 100% (utilities are deterministic)
-  - **Estimated Time**: 3 hours
-- **Files Created**: 30+ test files in `frontend/src/__tests__/`
-- **Success Criteria**: `npm run test:coverage` shows ≥95% coverage
-
-### 1.4 Infrastructure (CDK) Tests
-- [ ] 1.4.1 Test CDK stack synthesis
-  - Test `LfmtInfrastructureStack` synthesizes without errors
-  - Test environment-specific configurations (dev, staging, prod)
-  - Snapshot test for generated CloudFormation template
-  - **Estimated Time**: 4 hours
-- [ ] 1.4.2 Test resource creation
-  - Test DynamoDB tables have correct attributes, indexes, PITR enabled
-  - Test S3 buckets have encryption, versioning, lifecycle policies
-  - Test Lambda functions have correct environment variables, IAM roles
-  - Test API Gateway has CORS, authorizers, rate limiting
-  - **Estimated Time**: 6 hours
-- [ ] 1.4.3 Test IAM policies
-  - Test Lambda role has least-privilege permissions
-  - Test S3 bucket policies block public access
-  - Test Cognito user pool policies enforce password complexity
-  - **Estimated Time**: 4 hours
-- **Files Created**: `backend/infrastructure/__tests__/lfmt-infrastructure-stack.test.ts`
-- **Success Criteria**: CDK unit tests pass, coverage ≥95%
-
----
-
-## Phase 2: Code Quality Standards (Week 2 - 40 hours)
-
-### 2.1 TypeScript Strict Mode Migration
-- [ ] 2.1.1 Audit current `any` types across codebase
+### 1.1 TypeScript Strict Mode Migration (MOVED FROM PHASE 2)
+- [ ] 1.1.1 Audit current `any` types across codebase
   - Run `grep -r "any" --include="*.ts" --include="*.tsx"` to find all instances
   - Create inventory spreadsheet (file path, line number, justification needed)
   - **Estimated Count**: <50 instances
   - **Estimated Time**: 2 hours
-- [ ] 2.1.2 Enable strict mode in all `tsconfig.json` files
+- [ ] 1.1.2 Enable strict mode in all `tsconfig.json` files
   - `backend/functions/tsconfig.json`: Set `strict: true`, `noImplicitAny: true`
   - `frontend/tsconfig.json`: Set `strict: true`, `noImplicitAny: true`
   - `backend/infrastructure/tsconfig.json`: Set `strict: true`
   - `shared-types/tsconfig.json`: Set `strict: true`
   - **Estimated Time**: 1 hour
-- [ ] 2.1.3 Fix TypeScript errors incrementally
+- [ ] 1.1.3 Fix TypeScript errors incrementally
   - Fix backend Lambda functions (highest risk first: auth, translation)
   - Fix frontend components (auth, translation workflow)
   - Fix infrastructure CDK code
   - Fix shared types
-  - **Estimated Time**: 12 hours
+  - **Estimated Time**: 12 hours (2 full days)
 - **Files Modified**: 4 `tsconfig.json` files, 50+ TypeScript files
 - **Success Criteria**: `npm run type-check` passes in all packages with 0 errors
 
-### 2.2 ESLint Configuration Standardization
-- [ ] 2.2.1 Create standardized `.eslintrc.cjs` for backend
+### 1.2 ESLint Configuration Standardization (MOVED FROM PHASE 2)
+- [ ] 1.2.1 Create standardized `.eslintrc.cjs` for backend
   - Extend `@typescript-eslint/recommended-requiring-type-checking`
   - Add rules: `no-console: warn`, `no-unused-vars: error`, `prefer-const: error`
   - Configure parser options for TypeScript strict mode
   - **Estimated Time**: 2 hours
-- [ ] 2.2.2 Update frontend `.eslintrc.cjs`
+- [ ] 1.2.2 Update frontend `.eslintrc.cjs`
   - Add React-specific rules: `react-hooks/rules-of-hooks`, `react-hooks/exhaustive-deps`
   - Add accessibility rules: `jsx-a11y/recommended`
   - Align with backend rules for consistency
   - **Estimated Time**: 2 hours
-- [ ] 2.2.3 Fix all ESLint errors and warnings
+- [ ] 1.2.3 Fix all ESLint errors and warnings
   - Run `npm run lint -- --fix` in all packages
   - Manually fix remaining errors (estimated 20-30 errors)
   - **Estimated Time**: 4 hours
-- [ ] 2.2.4 Add ESLint to CI pipeline
+- [ ] 1.2.4 Add ESLint to CI pipeline
   - Modify `.github/workflows/deploy.yml` to run `npm run lint` in all packages
   - Fail build if any errors found (warnings allowed initially)
   - **Estimated Time**: 1 hour
 - **Files Modified**: `backend/functions/.eslintrc.cjs`, `frontend/.eslintrc.cjs`, `.github/workflows/deploy.yml`
 - **Success Criteria**: `npm run lint` passes with 0 errors across all packages
 
-### 2.3 Prettier Formatting
-- [ ] 2.3.1 Create `.prettierrc.json` configuration
+### 1.3 Prettier Formatting (MOVED FROM PHASE 2)
+- [ ] 1.3.1 Create `.prettierrc.json` configuration
   - `printWidth: 100`, `tabWidth: 2`, `semi: true`, `singleQuote: true`
   - `trailingComma: 'es5'`, `arrowParens: 'always'`
   - Place in project root to apply to all packages
   - **Estimated Time**: 1 hour
-- [ ] 2.3.2 Create `.prettierignore` file
+- [ ] 1.3.2 Create `.prettierignore` file
   - Ignore `node_modules/`, `dist/`, `build/`, `cdk.out/`, `coverage/`
   - **Estimated Time**: 0.5 hours
-- [ ] 2.3.3 Format all code
+- [ ] 1.3.3 Format all code
   - Run `npx prettier --write .` in project root
   - Verify changes don't break functionality (run all tests)
   - **Estimated Time**: 2 hours
-- [ ] 2.3.4 Add Prettier to package.json scripts
+- [ ] 1.3.4 Add Prettier to package.json scripts
   - Add `"format": "prettier --write ."` to all `package.json` files
   - Add `"format:check": "prettier --check ."` for CI
   - **Estimated Time**: 0.5 hours
@@ -173,44 +74,132 @@
 - **Files Modified**: All TypeScript files (formatting only)
 - **Success Criteria**: `npm run format:check` passes
 
-### 2.4 Pre-commit Hooks
-- [ ] 2.4.1 Install Husky and lint-staged
+### 1.4 Pre-commit Hooks (MOVED FROM PHASE 2)
+- [ ] 1.4.1 Install Husky and lint-staged
   - `npm install --save-dev husky lint-staged` in project root
   - Run `npx husky init` to create `.husky/` directory
   - **Estimated Time**: 1 hour
-- [ ] 2.4.2 Configure pre-commit hook
+- [ ] 1.4.2 Configure pre-commit hook
   - Create `.husky/pre-commit` script
   - Run `npx lint-staged` on staged files
   - **Estimated Time**: 1 hour
-- [ ] 2.4.3 Configure lint-staged
+- [ ] 1.4.3 Configure lint-staged
   - Add `.lintstagedrc.json` in project root
   - Run ESLint on `*.ts` and `*.tsx` files
   - Run Prettier on all files
   - Run type-check on changed packages
   - **Estimated Time**: 1 hour
-- [ ] 2.4.4 Test pre-commit hooks
+- [ ] 1.4.4 Test pre-commit hooks
   - Introduce intentional linting error → Commit should fail
   - Fix error → Commit should succeed
   - **Estimated Time**: 0.5 hours
 - **Files Created**: `.husky/pre-commit`, `.lintstagedrc.json`
 - **Success Criteria**: Pre-commit hooks block commits with linting/formatting errors
 
-### 2.5 PR Templates and Review Process
-- [ ] 2.5.1 Create PR template
+### 1.5 PR Templates and Review Process (MOVED FROM PHASE 2)
+- [ ] 1.5.1 Create PR template
   - Add `.github/pull_request_template.md`
-  - Sections: Description, Changes, Testing, Checklist (tests added, coverage ≥95%, linting passed)
+  - Sections: Description, Changes, Testing, Checklist (tests added, coverage meets targets, linting passed)
   - **Estimated Time**: 1 hour
-- [ ] 2.5.2 Create code review checklist document
+- [ ] 1.5.2 Create code review checklist document
   - Add `docs/code-review-checklist.md`
   - Include: SOLID principles, error handling, security, performance
   - **Estimated Time**: 2 hours
-- [ ] 2.5.3 Configure GitHub branch protection
+- [ ] 1.5.3 Configure GitHub branch protection
   - Require PR reviews before merging to `main`
-  - Require status checks (tests, linting, coverage)
+  - Require status checks (tests, linting, type-check)
   - Require linear history (no merge commits)
   - **Estimated Time**: 0.5 hours
 - **Files Created**: `.github/pull_request_template.md`, `docs/code-review-checklist.md`
 - **Success Criteria**: PRs cannot merge without passing checks
+
+---
+
+## Phase 2: Test Coverage Foundation (Week 2 - 40 hours) ⚠️ **TIERED TARGETS - REALISTIC FOR ONE PERSON**
+
+**Reviewer Feedback**: 0% → 95% in 5 days = unrealistic, leads to meaningless green-wash tests. Use tiered approach.
+
+### 2.1 Configure Tiered Coverage Reporting Infrastructure 🆕
+- [ ] 2.1.1 Update `backend/functions/jest.config.js` with **tiered** coverage thresholds
+  - **Critical Path** (auth/, translation/): `coverageThreshold.critical: 100%`
+  - **General Code**: `coverageThreshold.global: 80%`
+  - Add `coveragePathIgnorePatterns` for generated code
+  - **Estimated Time**: 2 hours
+- [ ] 2.1.2 Create `frontend/vitest.config.ts` with **tiered** coverage configuration
+  - Install `@vitest/coverage-v8` (already in devDependencies)
+  - Configure `coverage.provider: 'v8'`, `coverage.reporter: ['text', 'json', 'html', 'lcov']`
+  - **Critical Path** (auth, translation components): 100%
+  - **General Code**: 80%
+  - **Estimated Time**: 2 hours
+- [ ] 2.1.3 Update `backend/infrastructure/jest.config.js` for CDK testing
+  - **Infrastructure Coverage**: 40-50% (custom logic only, not CDK framework)
+  - Configure `testMatch` for CDK construct tests
+  - **Note**: Avoid CDK snapshot tests (brittle/noisy), prefer unit tests for custom constructs
+  - **Estimated Time**: 2 hours
+- [ ] 2.1.4 Add coverage reporting to CI pipeline (`.github/workflows/deploy.yml`)
+  - Modify `test` job to run `npm run test:coverage` instead of `npm test`
+  - Add coverage report upload as GitHub artifact
+  - Fail build if critical < 100%, general < 80%, infra < 40%
+  - **Estimated Time**: 2 hours
+- **Files Modified**: `backend/functions/jest.config.js`, `frontend/vitest.config.ts`, `backend/infrastructure/jest.config.js`, `.github/workflows/deploy.yml`
+- **Estimated Time**: 8 hours
+- **Success Criteria**: Tiered coverage thresholds configured, CI enforces them
+
+### 2.2 Critical Path Tests (100% Coverage) - Backend Auth
+- [ ] 2.2.1 Add missing tests for authentication handlers
+  - `auth/register.ts`: Test validation errors, duplicate email, password hashing
+  - `auth/login.ts`: Test invalid credentials, account lockout, token generation
+  - `auth/refresh-token.ts`: Test expired tokens, invalid tokens, rotation
+  - `auth/reset-password.ts`: Test email validation, password complexity, reset flow
+  - `auth/getCurrentUser.ts`: Test unauthorized access, token validation
+  - **Target Coverage**: 100% for all auth handlers (ZERO TOLERANCE)
+  - **Estimated Time**: 10 hours
+- **Files Created**: 5+ new test files in `backend/functions/__tests__/auth/`
+- **Success Criteria**: `npm run test:coverage` shows 100% coverage for auth/
+
+### 2.3 Critical Path Tests (100% Coverage) - Backend Translation
+- [ ] 2.3.1 Add missing tests for translation workflow
+  - `translation/chunkDocument.ts`: Test edge cases (empty file, single sentence, 500K words)
+  - `translation/translateChunk.ts`: Test Gemini API errors, rate limiting, retries, **circuit breaker**
+  - `translation/startTranslation.ts`: Test Step Functions errors, invalid job IDs
+  - `translation/getTranslationStatus.ts`: Test missing jobs, corrupted state
+  - **Target Coverage**: 100% for translation handlers (BUSINESS LOGIC = ZERO TOLERANCE)
+  - **Estimated Time**: 12 hours
+- **Files Created**: 4+ new test files in `backend/functions/__tests__/translation/`
+- **Success Criteria**: `npm run test:coverage` shows 100% coverage for translation/
+
+### 2.4 General Code Tests (80% Coverage) - Backend & Frontend
+- [ ] 2.4.1 Add tests for general backend handlers (upload, utils)
+  - `upload/uploadPresignedUrl.ts`: Test file size limits, file type validation, S3 errors
+  - `upload/uploadComplete.ts`: Test S3 verification, metadata updates, missing files
+  - Error handling paths: DynamoDB throttling, S3 access denied, Cognito errors
+  - **Target Coverage**: 80% for general backend code
+  - **Estimated Time**: 6 hours
+- [ ] 2.4.2 Add tests for frontend auth components (100% - also critical path)
+  - `src/components/auth/LoginForm.tsx`: Test form validation, submit, error display
+  - `src/components/auth/RegisterForm.tsx`: Test password validation, terms acceptance
+  - **Target Coverage**: 100% for auth components
+  - **Estimated Time**: 4 hours
+- [ ] 2.4.3 Add tests for frontend translation components (100% - also critical path)
+  - `src/components/translation/UploadForm.tsx`: Test file selection, legal attestation, upload
+  - `src/components/translation/TranslationStatus.tsx`: Test progress display, polling, **circuit breaker UI**
+  - **Target Coverage**: 100% for translation components
+  - **Estimated Time**: 6 hours
+- [ ] 2.4.4 Add tests for general frontend code (80%)
+  - Hooks, contexts, utilities (80% target for supporting code)
+  - **Estimated Time**: 4 hours
+- **Files Created**: 20+ new test files in `backend/functions/__tests__/` and `frontend/src/__tests__/`
+- **Success Criteria**: Critical path 100%, general code 80%
+
+### 2.5 Infrastructure Tests (40-50% Coverage) - Custom Logic Only
+- [ ] 2.5.1 Test custom CDK constructs (NOT framework validation)
+  - Test IAM policy generation logic (custom PolicyStatements)
+  - Test environment-specific configurations (dev vs staging vs prod)
+  - **Avoid CDK snapshot tests** (brittle/noisy per reviewer feedback)
+  - **Target Coverage**: 40-50% (focus on custom logic, not CDK framework)
+  - **Estimated Time**: 6 hours
+- **Files Created**: `backend/infrastructure/__tests__/lfmt-infrastructure-stack.test.ts`
+- **Success Criteria**: 40-50% coverage on custom CDK logic, all tests pass
 
 ---
 
@@ -315,104 +304,198 @@
 - **Files Modified**: `backend/infrastructure/lib/lfmt-infrastructure-stack.ts`
 - **Success Criteria**: All buckets encrypted, versioning enabled on data buckets
 
-### 3.4 Cognito Security Hardening
+### 3.4 Cognito Security Hardening (+ PASSWORD MIGRATION PLAN) 🆕
 - [ ] 3.4.1 Enforce password complexity
   - Update `userPool` password policy:
-    - `minLength: 12` (currently 8)
+    - `minLength: 12` (currently 8) ⚠️ **BREAKING FOR EXISTING USERS**
     - `requireUppercase: true`
     - `requireLowercase: true`
     - `requireDigits: true`
     - `requireSymbols: true`
   - **File**: `backend/infrastructure/lib/lfmt-infrastructure-stack.ts:224-267`
   - **Estimated Time**: 2 hours
-- [ ] 3.4.2 Configure account lockout policy
+- [ ] 3.4.2 **Create Password Policy Migration Plan** 🆕 **CRITICAL**
+  - **Problem**: Existing users with 8-char passwords will break
+  - **Solution**: Grandfather existing users (allow 8+ chars), enforce 12+ only for:
+    - New registrations
+    - Password resets
+  - **Implementation**: Custom Lambda trigger in Cognito (Pre Authentication)
+    - Check user creation date
+    - If created before policy change → allow 8+ chars
+    - If created after policy change → enforce 12+ chars
+  - Document migration strategy in `docs/runbooks/cognito-password-migration.md`
+  - **Estimated Time**: 4 hours
+- [ ] 3.4.3 Configure account lockout policy
   - Add `accountRecoverySetting` configuration
   - Lock account after 5 failed login attempts
   - Unlock after 15 minutes or admin intervention
   - **Estimated Time**: 2 hours
-- [ ] 3.4.3 Enable MFA for production environment
+- [ ] 3.4.4 Enable MFA for production environment
   - Add `mfa: cognito.Mfa.OPTIONAL` for prod context
   - Keep disabled for dev/staging (usability)
   - Document MFA setup in user guide
   - **Estimated Time**: 3 hours
-- [ ] 3.4.4 Configure session timeout
+- [ ] 3.4.5 Configure session timeout
   - Access token: 15 minutes (short-lived)
   - Refresh token: 30 days (current)
   - ID token: 15 minutes
   - **Estimated Time**: 1 hour
-- [ ] 3.4.5 Test password policy enforcement
+- [ ] 3.4.6 Test password policy enforcement + migration
   - Attempt registration with weak password → Should fail
+  - Test existing user with 8-char password → Should still login (grandfathered)
   - Attempt 5 failed logins → Account locked
   - **Estimated Time**: 2 hours
 - **Files Modified**: `backend/infrastructure/lib/lfmt-infrastructure-stack.ts`
-- **Success Criteria**: Password policy enforced, account lockout working
+- **Files Created**: `docs/runbooks/cognito-password-migration.md`, Lambda trigger for password validation
+- **Success Criteria**: Password policy enforced, existing users not broken, migration documented
 
-### 3.5 Environment Separation
-- [ ] 3.5.1 Formalize dev/staging/prod CDK contexts
+### 3.5 Environment Separation (+ AWS ORGANIZATIONS FOR PROD) ⚠️ **CRITICAL CHANGE**
+- [ ] 3.5.1 **Set up AWS Organizations** 🆕 **REVIEWER REQUIRED**
+  - Create AWS Organization from current AWS account (becomes management account)
+  - Create new AWS account for **production** (via AWS Console or CLI)
+  - Configure cross-account IAM roles for deployment (GitHub Actions → Prod account)
+  - **Rationale**: Separate blast radius (dev bug can't nuke prod)
+  - **Estimated Time**: 6 hours (2 days allocated in timeline)
+- [ ] 3.5.2 Formalize dev/staging/prod CDK contexts
   - Create `cdk.context.json` with environment-specific values
   - Define resource naming conventions (e.g., `lfmt-{env}-{resource}`)
   - Configure retention policies per environment
+  - **Add production account ID** to context
   - **Estimated Time**: 3 hours
-- [ ] 3.5.2 Add environment tagging
+- [ ] 3.5.3 Add environment tagging
   - Tag all resources with `Environment: dev|staging|prod`
   - Tag with `Project: lfmt`, `Owner: raymond@example.com`
   - Use tags for cost allocation reports
   - **Estimated Time**: 2 hours
-- [ ] 3.5.3 Create staging environment stack
-  - Duplicate `LfmtPocDev` stack as `LfmtPocStaging`
-  - Update `.github/workflows/deploy.yml` with staging deployment job
-  - Test deployment to staging
+- [ ] 3.5.4 Deploy production stack to new AWS account
+  - Update `.github/workflows/deploy.yml` with prod deployment job (cross-account assume role)
+  - Test deployment to prod account
   - **Estimated Time**: 4 hours
-- [ ] 3.5.4 Document environment strategy
+- [ ] 3.5.5 Document environment strategy
   - Create `docs/environment-strategy.md`
   - Explain dev → staging → prod promotion process
-  - Document AWS account separation plan (future)
+  - Document AWS Organizations setup, cross-account IAM
   - **Estimated Time**: 2 hours
 - **Files Modified**: `backend/infrastructure/bin/lfmt-infrastructure.ts`, `.github/workflows/deploy.yml`
-- **Files Created**: `cdk.context.json`, `docs/environment-strategy.md`
-- **Success Criteria**: Staging environment deployed successfully
+- **Files Created**: `cdk.context.json`, `docs/environment-strategy.md`, `docs/aws-organizations-setup.md`
+- **Success Criteria**: Prod stack deployed to separate AWS account, cross-account IAM working
+
+### 3.6 Secrets Management & Rotation 🆕 **CRITICAL GAP**
+- [ ] 3.6.1 Configure secrets rotation policy for Gemini API key
+  - **Production**: AWS Secrets Manager automatic rotation (90 days)
+    - Create rotation Lambda (generate new Gemini key via API, update Secrets Manager, invalidate old key)
+  - **Dev/Staging**: Manual rotation (90 days), document in runbook
+  - **Estimated Time**: 4 hours
+- [ ] 3.6.2 Track secret age in CloudWatch
+  - Create CloudWatch metric for Gemini API key age
+  - Alarm if key age > 100 days (10 days grace period)
+  - SNS notification to operations email
+  - **Estimated Time**: 2 hours
+- [ ] 3.6.3 Test rotation procedure in dev
+  - Manually rotate Gemini key in dev environment
+  - Verify translation jobs complete with new key
+  - Document rotation steps in runbook
+  - **Estimated Time**: 2 hours
+- **Files Created**: `backend/infrastructure/lib/constructs/secret-rotation-lambda.ts`, `docs/runbooks/secrets-rotation.md`
+- **Success Criteria**: Rotation Lambda deployed, CloudWatch alarm configured, tested in dev
+
+### 3.7 Cost Controls (AWS BUDGETS + ANOMALY DETECTION) 🆕 **CRITICAL GAP**
+- [ ] 3.7.1 Create AWS Budget ($50/month with 80% alert)
+  - Set up $50/month budget via AWS Budgets console or CDK
+  - Configure SNS alerts at:
+    - 80% ($40) — Warning notification
+    - 100% ($50) — Critical notification + investigation required
+  - Subscribe operations email to SNS topic
+  - **Estimated Time**: 2 hours
+- [ ] 3.7.2 Enable AWS Cost Anomaly Detection
+  - Enable Cost Anomaly Detection via AWS Console
+  - Configure ML-based anomaly alerts (catch runaway Lambda/Gemini loops within 6 hours)
+  - Subscribe operations email to anomaly notifications
+  - **Estimated Time**: 1 hour
+- [ ] 3.7.3 Create daily cost tracking metric
+  - CloudWatch metric for daily spend (visualize in dashboards)
+  - Create alarm if daily spend > $5 (unusual spike)
+  - **Estimated Time**: 2 hours
+- [ ] 3.7.4 Document emergency kill switch procedure
+  - Add `docs/runbooks/emergency-cost-control.md`
+  - Steps to disable API Gateway if runaway loop detected
+  - Steps to halt all Step Functions executions
+  - **Estimated Time**: 1 hour
+- **Files Created**: `docs/runbooks/emergency-cost-control.md`
+- **Success Criteria**: Budget configured, anomaly detection enabled, cost alarms firing correctly
+
+### 3.8 Data Privacy & GDPR Compliance 🆕 **CRITICAL GAP**
+- [ ] 3.8.1 Implement formal data retention policy
+  - **Policy**: User-uploaded documents deleted 30 days after translation (or immediate if user opts in)
+  - S3 Lifecycle Policies: Auto-delete from `documentBucket` after 30 days
+  - S3 Lifecycle Policies: Auto-delete from `resultsBucket` after 30 days
+  - **Estimated Time**: 3 hours
+- [ ] 3.8.2 Create user deletion API endpoint
+  - New endpoint: `DELETE /api/documents/:jobId`
+  - Immediate S3 deletion (both source and translated documents)
+  - Update DynamoDB job status to "deleted"
+  - Audit trail: Log deletion in CloudWatch
+  - **Estimated Time**: 4 hours
+- [ ] 3.8.3 Update terms of service with data handling disclosure
+  - Add section explaining data retention policy
+  - User consent checkbox during upload (required)
+  - **Estimated Time**: 2 hours
+- [ ] 3.8.4 Implement right to deletion UI
+  - Add "Delete Document" button in translation job list
+  - Confirmation modal: "Are you sure? This action cannot be undone."
+  - **Estimated Time**: 2 hours
+- **Files Modified**: `backend/infrastructure/lib/lfmt-infrastructure-stack.ts` (S3 lifecycle), backend Lambda (new delete endpoint), frontend (delete button)
+- **Files Created**: `docs/data-privacy-policy.md`, `docs/gdpr-compliance.md`
+- **Success Criteria**: Data retention policy enforced, deletion endpoint working, GDPR-compliant
 
 ---
 
 ## Phase 4: Monitoring & CI/CD Hardening (Week 4 - 40 hours)
 
-### 4.1 CloudWatch Dashboards
+### 4.1 CloudWatch Dashboards (Backend + FRONTEND RUM) 🆕
 - [ ] 4.1.1 Create API Gateway dashboard
-  - Widgets: Request count (sum, 5-min period)
-  - 4xx error rate (percentage, 5-min period)
-  - 5xx error rate (percentage, 5-min period)
-  - Latency (p50, p90, p99, 5-min period)
+  - Widgets: Request count, 4xx/5xx errors, latency (p50, p90, p99)
   - **Estimated Time**: 3 hours
 - [ ] 4.1.2 Create Lambda dashboard
-  - Widgets: Invocations (sum, 5-min period) per function
-  - Errors (sum, 5-min period) per function
-  - Duration (p50, p99, 5-min period) per function
-  - Throttles (sum, 5-min period)
-  - Concurrent executions (max, 5-min period)
+  - Widgets: Invocations, errors, duration, throttles, concurrent executions per function
   - **Estimated Time**: 4 hours
 - [ ] 4.1.3 Create DynamoDB dashboard
-  - Widgets: Consumed read capacity (sum, 1-min period) per table
-  - Consumed write capacity (sum, 1-min period) per table
-  - Throttled read requests (sum, 1-min period)
-  - Throttled write requests (sum, 1-min period)
+  - Widgets: Consumed capacity, throttled requests
   - **Estimated Time**: 3 hours
 - [ ] 4.1.4 Create S3 dashboard
-  - Widgets: Bucket size (bytes, daily)
-  - Request count (sum, 1-hour period) per bucket
-  - 4xx/5xx errors (sum, 1-hour period)
+  - Widgets: Bucket size, request count, 4xx/5xx errors
   - **Estimated Time**: 2 hours
 - [ ] 4.1.5 Create Step Functions dashboard
-  - Widgets: Execution count (sum, 5-min period)
-  - Execution success/failure rate (percentage, 5-min period)
-  - Execution duration (p50, p99, 5-min period)
+  - Widgets: Execution count, success/failure rate, duration
   - **Estimated Time**: 2 hours
-- [ ] 4.1.6 Create composite overview dashboard
-  - Combine key metrics from all services
+- [ ] 4.1.6 **Create Frontend Observability (CloudWatch RUM)** 🆕 **CRITICAL GAP**
+  - Add CloudWatch RUM app monitor in CDK stack
+  - Inject RUM script into frontend HTML (Vite plugin or index.html)
+  - Track: JS errors, page load time, React component crashes, API call failures, user sessions
+  - Create CloudWatch dashboard for frontend metrics (separate from backend)
+  - **Estimated Time**: 4 hours
+- [ ] 4.1.7 Create composite overview dashboard
+  - Combine key metrics from backend + frontend
   - Overall system health at-a-glance
-  - Link to detailed dashboards
   - **Estimated Time**: 2 hours
-- **Files Modified**: `backend/infrastructure/lib/lfmt-infrastructure-stack.ts` (add monitoring constructs)
-- **Success Criteria**: 6 CloudWatch dashboards deployed, metrics visible
+- **Files Modified**: `backend/infrastructure/lib/lfmt-infrastructure-stack.ts`, `frontend/index.html` or Vite config
+- **Success Criteria**: 7 CloudWatch dashboards deployed (6 backend + 1 frontend RUM), metrics visible
+
+### 4.1b Cost Controls Dashboard 🆕 **CRITICAL GAP (FROM PHASE 3)**
+- [ ] 4.1.8 **Create AWS Budget ($50/month with 80% alert)** 🆕 **REVIEWER REQUIRED**
+  - Set up $50/month budget via AWS Budgets console or CDK
+  - Configure SNS alerts at 80% ($40) and 100% ($50)
+  - Subscribe operations email to SNS topic
+  - **Estimated Time**: 2 hours
+- [ ] 4.1.9 Enable AWS Cost Anomaly Detection
+  - Enable Cost Anomaly Detection via AWS Console
+  - Configure ML-based anomaly alerts
+  - **Estimated Time**: 1 hour
+- [ ] 4.1.10 Create daily cost tracking metric
+  - CloudWatch metric for daily spend (visualize in dashboards)
+  - Create alarm if daily spend > $5 (unusual spike)
+  - **Estimated Time**: 2 hours
+- **Success Criteria**: Budget configured, anomaly detection enabled, cost visibility in dashboards
 
 ### 4.2 CloudWatch Alarms
 - [ ] 4.2.1 Create SNS topic for alarm notifications
@@ -445,11 +528,15 @@
 - **Files Modified**: `backend/infrastructure/lib/lfmt-infrastructure-stack.ts`
 - **Success Criteria**: 10+ alarms configured, test notifications received
 
-### 4.3 Structured Logging
-- [ ] 4.3.1 Add correlation IDs to all Lambda handlers
-  - Generate unique `correlationId` per request (UUID v4)
-  - Pass in `event.requestContext.requestId` from API Gateway
+### 4.3 Structured Logging (+ CORRELATION ID ORIGIN) 🆕
+- [ ] 4.3.1 Add correlation IDs to all Lambda handlers ⚠️ **REVIEWER CLARIFICATION**
+  - **Correlation ID Origin**: **API Gateway** (`event.requestContext.requestId`)
+    - Born when request enters AWS infrastructure (NOT in frontend)
+    - Automatically propagated to Lambda via event context
+    - Consistent across all backend services (Lambda, CloudWatch Logs, X-Ray)
+  - Extract `correlationId = event.requestContext.requestId` at handler entry
   - Include in all log statements
+  - **Return in response headers** (`X-Correlation-ID`) for frontend logging/support tickets
   - **Estimated Time**: 4 hours
 - [ ] 4.3.2 Standardize JSON log format
   - Create `logger.ts` utility with structured logging
@@ -457,88 +544,111 @@
   - Replace all `console.log` with `logger.info()`, `logger.error()`, etc.
   - **Estimated Time**: 6 hours
 - [ ] 4.3.3 Configure CloudWatch log retention
-  - Dev: 7 days retention
-  - Staging: 14 days retention
-  - Prod: 30 days retention
+  - Dev: 7 days, Staging: 14 days, Prod: 30 days
   - **File**: `backend/infrastructure/lib/lfmt-infrastructure-stack.ts` (LogRetention)
   - **Estimated Time**: 2 hours
 - [ ] 4.3.4 Create CloudWatch Insights queries
   - Query: All errors by Lambda function
   - Query: Slow requests (duration > 3s)
   - Query: Translation job failures with details
-  - Save queries in CloudWatch console
   - **Estimated Time**: 2 hours
 - **Files Created**: `backend/functions/utils/logger.ts`
 - **Files Modified**: All Lambda handlers (replace console.log)
-- **Success Criteria**: All logs include correlationId, CloudWatch Insights queries work
+- **Success Criteria**: All logs include correlationId (from API Gateway), CloudWatch Insights queries work
 
-### 4.4 CI/CD Hardening
-- [ ] 4.4.1 Add deployment smoke tests
+### 4.4 CI/CD Hardening (+ GEMINI CIRCUIT BREAKER) 🆕
+- [ ] 4.4.1 **Implement Gemini Rate Limiting Circuit Breaker** 🆕 **CRITICAL GAP**
+  - **Problem**: Current rate limiter doesn't handle Gemini 429 errors gracefully
+  - **Circuit Breaker Pattern**:
+    - Track consecutive 429 errors per translation job
+    - After 3 consecutive 429s → open circuit (halt job for 2 minutes)
+    - Exponential backoff: 2min → 4min → 8min
+    - After successful request → close circuit
+  - **Implementation**:
+    - Add circuit breaker logic to `translation/translateChunk.ts` Lambda
+    - Store circuit state in DynamoDB (job-level circuit breaker)
+    - Create CloudWatch metric for circuit breaker trips
+  - **UI Handling**:
+    - Update `TranslationStatus.tsx` to show "Translation paused due to rate limits. Retrying in X minutes..." (not generic error)
+    - Display circuit breaker state in job status
+  - **Estimated Time**: 8 hours
+- [ ] 4.4.2 Add deployment smoke tests
   - Create `backend/functions/__tests__/smoke/` directory
   - Test 1: Health check endpoint returns 200
   - Test 2: Login with test user succeeds
   - Test 3: Upload → chunk → translate → download workflow
   - Run smoke tests in CI after staging/prod deployments
   - **Estimated Time**: 6 hours
-- [ ] 4.4.2 Implement staging deployment workflow
+- [ ] 4.4.3 Implement staging deployment workflow
   - Add `deploy-staging` job to `.github/workflows/deploy.yml`
   - Trigger: Manual `workflow_dispatch` with environment selection
   - Require approval from project owner
   - Run smoke tests after staging deployment
   - **Estimated Time**: 3 hours
-- [ ] 4.4.3 Implement production deployment workflow
+- [ ] 4.4.4 Implement production deployment workflow
   - Add `deploy-prod` job to `.github/workflows/deploy.yml`
   - Require: Staging deployment successful + manual approval
   - Use CloudFormation change sets (review before apply)
   - Run smoke tests after production deployment
   - **Estimated Time**: 4 hours
-- [ ] 4.4.4 Add dependency security scanning
+- [ ] 4.4.5 Add dependency security scanning
   - Add Dependabot configuration (`.github/dependabot.yml`)
   - Scan npm dependencies weekly
   - Auto-create PRs for security updates
   - **Estimated Time**: 1 hour
-- [ ] 4.4.5 Pin dependency versions
+- [ ] 4.4.6 Pin dependency versions
   - Run `npm audit` across all packages
   - Fix critical/high vulnerabilities
   - Update `package-lock.json` to pin exact versions
   - **Estimated Time**: 2 hours
-- **Files Modified**: `.github/workflows/deploy.yml`
+- **Files Modified**: `.github/workflows/deploy.yml`, `backend/functions/translation/translateChunk.ts`, `frontend/src/components/translation/TranslationStatus.tsx`
 - **Files Created**: `.github/dependabot.yml`, `backend/functions/__tests__/smoke/`
-- **Success Criteria**: Staging/prod deployments require approval, smoke tests pass
+- **Success Criteria**: Circuit breaker working, staging/prod deployments require approval, smoke tests pass
 
-### 4.5 Operational Runbooks
+### 4.5 Operational Runbooks (+ AUTOMATED ROLLBACK SCRIPTS) ⚠️ **CRITICAL CHANGE**
 - [ ] 4.5.1 Create deployment runbook
   - Add `docs/runbooks/deployment.md`
   - Sections: Pre-deployment checklist, deployment steps, rollback procedure
+  - **Reference automated rollback scripts** (not manual steps)
   - Include time estimates for each step
   - Document database migration process
   - **Estimated Time**: 4 hours
-- [ ] 4.5.2 Create rollback procedure
-  - Document CDK rollback steps
-  - CloudFormation stack rollback commands
-  - Database rollback strategy (if migrations exist)
-  - Test rollback in dev environment
+- [ ] 4.5.2 **Create Automated Rollback Scripts** 🆕 **REVIEWER REQUIRED - NOT DOCUMENTATION ONLY**
+  - **Problem**: Documentation-only rollback = errors during panic
+  - **Solution**: Tested, automated scripts
+    - `scripts/rollback-lambda.sh <function-name> <version>`: Revert Lambda to previous version
+    - `scripts/rollback-cdk-stack.sh <stack-name>`: Rollback CloudFormation stack
+    - `scripts/rollback-database.sh <table-name> <timestamp>`: Restore DynamoDB from PITR
+  - **Testing Procedure**: Execute rollback in dev **every sprint** (muscle memory + validation)
+  - **Runbooks Reference Scripts**: "Run `./scripts/rollback-cdk-stack.sh LfmtPocProd`" (not 20-step manual checklist)
+  - **Estimated Time**: 6 hours
+- [ ] 4.5.3 Test automated rollback scripts in dev
+  - Deploy intentional breaking change to dev
+  - Execute rollback scripts
+  - Verify system restored to previous state
+  - Measure rollback time (target: <10 minutes)
   - **Estimated Time**: 3 hours
-- [ ] 4.5.3 Create incident response runbook
+- [ ] 4.5.4 Create incident response runbook
   - Add `docs/runbooks/incident-response.md`
   - Define severity levels (P0-P3)
   - Document escalation procedures
   - Create troubleshooting decision trees
+  - **Reference automated rollback scripts for P0/P1 incidents**
   - **Estimated Time**: 4 hours
-- [ ] 4.5.4 Create monitoring runbook
+- [ ] 4.5.5 Create monitoring runbook
   - Add `docs/runbooks/monitoring.md`
   - CloudWatch alarm response procedures
   - Common error debugging guides
   - Performance tuning playbook
   - **Estimated Time**: 3 hours
-- [ ] 4.5.5 Test runbooks with team
-  - Simulate production incident
+- [ ] 4.5.6 Test runbooks with simulated incident
+  - Simulate production incident (trigger Lambda error alarm)
   - Follow incident response runbook
-  - Measure MTTR (Mean Time to Recovery)
-  - Iterate based on feedback
+  - Execute automated rollback scripts
+  - Measure MTTR (Mean Time to Recovery) — target: <10 minutes with automation
   - **Estimated Time**: 2 hours
-- **Files Created**: `docs/runbooks/deployment.md`, `docs/runbooks/incident-response.md`, `docs/runbooks/monitoring.md`
-- **Success Criteria**: Runbooks tested, MTTR < 30 minutes for P1 incidents
+- **Files Created**: `scripts/rollback-lambda.sh`, `scripts/rollback-cdk-stack.sh`, `scripts/rollback-database.sh`, `docs/runbooks/deployment.md`, `docs/runbooks/incident-response.md`, `docs/runbooks/monitoring.md`
+- **Success Criteria**: Automated rollback scripts tested, runbooks reference scripts, MTTR < 10 minutes for P1 incidents
 
 ---
 
