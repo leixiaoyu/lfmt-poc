@@ -7,6 +7,7 @@
 import { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
 import { DynamoDBClient, GetItemCommand, GetItemCommandOutput } from '@aws-sdk/client-dynamodb';
 import { marshall, unmarshall } from '@aws-sdk/util-dynamodb';
+import { DynamoDBJob } from '@lfmt/shared-types';
 import Logger from '../shared/logger';
 import { getRequiredEnv } from '../shared/env';
 import { createSuccessResponse, createErrorResponse } from '../shared/api-response';
@@ -131,7 +132,7 @@ export const handler = async (
  * DynamoDB table has composite primary key: jobId (HASH) + userId (RANGE)
  * Uses ConsistentRead to ensure we get the latest status updates
  */
-async function loadJob(jobId: string, userId: string): Promise<any | null> {
+async function loadJob(jobId: string, userId: string): Promise<DynamoDBJob | null> {
   const command = new GetItemCommand({
     TableName: JOBS_TABLE,
     Key: marshall({ jobId, userId }),
@@ -144,7 +145,7 @@ async function loadJob(jobId: string, userId: string): Promise<any | null> {
     return null;
   }
 
-  return unmarshall(response.Item);
+  return unmarshall(response.Item) as DynamoDBJob;
 }
 
 /**

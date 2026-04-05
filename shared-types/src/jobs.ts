@@ -102,6 +102,59 @@ export interface TranslationJob {
   metadata: JobMetadata;
 }
 
+/**
+ * DynamoDB Job Record
+ * Represents the actual structure of job records stored in DynamoDB.
+ * This type includes all runtime fields used by Lambda functions.
+ */
+export interface DynamoDBJob {
+  // Primary Keys
+  jobId: string;
+  userId: string;
+
+  // Basic Job Info
+  documentId?: string;
+  filename?: string;
+  status: string; // More permissive than JobStatus to handle unknown statuses
+  createdAt: string;
+  updatedAt?: string;
+
+  // Chunking Metadata
+  totalChunks?: number;
+  chunkingMetadata?: {
+    chunkKeys?: string[];
+    chunkCount?: number;
+    averageChunkSize?: number;
+  };
+
+  // Translation Metadata
+  translationStatus?: 'NOT_STARTED' | 'IN_PROGRESS' | 'COMPLETED' | 'TRANSLATION_FAILED';
+  targetLanguage?: string;
+  translationTone?: 'formal' | 'informal' | 'neutral';
+  tone?: 'formal' | 'informal' | 'neutral'; // Alias for translationTone
+  translatedChunks?: number;
+  tokensUsed?: number;
+  estimatedCost?: number;
+  translationStartedAt?: string;
+  translationCompletedAt?: string;
+  translationError?: string;
+
+  // Step Functions
+  executionArn?: string;
+  executionStatus?: string;
+
+  // Legal Attestation
+  legalAttestation?: {
+    accepted: boolean;
+    timestamp: string;
+    ipAddress?: string;
+    userAgent?: string;
+  };
+
+  // Additional Fields (for extensibility)
+  [key: string]: unknown;
+}
+
 export interface JobTimestamps {
   createdAt: string;
   startedAt?: string;

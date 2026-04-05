@@ -187,7 +187,7 @@ async function updateJobStatus(
 
   const now = new Date().toISOString();
   const updateExpression: string[] = ['updatedAt = :updatedAt', '#status = :status'];
-  const expressionAttributeValues: Record<string, any> = {
+  const expressionAttributeValues: Record<string, unknown> = {
     ':updatedAt': now,
     ':status': status,
   };

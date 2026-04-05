@@ -32,16 +32,18 @@ export interface LfmtInfrastructureStackProps extends StackProps {
 }
 
 export class LfmtInfrastructureStack extends Stack {
-  public readonly userPool: cognito.UserPool;
-  public readonly userPoolClient: cognito.UserPoolClient;
-  public readonly jobsTable: dynamodb.Table;
-  public readonly usersTable: dynamodb.Table;
-  public readonly attestationsTable: dynamodb.Table;
-  public readonly documentBucket: s3.Bucket;
-  public readonly resultsBucket: s3.Bucket;
-  public readonly frontendBucket: s3.Bucket;
-  public readonly api: apigateway.RestApi;
-  public readonly frontendDistribution: cloudfront.Distribution;
+  public userPool!: cognito.UserPool;
+  public userPoolClient!: cognito.UserPoolClient;
+  public jobsTable!: dynamodb.Table;
+  public usersTable!: dynamodb.Table;
+  public attestationsTable!: dynamodb.Table;
+  public rateLimitBucketsTable!: dynamodb.Table;
+  public documentBucket!: s3.Bucket;
+  public resultsBucket!: s3.Bucket;
+  public frontendBucket!: s3.Bucket;
+  public api!: apigateway.RestApi;
+  public frontendDistribution!: cloudfront.Distribution;
+  public translationStateMachine!: stepfunctions.StateMachine;
 
   // Lambda functions
   private registerFunction?: lambda.Function;
@@ -56,11 +58,12 @@ export class LfmtInfrastructureStack extends Stack {
   private startTranslationFunction?: lambda.Function;
   private getTranslationStatusFunction?: lambda.Function;
 
-  // IAM role for Lambda functions
+  // IAM roles for Lambda functions (separated by responsibility)
   private lambdaRole?: iam.Role;
-
-  // Step Functions state machine
-  public readonly translationStateMachine: stepfunctions.StateMachine;
+  private authRole?: iam.Role;
+  private uploadRole?: iam.Role;
+  private chunkingRole?: iam.Role;
+  private translationRole?: iam.Role;
 
   // API Gateway resources
   private authResource?: apigateway.Resource;
@@ -143,7 +146,7 @@ export class LfmtInfrastructureStack extends Stack {
 
   private createDynamoDBTables(removalPolicy: RemovalPolicy) {
     // Jobs Table - From Document 7 (Job State Management)
-    (this as any).jobsTable = new dynamodb.Table(this, 'JobsTable', {
+    this.jobsTable = new dynamodb.Table(this, 'JobsTable', {
       tableName: `lfmt-jobs-${this.stackName}`,
       partitionKey: { name: 'jobId', type: dynamodb.AttributeType.STRING },
       sortKey: { name: 'userId', type: dynamodb.AttributeType.STRING },
@@ -169,7 +172,7 @@ export class LfmtInfrastructureStack extends Stack {
     });
 
     // Users Table - From Document 10 (User Management)
-    (this as any).usersTable = new dynamodb.Table(this, 'UsersTable', {
+    this.usersTable = new dynamodb.Table(this, 'UsersTable', {
       tableName: `lfmt-users-${this.stackName}`,
       partitionKey: { name: 'userId', type: dynamodb.AttributeType.STRING },
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
@@ -185,7 +188,7 @@ export class LfmtInfrastructureStack extends Stack {
     });
 
     // Legal Attestations Table - From Document 6 (Legal Attestation System)
-    (this as any).attestationsTable = new dynamodb.Table(this, 'AttestationsTable', {
+    this.attestationsTable = new dynamodb.Table(this, 'AttestationsTable', {
       tableName: `lfmt-attestations-${this.stackName}`,
       partitionKey: { name: 'attestationId', type: dynamodb.AttributeType.STRING },
       sortKey: { name: 'userId', type: dynamodb.AttributeType.STRING },
@@ -213,7 +216,7 @@ export class LfmtInfrastructureStack extends Stack {
 
     // Rate Limit Buckets Table - For distributed rate limiting across Lambda instances
     // Supports token bucket algorithm with atomic conditional writes
-    (this as any).rateLimitBucketsTable = new dynamodb.Table(this, 'RateLimitBucketsTable', {
+    this.rateLimitBucketsTable = new dynamodb.Table(this, 'RateLimitBucketsTable', {
       tableName: `lfmt-rate-limit-buckets-${this.stackName}`,
       partitionKey: { name: 'bucketKey', type: dynamodb.AttributeType.STRING }, // e.g., "gemini-api-rpm", "gemini-api-tpm"
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST, // On-demand for variable rate limiter access
@@ -239,7 +242,7 @@ export class LfmtInfrastructureStack extends Stack {
     };
 
     // Document Upload Bucket
-    (this as any).documentBucket = new s3.Bucket(this, 'DocumentBucket', {
+    this.documentBucket = new s3.Bucket(this, 'DocumentBucket', {
       bucketName: `lfmt-documents-${this.stackName.toLowerCase()}`,
       removalPolicy,
       autoDeleteObjects: removalPolicy === RemovalPolicy.DESTROY,
@@ -263,7 +266,7 @@ export class LfmtInfrastructureStack extends Stack {
     });
 
     // Translation Results Bucket
-    (this as any).resultsBucket = new s3.Bucket(this, 'ResultsBucket', {
+    this.resultsBucket = new s3.Bucket(this, 'ResultsBucket', {
       bucketName: `lfmt-results-${this.stackName.toLowerCase()}`,
       removalPolicy,
       autoDeleteObjects: removalPolicy === RemovalPolicy.DESTROY,
@@ -293,7 +296,7 @@ export class LfmtInfrastructureStack extends Stack {
     // Staging/Prod: Enable for security (requires custom SES setup)
     const isDev = this.stackName.toLowerCase().includes('dev');
 
-    (this as any).userPool = new cognito.UserPool(this, 'UserPool', {
+    this.userPool = new cognito.UserPool(this, 'UserPool', {
       userPoolName: `lfmt-users-${this.stackName}`,
       removalPolicy,
       signInCaseSensitive: false,
@@ -376,7 +379,7 @@ export class LfmtInfrastructureStack extends Stack {
       },
     });
 
-    (this as any).userPoolClient = new cognito.UserPoolClient(this, 'UserPoolClient', {
+    this.userPoolClient = new cognito.UserPoolClient(this, 'UserPoolClient', {
       userPool: this.userPool,
       userPoolClientName: `lfmt-client-${this.stackName}`,
       generateSecret: false,
@@ -401,7 +404,7 @@ export class LfmtInfrastructureStack extends Stack {
   private createApiGateway() {
     // Create API Gateway - From Document 3 (API Gateway & Lambda Functions)
     // NOTE: CloudFront URL will be included in CORS origins after createFrontendHosting() is called
-    (this as any).api = new apigateway.RestApi(this, 'LfmtApi', {
+    this.api = new apigateway.RestApi(this, 'LfmtApi', {
       restApiName: `lfmt-api-${this.stackName}`,
       description: 'LFMT Translation Service API',
       endpointConfiguration: {
@@ -508,7 +511,7 @@ export class LfmtInfrastructureStack extends Stack {
     // Role 1: Auth Lambda Functions Role
     // Permissions: Cognito + DynamoDB (users table only)
     // ===================================================================
-    (this as any).authRole = new iam.Role(this, 'AuthLambdaRole', {
+    this.authRole = new iam.Role(this, 'AuthLambdaRole', {
       assumedBy: new iam.ServicePrincipal('lambda.amazonaws.com'),
       description: 'Execution role for authentication Lambda functions (register, login, getCurrentUser, etc.)',
       managedPolicies: [
@@ -518,7 +521,7 @@ export class LfmtInfrastructureStack extends Stack {
 
     // Auth: Cognito Access
     new iam.ManagedPolicy(this, 'AuthCognitoPolicy', {
-      roles: [(this as any).authRole],
+      roles: [this.authRole],
       statements: [
         new iam.PolicyStatement({
           effect: iam.Effect.ALLOW,
@@ -540,7 +543,7 @@ export class LfmtInfrastructureStack extends Stack {
 
     // Auth: DynamoDB Access (users + rate limit buckets tables only)
     new iam.ManagedPolicy(this, 'AuthDynamoDBPolicy', {
-      roles: [(this as any).authRole],
+      roles: [this.authRole],
       statements: [
         new iam.PolicyStatement({
           effect: iam.Effect.ALLOW,
@@ -554,7 +557,7 @@ export class LfmtInfrastructureStack extends Stack {
           ],
           resources: [
             this.usersTable.tableArn,
-            (this as any).rateLimitBucketsTable.tableArn,
+            this.rateLimitBucketsTable.tableArn,
             `${this.usersTable.tableArn}/index/*`,
           ],
         }),
@@ -565,7 +568,7 @@ export class LfmtInfrastructureStack extends Stack {
     // Role 2: Upload Lambda Functions Role
     // Permissions: S3 + DynamoDB (jobs + attestations tables)
     // ===================================================================
-    (this as any).uploadRole = new iam.Role(this, 'UploadLambdaRole', {
+    this.uploadRole = new iam.Role(this, 'UploadLambdaRole', {
       assumedBy: new iam.ServicePrincipal('lambda.amazonaws.com'),
       description: 'Execution role for upload Lambda functions (upload-request, upload-complete)',
       managedPolicies: [
@@ -575,7 +578,7 @@ export class LfmtInfrastructureStack extends Stack {
 
     // Upload: S3 Access
     new iam.ManagedPolicy(this, 'UploadS3Policy', {
-      roles: [(this as any).uploadRole],
+      roles: [this.uploadRole],
       statements: [
         new iam.PolicyStatement({
           effect: iam.Effect.ALLOW,
@@ -602,7 +605,7 @@ export class LfmtInfrastructureStack extends Stack {
 
     // Upload: DynamoDB Access (jobs + attestations + rate limit buckets tables)
     new iam.ManagedPolicy(this, 'UploadDynamoDBPolicy', {
-      roles: [(this as any).uploadRole],
+      roles: [this.uploadRole],
       statements: [
         new iam.PolicyStatement({
           effect: iam.Effect.ALLOW,
@@ -617,7 +620,7 @@ export class LfmtInfrastructureStack extends Stack {
           resources: [
             this.jobsTable.tableArn,
             this.attestationsTable.tableArn,
-            (this as any).rateLimitBucketsTable.tableArn,
+            this.rateLimitBucketsTable.tableArn,
             `${this.jobsTable.tableArn}/index/*`,
             `${this.attestationsTable.tableArn}/index/*`,
           ],
@@ -629,7 +632,7 @@ export class LfmtInfrastructureStack extends Stack {
     // Role 3: Chunking Lambda Functions Role
     // Permissions: S3 + DynamoDB (jobs table)
     // ===================================================================
-    (this as any).chunkingRole = new iam.Role(this, 'ChunkingLambdaRole', {
+    this.chunkingRole = new iam.Role(this, 'ChunkingLambdaRole', {
       assumedBy: new iam.ServicePrincipal('lambda.amazonaws.com'),
       description: 'Execution role for chunking Lambda function (chunk-document)',
       managedPolicies: [
@@ -639,7 +642,7 @@ export class LfmtInfrastructureStack extends Stack {
 
     // Chunking: S3 Access
     new iam.ManagedPolicy(this, 'ChunkingS3Policy', {
-      roles: [(this as any).chunkingRole],
+      roles: [this.chunkingRole],
       statements: [
         new iam.PolicyStatement({
           effect: iam.Effect.ALLOW,
@@ -666,7 +669,7 @@ export class LfmtInfrastructureStack extends Stack {
 
     // Chunking: DynamoDB Access (jobs + rate limit buckets tables)
     new iam.ManagedPolicy(this, 'ChunkingDynamoDBPolicy', {
-      roles: [(this as any).chunkingRole],
+      roles: [this.chunkingRole],
       statements: [
         new iam.PolicyStatement({
           effect: iam.Effect.ALLOW,
@@ -680,7 +683,7 @@ export class LfmtInfrastructureStack extends Stack {
           ],
           resources: [
             this.jobsTable.tableArn,
-            (this as any).rateLimitBucketsTable.tableArn,
+            this.rateLimitBucketsTable.tableArn,
             `${this.jobsTable.tableArn}/index/*`,
           ],
         }),
@@ -691,7 +694,7 @@ export class LfmtInfrastructureStack extends Stack {
     // Role 4: Translation Lambda Functions Role
     // Permissions: S3 + DynamoDB (all tables) + Secrets Manager + Lambda Invoke
     // ===================================================================
-    (this as any).translationRole = new iam.Role(this, 'TranslationLambdaRole', {
+    this.translationRole = new iam.Role(this, 'TranslationLambdaRole', {
       assumedBy: new iam.ServicePrincipal('lambda.amazonaws.com'),
       description: 'Execution role for translation Lambda functions (translate-chunk, start-translation, get-translation-status)',
       managedPolicies: [
@@ -701,7 +704,7 @@ export class LfmtInfrastructureStack extends Stack {
 
     // Translation: S3 Access
     new iam.ManagedPolicy(this, 'TranslationS3Policy', {
-      roles: [(this as any).translationRole],
+      roles: [this.translationRole],
       statements: [
         new iam.PolicyStatement({
           effect: iam.Effect.ALLOW,
@@ -728,7 +731,7 @@ export class LfmtInfrastructureStack extends Stack {
 
     // Translation: DynamoDB Access (all tables)
     new iam.ManagedPolicy(this, 'TranslationDynamoDBPolicy', {
-      roles: [(this as any).translationRole],
+      roles: [this.translationRole],
       statements: [
         new iam.PolicyStatement({
           effect: iam.Effect.ALLOW,
@@ -744,7 +747,7 @@ export class LfmtInfrastructureStack extends Stack {
             this.jobsTable.tableArn,
             this.usersTable.tableArn,
             this.attestationsTable.tableArn,
-            (this as any).rateLimitBucketsTable.tableArn,
+            this.rateLimitBucketsTable.tableArn,
             `${this.jobsTable.tableArn}/index/*`,
             `${this.usersTable.tableArn}/index/*`,
             `${this.attestationsTable.tableArn}/index/*`,
@@ -762,7 +765,7 @@ export class LfmtInfrastructureStack extends Stack {
     //
     // This secret is NOT created by CDK for security reasons (avoid storing secrets in code)
     new iam.ManagedPolicy(this, 'TranslationSecretsPolicy', {
-      roles: [(this as any).translationRole],
+      roles: [this.translationRole],
       statements: [
         new iam.PolicyStatement({
           effect: iam.Effect.ALLOW,
@@ -776,7 +779,7 @@ export class LfmtInfrastructureStack extends Stack {
 
     // Translation: Lambda Invoke Access (for invoking translation functions)
     new iam.ManagedPolicy(this, 'TranslationLambdaInvokePolicy', {
-      roles: [(this as any).translationRole],
+      roles: [this.translationRole],
       statements: [
         new iam.PolicyStatement({
           effect: iam.Effect.ALLOW,
@@ -790,7 +793,7 @@ export class LfmtInfrastructureStack extends Stack {
 
     // Maintain backward compatibility with legacy code that references this.lambdaRole
     // New deployments should use specific roles (authRole, uploadRole, chunkingRole, translationRole)
-    this.lambdaRole = (this as any).translationRole; // Default to most permissive role for backward compatibility
+    this.lambdaRole = this.translationRole; // Default to most permissive role for backward compatibility
 
     // Step Functions Execution Role
     const stepFunctionsRole = new iam.Role(this, 'StepFunctionsExecutionRole', {
@@ -816,10 +819,10 @@ export class LfmtInfrastructureStack extends Stack {
 
     // Get role references from IAM role creation (stored in this.lambdaRole context)
     // Each Lambda function uses the appropriate role based on its permission requirements
-    const authRole = (this as any).authRole || this.lambdaRole;
-    const uploadRole = (this as any).uploadRole || this.lambdaRole;
-    const chunkingRole = (this as any).chunkingRole || this.lambdaRole;
-    const translationRole = (this as any).translationRole || this.lambdaRole;
+    const authRole = this.authRole || this.lambdaRole;
+    const uploadRole = this.uploadRole || this.lambdaRole;
+    const chunkingRole = this.chunkingRole || this.lambdaRole;
+    const translationRole = this.translationRole || this.lambdaRole;
 
     // Common environment variables for all Lambda functions
     const commonEnv = {
@@ -829,7 +832,7 @@ export class LfmtInfrastructureStack extends Stack {
       JOBS_TABLE: this.jobsTable.tableName,
       USERS_TABLE_NAME: this.usersTable.tableName,
       ATTESTATIONS_TABLE_NAME: this.attestationsTable.tableName,
-      RATE_LIMIT_BUCKETS_TABLE: (this as any).rateLimitBucketsTable.tableName,
+      RATE_LIMIT_BUCKETS_TABLE: this.rateLimitBucketsTable.tableName,
       DOCUMENT_BUCKET: this.documentBucket.bucketName,
       CHUNKS_BUCKET: this.documentBucket.bucketName, // Chunks stored in same bucket as documents
       GEMINI_API_KEY_SECRET_NAME: `lfmt/gemini-api-key-${this.stackName}`,
@@ -1188,7 +1191,7 @@ export class LfmtInfrastructureStack extends Stack {
       .next(successState);
 
     // Create the state machine
-    (this as any).translationStateMachine = new stepfunctions.StateMachine(this, 'TranslationStateMachine', {
+    this.translationStateMachine = new stepfunctions.StateMachine(this, 'TranslationStateMachine', {
       stateMachineName: `lfmt-translation-workflow-${this.stackName}`,
       definition,
       timeout: Duration.hours(6), // Max 6 hours for large documents (400K words)
@@ -1464,7 +1467,7 @@ export class LfmtInfrastructureStack extends Stack {
      */
 
     // 1. Create Frontend S3 Bucket
-    (this as any).frontendBucket = new s3.Bucket(this, 'FrontendBucket', {
+    this.frontendBucket = new s3.Bucket(this, 'FrontendBucket', {
       bucketName: `lfmt-frontend-${this.stackName.toLowerCase()}`,
       removalPolicy,
       autoDeleteObjects: removalPolicy === RemovalPolicy.DESTROY,
@@ -1527,7 +1530,7 @@ export class LfmtInfrastructureStack extends Stack {
       },
     });
 
-    (this as any).frontendDistribution = new cloudfront.Distribution(this, 'FrontendDistribution', {
+    this.frontendDistribution = new cloudfront.Distribution(this, 'FrontendDistribution', {
       defaultBehavior: {
         origin: origins.S3BucketOrigin.withOriginAccessControl(this.frontendBucket, {
           originAccessControl: oac,
