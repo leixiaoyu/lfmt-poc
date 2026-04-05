@@ -20,19 +20,14 @@ import {
   CircularProgress,
 } from '@mui/material';
 import { LegalAttestation, LegalAttestationData } from '../components/Translation/LegalAttestation';
-import { TranslationConfig, TranslationConfigData } from '../components/Translation/TranslationConfig';
-import { FileUpload } from '../components/Translation/FileUpload';
 import {
-  translationService,
-  TranslationServiceError,
-} from '../services/translationService';
+  TranslationConfig,
+  TranslationConfigData,
+} from '../components/Translation/TranslationConfig';
+import { FileUpload } from '../components/Translation/FileUpload';
+import { translationService, TranslationServiceError } from '../services/translationService';
 
-const STEPS = [
-  'Legal Attestation',
-  'Translation Settings',
-  'Upload Document',
-  'Review & Submit',
-];
+const STEPS = ['Legal Attestation', 'Translation Settings', 'Upload Document', 'Review & Submit'];
 
 interface FormData {
   legalAttestation: LegalAttestationData;
@@ -199,9 +194,7 @@ export const TranslationUpload: React.FC = () => {
         return (
           <LegalAttestation
             value={formData.legalAttestation}
-            onChange={(data) =>
-              setFormData((prev) => ({ ...prev, legalAttestation: data }))
-            }
+            onChange={(data) => setFormData((prev) => ({ ...prev, legalAttestation: data }))}
             errors={errors.legalAttestation}
           />
         );
@@ -209,9 +202,7 @@ export const TranslationUpload: React.FC = () => {
         return (
           <TranslationConfig
             value={formData.translationConfig}
-            onChange={(data) =>
-              setFormData((prev) => ({ ...prev, translationConfig: data }))
-            }
+            onChange={(data) => setFormData((prev) => ({ ...prev, translationConfig: data }))}
             errors={errors.translationConfig}
           />
         );
@@ -279,9 +270,7 @@ export const TranslationUpload: React.FC = () => {
         ))}
       </Stepper>
 
-      <Box sx={{ mt: 4, mb: 4 }}>
-        {renderStepContent(activeStep)}
-      </Box>
+      <Box sx={{ mt: 4, mb: 4 }}>{renderStepContent(activeStep)}</Box>
 
       {submitError && (
         <Alert severity="error" sx={{ mb: 3 }} role="alert">
@@ -290,11 +279,7 @@ export const TranslationUpload: React.FC = () => {
       )}
 
       <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 3 }}>
-        <Button
-          disabled={activeStep === 0 || isSubmitting}
-          onClick={handleBack}
-          variant="outlined"
-        >
+        <Button disabled={activeStep === 0 || isSubmitting} onClick={handleBack} variant="outlined">
           Back
         </Button>
         <Box sx={{ display: 'flex', gap: 2 }}>

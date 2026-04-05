@@ -110,7 +110,7 @@ test.describe('Multi-Language Translation Support', () => {
         `${process.env.API_BASE_URL || 'http://localhost:3000'}/v1/translation/jobs/${jobId}`,
         {
           headers: {
-            'Authorization': `Bearer ${authToken}`,
+            Authorization: `Bearer ${authToken}`,
           },
         }
       );
@@ -130,16 +130,12 @@ test.describe('Multi-Language Translation Support', () => {
       await detailPage.waitForPageLoad();
 
       // Verify tone was set correctly via API
-      const currentUrl = page.url();
-      const jobIdMatch = currentUrl.match(/\/translation\/([a-f0-9-]+)/);
-      const jobId = jobIdMatch![1];
-
       const authToken = await page.evaluate(() => localStorage.getItem('authToken'));
       const jobResponse = await page.request.get(
         `${process.env.API_BASE_URL || 'http://localhost:3000'}/v1/auth/register`,
         {
           headers: {
-            'Authorization': `Bearer ${authToken}`,
+            Authorization: `Bearer ${authToken}`,
           },
         }
       );
@@ -211,7 +207,7 @@ test.describe('Multi-Language Translation Support', () => {
         `${process.env.API_BASE_URL || 'http://localhost:3000'}/v1/translation/jobs/${jobIds[i]}`,
         {
           headers: {
-            'Authorization': `Bearer ${authToken}`,
+            Authorization: `Bearer ${authToken}`,
           },
         }
       );

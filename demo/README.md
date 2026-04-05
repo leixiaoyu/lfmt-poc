@@ -8,11 +8,11 @@ This directory contains demonstration materials for investor presentations and a
 
 Downloaded from [Project Gutenberg](https://www.gutenberg.org/) (public domain):
 
-| File | Book | Word Count | Target Language | Est. Time | Est. Cost |
-|------|------|------------|-----------------|-----------|-----------|
-| `sherlock-holmes.txt` | The Adventures of Sherlock Holmes | 107,562 | Spanish | 30-45 min | $0.02-0.03 |
-| `pride-and-prejudice.txt` | Pride and Prejudice | 127,381 | French | 60-90 min | $0.03-0.04 |
-| `war-and-peace.txt` | War and Peace | 566,338 | German | 4-6 hours | $0.10-0.15 |
+| File                      | Book                              | Word Count | Target Language | Est. Time | Est. Cost  |
+| ------------------------- | --------------------------------- | ---------- | --------------- | --------- | ---------- |
+| `sherlock-holmes.txt`     | The Adventures of Sherlock Holmes | 107,562    | Spanish         | 30-45 min | $0.02-0.03 |
+| `pride-and-prejudice.txt` | Pride and Prejudice               | 127,381    | French          | 60-90 min | $0.03-0.04 |
+| `war-and-peace.txt`       | War and Peace                     | 566,338    | German          | 4-6 hours | $0.10-0.15 |
 
 **Total Demo Set Cost**: ~$0.15-0.22 (well within $50/month budget for 1000 translations)
 
@@ -33,23 +33,27 @@ See [DEMO-CONTENT-PLAN.md](DEMO-CONTENT-PLAN.md) for detailed execution plan and
 ## Quick Start - Running Demo Translations
 
 ### 1. Access Dev Environment
+
 ```bash
 # Frontend URL
 open https://d39xcun7144jgl.cloudfront.net
 ```
 
 ### 2. Create Demo Account
+
 1. Register with `demo@lfmt-poc.dev` (auto-verified in dev)
 2. Login with credentials
 3. Navigate to "New Translation" page
 
 ### 3. Upload Test Document
+
 1. Select test document from `demo/test-documents/`
 2. Choose target language (see table above)
 3. Accept legal attestation
 4. Click "Start Translation"
 
 ### 4. Monitor Progress
+
 1. View translation progress on dashboard
 2. Download results when complete
 3. Document metrics (see DEMO-CONTENT-PLAN.md)
@@ -86,4 +90,4 @@ Demo materials will be created in this directory:
 
 ---
 
-*For questions or issues, see [PROGRESS.md](../PROGRESS.md) or contact repository owner.*
+_For questions or issues, see [PROGRESS.md](../PROGRESS.md) or contact repository owner._

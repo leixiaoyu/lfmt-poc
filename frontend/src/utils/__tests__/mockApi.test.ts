@@ -97,9 +97,7 @@ describe('mockApi', () => {
 
       await client.post('/auth/register', registrationData);
 
-      expect(consoleError).not.toHaveBeenCalledWith(
-        expect.stringContaining('is not valid JSON')
-      );
+      expect(consoleError).not.toHaveBeenCalledWith(expect.stringContaining('is not valid JSON'));
 
       consoleError.mockRestore();
     });
@@ -131,7 +129,7 @@ describe('mockApi', () => {
       const response1 = await client.post('/auth/register', userData);
 
       // Small delay to ensure different timestamp
-      await new Promise(resolve => setTimeout(resolve, 10));
+      await new Promise((resolve) => setTimeout(resolve, 10));
 
       const response2 = await client.post('/auth/register', {
         ...userData,

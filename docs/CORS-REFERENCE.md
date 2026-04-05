@@ -9,6 +9,7 @@ This document describes the Cross-Origin Resource Sharing (CORS) configuration f
 ### Multi-Origin CORS Support
 
 The LFMT application supports CORS requests from multiple origins:
+
 - **Local Development**: `http://localhost:3000`, `https://localhost:3000`
 - **CloudFront CDN**: `https://<distribution-id>.cloudfront.net` (dynamically added)
 - **Custom Domain**: (future) production domain when configured
@@ -60,6 +61,7 @@ private getAllowedApiOrigins(): string[] {
 ```
 
 **Key Points**:
+
 - Environment-specific origin configuration
 - Dynamically includes CloudFront URL from CDK resources
 - No hardcoded URLs (except localhost for dev)
@@ -109,25 +111,26 @@ export function getCorsHeaders(requestOrigin?: string): Record<string, string> {
   // Get allowed origins from environment variable (comma-separated list)
   const allowedOriginsEnv = process.env.ALLOWED_ORIGINS || process.env.ALLOWED_ORIGIN;
   const allowedOrigins = allowedOriginsEnv
-    ? allowedOriginsEnv.split(',').map(origin => origin.trim())
+    ? allowedOriginsEnv.split(',').map((origin) => origin.trim())
     : ['http://localhost:3000']; // Fallback to localhost
 
   // Match the request origin against allowed origins
-  const allowedOrigin = requestOrigin && allowedOrigins.includes(requestOrigin)
-    ? requestOrigin
-    : allowedOrigins[0]; // Default to first allowed origin
+  const allowedOrigin =
+    requestOrigin && allowedOrigins.includes(requestOrigin) ? requestOrigin : allowedOrigins[0]; // Default to first allowed origin
 
   return {
     'Content-Type': 'application/json',
     'Access-Control-Allow-Origin': allowedOrigin,
     'Access-Control-Allow-Credentials': 'true',
-    'Access-Control-Allow-Headers': 'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token',
+    'Access-Control-Allow-Headers':
+      'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token',
     'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS',
   };
 }
 ```
 
 **Key Features**:
+
 - Reads `ALLOWED_ORIGINS` environment variable (comma-separated)
 - Matches incoming request origin against allowed list
 - Returns matched origin or defaults to first allowed origin
@@ -140,7 +143,7 @@ export function createSuccessResponse<T = any>(
   statusCode: number,
   data: ApiSuccessResponse<T>,
   requestId?: string,
-  requestOrigin?: string  // NEW PARAMETER
+  requestOrigin?: string // NEW PARAMETER
 ): ApiResponse {
   return {
     statusCode,
@@ -157,7 +160,7 @@ export function createErrorResponse(
   message: string,
   requestId?: string,
   errors?: Record<string, string[]>,
-  requestOrigin?: string  // NEW PARAMETER
+  requestOrigin?: string // NEW PARAMETER
 ): ApiResponse {
   return {
     statusCode,
@@ -180,11 +183,9 @@ export function createErrorResponse(
 **Example**: `backend/functions/auth/register.ts`
 
 ```typescript
-export const handler = async (
-  event: APIGatewayProxyEvent
-): Promise<APIGatewayProxyResult> => {
+export const handler = async (event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> => {
   const requestId = event.requestContext.requestId;
-  const requestOrigin = event.headers.origin || event.headers.Origin;  // Extract origin
+  const requestOrigin = event.headers.origin || event.headers.Origin; // Extract origin
 
   // ... validation and business logic ...
 
@@ -196,12 +197,13 @@ export const handler = async (
         : 'User registered successfully. Please check your email to verify your account.',
     },
     requestId,
-    requestOrigin  // Pass to response function
+    requestOrigin // Pass to response function
   );
-}
+};
 ```
 
 **Pattern Applied To**:
+
 - `backend/functions/auth/register.ts`
 - `backend/functions/auth/login.ts`
 - All other Lambda functions returning HTTP responses
@@ -235,16 +237,19 @@ Browser Request → API Gateway → Lambda Function
 ### Development Environment
 
 **Allowed Origins**:
+
 - `http://localhost:3000` (Vite dev server)
 - `https://localhost:3000` (HTTPS local dev)
 - `https://d39xcun7144jgl.cloudfront.net` (CloudFront dev distribution)
 
 **Lambda Environment Variable**:
+
 ```bash
 ALLOWED_ORIGINS=http://localhost:3000,https://localhost:3000,https://d39xcun7144jgl.cloudfront.net
 ```
 
 **Verification**:
+
 ```bash
 aws lambda get-function-configuration \
   --function-name lfmt-register-LfmtPocDev \
@@ -254,12 +259,14 @@ aws lambda get-function-configuration \
 ### Staging Environment (Future)
 
 **Allowed Origins**:
+
 - `https://staging.lfmt.yourcompany.com` (custom domain)
 - `https://<staging-cloudfront>.cloudfront.net` (CloudFront staging distribution)
 
 ### Production Environment (Future)
 
 **Allowed Origins**:
+
 - `https://lfmt.yourcompany.com` (custom domain)
 - `https://<prod-cloudfront>.cloudfront.net` (CloudFront production distribution)
 
@@ -268,6 +275,7 @@ aws lambda get-function-configuration \
 ### Manual Testing with curl
 
 **Test CORS Preflight (OPTIONS)**:
+
 ```bash
 curl -X OPTIONS https://8brwlwf68h.execute-api.us-east-1.amazonaws.com/v1/auth/register \
   -H "Origin: https://d39xcun7144jgl.cloudfront.net" \
@@ -277,6 +285,7 @@ curl -X OPTIONS https://8brwlwf68h.execute-api.us-east-1.amazonaws.com/v1/auth/r
 ```
 
 **Expected Response Headers**:
+
 ```
 Access-Control-Allow-Origin: https://d39xcun7144jgl.cloudfront.net
 Access-Control-Allow-Methods: GET,POST,PUT,DELETE,OPTIONS
@@ -285,6 +294,7 @@ Access-Control-Allow-Credentials: true
 ```
 
 **Test Actual Request (POST)**:
+
 ```bash
 curl -X POST https://8brwlwf68h.execute-api.us-east-1.amazonaws.com/v1/auth/login \
   -H "Origin: https://d39xcun7144jgl.cloudfront.net" \
@@ -294,6 +304,7 @@ curl -X POST https://8brwlwf68h.execute-api.us-east-1.amazonaws.com/v1/auth/logi
 ```
 
 **Expected Response Headers**:
+
 ```
 Access-Control-Allow-Origin: https://d39xcun7144jgl.cloudfront.net
 Access-Control-Allow-Credentials: true
@@ -302,12 +313,14 @@ Access-Control-Allow-Credentials: true
 ### Browser Testing
 
 **Open Browser Console**:
+
 1. Navigate to https://d39xcun7144jgl.cloudfront.net
 2. Open Developer Tools → Network tab
 3. Attempt login or registration
 4. Inspect request/response headers
 
 **Check for CORS Errors**:
+
 - ✅ No CORS errors → Configuration working
 - ❌ `Access-Control-Allow-Origin` mismatch → Check Lambda env var
 - ❌ `CORS policy: No 'Access-Control-Allow-Origin'` → Check API Gateway config
@@ -317,6 +330,7 @@ Access-Control-Allow-Credentials: true
 **Location**: `backend/infrastructure/lib/__tests__/infrastructure.test.ts`
 
 **Test: CloudFront URL in CORS origins** (Lines 687-713):
+
 ```typescript
 it('should include CloudFront distribution URL in CORS allowed origins', () => {
   const template = Template.fromStack(stack);
@@ -333,13 +347,14 @@ it('should include CloudFront distribution URL in CORS allowed origins', () => {
 
   expect(corsConfig.allowOrigins).toBeDefined();
   expect(corsConfig.allowOrigins).toContain('http://localhost:3000');
-  expect(corsConfig.allowOrigins.some((origin: string) =>
-    origin.includes('.cloudfront.net')
-  )).toBe(true);
+  expect(corsConfig.allowOrigins.some((origin: string) => origin.includes('.cloudfront.net'))).toBe(
+    true
+  );
 });
 ```
 
 **Run Tests**:
+
 ```bash
 cd backend/infrastructure
 npm test
@@ -350,6 +365,7 @@ npm test
 ### Issue: CORS Error with CloudFront URL
 
 **Error Message**:
+
 ```
 Access to XMLHttpRequest at 'https://API_URL' from origin 'https://CLOUDFRONT_URL'
 has been blocked by CORS policy: The 'Access-Control-Allow-Origin' header has a
@@ -359,6 +375,7 @@ value 'http://localhost:3000' that is not equal to the supplied origin.
 **Root Cause**: Lambda environment variable `ALLOWED_ORIGINS` doesn't include CloudFront URL
 
 **Solution**:
+
 1. Verify CDK constructor order: `createFrontendHosting()` before `createLambdaFunctions()`
 2. Redeploy infrastructure: `npx cdk deploy --context environment=dev`
 3. Verify Lambda env var:
@@ -372,6 +389,7 @@ value 'http://localhost:3000' that is not equal to the supplied origin.
 ### Issue: CORS Error with localhost
 
 **Error Message**:
+
 ```
 Access to XMLHttpRequest at 'https://API_URL' from origin 'http://localhost:3000'
 has been blocked by CORS policy: Response to preflight request doesn't pass access
@@ -381,6 +399,7 @@ control check: No 'Access-Control-Allow-Origin' header is present on the request
 **Root Cause**: API Gateway CORS not configured for localhost
 
 **Solution**:
+
 1. Check `getAllowedApiOrigins()` includes `http://localhost:3000`
 2. Redeploy infrastructure
 3. Clear browser cache and retry
@@ -388,6 +407,7 @@ control check: No 'Access-Control-Allow-Origin' header is present on the request
 ### Issue: OPTIONS Preflight Succeeds but POST Fails
 
 **Error Message**:
+
 ```
 CORS error on actual request but not on preflight
 ```
@@ -395,6 +415,7 @@ CORS error on actual request but not on preflight
 **Root Cause**: Lambda function not extracting `requestOrigin` from headers and passing to response functions
 
 **Solution**:
+
 1. Verify Lambda extracts origin: `const requestOrigin = event.headers.origin || event.headers.Origin;`
 2. Verify response functions receive origin: `createSuccessResponse(..., requestOrigin)`
 3. Redeploy Lambda functions
@@ -402,6 +423,7 @@ CORS error on actual request but not on preflight
 ### Issue: Wrong Origin in Response Header
 
 **Error Message**:
+
 ```
 Access-Control-Allow-Origin: http://localhost:3000 (expected: https://cloudfront.url)
 ```
@@ -409,6 +431,7 @@ Access-Control-Allow-Origin: http://localhost:3000 (expected: https://cloudfront
 **Root Cause**: `getCorsHeaders()` defaulting to first origin in list instead of matching request origin
 
 **Solution**:
+
 1. Verify browser sends `Origin` header in request
 2. Check Lambda logs for `requestOrigin` value
 3. Verify `getCorsHeaders()` logic matches origin against allowed list
@@ -418,11 +441,13 @@ Access-Control-Allow-Origin: http://localhost:3000 (expected: https://cloudfront
 ### 1. Never Hardcode Origins
 
 ❌ **BAD**:
+
 ```typescript
 const ALLOWED_ORIGIN = 'https://d39xcun7144jgl.cloudfront.net';
 ```
 
 ✅ **GOOD**:
+
 ```typescript
 const allowedOrigins = this.getAllowedApiOrigins();
 ```
@@ -430,11 +455,13 @@ const allowedOrigins = this.getAllowedApiOrigins();
 ### 2. Always Extract Request Origin
 
 ❌ **BAD**:
+
 ```typescript
 return createSuccessResponse(200, data, requestId);
 ```
 
 ✅ **GOOD**:
+
 ```typescript
 const requestOrigin = event.headers.origin || event.headers.Origin;
 return createSuccessResponse(200, data, requestId, requestOrigin);
@@ -443,11 +470,13 @@ return createSuccessResponse(200, data, requestId, requestOrigin);
 ### 3. Use Environment-Specific Configuration
 
 ❌ **BAD**:
+
 ```typescript
 const origins = ['http://localhost:3000', 'https://prod.example.com'];
 ```
 
 ✅ **GOOD**:
+
 ```typescript
 const origins = [];
 switch (this.node.tryGetContext('environment')) {
@@ -466,6 +495,7 @@ switch (this.node.tryGetContext('environment')) {
 ### 4. Test CORS in Browser Console
 
 Always verify CORS configuration in browser Developer Tools:
+
 1. Check Network tab for preflight OPTIONS requests
 2. Verify response headers include correct `Access-Control-Allow-Origin`
 3. Look for CORS-related errors in Console tab
@@ -473,6 +503,7 @@ Always verify CORS configuration in browser Developer Tools:
 ### 5. Keep API Gateway and Lambda in Sync
 
 Ensure both API Gateway CORS preflight and Lambda response headers use the same origin list:
+
 - API Gateway: `getAllowedApiOrigins()` for preflight
 - Lambda: `ALLOWED_ORIGINS` env var for actual requests
 
@@ -481,6 +512,7 @@ Ensure both API Gateway CORS preflight and Lambda response headers use the same 
 ### 1. Origin Whitelisting
 
 Only allow origins you control:
+
 - ✅ Your CloudFront distributions
 - ✅ Your custom domains
 - ✅ localhost for development
@@ -490,6 +522,7 @@ Only allow origins you control:
 ### 2. Credentials Support
 
 `Access-Control-Allow-Credentials: true` allows cookies/auth headers:
+
 - Required for JWT token authentication
 - Only use with whitelisted origins (never with `*`)
 - Ensure HTTPS for production origins
@@ -497,14 +530,15 @@ Only allow origins you control:
 ### 3. Header Restrictions
 
 Only allow necessary headers:
+
 ```typescript
 allowHeaders: [
-  'Content-Type',        // Required for JSON requests
-  'Authorization',       // Required for JWT tokens
-  'X-Amz-Date',         // AWS signature
-  'X-Api-Key',          // API Gateway auth
-  'X-Amz-Security-Token' // Temporary credentials
-]
+  'Content-Type', // Required for JSON requests
+  'Authorization', // Required for JWT tokens
+  'X-Amz-Date', // AWS signature
+  'X-Api-Key', // API Gateway auth
+  'X-Amz-Security-Token', // Temporary credentials
+];
 ```
 
 Avoid allowing all headers (`*`) in production.
@@ -514,11 +548,13 @@ Avoid allowing all headers (`*`) in production.
 ### Before (Single Origin)
 
 **CDK**:
+
 ```typescript
-ALLOWED_ORIGIN: 'http://localhost:3000'
+ALLOWED_ORIGIN: 'http://localhost:3000';
 ```
 
 **Lambda**:
+
 ```typescript
 'Access-Control-Allow-Origin': process.env.ALLOWED_ORIGIN || 'http://localhost:3000'
 ```
@@ -526,17 +562,18 @@ ALLOWED_ORIGIN: 'http://localhost:3000'
 ### After (Multi-Origin)
 
 **CDK**:
+
 ```typescript
-ALLOWED_ORIGINS: this.getAllowedApiOrigins().join(',')
+ALLOWED_ORIGINS: this.getAllowedApiOrigins().join(',');
 // Result: "http://localhost:3000,https://localhost:3000,https://d39xcun7144jgl.cloudfront.net"
 ```
 
 **Lambda**:
+
 ```typescript
-const allowedOrigins = process.env.ALLOWED_ORIGINS.split(',').map(o => o.trim());
-const allowedOrigin = requestOrigin && allowedOrigins.includes(requestOrigin)
-  ? requestOrigin
-  : allowedOrigins[0];
+const allowedOrigins = process.env.ALLOWED_ORIGINS.split(',').map((o) => o.trim());
+const allowedOrigin =
+  requestOrigin && allowedOrigins.includes(requestOrigin) ? requestOrigin : allowedOrigins[0];
 ```
 
 ## Related Documentation
@@ -551,9 +588,10 @@ const allowedOrigin = requestOrigin && allowedOrigins.includes(requestOrigin)
 
 **Last Updated**: 2025-11-21
 **Related PRs**:
+
 - #88 - Deploy Translation UI to dev environment
 - #87 - Fix CORS configuration for CloudFront URL support
-**Status**: ✅ Implemented and tested
+  **Status**: ✅ Implemented and tested
 
 ---
 
@@ -566,6 +604,7 @@ const allowedOrigin = requestOrigin && allowedOrigins.includes(requestOrigin)
 📖 **Full Investigation Report**: See [`docs/archive/CORS-TROUBLESHOOTING.md`](docs/archive/CORS-TROUBLESHOOTING.md)
 
 **Key Learnings**:
+
 - ✅ Always extract request origin from `event.headers.origin`
 - ✅ Pass origin to all response helpers (success AND error)
 - ✅ Test with Playwright before/after comparison

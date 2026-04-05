@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 /**
  * Upload Service Tests
  *
@@ -78,9 +79,7 @@ describe('uploadService', () => {
       vi.spyOn(api.apiClient, 'post').mockRejectedValue(mockError);
 
       // Act & Assert
-      await expect(uploadService.requestUploadUrl(mockFile)).rejects.toThrow(
-        'API request failed'
-      );
+      await expect(uploadService.requestUploadUrl(mockFile)).rejects.toThrow('API request failed');
     });
 
     it('should handle large files', async () => {
@@ -169,24 +168,14 @@ describe('uploadService', () => {
       });
 
       // Act
-      const uploadPromise = uploadService.uploadToS3(
-        mockFile,
-        uploadUrl,
-        requiredHeaders
-      );
+      const uploadPromise = uploadService.uploadToS3(mockFile, uploadUrl, requiredHeaders);
 
       await uploadPromise;
 
       // Assert
       expect(mockXHR.open).toHaveBeenCalledWith('PUT', uploadUrl);
-      expect(mockXHR.setRequestHeader).toHaveBeenCalledWith(
-        'Content-Type',
-        'text/plain'
-      );
-      expect(mockXHR.setRequestHeader).toHaveBeenCalledWith(
-        'Content-Length',
-        '7'
-      );
+      expect(mockXHR.setRequestHeader).toHaveBeenCalledWith('Content-Type', 'text/plain');
+      expect(mockXHR.setRequestHeader).toHaveBeenCalledWith('Content-Length', '7');
       expect(mockXHR.send).toHaveBeenCalledWith(mockFile);
     });
 
@@ -241,9 +230,9 @@ describe('uploadService', () => {
       });
 
       // Act & Assert
-      await expect(
-        uploadService.uploadToS3(mockFile, uploadUrl, {})
-      ).rejects.toThrow('Network error during file upload');
+      await expect(uploadService.uploadToS3(mockFile, uploadUrl, {})).rejects.toThrow(
+        'Network error during file upload'
+      );
     });
 
     it('should handle upload abort', async () => {
@@ -258,9 +247,9 @@ describe('uploadService', () => {
       });
 
       // Act & Assert
-      await expect(
-        uploadService.uploadToS3(mockFile, uploadUrl, {})
-      ).rejects.toThrow('Upload was cancelled');
+      await expect(uploadService.uploadToS3(mockFile, uploadUrl, {})).rejects.toThrow(
+        'Upload was cancelled'
+      );
     });
 
     it('should handle HTTP error responses', async () => {
@@ -278,9 +267,9 @@ describe('uploadService', () => {
       });
 
       // Act & Assert
-      await expect(
-        uploadService.uploadToS3(mockFile, uploadUrl, {})
-      ).rejects.toThrow('Upload failed with status 403: Forbidden');
+      await expect(uploadService.uploadToS3(mockFile, uploadUrl, {})).rejects.toThrow(
+        'Upload failed with status 403: Forbidden'
+      );
     });
   });
 

@@ -3,9 +3,9 @@
 
 // Core interfaces (order matters to avoid conflicts)
 export * from './auth';
-export * from './errors';         // Export ValidationError from here
-export * from './jobs';           // Export JobStatus from here
-export * from './documents';      // Export ValidationResult from here (primary)
+export * from './errors'; // Export ValidationError from here
+export * from './jobs'; // Export JobStatus from here
+export * from './documents'; // Export ValidationResult from here (primary)
 export * from './legal';
 export * from './workflows';
 
@@ -19,7 +19,7 @@ export {
   ClaudeTranslationResponse,
   CostEstimationRequest,
   CostEstimationResponse,
-  ProgressResponse
+  ProgressResponse,
 } from './api';
 
 export {
@@ -27,10 +27,8 @@ export {
   PollingState,
   AdaptivePollingManager,
   PerformanceMonitor,
-  PerformanceMetrics
+  PerformanceMetrics,
 } from './polling';
 
 // Validation utilities (exclude ValidationError and ValidationResult to avoid conflicts)
-export {
-  ValidationUtils
-} from './validation';
+export { ValidationUtils } from './validation';

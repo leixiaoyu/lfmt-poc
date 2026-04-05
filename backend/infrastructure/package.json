@@ -12,7 +12,9 @@
     "destroy": "cdk destroy",
     "diff": "cdk diff",
     "synth": "cdk synth",
-    "lint": "eslint lib/**/*.ts"
+    "lint": "eslint lib/**/*.ts",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
   },
   "devDependencies": {
     "@types/jest": "^29.5.0",

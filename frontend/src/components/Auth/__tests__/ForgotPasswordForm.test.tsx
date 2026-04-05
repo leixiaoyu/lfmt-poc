@@ -121,9 +121,12 @@ describe('ForgotPasswordForm - Submission', () => {
   it('should disable submit button while submitting', async () => {
     const user = userEvent.setup();
     let resolveSubmit: () => void;
-    const onSubmit = vi.fn(() => new Promise<void>(resolve => {
-      resolveSubmit = resolve;
-    }));
+    const onSubmit = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveSubmit = resolve;
+        })
+    );
     renderWithRouter(<ForgotPasswordForm onSubmit={onSubmit} />);
 
     const emailInput = screen.getByLabelText(/email/i);
@@ -147,9 +150,12 @@ describe('ForgotPasswordForm - Submission', () => {
   it('should show loading text while submitting', async () => {
     const user = userEvent.setup();
     let resolveSubmit: () => void;
-    const onSubmit = vi.fn(() => new Promise<void>(resolve => {
-      resolveSubmit = resolve;
-    }));
+    const onSubmit = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveSubmit = resolve;
+        })
+    );
     renderWithRouter(<ForgotPasswordForm onSubmit={onSubmit} />);
 
     const emailInput = screen.getByLabelText(/email/i);

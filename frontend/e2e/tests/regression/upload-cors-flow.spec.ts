@@ -26,7 +26,7 @@ test.describe('Upload Flow - CORS and Authentication Regression', () => {
     await page.waitForURL('**/dashboard');
   });
 
-  test('should not encounter CORS errors when uploading from CloudFront', async ({ page, context }) => {
+  test('should not encounter CORS errors when uploading from CloudFront', async ({ page }) => {
     // Monitor for CORS errors
     const corsErrors: string[] = [];
     page.on('console', (msg) => {
@@ -161,9 +161,7 @@ test.describe('Upload Flow - CORS and Authentication Regression', () => {
     await page.waitForTimeout(3000);
 
     // Step 1: POST to /jobs/upload (get presigned URL)
-    const apiRequest = requests.find(
-      (r) => r.url.includes('/jobs/upload') && r.method === 'POST'
-    );
+    const apiRequest = requests.find((r) => r.url.includes('/jobs/upload') && r.method === 'POST');
     expect(apiRequest).toBeDefined();
 
     // Step 2: PUT to S3 (upload file)
@@ -182,10 +180,12 @@ test.describe('Upload Flow - CORS and Authentication Regression', () => {
   test('should handle expired token with redirect to login', async ({ page }) => {
     // Simulate expired token
     await page.evaluate(() => {
-      const expiredToken = btoa(JSON.stringify({
-        sub: 'test-user',
-        exp: Math.floor(Date.now() / 1000) - 3600, // Expired 1 hour ago
-      }));
+      const expiredToken = btoa(
+        JSON.stringify({
+          sub: 'test-user',
+          exp: Math.floor(Date.now() / 1000) - 3600, // Expired 1 hour ago
+        })
+      );
       localStorage.setItem('accessToken', `header.${expiredToken}.signature`);
     });
 
@@ -229,9 +229,10 @@ test.describe('Upload Flow - CORS and Authentication Regression', () => {
     await page.waitForTimeout(3000);
 
     // Filter for CORS-related errors
-    const corsErrors = consoleErrors.filter((err) =>
-      err.toLowerCase().includes('cors') ||
-      err.toLowerCase().includes('access-control-allow-origin')
+    const corsErrors = consoleErrors.filter(
+      (err) =>
+        err.toLowerCase().includes('cors') ||
+        err.toLowerCase().includes('access-control-allow-origin')
     );
 
     // Should be zero CORS errors
@@ -264,7 +265,9 @@ test.describe('Upload Flow - CORS and Authentication Regression', () => {
     await page.waitForTimeout(5000);
 
     // Check for success message or navigation to status page
-    const successMessage = await page.locator('text=/upload.*success|translation.*started/i').count();
+    const successMessage = await page
+      .locator('text=/upload.*success|translation.*started/i')
+      .count();
     expect(successMessage).toBeGreaterThan(0);
   });
 });

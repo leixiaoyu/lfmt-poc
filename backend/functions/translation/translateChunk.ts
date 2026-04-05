@@ -127,9 +127,7 @@ export const handler = async (
 
     // Verify job is in correct state
     if (job.status !== 'CHUNKED' && job.translationStatus !== 'IN_PROGRESS') {
-      throw new Error(
-        `Job ${event.jobId} is not ready for translation (status: ${job.status})`
-      );
+      throw new Error(`Job ${event.jobId} is not ready for translation (status: ${job.status})`);
     }
 
     // Load current chunk from S3 (includes pre-calculated previousSummary)
@@ -153,10 +151,7 @@ export const handler = async (
     });
 
     // Acquire rate limit tokens before making API call
-    const rateLimitAcquire = await rateLimiter.acquire(
-      estimatedTokens,
-      RateLimitType.TPM
-    );
+    const rateLimitAcquire = await rateLimiter.acquire(estimatedTokens, RateLimitType.TPM);
 
     if (!rateLimitAcquire.success) {
       logger.warn('Rate limit exceeded, returning retryable error', {
@@ -182,11 +177,7 @@ export const handler = async (
       preserveFormatting: true,
     };
 
-    const result = await geminiClient.translate(
-      chunk.primaryContent,
-      translationOptions,
-      context
-    );
+    const result = await geminiClient.translate(chunk.primaryContent, translationOptions, context);
 
     logger.info('Translation completed', {
       jobId: event.jobId,
@@ -239,8 +230,7 @@ export const handler = async (
     });
 
     // Determine if error is retryable
-    const retryable =
-      error instanceof GeminiApiError ? error.retryable : false;
+    const retryable = error instanceof GeminiApiError ? error.retryable : false;
 
     // Update job status if error is not retryable and we have a valid jobId and userId
     if (!retryable && event.jobId && event.userId) {

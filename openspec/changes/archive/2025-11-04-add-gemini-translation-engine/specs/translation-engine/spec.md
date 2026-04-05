@@ -173,7 +173,7 @@ The system SHALL track token usage and estimated costs for translation operation
 **Given** a translation request uses 10,000 input tokens
 **And** the Gemini API pricing is $0.075 per 1M input tokens (free tier)
 **When** the translation completes
-**Then** the system SHALL calculate cost as (10,000 / 1,000,000) * $0.075 = $0.00075
+**Then** the system SHALL calculate cost as (10,000 / 1,000,000) \* $0.075 = $0.00075
 **And** it SHALL add this cost to the job's estimatedCost field
 **And** it SHALL emit a CloudWatch metric with the cost
 
@@ -254,10 +254,10 @@ The system SHALL support translation to multiple target languages.
 
 ```typescript
 interface TokenBucket {
-  capacity: number;        // Maximum tokens (e.g., 5 for RPM)
-  tokens: number;          // Available tokens
-  refillRate: number;      // Tokens per second
-  lastRefill: number;      // Timestamp of last refill
+  capacity: number; // Maximum tokens (e.g., 5 for RPM)
+  tokens: number; // Available tokens
+  refillRate: number; // Tokens per second
+  lastRefill: number; // Timestamp of last refill
 }
 
 function checkLimit(bucket: TokenBucket, required: number): boolean {
@@ -307,7 +307,7 @@ function prepareContext(
     currentChunk,
     previousChunks: contextChunks,
     totalTokens,
-    maxTokens
+    maxTokens,
   };
 }
 ```

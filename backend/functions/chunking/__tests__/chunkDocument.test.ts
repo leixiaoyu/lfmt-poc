@@ -7,17 +7,8 @@
 import { describe, it, expect, beforeEach, jest } from '@jest/globals';
 import { S3Event, Context } from 'aws-lambda';
 import { mockClient } from 'aws-sdk-client-mock';
-import {
-  S3Client,
-  GetObjectCommand,
-  PutObjectCommand,
-} from '@aws-sdk/client-s3';
-import {
-  DynamoDBClient,
-  GetItemCommand,
-  UpdateItemCommand,
-} from '@aws-sdk/client-dynamodb';
-import { Readable } from 'stream';
+import { S3Client, GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
+import { DynamoDBClient, GetItemCommand, UpdateItemCommand } from '@aws-sdk/client-dynamodb';
 
 // Mock environment variables
 process.env.DOCUMENT_BUCKET = 'test-bucket';
@@ -90,13 +81,6 @@ describe('Document Chunking Lambda Handler', () => {
       },
     ],
   });
-
-  const createReadableStream = (content: string): Readable => {
-    const stream = new Readable();
-    stream.push(content);
-    stream.push(null);
-    return stream;
-  };
 
   describe('Successful Document Chunking', () => {
     it('should process S3 event and chunk document successfully', async () => {
@@ -336,7 +320,6 @@ describe('Document Chunking Lambda Handler', () => {
 
       // Should fail with CHUNKING_FAILED
       const updateCalls = dynamoMock.commandCalls(UpdateItemCommand);
-      const lastCall = updateCalls[updateCalls.length - 1];
       // The status should be CHUNKING_FAILED due to empty content
       expect(updateCalls.length).toBeGreaterThan(0);
     });
@@ -436,7 +419,8 @@ describe('Document Chunking Lambda Handler', () => {
       };
 
       // First record fails, second succeeds
-      s3Mock.on(GetObjectCommand)
+      s3Mock
+        .on(GetObjectCommand)
         .resolvesOnce({
           Metadata: undefined, // First fails
         })

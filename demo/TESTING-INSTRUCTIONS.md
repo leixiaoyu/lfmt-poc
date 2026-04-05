@@ -14,6 +14,7 @@ This document provides detailed instructions for manually testing the translatio
 ## 📋 Prerequisites
 
 ### Required Information
+
 - **Frontend URL**: https://d39xcun7144jgl.cloudfront.net
 - **Demo Account Email**: `demo@lfmt-poc.dev`
 - **Demo Account Password**: (See `demo/CREDENTIALS.md` - not committed to git)
@@ -22,6 +23,7 @@ This document provides detailed instructions for manually testing the translatio
 - **Environment**: Development (LfmtPocDev)
 
 ### Browser Setup
+
 - **Recommended**: Chrome or Edge (for Claude for Chrome extension compatibility)
 - **Extensions**: Claude for Chrome (optional, for AI-assisted testing)
 - **Network**: Stable internet connection (translations may take 30 min to 6 hours)
@@ -33,6 +35,7 @@ This document provides detailed instructions for manually testing the translatio
 ### Step 1: Login to Application
 
 1. **Open Frontend URL**:
+
    ```
    https://d39xcun7144jgl.cloudfront.net
    ```
@@ -55,6 +58,7 @@ This document provides detailed instructions for manually testing the translatio
 ### Step 2: Upload Test Document #1 - Sherlock Holmes (Spanish)
 
 #### Document Details
+
 - **File**: `demo/test-documents/sherlock-holmes.txt`
 - **Word Count**: 107,562 words
 - **Target Language**: Spanish
@@ -96,6 +100,7 @@ This document provides detailed instructions for manually testing the translatio
 ### Step 3: Upload Test Document #2 - Pride and Prejudice (French)
 
 #### Document Details
+
 - **File**: `demo/test-documents/pride-and-prejudice.txt`
 - **Word Count**: 127,381 words
 - **Target Language**: French
@@ -103,6 +108,7 @@ This document provides detailed instructions for manually testing the translatio
 - **Estimated Cost**: $0.03-0.04
 
 #### Upload Steps
+
 1. **Repeat Step 2 workflow** with following changes:
    - File: `demo/test-documents/pride-and-prejudice.txt`
    - Target Language: French (Français)
@@ -119,6 +125,7 @@ This document provides detailed instructions for manually testing the translatio
 ### Step 4: Upload Test Document #3 - War and Peace (German)
 
 #### Document Details
+
 - **File**: `demo/test-documents/war-and-peace.txt`
 - **Word Count**: 566,338 words
 - **Target Language**: German
@@ -126,6 +133,7 @@ This document provides detailed instructions for manually testing the translatio
 - **Estimated Cost**: $0.10-0.15
 
 #### Upload Steps
+
 1. **Repeat Step 2 workflow** with following changes:
    - File: `demo/test-documents/war-and-peace.txt`
    - Target Language: German (Deutsch)
@@ -147,18 +155,21 @@ For **each translation job**, capture the following metrics:
 ### 1. Performance Metrics
 
 **During Translation**:
+
 - [ ] Start timestamp (when "Start Translation" clicked)
 - [ ] First chunk processing time (time until progress > 0%)
 - [ ] Progress update intervals (15s, 30s, 60s - observe adaptive polling)
 - [ ] Any rate limiting delays observed in UI
 
 **After Completion**:
+
 - [ ] End timestamp (when progress reaches 100%)
 - [ ] Total processing time (end - start)
 - [ ] Total chunks processed / total chunks (should be 100%)
 - [ ] Average time per chunk (total time / chunk count)
 
 **Data to Record**:
+
 ```json
 {
   "performance": {
@@ -178,6 +189,7 @@ For **each translation job**, capture the following metrics:
 ### 2. Cost Metrics
 
 **Access AWS CloudWatch Logs**:
+
 ```bash
 # View translateChunk Lambda logs
 aws logs tail /aws/lambda/lfmt-translate-chunk-LfmtPocDev --follow --filter-pattern "usageMetadata"
@@ -191,17 +203,20 @@ aws logs filter-log-events \
 ```
 
 **Data to Extract**:
+
 - Input tokens per chunk
 - Output tokens per chunk
 - Total input tokens for document
 - Total output tokens for document
 
 **Calculate Costs** (Gemini 2.5 Flash Free Tier):
+
 - Free tier limits: 5 RPM, 250K TPM, 25 RPD
 - Cost per 1 million tokens: $0 (within free tier)
 - Estimated cost if paid: Input $0.075/1M tokens, Output $0.30/1M tokens
 
 **Data to Record**:
+
 ```json
 {
   "cost": {
@@ -209,7 +224,7 @@ aws logs filter-log-events \
     "outputTokens": 120000,
     "estimatedCostUSD": 0.047,
     "freeTierUsed": true,
-    "actualCostUSD": 0.00
+    "actualCostUSD": 0.0
   }
 }
 ```
@@ -219,17 +234,20 @@ aws logs filter-log-events \
 ### 3. Quality Metrics
 
 **Spot-Check Translation Quality**:
+
 1. **Download Translated Document** from UI
 2. **Select 5-10 Passages** (beginning, middle, end, dialogue, narrative)
 3. **Evaluate Each Passage** using criteria below
 
 **Evaluation Criteria** (1-5 scale):
+
 - **Coherence**: Does translation read naturally? (1=broken, 5=fluent)
 - **Context Preservation**: Are connections between chunks maintained? (1=lost, 5=perfect)
 - **Semantic Accuracy**: Does meaning match source text? (1=incorrect, 5=accurate)
 - **Formatting**: Are paragraphs, chapters, spacing preserved? (1=broken, 5=perfect)
 
 **Example Spot-Check**:
+
 ```json
 {
   "quality": {
@@ -251,6 +269,7 @@ aws logs filter-log-events \
 **Access AWS CloudWatch**:
 
 **Step Functions Execution**:
+
 ```bash
 # List recent executions
 aws stepfunctions list-executions \
@@ -263,6 +282,7 @@ aws stepfunctions describe-execution \
 ```
 
 **Lambda Performance**:
+
 ```bash
 # View translateChunk Lambda metrics
 aws cloudwatch get-metric-statistics \
@@ -276,6 +296,7 @@ aws cloudwatch get-metric-statistics \
 ```
 
 **S3 Upload/Download Times**:
+
 ```bash
 # View S3 request metrics
 aws cloudwatch get-metric-statistics \
@@ -289,6 +310,7 @@ aws cloudwatch get-metric-statistics \
 ```
 
 **Data to Record**:
+
 ```json
 {
   "technical": {
@@ -311,6 +333,7 @@ For **each translation**, create a metrics file:
 **File Path**: `demo/results/<document-name>-metrics.json`
 
 **Example** (`demo/results/sherlock-holmes-spanish-metrics.json`):
+
 ```json
 {
   "document": {
@@ -331,7 +354,7 @@ For **each translation**, create a metrics file:
     "inputTokens": 150000,
     "outputTokens": 120000,
     "estimatedCostUSD": 0.047,
-    "actualCostUSD": 0.00
+    "actualCostUSD": 0.0
   },
   "quality": {
     "passagesChecked": 8,
@@ -350,22 +373,26 @@ For **each translation**, create a metrics file:
 ## 🐛 Troubleshooting
 
 ### Issue: Upload Fails
+
 - **Check**: File size limit (CloudFront default: 1MB, CDK configured: 100MB)
 - **Check**: File encoding (must be UTF-8)
 - **Check**: Network connectivity
 - **Solution**: Try smaller file or check browser console for errors
 
 ### Issue: Translation Stuck at 0%
+
 - **Check**: AWS CloudWatch logs for Lambda errors
 - **Check**: Step Functions execution status
 - **Solution**: Contact AWS admin or check DynamoDB job status
 
 ### Issue: Progress Not Updating
+
 - **Check**: Browser console for polling errors
 - **Check**: CORS configuration (should allow CloudFront origin)
 - **Solution**: Hard refresh (Ctrl+Shift+R) or check API Gateway logs
 
 ### Issue: Rate Limiting Errors
+
 - **Expected**: Gemini API has 5 RPM, 250K TPM limits
 - **Behavior**: System should retry with exponential backoff
 - **Solution**: Wait and monitor - system handles automatically
@@ -375,12 +402,14 @@ For **each translation**, create a metrics file:
 ## ✅ Testing Checklist
 
 ### Pre-Testing
+
 - [ ] Demo account created and credentials accessible
 - [ ] Frontend URL accessible in browser
 - [ ] Test documents downloaded in `demo/test-documents/`
 - [ ] AWS CLI configured for metrics collection
 
 ### Translation Testing
+
 - [ ] Login successful with demo account
 - [ ] Sherlock Holmes (Spanish) uploaded and translating
 - [ ] Pride and Prejudice (French) uploaded and translating
@@ -388,6 +417,7 @@ For **each translation**, create a metrics file:
 - [ ] All translations completed successfully
 
 ### Metrics Collection
+
 - [ ] Performance metrics captured for all 3 translations
 - [ ] Cost metrics extracted from CloudWatch logs
 - [ ] Quality metrics documented (spot-checked translations)
@@ -395,6 +425,7 @@ For **each translation**, create a metrics file:
 - [ ] All metrics saved to `demo/results/*.json`
 
 ### Documentation
+
 - [ ] Screenshots captured for investor pitch deck
 - [ ] Translation history page documented
 - [ ] Error handling tested (if any failures occurred)

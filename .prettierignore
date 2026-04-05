@@ -1,0 +1,32 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+dist/
+build/
+cdk.out/
+
+# Coverage
+coverage/
+
+# Test results
+playwright-report/
+test-results/
+
+# Package locks
+package-lock.json
+pnpm-lock.yaml
+yarn.lock
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# IDE
+.vscode/
+.idea/
+
+# Misc
+*.log
+.DS_Store

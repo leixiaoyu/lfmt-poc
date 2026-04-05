@@ -101,7 +101,7 @@ let failedQueue: Array<{
  * Process queued requests after token refresh
  */
 function processQueue(error: unknown, token: string | null = null) {
-  failedQueue.forEach(prom => {
+  failedQueue.forEach((prom) => {
     if (error) {
       prom.reject(error);
     } else {
@@ -145,13 +145,13 @@ async function responseErrorInterceptor(error: unknown): Promise<unknown> {
       return new Promise((resolve, reject) => {
         failedQueue.push({ resolve, reject });
       })
-        .then(token => {
+        .then((token) => {
           if (originalRequest.headers) {
             originalRequest.headers.Authorization = `Bearer ${token}`;
           }
           return axios(originalRequest);
         })
-        .catch(err => {
+        .catch((err) => {
           return Promise.reject(err);
         });
     }
@@ -289,16 +289,10 @@ export function createApiClient(): AxiosInstance {
   }
 
   // Register request interceptors
-  client.interceptors.request.use(
-    requestInterceptor,
-    requestErrorInterceptor
-  );
+  client.interceptors.request.use(requestInterceptor, requestErrorInterceptor);
 
   // Register response interceptors
-  client.interceptors.response.use(
-    responseInterceptor,
-    responseErrorInterceptor
-  );
+  client.interceptors.response.use(responseInterceptor, responseErrorInterceptor);
 
   return client;
 }

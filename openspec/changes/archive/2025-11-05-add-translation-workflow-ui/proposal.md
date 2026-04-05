@@ -11,6 +11,7 @@ The frontend currently has authentication UI (Phase 3 completed) but lacks the c
 ## What Changes
 
 ### Frontend Capabilities (New)
+
 - **Translation Service Layer**: API integration for job management and translation operations
 - **Legal Attestation UI**: Copyright and rights compliance before upload
 - **Translation Upload Flow**: File upload with language/tone selection
@@ -19,12 +20,14 @@ The frontend currently has authentication UI (Phase 3 completed) but lacks the c
 - **Translation Detail Page**: Individual job view with download capability
 
 ### Testing Infrastructure (New)
+
 - **Playwright E2E Suite**: Complete workflow testing against live backend
 - **Page Object Model**: Reusable page abstractions for maintainability
 - **Test Fixtures**: Shared test documents matching backend integration tests
 - **CI/CD Integration**: Automated E2E tests on every PR
 
 ### API Integration
+
 - Connects to backend endpoints validated by integration tests:
   - `POST /jobs/upload` - Request presigned URL with legal attestation
   - `GET /jobs/:jobId` - Get job status
@@ -32,6 +35,7 @@ The frontend currently has authentication UI (Phase 3 completed) but lacks the c
   - `GET /jobs/:jobId/translation-status` - Get translation progress
 
 ### Technical Enhancements
+
 - **Polling Strategy**: Adaptive intervals (15s → 30s → 60s) for progress updates
 - **State Management**: TranslationContext for translation-specific state
 - **Error Handling**: Comprehensive error states with user-friendly messages
@@ -40,6 +44,7 @@ The frontend currently has authentication UI (Phase 3 completed) but lacks the c
 ## Impact
 
 ### Affected Specs
+
 - **NEW**: `translation-service` - Backend API integration layer
 - **NEW**: `translation-upload` - File upload with legal attestation
 - **NEW**: `translation-progress` - Real-time status tracking
@@ -48,6 +53,7 @@ The frontend currently has authentication UI (Phase 3 completed) but lacks the c
 - **NEW**: `legal-attestation` - Copyright compliance UI
 
 ### Affected Code
+
 - **Frontend**:
   - `src/services/translationService.ts` (new)
   - `src/components/Translation/` (6 new components)
@@ -68,18 +74,22 @@ The frontend currently has authentication UI (Phase 3 completed) but lacks the c
   - `frontend/README.md` (update)
 
 ### Dependencies
+
 - **Runtime**: No new dependencies (uses existing axios, Material-UI, React Router)
 - **Dev Dependencies**:
   - `@playwright/test` - E2E testing framework
   - `@playwright/test-runner` - Test runner
 
 ### Breaking Changes
+
 None. This is purely additive functionality.
 
 ### Migration Path
+
 N/A - New functionality, no migration needed.
 
 ### Risks
+
 1. **Polling Performance**: Excessive polling could strain backend
    - **Mitigation**: Adaptive intervals reduce frequency over time
 2. **E2E Test Reliability**: Network flakiness could cause test failures
@@ -88,6 +98,7 @@ N/A - New functionality, no migration needed.
    - **Mitigation**: Backend integration tests provide contract stability
 
 ### Success Criteria
+
 - ✅ User can upload document with legal attestation
 - ✅ User can select target language (es, fr, de, it, zh) and tone (formal, informal, neutral)
 - ✅ User can see real-time translation progress

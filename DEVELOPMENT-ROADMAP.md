@@ -12,6 +12,7 @@
 🎉 **MAJOR MILESTONE ACHIEVED** (2025-11-23): The complete **translation workflow UI is now deployed and operational** in the dev environment! The application features end-to-end functionality from upload through translation to download, with comprehensive testing infrastructure and CI/CD automation.
 
 ### Current Achievement Status
+
 ✅ **Functional End-to-End Workflow**: Upload → Chunking → Translation → Download
 ✅ **Translation UI Deployed**: Live at https://d39xcun7144jgl.cloudfront.net
 ✅ **CI/CD Pipeline**: Automated deployment with health checks operational
@@ -19,10 +20,12 @@
 ✅ **Production-Ready Architecture**: CDK-managed infrastructure, HTTPS-only, comprehensive monitoring
 
 ### Resolved Critical Risks
+
 ✅ **Cost Model** (Issue #13): Gemini free tier selected, <$50/month target achieved
 ✅ **Sequential Performance Bottleneck**: Parallel translation implemented (PR #43), 5-7x speedup ready for deployment
 
 ### Current Focus
+
 🎯 **Phase 10 - Investor Demo & Alpha User Readiness** (Target: 2025-11-30)
 The application is functionally complete and deployed. Focus now shifts to demo preparation, performance validation, and user experience polish.
 
@@ -31,6 +34,7 @@ The application is functionally complete and deployed. Focus now shifts to demo 
 ## Completed Milestones ✅
 
 ### V1 End-to-End Workflow (Phase 6 - Complete)
+
 - **Status**: ✅ Merged via PR #33 (2025-11-04)
 - **Achievement**: Core Step Functions state machine implemented, tested, and deployed
 - **Test Coverage**: 25/25 infrastructure tests, 296/296 backend function tests
@@ -38,6 +42,7 @@ The application is functionally complete and deployed. Focus now shifts to demo 
 - **Related Issues**: #22 (Missing Step Functions orchestrator)
 
 **Key Implementations:**
+
 - Step Functions workflow with Map state for chunk processing
 - Retry logic with exponential backoff (2s → 4s → 8s)
 - DynamoDB service integration for job status updates
@@ -53,6 +58,7 @@ The application is functionally complete and deployed. Focus now shifts to demo 
 This phase ensures the project is both economically viable and technically performant.
 
 #### P0 - Validate Cost Model & Engine Choice ✅ COMPLETED
+
 **Priority**: CRITICAL - Highest business risk
 **Status**: ✅ COMPLETE - Decision made, infrastructure implemented
 **Related Issue**: #13
@@ -62,23 +68,27 @@ This phase ensures the project is both economically viable and technically perfo
 The conflict between the project's cost targets and the estimated cost of the translation engine has been resolved.
 
 **Decision Made:**
+
 - **Selected Engine**: Google Gemini 1.5 Pro (POC phase)
 - **Cost Model**: Using Gemini free tier to meet <$50/month cost target
 - **Future Path**: Option to upgrade to Claude Sonnet 4 for production if quality requirements increase
 
 **Action Items:**
+
 - [x] Finalize choice of translation engine (Claude Sonnet 4 vs. Gemini 1.5 Pro) - **Gemini selected**
 - [x] Get business approval on realistic cost model - **Approved: Gemini free tier**
 - [x] Update all documentation to reflect final engine choice - **README.md updated**
 - [x] Update infrastructure to support chosen engine - **PR #6 merged (87 tests, 93-100% coverage)**
 
 **Implementation Evidence:**
+
 - ✅ GeminiClient with AWS Secrets Manager integration (17 tests, 95% coverage)
 - ✅ RateLimiter with token bucket algorithm (26 tests, 93.75% coverage)
 - ✅ Full CDK infrastructure with IAM permissions
 - ✅ Production-ready backend (296/296 tests passing)
 
 **Decision Rationale:**
+
 - **Cost**: Gemini free tier (5 RPM, 250K TPM, 25 RPD) meets <$50/month target
 - **Quality**: Sufficient for POC phase, can upgrade later if needed
 - **Risk**: Minimal - infrastructure supports future Claude migration if required
@@ -86,6 +96,7 @@ The conflict between the project's cost targets and the estimated cost of the tr
 ---
 
 #### P1 - Enable Parallel Translation
+
 **Priority**: HIGH - Critical performance blocker
 **Status**: 🟢 READY - Unblocked (P0 complete)
 **Related Issue**: #23
@@ -94,14 +105,17 @@ The conflict between the project's cost targets and the estimated cost of the tr
 The V1 orchestrator intentionally processes chunks sequentially (`maxConcurrency: 1`). This was a temporary trade-off for context continuity that must now be addressed to meet performance goals.
 
 **Current Performance (Sequential):**
+
 - 65K words (10 chunks): ~100 seconds
 - 400K words (60 chunks): ~600 seconds (10 minutes)
 
 **Target Performance (Parallel):**
+
 - 65K words (10 chunks): ~15-20 seconds (5-7x faster)
 - 400K words (60 chunks): ~60-90 seconds (6-10x faster)
 
 **Action Items:**
+
 - [ ] Modify `translateChunk` function to use pre-calculated context from chunk object
 - [ ] Remove `maxConcurrency: 1` limitation in Step Functions Map state
 - [ ] Implement distributed rate limiting for parallel execution
@@ -109,6 +123,7 @@ The V1 orchestrator intentionally processes chunks sequentially (`maxConcurrency
 - [ ] Update performance benchmarks and documentation
 
 **Technical Approach:**
+
 1. Chunk metadata already includes context windows (250-token overlap)
 2. Each chunk is self-contained with pre-calculated context
 3. Remove sequential constraint and rely on pre-calculated context
@@ -117,6 +132,7 @@ The V1 orchestrator intentionally processes chunks sequentially (`maxConcurrency
 ---
 
 #### P1 - Address Core Scalability Blockers
+
 **Priority**: HIGH - Will cause failures at scale
 **Status**: 🟡 READY - Can start immediately
 **Related Issues**: #24, #25
@@ -124,18 +140,21 @@ The V1 orchestrator intentionally processes chunks sequentially (`maxConcurrency
 **Two major scalability issues:**
 
 **Issue #24: In-Memory File Processing**
+
 - **Problem**: Chunking Lambda loads entire document into memory
 - **Risk**: Lambda OOM errors for 400K word documents (~2-3 MB plain text)
 - **Solution**: Stream processing from S3 with chunk-by-chunk processing
 - **Impact**: Enables processing of documents up to 10 MB without Lambda limits
 
 **Issue #25: Distributed Rate Limiter**
+
 - **Problem**: Current rate limiting is per-Lambda instance, not global
 - **Risk**: Parallel execution will violate API rate limits
 - **Solution**: DynamoDB-backed distributed rate limiter with token bucket algorithm
 - **Impact**: Safe parallel processing up to API limits
 
 **Action Items:**
+
 - [ ] Implement S3 streaming for chunking Lambda
 - [ ] Add memory usage monitoring and alerts
 - [ ] Implement DynamoDB token bucket rate limiter
@@ -149,19 +168,21 @@ The V1 orchestrator intentionally processes chunks sequentially (`maxConcurrency
 With a scalable workflow, fix remaining bugs and security flaws.
 
 #### P1 - Fix Critical Bugs
+
 **Status**: 🟡 READY - Can start immediately
 **Related Issues**: #10, #12, #15, #26
 
 **Bug Inventory:**
 
-| Issue | Priority | Description | Impact |
-|-------|----------|-------------|--------|
-| #10 | P1 | Inconsistent environment variables | Deployment failures |
-| #12 | P1 | Unprotected `/auth/me` endpoint | Security vulnerability |
-| #15 | P1 | Incorrect API Gateway caching on auth endpoints | Stale auth responses |
-| #26 | P1 | Hardcoded fallback URL in frontend | Breaks non-dev environments |
+| Issue | Priority | Description                                     | Impact                      |
+| ----- | -------- | ----------------------------------------------- | --------------------------- |
+| #10   | P1       | Inconsistent environment variables              | Deployment failures         |
+| #12   | P1       | Unprotected `/auth/me` endpoint                 | Security vulnerability      |
+| #15   | P1       | Incorrect API Gateway caching on auth endpoints | Stale auth responses        |
+| #26   | P1       | Hardcoded fallback URL in frontend              | Breaks non-dev environments |
 
 **Action Items:**
+
 - [ ] Audit and standardize all environment variable usage
 - [ ] Add Cognito authorizer to `/auth/me` endpoint
 - [ ] Configure API Gateway cache exclusions for auth endpoints
@@ -171,24 +192,28 @@ With a scalable workflow, fix remaining bugs and security flaws.
 ---
 
 #### P1 - Harden Security
+
 **Status**: 🟡 READY - Can start immediately
 **Related Issues**: #11, #14
 
 **Security Issues:**
 
 **Issue #11: Wildcard CORS Vulnerability**
+
 - **Problem**: API Gateway allows `Access-Control-Allow-Origin: *`
 - **Risk**: CSRF attacks, credential leakage
 - **Solution**: Restrict to specific frontend origins
 - **Action**: Update API Gateway CORS configuration
 
 **Issue #14: Overly Permissive IAM Role**
+
 - **Problem**: Some Lambda roles have broader permissions than needed
 - **Risk**: Privilege escalation, blast radius expansion
 - **Solution**: Apply least-privilege principles
 - **Action**: Audit all IAM roles and scope down permissions
 
 **Action Items:**
+
 - [ ] Update CORS to whitelist specific origins (dev, staging, prod)
 - [ ] Audit all Lambda IAM policies
 - [ ] Remove unnecessary permissions
@@ -202,6 +227,7 @@ With a scalable workflow, fix remaining bugs and security flaws.
 Once the core service is stable, performant, and secure, focus on user-facing features and developer experience.
 
 #### P2 - Implement High-Value Features
+
 **Status**: ⏸️ BLOCKED - Waiting on Phase 1/2 completion
 **Related Issues**: #29, #27, #28
 
@@ -223,6 +249,7 @@ Once the core service is stable, performant, and secure, focus on user-facing fe
    - Handle embedded images and metadata
 
 **Action Items:**
+
 - [ ] Design and prototype Post-Translation Editor UI
 - [ ] Implement backend API for translation updates
 - [ ] Build Side-by-Side Viewer component
@@ -232,27 +259,32 @@ Once the core service is stable, performant, and secure, focus on user-facing fe
 ---
 
 #### P2 - Address Technical Debt
+
 **Status**: ⏸️ BLOCKED - Waiting on Phase 1/2 completion
 **Related Issues**: #18, #20, #19
 
 **Technical Debt Items:**
 
 **Issue #18: Integrate React Query**
+
 - **Benefit**: Better caching, automatic refetching, optimistic updates
 - **Scope**: Replace current API client with React Query
 - **Effort**: Medium (2-3 days)
 
 **Issue #20: Centralize Shared Constants**
+
 - **Benefit**: Single source of truth, easier maintenance
 - **Scope**: Move constants from `shared-types` to centralized module
 - **Effort**: Low (1 day)
 
 **Issue #19: Improve File Upload UX**
+
 - **Benefit**: Better user experience, clearer feedback
 - **Scope**: Enhanced progress tracking, better error handling
 - **Effort**: Medium (2 days)
 
 **Action Items:**
+
 - [ ] Implement React Query for all API calls
 - [ ] Create centralized constants module
 - [ ] Enhance file upload component with better UX
@@ -266,16 +298,19 @@ Once the core service is stable, performant, and secure, focus on user-facing fe
 Minor cleanup tasks addressed as bandwidth allows.
 
 #### P3 - Chores and Documentation
+
 **Status**: 🟢 ONGOING - As bandwidth permits
 **Related Issues**: #17, #16, #21
 
 **Chores:**
+
 - Update outdated dependencies
 - Refactor deprecated API usage
 - Improve code comments and documentation
 - Cleanup unused code and assets
 
 **Action Items:**
+
 - [ ] Quarterly dependency updates
 - [ ] Documentation reviews
 - [ ] Code cleanup sprints
@@ -321,20 +356,24 @@ Minor cleanup tasks addressed as bandwidth allows.
 ### Team Allocation (Recommended)
 
 **Week 1-2: Foundation**
+
 - **P0** - Business stakeholders: Finalize cost model decision
 - **P1** - Backend team: Start distributed rate limiter (#25)
 - **P1** - Infrastructure team: Start S3 streaming (#24)
 
 **Week 3-4: Performance**
+
 - **P1** - Full team: Implement parallel translation (#23)
 - **P1** - Backend team: Fix critical bugs (#10, #12, #15, #26)
 
 **Week 5-6: Security & Stabilization**
+
 - **P1** - Security team: CORS and IAM hardening (#11, #14)
 - **P1** - QA team: Comprehensive load testing
 - **P2** - Begin technical debt reduction (#18, #20)
 
 **Week 7+: Features**
+
 - **P2** - Frontend team: Post-Translation Editor (#29)
 - **P2** - Full stack team: Side-by-Side Viewer (#27)
 - **P3** - Ongoing: Polish and cleanup
@@ -344,23 +383,27 @@ Minor cleanup tasks addressed as bandwidth allows.
 ## Success Metrics
 
 ### Phase 1 (Viability & Performance)
+
 - [ ] Cost model approved by business stakeholders
 - [ ] Translation speed: <20s for 65K words, <90s for 400K words
 - [ ] Zero OOM errors in chunking Lambda
 - [ ] Zero rate limit violations in production
 
 ### Phase 2 (Stability & Security)
+
 - [ ] All P1 bugs resolved
 - [ ] Zero security vulnerabilities in automated scans
 - [ ] CORS restricted to specific origins
 - [ ] IAM policies follow least-privilege
 
 ### Phase 3 (Features & Debt)
+
 - [ ] Post-Translation Editor user satisfaction >80%
 - [ ] React Query implemented across frontend
 - [ ] Code coverage maintained at 90%+
 
 ### Phase 4 (Polish)
+
 - [ ] All dependencies up-to-date
 - [ ] Documentation accuracy >95%
 - [ ] Technical debt backlog <10 items
@@ -372,21 +415,25 @@ Minor cleanup tasks addressed as bandwidth allows.
 ### Phase-Specific Testing
 
 **Phase 1: Performance Testing**
+
 - Load testing with 10+ concurrent translations
 - Memory profiling for chunking Lambda
 - Rate limit compliance testing
 
 **Phase 2: Security Testing**
+
 - OWASP Top 10 vulnerability scanning
 - Penetration testing for auth endpoints
 - IAM policy validation
 
 **Phase 3: User Acceptance Testing**
+
 - Beta testing for Post-Translation Editor
 - Usability testing for new features
 - A/B testing for UX improvements
 
 **Phase 4: Regression Testing**
+
 - Automated regression suite for all features
 - Performance regression detection
 - Security regression monitoring
@@ -397,21 +444,23 @@ Minor cleanup tasks addressed as bandwidth allows.
 
 ### High-Risk Items
 
-| Risk | Likelihood | Impact | Mitigation |
-|------|------------|--------|------------|
-| Cost model rejected | Medium | Critical | Prepare fallback options (Gemini free tier) |
-| Parallel translation breaks context | Low | High | Comprehensive testing with pre-calculated context |
-| Rate limiter fails at scale | Medium | High | Load testing before production rollout |
-| Security vulnerability discovered | Low | Critical | Regular security audits, automated scanning |
+| Risk                                | Likelihood | Impact   | Mitigation                                        |
+| ----------------------------------- | ---------- | -------- | ------------------------------------------------- |
+| Cost model rejected                 | Medium     | Critical | Prepare fallback options (Gemini free tier)       |
+| Parallel translation breaks context | Low        | High     | Comprehensive testing with pre-calculated context |
+| Rate limiter fails at scale         | Medium     | High     | Load testing before production rollout            |
+| Security vulnerability discovered   | Low        | Critical | Regular security audits, automated scanning       |
 
 ### Contingency Plans
 
 **If P0 is delayed:**
+
 - Continue with P1 items that don't depend on engine choice (#24, #25)
 - Use Gemini free tier as temporary solution
 - Delay parallel translation (#23) until cost model is approved
 
 **If performance targets not met:**
+
 - Re-evaluate chunk size and overlap
 - Consider moving to ECS Fargate for long-running processes
 - Implement caching for repeated translations
@@ -421,15 +470,18 @@ Minor cleanup tasks addressed as bandwidth allows.
 ## Communication Plan
 
 ### Weekly Updates
+
 - **Monday**: Sprint planning, priority review
 - **Wednesday**: Mid-week sync, blocker resolution
 - **Friday**: Sprint demo, retrospective
 
 ### Stakeholder Updates
+
 - **Bi-weekly**: Business stakeholders (cost, timeline, risks)
 - **Monthly**: Full team retrospective and roadmap adjustment
 
 ### Documentation
+
 - Update [PROGRESS.md](PROGRESS.md) after each completed milestone
 - Update this roadmap quarterly or when priorities shift
 - Maintain issue tracking in GitHub Projects

@@ -15,7 +15,8 @@
 import { randomBytes } from 'crypto';
 
 // Configuration from environment or defaults
-const API_BASE_URL = process.env.API_URL || 'https://8brwlwf68h.execute-api.us-east-1.amazonaws.com/v1';
+const API_BASE_URL =
+  process.env.API_URL || 'https://8brwlwf68h.execute-api.us-east-1.amazonaws.com/v1';
 const TEST_EMAIL_DOMAIN = '@example.org'; // Using .org for better Cognito compatibility
 
 // Helper to generate unique test emails
@@ -29,7 +30,7 @@ const apiRequest = async (
   endpoint: string,
   method: string = 'GET',
   body?: any
-): Promise<{status: number; data: any; headers: Headers}> => {
+): Promise<{ status: number; data: any; headers: Headers }> => {
   const response = await fetch(`${API_BASE_URL}${endpoint}`, {
     method,
     headers: {

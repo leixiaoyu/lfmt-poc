@@ -4,7 +4,17 @@
  * Main dashboard page for authenticated users with quick actions for translation workflow.
  */
 
-import { Container, Box, Typography, Button, Paper, Grid, Card, CardContent, CardActions } from '@mui/material';
+import {
+  Container,
+  Box,
+  Typography,
+  Button,
+  Paper,
+  Grid,
+  Card,
+  CardContent,
+  CardActions,
+} from '@mui/material';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { ROUTES } from '../config/constants';
@@ -21,7 +31,7 @@ export default function DashboardPage() {
       await logout();
       navigate(ROUTES.LOGIN);
     } catch (error) {
-      console.error('Logout failed:', error);
+      // console.error('Logout failed:', error);
       // Do NOT navigate on error - user is still authenticated
     }
   };

@@ -23,9 +23,15 @@ const LoginPage = lazy(() => import('./pages/LoginPage'));
 const RegisterPage = lazy(() => import('./pages/RegisterPage'));
 const ForgotPasswordPage = lazy(() => import('./pages/ForgotPasswordPage'));
 const DashboardPage = lazy(() => import('./pages/DashboardPage'));
-const TranslationUpload = lazy(() => import('./pages/TranslationUpload').then(m => ({ default: m.TranslationUpload })));
-const TranslationHistory = lazy(() => import('./pages/TranslationHistory').then(m => ({ default: m.TranslationHistory })));
-const TranslationDetail = lazy(() => import('./pages/TranslationDetail').then(m => ({ default: m.TranslationDetail })));
+const TranslationUpload = lazy(() =>
+  import('./pages/TranslationUpload').then((m) => ({ default: m.TranslationUpload }))
+);
+const TranslationHistory = lazy(() =>
+  import('./pages/TranslationHistory').then((m) => ({ default: m.TranslationHistory }))
+);
+const TranslationDetail = lazy(() =>
+  import('./pages/TranslationDetail').then((m) => ({ default: m.TranslationDetail }))
+);
 
 // Loading fallback component
 function LoadingFallback() {

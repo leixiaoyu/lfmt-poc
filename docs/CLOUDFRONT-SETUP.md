@@ -27,6 +27,7 @@ This document provides comprehensive technical details for the CloudFront + S3 f
 The LFMT POC frontend is a React 18 SPA hosted on AWS CloudFront with an S3 origin, fully managed as Infrastructure as Code using AWS CDK.
 
 **Key Benefits**:
+
 - ✅ HTTPS-only with automatic HTTP → HTTPS redirect
 - ✅ Global CDN distribution with low latency
 - ✅ Secure S3 access via Origin Access Control (OAC)
@@ -86,24 +87,25 @@ const frontendBucket = new s3.Bucket(this, 'FrontendBucket', {
   bucketName: `lfmt-frontend-${this.stackName.toLowerCase()}`,
 
   // Security
-  publicReadAccess: false,              // CloudFront-only access via OAC
+  publicReadAccess: false, // CloudFront-only access via OAC
   blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
   encryption: s3.BucketEncryption.S3_MANAGED,
 
   // Versioning & Lifecycle
-  versioned: true,                      // Enable rollback capability
+  versioned: true, // Enable rollback capability
   lifecycleRules: [
     {
       id: 'DeleteOldDeployments',
       enabled: true,
-      expiration: Duration.days(90),    // Clean up after 90 days
+      expiration: Duration.days(90), // Clean up after 90 days
     },
   ],
 
   // Removal Policy
-  removalPolicy: environment === 'prod'
-    ? RemovalPolicy.RETAIN              // Keep prod buckets
-    : RemovalPolicy.DESTROY,            // Auto-delete dev buckets
+  removalPolicy:
+    environment === 'prod'
+      ? RemovalPolicy.RETAIN // Keep prod buckets
+      : RemovalPolicy.DESTROY, // Auto-delete dev buckets
   autoDeleteObjects: environment !== 'prod',
 });
 ```
@@ -125,7 +127,7 @@ const frontendDistribution = new cloudfront.Distribution(this, 'FrontendDistribu
 
     // Cache & Compression
     cachePolicy: cloudfront.CachePolicy.CACHING_OPTIMIZED,
-    compress: true,                      // Enable gzip/brotli
+    compress: true, // Enable gzip/brotli
 
     // HTTPS & Security
     viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
@@ -145,7 +147,7 @@ const frontendDistribution = new cloudfront.Distribution(this, 'FrontendDistribu
       httpStatus: 403,
       responsePagePath: '/index.html',
       responseHttpStatus: 200,
-      ttl: Duration.seconds(300),        // 5 min cache
+      ttl: Duration.seconds(300), // 5 min cache
     },
     {
       httpStatus: 404,
@@ -168,7 +170,7 @@ const responseHeadersPolicy = new cloudfront.ResponseHeadersPolicy(this, 'Securi
   securityHeadersBehavior: {
     // HSTS (HTTP Strict Transport Security)
     strictTransportSecurity: {
-      accessControlMaxAge: Duration.seconds(31536000),  // 1 year
+      accessControlMaxAge: Duration.seconds(31536000), // 1 year
       includeSubdomains: true,
       override: true,
     },
@@ -190,17 +192,20 @@ const responseHeadersPolicy = new cloudfront.ResponseHeadersPolicy(this, 'Securi
     },
 
     // Additional Security Headers
-    contentTypeOptions: { override: true },          // X-Content-Type-Options: nosniff
-    frameOptions: {                                  // X-Frame-Options: DENY
+    contentTypeOptions: { override: true }, // X-Content-Type-Options: nosniff
+    frameOptions: {
+      // X-Frame-Options: DENY
       frameOption: cloudfront.HeadersFrameOption.DENY,
       override: true,
     },
-    xssProtection: {                                 // X-XSS-Protection: 1; mode=block
+    xssProtection: {
+      // X-XSS-Protection: 1; mode=block
       protection: true,
       modeBlock: true,
       override: true,
     },
-    referrerPolicy: {                                // Referrer-Policy
+    referrerPolicy: {
+      // Referrer-Policy
       referrerPolicy: cloudfront.HeadersReferrerPolicy.STRICT_ORIGIN_WHEN_CROSS_ORIGIN,
       override: true,
     },
@@ -247,6 +252,7 @@ new CfnOutput(this, 'FrontendUrl', {
 **Steps**:
 
 1. **Retrieve Frontend Bucket Name**:
+
    ```bash
    BUCKET_NAME=$(aws cloudformation describe-stacks \
      --stack-name LfmtPocDev \
@@ -255,6 +261,7 @@ new CfnOutput(this, 'FrontendUrl', {
    ```
 
 2. **Deploy Frontend to S3**:
+
    ```bash
    aws s3 sync frontend/dist/ s3://$BUCKET_NAME/ --delete
    aws s3 cp frontend/dist/index.html s3://$BUCKET_NAME/index.html \
@@ -262,6 +269,7 @@ new CfnOutput(this, 'FrontendUrl', {
    ```
 
 3. **Retrieve CloudFront Distribution ID**:
+
    ```bash
    DISTRIBUTION_ID=$(aws cloudformation describe-stacks \
      --stack-name LfmtPocDev \
@@ -270,6 +278,7 @@ new CfnOutput(this, 'FrontendUrl', {
    ```
 
 4. **Create CloudFront Invalidation**:
+
    ```bash
    INVALIDATION_ID=$(aws cloudfront create-invalidation \
      --distribution-id $DISTRIBUTION_ID \
@@ -346,6 +355,7 @@ errorResponses: [
 ```
 
 **Why 403 AND 404?**
+
 - **403**: S3 with OAC returns 403 for non-existent objects (security feature)
 - **404**: Standard HTTP not-found response
 - **TTL 5 minutes**: Balance between UX and cache efficiency
@@ -353,6 +363,7 @@ errorResponses: [
 ### Validation
 
 Test SPA routing by navigating directly to:
+
 - ✅ `/` → redirects to `/login` (React Router)
 - ✅ `/dashboard` → serves React app (403 fix working)
 - ✅ `/translation/upload` → serves React app
@@ -371,6 +382,7 @@ Test SPA routing by navigating directly to:
 ### What to Invalidate
 
 **Full Distribution** (Recommended for POC):
+
 ```bash
 aws cloudfront create-invalidation \
   --distribution-id $DISTRIBUTION_ID \
@@ -378,6 +390,7 @@ aws cloudfront create-invalidation \
 ```
 
 **Specific Paths** (Advanced):
+
 ```bash
 # Only index.html (faster, requires careful cache management)
 aws cloudfront create-invalidation \
@@ -388,11 +401,13 @@ aws cloudfront create-invalidation \
 ### Invalidation Best Practices
 
 **Cost**:
+
 - First 1,000 invalidations per month: **FREE**
 - Additional: $0.005 per path
 - POC impact: Negligible (< 100 deployments/month)
 
 **Time**:
+
 - **Typical**: 3-5 minutes
 - **Maximum**: 15 minutes
 - **Workflow Timeout**: 15 minutes (900 seconds)
@@ -419,6 +434,7 @@ aws cloudfront create-invalidation \
 7. **CloudFront URL in CORS origins** (Lines 687-713)
 
 **Run Tests**:
+
 ```bash
 cd backend/infrastructure
 npm test
@@ -427,9 +443,11 @@ npm test
 ### Manual Validation
 
 1. **Check Security Headers**:
+
    ```bash
    curl -I https://<cloudfront-domain>
    ```
+
    Expected headers:
    - `strict-transport-security: max-age=31536000; includeSubDomains`
    - `x-content-type-options: nosniff`
@@ -521,12 +539,14 @@ aws cloudfront get-invalidation \
 ### Common Pitfalls
 
 ❌ **DON'T**:
+
 - Hardcode CloudFront URLs anywhere (use stack outputs)
 - Put CSP in `customHeadersBehavior` (use `securityHeadersBehavior.contentSecurityPolicy`)
 - Skip CloudFront invalidation after deploy (users will see stale content)
 - Modify CloudFront distribution manually in AWS Console (breaks IaC)
 
 ✅ **DO**:
+
 - Retrieve infrastructure values from CDK stack outputs
 - Configure security headers in `securityHeadersBehavior`
 - Create invalidations after S3 deploy
@@ -539,6 +559,7 @@ aws cloudfront get-invalidation \
 ### Issue: CloudFront CSP Deployment Failure (Fixed in PR #66)
 
 **Error**:
+
 ```
 The parameter CustomHeaders contains Content-Security-Policy that is a security header
 and cannot be set as custom header.
@@ -575,24 +596,29 @@ securityHeadersBehavior: {
 ### From Manual CloudFront to CDK (Completed 2025-11-10)
 
 **Phase 1**: CDK Infrastructure (PR #59) ✅
+
 - Created CloudFront distribution via CDK
 - Configured S3 bucket with OAC
 - Added stack outputs for dynamic configuration
 
 **Phase 2**: Deployment Workflow (PR #61) ✅
+
 - Updated GitHub Actions to use CDK stack outputs
 - Automated S3 sync and CloudFront invalidation
 - Removed hardcoded distribution IDs
 
 **Hotfix**: CSP Configuration (PR #66) ✅
+
 - Fixed CSP deployment failure
 - Moved CSP from `customHeadersBehavior` to `securityHeadersBehavior`
 
 **Phase 3**: Documentation (Current)
+
 - Extracted CloudFront docs from CLAUDE.md
 - Created comprehensive reference guide
 
 **Manual Distribution**: `d1yysvwo9eg20b.cloudfront.net`
+
 - **Status**: Deprecated, deleted after 30-day grace period (Dec 10, 2025)
 - **Replacement**: CDK-managed distribution (outputs from `LfmtPocDev` stack)
 
@@ -601,9 +627,11 @@ securityHeadersBehavior: {
 **For CDK Infrastructure Updates**:
 
 1. **GREEN Deployment** (New):
+
    ```bash
    npx cdk deploy --context environment=dev
    ```
+
    - Creates new CloudFront distribution
    - New S3 bucket
    - New stack outputs
@@ -624,6 +652,7 @@ securityHeadersBehavior: {
 
 **Rollback Procedure**:
 If issues occur with GREEN deployment:
+
 1. Revert DNS to old CloudFront URL (if changed)
 2. Redeploy frontend to old S3 bucket
 3. Update API Gateway CORS to old CloudFront URL

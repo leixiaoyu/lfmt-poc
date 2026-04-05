@@ -57,6 +57,7 @@ aws iam create-open-id-connect-provider \
 ```
 
 **Verify it was created**:
+
 ```bash
 aws iam list-open-id-connect-providers
 ```
@@ -97,6 +98,7 @@ Save this as `github-actions-trust-policy.json`:
 ```
 
 **Create the role**:
+
 ```bash
 aws iam create-role \
   --role-name GitHubActionsLFMTDeploy \
@@ -105,6 +107,7 @@ aws iam create-role \
 ```
 
 **Attach deployment permissions**:
+
 ```bash
 # CDK deployment requires broad permissions
 aws iam attach-role-policy \
@@ -114,6 +117,7 @@ aws iam attach-role-policy \
 
 **⚠️ Note on AdministratorAccess**:
 For a POC with budget=$10/month, AdministratorAccess is acceptable. For production, you should create a custom policy with only the required permissions:
+
 - CloudFormation (full)
 - Lambda (full)
 - API Gateway (full)
@@ -124,6 +128,7 @@ For a POC with budget=$10/month, AdministratorAccess is acceptable. For producti
 - CloudWatch Logs (full)
 
 **Get the Role ARN** (you'll need this for GitHub):
+
 ```bash
 aws iam get-role --role-name GitHubActionsLFMTDeploy --query 'Role.Arn' --output text
 ```
@@ -163,6 +168,7 @@ aws budgets create-budget \
 ```
 
 **budget-config.json**:
+
 ```json
 {
   "BudgetName": "LFMT-POC-Monthly-Budget",
@@ -176,6 +182,7 @@ aws budgets create-budget \
 ```
 
 **budget-notifications.json**:
+
 ```json
 [
   {
@@ -225,12 +232,14 @@ git push -u origin main
 ```
 
 This will:
+
 1. Trigger the GitHub Actions workflow
 2. Run all tests
 3. Build infrastructure
 4. Deploy to AWS dev environment automatically
 
 **Watch the deployment**:
+
 - Go to: https://github.com/leixiaoyu/lfmt-poc/actions
 - Click on the latest workflow run
 - Watch each step execute in real-time
@@ -292,6 +301,7 @@ curl -X POST ${API_URL}/v1/auth \
 ```
 
 **Expected response**:
+
 ```json
 {
   "message": "User registered successfully. Please check your email to verify your account.",
@@ -327,15 +337,19 @@ aws logs tail /aws/lambda/lfmt-register-lfmt-dev \
 ### Common Issues
 
 **Issue: "Role not found" error**
+
 - Solution: Wait 10-15 seconds after creating the role, then retry
 
 **Issue: "OIDC provider not found"**
+
 - Solution: Verify the provider exists: `aws iam list-open-id-connect-providers`
 
 **Issue: "Permission denied"**
+
 - Solution: Check that AdministratorAccess is attached to the role
 
 **Issue: "Docker not available"**
+
 - Solution: GitHub Actions runners have Docker pre-installed, this shouldn't happen
 
 ---
@@ -357,15 +371,15 @@ aws ce get-cost-and-usage \
 
 ### Expected Monthly Costs
 
-| Service | Expected Cost |
-|---------|---------------|
-| DynamoDB | $0-2 (on-demand, light usage) |
-| S3 | $0-1 (minimal storage) |
+| Service     | Expected Cost                     |
+| ----------- | --------------------------------- |
+| DynamoDB    | $0-2 (on-demand, light usage)     |
+| S3          | $0-1 (minimal storage)            |
 | API Gateway | $0-3 (within free tier initially) |
-| Lambda | $0 (within free tier) |
-| Cognito | $0 (free up to 50K users) |
-| CloudWatch | $0-1 (logs) |
-| **Total** | **$0-7/month** |
+| Lambda      | $0 (within free tier)             |
+| Cognito     | $0 (free up to 50K users)         |
+| CloudWatch  | $0-1 (logs)                       |
+| **Total**   | **$0-7/month**                    |
 
 Your $10/month budget has plenty of headroom!
 
@@ -397,6 +411,7 @@ Once everything is set up:
 ✅ **Audit trail** - All deployments logged in GitHub Actions
 
 **⚠️ For Production:**
+
 - Replace AdministratorAccess with a custom policy
 - Enable CloudTrail for AWS API auditing
 - Add approval requirements for prod deployments

@@ -23,10 +23,12 @@ Translation Engine: ░░░░░░░░░░ 0% ⏳
 ## ✅ Completed in This Session
 
 ### 1. Bug Fixes (Authentication Lambda Functions)
+
 **Duration**: ~1.5 hours
 **Git Commit**: `964eea2`
 
 **Issues Fixed**:
+
 1. **Schema Mismatch**: Lambda functions expected `given_name`/`family_name`, but shared-types used `firstName`/`lastName`
    - Fixed register.ts to map field names correctly
 
@@ -54,6 +56,7 @@ Translation Engine: ░░░░░░░░░░ 0% ⏳
    - Tokens nested under `data` property
 
 **Test Results**:
+
 ```
 ✓ All 12 tests passing (100%)
 ✓ Coverage: 75% (acceptable for initial implementation)
@@ -64,10 +67,12 @@ Translation Engine: ░░░░░░░░░░ 0% ⏳
 ---
 
 ### 2. Infrastructure Integration (CDK Stack Updates)
+
 **Duration**: ~2 hours
 **Git Commit**: `7551e3a`
 
 **Lambda Functions Added (4)**:
+
 ```typescript
 1. RegisterFunction
    - Handler: auth/register.handler
@@ -91,6 +96,7 @@ Translation Engine: ░░░░░░░░░░ 0% ⏳
 ```
 
 **Lambda Configuration**:
+
 - Runtime: Node.js 18.x
 - Memory: 256 MB
 - Timeout: 30 seconds
@@ -98,6 +104,7 @@ Translation Engine: ░░░░░░░░░░ 0% ⏳
 - IAM Role: Shared execution role with full permissions
 
 **Environment Variables Configured**:
+
 ```typescript
 {
   COGNITO_CLIENT_ID: User pool client ID
@@ -111,18 +118,21 @@ Translation Engine: ░░░░░░░░░░ 0% ⏳
 ```
 
 **API Gateway Endpoints**:
+
 - `/auth` - POST - User registration
 - `/auth/login` - POST - User login
 - `/auth/refresh` - POST - Token refresh
 - `/auth/reset-password` - POST - Password reset
 
 **IAM Permissions Added**:
+
 - `cognito-idp:SignUp` - Self-registration
 - `cognito-idp:InitiateAuth` - Login and refresh
 - `cognito-idp:ForgotPassword` - Password reset
 - `cognito-idp:ConfirmForgotPassword` - Password reset confirmation
 
 **Infrastructure Validation**:
+
 ```
 ✓ TypeScript compilation: Successful
 ✓ CDK synthesis: In progress (Docker bundling)
@@ -134,6 +144,7 @@ Translation Engine: ░░░░░░░░░░ 0% ⏳
 ### 3. Documentation Created
 
 **Files Created**:
+
 1. **DEPLOYMENT-QUESTIONS.md** (4.5KB)
    - 23 questions covering all deployment aspects
    - Pre-deployment checklist
@@ -151,41 +162,45 @@ Translation Engine: ░░░░░░░░░░ 0% ⏳
 ## 📊 Detailed Progress by Component
 
 ### Backend - Lambda Functions
-| Component | Status | Tests | Coverage | Notes |
-|-----------|--------|-------|----------|-------|
-| register.ts | ✅ Complete | ✓ Passing | 77% | Zod validation, type-safe errors |
-| login.ts | ✅ Complete | ✓ Passing | 68% | User enumeration prevention |
-| refreshToken.ts | ✅ Complete | ✓ Passing | 80% | JWT refresh flow |
-| resetPassword.ts | ✅ Complete | ✓ Passing | 71% | Email-based reset |
-| api-response.ts | ✅ Complete | ✓ Passing | 100% | CORS, structured responses |
-| logger.ts | ✅ Complete | ✓ Passing | 87% | CloudWatch-friendly logging |
-| env.ts | ✅ Complete | ✓ Passing | 50% | Environment validation |
+
+| Component        | Status      | Tests     | Coverage | Notes                            |
+| ---------------- | ----------- | --------- | -------- | -------------------------------- |
+| register.ts      | ✅ Complete | ✓ Passing | 77%      | Zod validation, type-safe errors |
+| login.ts         | ✅ Complete | ✓ Passing | 68%      | User enumeration prevention      |
+| refreshToken.ts  | ✅ Complete | ✓ Passing | 80%      | JWT refresh flow                 |
+| resetPassword.ts | ✅ Complete | ✓ Passing | 71%      | Email-based reset                |
+| api-response.ts  | ✅ Complete | ✓ Passing | 100%     | CORS, structured responses       |
+| logger.ts        | ✅ Complete | ✓ Passing | 87%      | CloudWatch-friendly logging      |
+| env.ts           | ✅ Complete | ✓ Passing | 50%      | Environment validation           |
 
 ### Backend - Infrastructure (CDK)
-| Component | Status | Notes |
-|-----------|--------|-------|
-| DynamoDB Tables | ✅ Existing | jobs, users, attestations |
-| S3 Buckets | ✅ Existing | documents, results |
-| Cognito User Pool | ✅ Existing | Email verification, password policy |
-| API Gateway | ✅ Existing | Regional endpoint, CORS |
-| Lambda Functions | ✅ Added | 4 auth functions integrated |
-| API Endpoints | ✅ Added | /auth routes configured |
-| IAM Roles | ✅ Updated | Cognito permissions added |
-| Environment Vars | ✅ Configured | All Lambda functions |
+
+| Component         | Status        | Notes                               |
+| ----------------- | ------------- | ----------------------------------- |
+| DynamoDB Tables   | ✅ Existing   | jobs, users, attestations           |
+| S3 Buckets        | ✅ Existing   | documents, results                  |
+| Cognito User Pool | ✅ Existing   | Email verification, password policy |
+| API Gateway       | ✅ Existing   | Regional endpoint, CORS             |
+| Lambda Functions  | ✅ Added      | 4 auth functions integrated         |
+| API Endpoints     | ✅ Added      | /auth routes configured             |
+| IAM Roles         | ✅ Updated    | Cognito permissions added           |
+| Environment Vars  | ✅ Configured | All Lambda functions                |
 
 ### Shared Types
-| Component | Status | Notes |
-|-----------|--------|-------|
-| Auth Interfaces | ✅ Complete | UserProfile, Login/Register requests |
-| Zod Schemas | ✅ Complete | All 4 auth endpoints validated |
-| API Response Types | ✅ Complete | Consistent structure |
-| Error Types | ✅ Complete | Type-safe error handling |
+
+| Component          | Status      | Notes                                |
+| ------------------ | ----------- | ------------------------------------ |
+| Auth Interfaces    | ✅ Complete | UserProfile, Login/Register requests |
+| Zod Schemas        | ✅ Complete | All 4 auth endpoints validated       |
+| API Response Types | ✅ Complete | Consistent structure                 |
+| Error Types        | ✅ Complete | Type-safe error handling             |
 
 ---
 
 ## 🚨 Pending Items
 
 ### Immediate (Blocking Deployment)
+
 1. **User Input Required**: Answer deployment questions in DEPLOYMENT-QUESTIONS.md
    - AWS Account ID
    - AWS Region
@@ -198,6 +213,7 @@ Translation Engine: ░░░░░░░░░░ 0% ⏳
    - Validates all infrastructure definitions
 
 ### Next Phase (After Deployment)
+
 3. **AWS Deployment**
    - Run `cdk deploy` with user's AWS credentials
    - Verify all resources created successfully
@@ -220,17 +236,19 @@ Translation Engine: ░░░░░░░░░░ 0% ⏳
 ## 💰 Estimated Costs (Monthly)
 
 ### Development Environment
-| Service | Monthly Cost | Notes |
-|---------|--------------|-------|
-| DynamoDB | $2-5 | On-demand billing, light usage |
-| S3 | $1-3 | Storage + requests |
-| API Gateway | $3-10 | Based on request volume |
-| Lambda | $0-2 | Within free tier for light testing |
-| Cognito | $0 | Free up to 50K MAU |
-| CloudWatch | $1-2 | Logs + metrics |
-| **Total** | **$7-22** | Before Claude API costs |
+
+| Service     | Monthly Cost | Notes                              |
+| ----------- | ------------ | ---------------------------------- |
+| DynamoDB    | $2-5         | On-demand billing, light usage     |
+| S3          | $1-3         | Storage + requests                 |
+| API Gateway | $3-10        | Based on request volume            |
+| Lambda      | $0-2         | Within free tier for light testing |
+| Cognito     | $0           | Free up to 50K MAU                 |
+| CloudWatch  | $1-2         | Logs + metrics                     |
+| **Total**   | **$7-22**    | Before Claude API costs            |
 
 ### Production Scaling (1000 translations/month)
+
 - Infrastructure: $20-30/month
 - Claude API: $20-40/month (primary cost)
 - **Total Target**: <$50/month
@@ -240,6 +258,7 @@ Translation Engine: ░░░░░░░░░░ 0% ⏳
 ## 🎯 Success Metrics
 
 ### Completed ✅
+
 - [x] **Authentication Functions**: 4/4 implemented and tested
 - [x] **Bug-Free Code**: 12/12 tests passing
 - [x] **Infrastructure Integration**: Lambda + API Gateway complete
@@ -248,9 +267,11 @@ Translation Engine: ░░░░░░░░░░ 0% ⏳
 - [x] **Git Commits**: All changes committed with detailed messages
 
 ### In Progress ⏳
+
 - [ ] **CDK Synthesis**: Running (Docker bundling Lambda functions)
 
 ### Pending AWS Deployment ⏳
+
 - [ ] **AWS Account Setup**: User must provide credentials
 - [ ] **CDK Bootstrap**: User must bootstrap their AWS account
 - [ ] **Stack Deployment**: `cdk deploy` awaiting user approval
@@ -262,6 +283,7 @@ Translation Engine: ░░░░░░░░░░ 0% ⏳
 ## 📁 File Changes Summary
 
 ### Modified Files (3)
+
 1. **backend/functions/auth/register.ts**
    - Fixed: firstName/lastName mapping
    - Added: Comment explaining mapping
@@ -294,6 +316,7 @@ Translation Engine: ░░░░░░░░░░ 0% ⏳
    - Added: TypeScript compiled outputs exclusion
 
 ### New Files (3)
+
 1. **backend/functions/package-lock.json** (7,412 lines)
    - NPM dependency lock file
 
@@ -309,8 +332,10 @@ Translation Engine: ░░░░░░░░░░ 0% ⏳
 ## 🔧 Technical Decisions Made
 
 ### 1. Lambda Bundling Strategy
+
 **Decision**: Use CDK Docker bundling
 **Rationale**:
+
 - Automatic TypeScript compilation
 - Includes node_modules in deployment
 - Consistent build environment
@@ -320,13 +345,16 @@ Translation Engine: ░░░░░░░░░░ 0% ⏳
 **Why Not**: More error-prone, requires manual updates
 
 ### 2. API Gateway Structure
+
 **Decision**: Single `/auth` resource with sub-resources
 **Rationale**:
+
 - Clear organization
 - Easy to extend with more auth endpoints
 - Consistent URL structure
 
 **Endpoints**:
+
 ```
 /auth           - POST - Register
 /auth/login     - POST - Login
@@ -335,16 +363,20 @@ Translation Engine: ░░░░░░░░░░ 0% ⏳
 ```
 
 ### 3. Environment Variable Strategy
+
 **Decision**: Pass all env vars via CDK, fail-fast on missing vars
 **Rationale**:
+
 - Explicit configuration
 - Early error detection
 - No runtime surprises
 - CloudFormation manages all config
 
 ### 4. Shared Lambda Role
+
 **Decision**: One role for all Lambda functions
 **Rationale**:
+
 - Simpler to manage
 - All functions need similar permissions
 - Easier to audit
@@ -357,6 +389,7 @@ Translation Engine: ░░░░░░░░░░ 0% ⏳
 ## 🚀 Deployment Readiness
 
 ### Prerequisites Checklist
+
 - [x] **Code Complete**: All Lambda functions implemented
 - [x] **Tests Passing**: 12/12 tests passing
 - [x] **Infrastructure Defined**: CDK stack complete
@@ -365,6 +398,7 @@ Translation Engine: ░░░░░░░░░░ 0% ⏳
 - [x] **Documentation**: Deployment guide ready
 
 ### User Prerequisites (Pending)
+
 - [ ] **AWS Account**: User must have AWS account
 - [ ] **AWS CLI**: User must have CLI configured
 - [ ] **CDK Bootstrap**: User's account must be bootstrapped
@@ -372,6 +406,7 @@ Translation Engine: ░░░░░░░░░░ 0% ⏳
 - [ ] **IAM Permissions**: User must have deployment permissions
 
 ### Deployment Command (Ready to Run)
+
 ```bash
 cd backend/infrastructure
 npx cdk deploy --context environment=dev
@@ -382,12 +417,14 @@ npx cdk deploy --context environment=dev
 ## 📝 Lessons Learned
 
 ### Bug Fixing Session
+
 1. **Schema Consistency**: Shared-types must match Lambda expectations
 2. **Test Environment Setup**: Set env vars before imports for cold-start validation
 3. **Mock Fidelity**: Use actual AWS SDK exception constructors in tests
 4. **Response Structure**: Document response formats clearly
 
 ### Infrastructure Integration
+
 1. **CDK Asset Paths**: Use relative paths from infrastructure directory
 2. **Handler Paths**: Include subdirectory in handler (auth/register.handler)
 3. **Environment Variables**: Pass all config via CDK for CloudFormation management
@@ -400,12 +437,14 @@ npx cdk deploy --context environment=dev
 ### If User Answers Deployment Questions:
 
 **Immediate (30 minutes)**:
+
 1. Configure AWS CLI with user's credentials
 2. Bootstrap CDK if needed
 3. Run `cdk deploy`
 4. Verify deployment success
 
 **Short Term (1-2 hours)**:
+
 1. Test all 4 API endpoints with curl
 2. Register a test user
 3. Verify email verification flow
@@ -413,6 +452,7 @@ npx cdk deploy --context environment=dev
 5. Document any issues
 
 **Medium Term (2-4 hours)**:
+
 1. Build React frontend components
 2. Integrate with API endpoints
 3. Implement JWT token management
@@ -421,6 +461,7 @@ npx cdk deploy --context environment=dev
 ### If Continuing Without Deployment:
 
 **Alternative Path**:
+
 1. Copy document upload/processing Lambdas from Gemini POC
 2. Fix chunking algorithm
 3. Prepare Claude API integration
@@ -432,6 +473,7 @@ npx cdk deploy --context environment=dev
 ## 📞 Questions for User
 
 ### Critical (Must Answer Before Deployment)
+
 1. **Do you have an AWS account?** If not, do you want to create one now?
 2. **Do you have AWS CLI installed and configured?**
 3. **Do you have Docker installed and running?**
@@ -439,11 +481,13 @@ npx cdk deploy --context environment=dev
 5. **Which AWS region do you prefer?** (Recommend: us-east-1)
 
 ### Important (Good to Know Now)
+
 6. **What is your monthly budget for this POC?**
 7. **Do you want automated CI/CD or manual deployments?**
 8. **Should we deploy to production later, or just dev for now?**
 
 ### Optional (Can Answer Later)
+
 9. **Do you have a custom domain for the API?**
 10. **What email should receive cost/error alerts?**
 
@@ -459,6 +503,7 @@ npx cdk deploy --context environment=dev
 6. ✅ **Documentation** - Multiple README files, guides, and summaries
 
 **Lines of Code**:
+
 - Lambda Functions: 1,046 lines
 - Shared Utilities: 200 lines
 - Tests: 180 lines (updated)

@@ -13,7 +13,7 @@ describe('LFMT Infrastructure Stack', () => {
   beforeAll(() => {
     app = new App({
       context: {
-        skipLambdaBundling: 'true',  // Skip Docker bundling for tests
+        skipLambdaBundling: 'true', // Skip Docker bundling for tests
       },
     });
     stack = new LfmtInfrastructureStack(app, 'TestStack', {
@@ -33,20 +33,20 @@ describe('LFMT Infrastructure Stack', () => {
         KeySchema: [
           {
             AttributeName: 'jobId',
-            KeyType: 'HASH'
+            KeyType: 'HASH',
           },
           {
-            AttributeName: 'userId', 
-            KeyType: 'RANGE'
-          }
+            AttributeName: 'userId',
+            KeyType: 'RANGE',
+          },
         ],
         BillingMode: 'PAY_PER_REQUEST',
         PointInTimeRecoverySpecification: {
-          PointInTimeRecoveryEnabled: true
+          PointInTimeRecoveryEnabled: true,
         },
         SSESpecification: {
-          SSEEnabled: true
-        }
+          SSEEnabled: true,
+        },
       });
     });
 
@@ -58,28 +58,28 @@ describe('LFMT Infrastructure Stack', () => {
             KeySchema: [
               {
                 AttributeName: 'userId',
-                KeyType: 'HASH'
+                KeyType: 'HASH',
               },
               {
                 AttributeName: 'createdAt',
-                KeyType: 'RANGE'
-              }
-            ]
+                KeyType: 'RANGE',
+              },
+            ],
           }),
           Match.objectLike({
             IndexName: 'StatusIndex',
             KeySchema: [
               {
                 AttributeName: 'status',
-                KeyType: 'HASH'
+                KeyType: 'HASH',
               },
               {
-                AttributeName: 'createdAt', 
-                KeyType: 'RANGE'
-              }
-            ]
-          })
-        ])
+                AttributeName: 'createdAt',
+                KeyType: 'RANGE',
+              },
+            ],
+          }),
+        ]),
       });
     });
 
@@ -90,8 +90,8 @@ describe('LFMT Infrastructure Stack', () => {
         KeySchema: [
           {
             AttributeName: 'userId',
-            KeyType: 'HASH'
-          }
+            KeyType: 'HASH',
+          },
         ],
         GlobalSecondaryIndexes: Match.arrayWith([
           Match.objectLike({
@@ -99,11 +99,11 @@ describe('LFMT Infrastructure Stack', () => {
             KeySchema: [
               {
                 AttributeName: 'email',
-                KeyType: 'HASH'
-              }
-            ]
-          })
-        ])
+                KeyType: 'HASH',
+              },
+            ],
+          }),
+        ]),
       });
     });
 
@@ -113,18 +113,18 @@ describe('LFMT Infrastructure Stack', () => {
         TableName: 'lfmt-attestations-test',
         TimeToLiveSpecification: {
           AttributeName: 'ttl',
-          Enabled: true
+          Enabled: true,
         },
         KeySchema: [
           {
             AttributeName: 'attestationId',
-            KeyType: 'HASH'
+            KeyType: 'HASH',
           },
           {
             AttributeName: 'userId',
-            KeyType: 'RANGE'
-          }
-        ]
+            KeyType: 'RANGE',
+          },
+        ],
       });
     });
 
@@ -136,20 +136,20 @@ describe('LFMT Infrastructure Stack', () => {
         KeySchema: [
           {
             AttributeName: 'bucketKey',
-            KeyType: 'HASH'
-          }
+            KeyType: 'HASH',
+          },
         ],
         BillingMode: 'PAY_PER_REQUEST',
         PointInTimeRecoverySpecification: {
-          PointInTimeRecoveryEnabled: true
+          PointInTimeRecoveryEnabled: true,
         },
         SSESpecification: {
-          SSEEnabled: true
+          SSEEnabled: true,
         },
         TimeToLiveSpecification: {
           AttributeName: 'ttl',
-          Enabled: true
-        }
+          Enabled: true,
+        },
       });
     });
   });
@@ -159,23 +159,23 @@ describe('LFMT Infrastructure Stack', () => {
       template.hasResourceProperties('AWS::S3::Bucket', {
         BucketName: 'lfmt-documents-test',
         VersioningConfiguration: {
-          Status: 'Enabled'
+          Status: 'Enabled',
         },
         PublicAccessBlockConfiguration: {
           BlockPublicAcls: true,
           BlockPublicPolicy: true,
           IgnorePublicAcls: true,
-          RestrictPublicBuckets: true
+          RestrictPublicBuckets: true,
         },
         BucketEncryption: {
           ServerSideEncryptionConfiguration: [
             {
               ServerSideEncryptionByDefault: {
-                SSEAlgorithm: 'AES256'
-              }
-            }
-          ]
-        }
+                SSEAlgorithm: 'AES256',
+              },
+            },
+          ],
+        },
       });
     });
 
@@ -183,7 +183,7 @@ describe('LFMT Infrastructure Stack', () => {
       template.hasResourceProperties('AWS::S3::Bucket', {
         BucketName: 'lfmt-results-test',
         BucketEncryption: Match.anyValue(),
-        PublicAccessBlockConfiguration: Match.anyValue()
+        PublicAccessBlockConfiguration: Match.anyValue(),
       });
     });
 
@@ -196,10 +196,10 @@ describe('LFMT Infrastructure Stack', () => {
             Match.objectLike({
               Id: 'DocumentCleanup',
               Status: 'Enabled',
-              ExpirationInDays: 90
-            })
-          ])
-        }
+              ExpirationInDays: 90,
+            }),
+          ]),
+        },
       });
 
       // Results bucket: 90 days retention with transitions at 30/60 days
@@ -214,16 +214,16 @@ describe('LFMT Infrastructure Stack', () => {
               Transitions: Match.arrayWith([
                 Match.objectLike({
                   StorageClass: 'STANDARD_IA',
-                  TransitionInDays: 30
+                  TransitionInDays: 30,
                 }),
                 Match.objectLike({
                   StorageClass: 'GLACIER',
-                  TransitionInDays: 60
-                })
-              ])
-            })
-          ])
-        }
+                  TransitionInDays: 60,
+                }),
+              ]),
+            }),
+          ]),
+        },
       });
     });
   });
@@ -241,23 +241,23 @@ describe('LFMT Infrastructure Stack', () => {
             RequireLowercase: true,
             RequireNumbers: true,
             RequireSymbols: true,
-            RequireUppercase: true
-          }
-        }
+            RequireUppercase: true,
+          },
+        },
       });
     });
 
     test('User pool client configured correctly', () => {
       template.hasResourceProperties('AWS::Cognito::UserPoolClient', {
         ClientName: 'lfmt-client-test',
-        GenerateSecret: false
+        GenerateSecret: false,
       });
-      
+
       // Check that required auth flows are present (but allow additional ones)
       const userPoolClients = template.findResources('AWS::Cognito::UserPoolClient');
       const client = Object.values(userPoolClients)[0] as any;
       const authFlows = client.Properties.ExplicitAuthFlows;
-      
+
       expect(authFlows).toContain('ALLOW_USER_SRP_AUTH');
       expect(authFlows).toContain('ALLOW_USER_PASSWORD_AUTH');
       expect(authFlows).toContain('ALLOW_ADMIN_USER_PASSWORD_AUTH');
@@ -271,18 +271,18 @@ describe('LFMT Infrastructure Stack', () => {
         Name: 'lfmt-api-test',
         Description: 'LFMT Translation Service API',
         EndpointConfiguration: {
-          Types: ['REGIONAL']
-        }
+          Types: ['REGIONAL'],
+        },
       });
     });
 
     test('API deployment configured correctly', () => {
       // Check that API Gateway deployment exists
       template.resourceCountIs('AWS::ApiGateway::Deployment', 1);
-      
+
       // Check that API Gateway stage exists with correct name
       template.hasResourceProperties('AWS::ApiGateway::Stage', {
-        StageName: 'v1'
+        StageName: 'v1',
       });
 
       // Caching is intentionally disabled for cost control, so no assertion is needed.
@@ -320,11 +320,11 @@ describe('LFMT Infrastructure Stack', () => {
             Match.objectLike({
               Effect: 'Allow',
               Principal: {
-                Service: 'lambda.amazonaws.com'
-              }
-            })
-          ])
-        }
+                Service: 'lambda.amazonaws.com',
+              },
+            }),
+          ]),
+        },
       });
 
       // Check for DynamoDB permissions in managed policies (refactored from inline to avoid IAM size limits)
@@ -337,11 +337,11 @@ describe('LFMT Infrastructure Stack', () => {
                 'dynamodb:GetItem',
                 'dynamodb:PutItem',
                 'dynamodb:UpdateItem',
-                'dynamodb:Query'
-              ])
-            })
-          ])
-        }
+                'dynamodb:Query',
+              ]),
+            }),
+          ]),
+        },
       });
 
       // Verify S3 permissions in managed policy
@@ -350,13 +350,10 @@ describe('LFMT Infrastructure Stack', () => {
           Statement: Match.arrayWith([
             Match.objectLike({
               Effect: 'Allow',
-              Action: Match.arrayWith([
-                's3:GetObject',
-                's3:PutObject'
-              ])
-            })
-          ])
-        }
+              Action: Match.arrayWith(['s3:GetObject', 's3:PutObject']),
+            }),
+          ]),
+        },
       });
 
       // Verify Cognito permissions in managed policy
@@ -365,13 +362,10 @@ describe('LFMT Infrastructure Stack', () => {
           Statement: Match.arrayWith([
             Match.objectLike({
               Effect: 'Allow',
-              Action: Match.arrayWith([
-                'cognito-idp:SignUp',
-                'cognito-idp:InitiateAuth'
-              ])
-            })
-          ])
-        }
+              Action: Match.arrayWith(['cognito-idp:SignUp', 'cognito-idp:InitiateAuth']),
+            }),
+          ]),
+        },
       });
 
       // Verify Secrets Manager permissions in managed policy
@@ -380,10 +374,10 @@ describe('LFMT Infrastructure Stack', () => {
           Statement: Match.arrayWith([
             Match.objectLike({
               Effect: 'Allow',
-              Action: 'secretsmanager:GetSecretValue'
-            })
-          ])
-        }
+              Action: 'secretsmanager:GetSecretValue',
+            }),
+          ]),
+        },
       });
 
       // Verify Lambda invoke permissions in managed policy
@@ -392,10 +386,10 @@ describe('LFMT Infrastructure Stack', () => {
           Statement: Match.arrayWith([
             Match.objectLike({
               Effect: 'Allow',
-              Action: 'lambda:InvokeFunction'
-            })
-          ])
-        }
+              Action: 'lambda:InvokeFunction',
+            }),
+          ]),
+        },
       });
 
       // Verify Step Functions permissions in managed policy
@@ -404,10 +398,10 @@ describe('LFMT Infrastructure Stack', () => {
           Statement: Match.arrayWith([
             Match.objectLike({
               Effect: 'Allow',
-              Action: 'states:StartExecution'
-            })
-          ])
-        }
+              Action: 'states:StartExecution',
+            }),
+          ]),
+        },
       });
     });
 
@@ -418,11 +412,11 @@ describe('LFMT Infrastructure Stack', () => {
             Match.objectLike({
               Effect: 'Allow',
               Principal: {
-                Service: 'states.amazonaws.com'
-              }
-            })
-          ])
-        }
+                Service: 'states.amazonaws.com',
+              },
+            }),
+          ]),
+        },
       });
     });
   });
@@ -434,7 +428,7 @@ describe('LFMT Infrastructure Stack', () => {
 
       // Verify it has the correct name
       template.hasResourceProperties('AWS::StepFunctions::StateMachine', {
-        StateMachineName: 'lfmt-translation-workflow-test'
+        StateMachineName: 'lfmt-translation-workflow-test',
       });
     });
 
@@ -444,7 +438,9 @@ describe('LFMT Infrastructure Stack', () => {
       expect(stateMachineKeys.length).toBe(1);
 
       const stateMachine = stateMachines[stateMachineKeys[0]];
-      const definition = JSON.parse(stateMachine.Properties.DefinitionString['Fn::Join'][1].join(''));
+      const definition = JSON.parse(
+        stateMachine.Properties.DefinitionString['Fn::Join'][1].join('')
+      );
 
       // Verify Map state exists
       const states = definition.States;
@@ -459,7 +455,9 @@ describe('LFMT Infrastructure Stack', () => {
       const stateMachines = template.findResources('AWS::StepFunctions::StateMachine');
       const stateMachineKeys = Object.keys(stateMachines);
       const stateMachine = stateMachines[stateMachineKeys[0]];
-      const definition = JSON.parse(stateMachine.Properties.DefinitionString['Fn::Join'][1].join(''));
+      const definition = JSON.parse(
+        stateMachine.Properties.DefinitionString['Fn::Join'][1].join('')
+      );
 
       // Verify state machine has multiple states
       const states = definition.States;
@@ -481,10 +479,10 @@ describe('LFMT Infrastructure Stack', () => {
             Match.objectLike({
               Effect: 'Allow',
               Action: 'lambda:InvokeFunction',
-              Resource: Match.anyValue()
-            })
-          ])
-        }
+              Resource: Match.anyValue(),
+            }),
+          ]),
+        },
       });
 
       // State machine should have permission to read/write DynamoDB
@@ -493,20 +491,18 @@ describe('LFMT Infrastructure Stack', () => {
           Statement: Match.arrayWith([
             Match.objectLike({
               Effect: 'Allow',
-              Action: Match.arrayWith([
-                Match.stringLikeRegexp('dynamodb:.*')
-              ]),
-              Resource: Match.anyValue()
-            })
-          ])
-        }
+              Action: Match.arrayWith([Match.stringLikeRegexp('dynamodb:.*')]),
+              Resource: Match.anyValue(),
+            }),
+          ]),
+        },
       });
     });
 
     test('State machine log group configured correctly', () => {
       template.hasResourceProperties('AWS::Logs::LogGroup', {
         LogGroupName: '/aws/stepfunctions/lfmt-translation-test',
-        RetentionInDays: 7  // One week retention as specified in implementation
+        RetentionInDays: 7, // One week retention as specified in implementation
       });
     });
   });
@@ -515,22 +511,22 @@ describe('LFMT Infrastructure Stack', () => {
     test('Log groups created with correct retention', () => {
       template.hasResourceProperties('AWS::Logs::LogGroup', {
         LogGroupName: '/aws/apigateway/lfmt-api-test',
-        RetentionInDays: 30
+        RetentionInDays: 30,
       });
 
       template.hasResourceProperties('AWS::Logs::LogGroup', {
         LogGroupName: '/aws/lambda/lfmt-test',
-        RetentionInDays: 30
+        RetentionInDays: 30,
       });
 
       template.hasResourceProperties('AWS::Logs::LogGroup', {
         LogGroupName: '/aws/stepfunctions/lfmt-test',
-        RetentionInDays: 30
+        RetentionInDays: 30,
       });
 
       template.hasResourceProperties('AWS::Logs::LogGroup', {
         LogGroupName: '/aws/security/lfmt-test',
-        RetentionInDays: 90
+        RetentionInDays: 90,
       });
     });
   });
@@ -562,11 +558,11 @@ describe('LFMT Infrastructure Stack', () => {
     test('Expected number of resources created', () => {
       // Ensure we're not creating too many or too few resources
       template.resourceCountIs('AWS::DynamoDB::Table', 4); // Jobs, Users, Attestations, Rate Limit Buckets
-      template.resourceCountIs('AWS::S3::Bucket', 3);      // Documents, Results, Frontend
+      template.resourceCountIs('AWS::S3::Bucket', 3); // Documents, Results, Frontend
       template.resourceCountIs('AWS::Cognito::UserPool', 1);
       template.resourceCountIs('AWS::Cognito::UserPoolClient', 1);
       template.resourceCountIs('AWS::ApiGateway::RestApi', 1);
-      template.resourceCountIs('AWS::Logs::LogGroup', 5);   // API, Lambda x3, Step Functions State Machine x1
+      template.resourceCountIs('AWS::Logs::LogGroup', 5); // API, Lambda x3, Step Functions State Machine x1
       template.resourceCountIs('AWS::CloudFront::Distribution', 1);
       template.resourceCountIs('AWS::CloudFront::OriginAccessControl', 1);
       // Now we have 2 ResponseHeadersPolicy: initial + updated with API Gateway URL
@@ -582,10 +578,10 @@ describe('LFMT Infrastructure Stack', () => {
       // Ensure no hardcoded values in the template
       const templateJson = template.toJSON();
       const templateString = JSON.stringify(templateJson);
-      
+
       // Check for actual hardcoded secrets, but ignore legitimate CDK properties
       expect(templateString).not.toMatch(/["']password["']\s*:\s*["'][^"']{8,}["']/i);
-      expect(templateString).not.toMatch(/["']secret["']\s*:\s*["'][^"']{10,}["']/i);  
+      expect(templateString).not.toMatch(/["']secret["']\s*:\s*["'][^"']{10,}["']/i);
       expect(templateString).not.toMatch(/["']api[_-]?key["']\s*:\s*["'][a-zA-Z0-9]{20,}["']/i);
     });
 
@@ -595,16 +591,16 @@ describe('LFMT Infrastructure Stack', () => {
           BlockPublicAcls: true,
           BlockPublicPolicy: true,
           IgnorePublicAcls: true,
-          RestrictPublicBuckets: true
-        }
+          RestrictPublicBuckets: true,
+        },
       });
     });
 
     test('All DynamoDB tables have encryption enabled', () => {
       template.allResourcesProperties('AWS::DynamoDB::Table', {
         SSESpecification: {
-          SSEEnabled: true
-        }
+          SSEEnabled: true,
+        },
       });
     });
   });
@@ -615,8 +611,8 @@ describe('LFMT Infrastructure Stack', () => {
         DistributionConfig: {
           Enabled: true,
           IPV6Enabled: true,
-          DefaultRootObject: 'index.html'
-        }
+          DefaultRootObject: 'index.html',
+        },
       });
     });
 
@@ -628,16 +624,16 @@ describe('LFMT Infrastructure Stack', () => {
               ErrorCode: 403,
               ResponseCode: 200,
               ResponsePagePath: '/index.html',
-              ErrorCachingMinTTL: 300
+              ErrorCachingMinTTL: 300,
             },
             {
               ErrorCode: 404,
               ResponseCode: 200,
               ResponsePagePath: '/index.html',
-              ErrorCachingMinTTL: 300
-            }
-          ]
-        }
+              ErrorCachingMinTTL: 300,
+            },
+          ],
+        },
       });
     });
 
@@ -645,9 +641,9 @@ describe('LFMT Infrastructure Stack', () => {
       template.hasResourceProperties('AWS::CloudFront::Distribution', {
         DistributionConfig: {
           DefaultCacheBehavior: {
-            ViewerProtocolPolicy: 'redirect-to-https'
-          }
-        }
+            ViewerProtocolPolicy: 'redirect-to-https',
+          },
+        },
       });
     });
 
@@ -659,36 +655,39 @@ describe('LFMT Infrastructure Stack', () => {
             StrictTransportSecurity: {
               AccessControlMaxAgeSec: 31536000,
               IncludeSubdomains: true,
-              Override: true
+              Override: true,
             },
             ContentTypeOptions: {
-              Override: true
+              Override: true,
             },
             FrameOptions: {
               FrameOption: 'DENY',
-              Override: true
+              Override: true,
             },
             XSSProtection: {
               Protection: true,
               ModeBlock: true,
-              Override: true
+              Override: true,
             },
             ReferrerPolicy: {
               ReferrerPolicy: 'strict-origin-when-cross-origin',
-              Override: true
-            }
-          }
-        }
+              Override: true,
+            },
+          },
+        },
       });
 
       // Verify that CSP includes API Gateway domain (specific test)
       const policies = template.findResources('AWS::CloudFront::ResponseHeadersPolicy');
       const policyWithUpdatedCSP = Object.values(policies).find((policy: any) => {
-        const csp = policy?.Properties?.ResponseHeadersPolicyConfig?.SecurityHeadersConfig?.ContentSecurityPolicy?.ContentSecurityPolicy;
+        const csp =
+          policy?.Properties?.ResponseHeadersPolicyConfig?.SecurityHeadersConfig
+            ?.ContentSecurityPolicy?.ContentSecurityPolicy;
         // Check if CSP contains the specific API Gateway domain pattern or the Fn::Join construct
-        return csp && (
-          (typeof csp === 'string' && csp.includes('execute-api')) ||
-          (typeof csp === 'object' && csp['Fn::Join'])
+        return (
+          csp &&
+          ((typeof csp === 'string' && csp.includes('execute-api')) ||
+            (typeof csp === 'object' && csp['Fn::Join']))
         );
       });
       expect(policyWithUpdatedCSP).toBeDefined();
@@ -699,8 +698,8 @@ describe('LFMT Infrastructure Stack', () => {
         OriginAccessControlConfig: {
           OriginAccessControlOriginType: 's3',
           SigningBehavior: 'always',
-          SigningProtocol: 'sigv4'
-        }
+          SigningProtocol: 'sigv4',
+        },
       });
     });
 
@@ -711,8 +710,8 @@ describe('LFMT Infrastructure Stack', () => {
         // Check if it's a string containing 'frontend' OR a Fn::Join with 'frontend'
         return (
           (typeof bucketName === 'string' && bucketName.includes('frontend')) ||
-          bucketName?.['Fn::Join']?.[1]?.some((part: any) =>
-            typeof part === 'string' && part.includes('frontend')
+          bucketName?.['Fn::Join']?.[1]?.some(
+            (part: any) => typeof part === 'string' && part.includes('frontend')
           )
         );
       });
@@ -724,7 +723,7 @@ describe('LFMT Infrastructure Stack', () => {
           BlockPublicAcls: true,
           BlockPublicPolicy: true,
           IgnorePublicAcls: true,
-          RestrictPublicBuckets: true
+          RestrictPublicBuckets: true,
         });
       }
     });

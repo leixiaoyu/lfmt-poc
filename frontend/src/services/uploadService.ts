@@ -49,19 +49,14 @@ export interface UploadResult {
  * @returns Presigned URL and metadata for upload
  * @throws ApiError if request fails
  */
-export async function requestUploadUrl(
-  file: File
-): Promise<UploadRequestResult> {
+export async function requestUploadUrl(file: File): Promise<UploadRequestResult> {
   const request: PresignedUrlRequest = {
     fileName: file.name,
     fileSize: file.size,
     contentType: file.type,
   };
 
-  const response = await apiClient.post<{ data: PresignedUrlResponse }>(
-    '/jobs/upload',
-    request
-  );
+  const response = await apiClient.post<{ data: PresignedUrlResponse }>('/jobs/upload', request);
 
   return response.data.data;
 }
@@ -103,11 +98,7 @@ export async function uploadToS3(
       if (xhr.status >= 200 && xhr.status < 300) {
         resolve();
       } else {
-        reject(
-          new Error(
-            `Upload failed with status ${xhr.status}: ${xhr.statusText}`
-          )
-        );
+        reject(new Error(`Upload failed with status ${xhr.status}: ${xhr.statusText}`));
       }
     });
 
@@ -146,9 +137,7 @@ export async function uploadDocument(
 ): Promise<UploadResult> {
   try {
     // Step 1: Request presigned URL
-    const { uploadUrl, fileId, requiredHeaders } = await requestUploadUrl(
-      file
-    );
+    const { uploadUrl, fileId, requiredHeaders } = await requestUploadUrl(file);
 
     // Step 2: Upload to S3
     await uploadToS3(file, uploadUrl, requiredHeaders, onProgress);
@@ -158,8 +147,7 @@ export async function uploadDocument(
       success: true,
     };
   } catch (error) {
-    const errorMessage =
-      error instanceof Error ? error.message : 'Upload failed';
+    const errorMessage = error instanceof Error ? error.message : 'Upload failed';
 
     return {
       fileId: '',

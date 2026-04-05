@@ -30,25 +30,19 @@ describe('FileUploadForm', () => {
     it('should render upload form with correct heading', () => {
       render(<FileUploadForm onUploadComplete={mockOnUploadComplete} />);
 
-      expect(
-        screen.getByRole('heading', { name: /upload document/i })
-      ).toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: /upload document/i })).toBeInTheDocument();
     });
 
     it('should display file size and type information', () => {
       render(<FileUploadForm onUploadComplete={mockOnUploadComplete} />);
 
-      expect(
-        screen.getByText(/maximum file size: 100mb/i)
-      ).toBeInTheDocument();
+      expect(screen.getByText(/maximum file size: 100mb/i)).toBeInTheDocument();
     });
 
     it('should render file drop zone', () => {
       render(<FileUploadForm onUploadComplete={mockOnUploadComplete} />);
 
-      expect(
-        screen.getByText(/drag and drop your file here/i)
-      ).toBeInTheDocument();
+      expect(screen.getByText(/drag and drop your file here/i)).toBeInTheDocument();
       expect(screen.getByText(/or click to browse/i)).toBeInTheDocument();
     });
 
@@ -106,9 +100,7 @@ describe('FileUploadForm', () => {
       await user.upload(input, file);
 
       await waitFor(() => {
-        expect(
-          screen.getByRole('button', { name: /clear/i })
-        ).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: /clear/i })).toBeInTheDocument();
       });
     });
 
@@ -130,9 +122,7 @@ describe('FileUploadForm', () => {
 
       await waitFor(() => {
         expect(screen.queryByText('test.txt')).not.toBeInTheDocument();
-        expect(
-          screen.getByText(/drag and drop your file here/i)
-        ).toBeInTheDocument();
+        expect(screen.getByText(/drag and drop your file here/i)).toBeInTheDocument();
       });
     });
   });
@@ -151,9 +141,7 @@ describe('FileUploadForm', () => {
       await user.upload(input, file);
 
       await waitFor(() => {
-        expect(
-          screen.getByText(/file size exceeds maximum allowed size/i)
-        ).toBeInTheDocument();
+        expect(screen.getByText(/file size exceeds maximum allowed size/i)).toBeInTheDocument();
       });
 
       const uploadButton = screen.getByRole('button', { name: /^upload$/i });
@@ -170,9 +158,7 @@ describe('FileUploadForm', () => {
       await user.upload(input, file);
 
       await waitFor(() => {
-        expect(
-          screen.getByText(/file size is below minimum required size/i)
-        ).toBeInTheDocument();
+        expect(screen.getByText(/file size is below minimum required size/i)).toBeInTheDocument();
       });
     });
 
@@ -187,9 +173,7 @@ describe('FileUploadForm', () => {
       await user.upload(input, file);
 
       await waitFor(() => {
-        expect(
-          screen.getByText(/only \.txt files are allowed/i)
-        ).toBeInTheDocument();
+        expect(screen.getByText(/only \.txt files are allowed/i)).toBeInTheDocument();
       });
     });
 
@@ -204,9 +188,7 @@ describe('FileUploadForm', () => {
       await user.upload(input, file);
 
       await waitFor(() => {
-        expect(
-          screen.getByText(/only \.txt files are allowed/i)
-        ).toBeInTheDocument();
+        expect(screen.getByText(/only \.txt files are allowed/i)).toBeInTheDocument();
       });
     });
 
@@ -224,9 +206,7 @@ describe('FileUploadForm', () => {
 
       await waitFor(() => {
         // Type check passes, but extension check fails
-        expect(
-          screen.getByText(/only \.txt files are allowed/i)
-        ).toBeInTheDocument();
+        expect(screen.getByText(/only \.txt files are allowed/i)).toBeInTheDocument();
       });
 
       // Select valid file
@@ -236,9 +216,7 @@ describe('FileUploadForm', () => {
       await user.upload(input, validFile);
 
       await waitFor(() => {
-        expect(
-          screen.queryByText(/only \.txt files are allowed/i)
-        ).not.toBeInTheDocument();
+        expect(screen.queryByText(/only \.txt files are allowed/i)).not.toBeInTheDocument();
       });
     });
   });
@@ -249,8 +227,7 @@ describe('FileUploadForm', () => {
 
       const content = 'x'.repeat(1500);
       const file = new File([content], 'test.txt', { type: 'text/plain' });
-      const dropZone = screen.getByText(/drag and drop your file here/i)
-        .closest('div')!;
+      const dropZone = screen.getByText(/drag and drop your file here/i).closest('div')!;
 
       fireEvent.drop(dropZone, {
         dataTransfer: {
@@ -266,7 +243,8 @@ describe('FileUploadForm', () => {
     it('should highlight drop zone on drag over', () => {
       render(<FileUploadForm onUploadComplete={mockOnUploadComplete} />);
 
-      const dropZone = screen.getByText(/drag and drop your file here/i)
+      const dropZone = screen
+        .getByText(/drag and drop your file here/i)
         .closest('div')!.parentElement!;
 
       fireEvent.dragEnter(dropZone);
@@ -279,7 +257,8 @@ describe('FileUploadForm', () => {
     it('should remove highlight when drag leaves', () => {
       render(<FileUploadForm onUploadComplete={mockOnUploadComplete} />);
 
-      const dropZone = screen.getByText(/drag and drop your file here/i)
+      const dropZone = screen
+        .getByText(/drag and drop your file here/i)
         .closest('div')!.parentElement!;
 
       fireEvent.dragEnter(dropZone);
@@ -294,12 +273,10 @@ describe('FileUploadForm', () => {
     it('should upload file successfully', async () => {
       const user = userEvent.setup();
 
-      vi.spyOn(uploadService.uploadService, 'uploadDocument').mockResolvedValue(
-        {
-          fileId: 'test-file-id-123',
-          success: true,
-        }
-      );
+      vi.spyOn(uploadService.uploadService, 'uploadDocument').mockResolvedValue({
+        fileId: 'test-file-id-123',
+        success: true,
+      });
 
       render(<FileUploadForm onUploadComplete={mockOnUploadComplete} />);
 
@@ -322,25 +299,22 @@ describe('FileUploadForm', () => {
         expect(mockOnUploadComplete).toHaveBeenCalledWith('test-file-id-123');
       });
 
-      expect(
-        screen.getByText(/file uploaded successfully/i)
-      ).toBeInTheDocument();
+      expect(screen.getByText(/file uploaded successfully/i)).toBeInTheDocument();
     });
 
     it.skip('should display progress during upload', async () => {
       const user = userEvent.setup();
 
-      vi.spyOn(
-        uploadService.uploadService,
-        'uploadDocument'
-      ).mockImplementation(async (_file, onProgress) => {
-        // Simulate progress
-        if (onProgress) {
-          onProgress({ loaded: 50, total: 100, percentage: 50 });
-          onProgress({ loaded: 100, total: 100, percentage: 100 });
+      vi.spyOn(uploadService.uploadService, 'uploadDocument').mockImplementation(
+        async (_file, onProgress) => {
+          // Simulate progress
+          if (onProgress) {
+            onProgress({ loaded: 50, total: 100, percentage: 50 });
+            onProgress({ loaded: 100, total: 100, percentage: 100 });
+          }
+          return { fileId: 'test-id', success: true };
         }
-        return { fileId: 'test-id', success: true };
-      });
+      );
 
       render(<FileUploadForm onUploadComplete={mockOnUploadComplete} />);
 
@@ -360,19 +334,14 @@ describe('FileUploadForm', () => {
     it('should handle upload errors', async () => {
       const user = userEvent.setup();
 
-      vi.spyOn(uploadService.uploadService, 'uploadDocument').mockResolvedValue(
-        {
-          fileId: '',
-          success: false,
-          error: 'Network error during upload',
-        }
-      );
+      vi.spyOn(uploadService.uploadService, 'uploadDocument').mockResolvedValue({
+        fileId: '',
+        success: false,
+        error: 'Network error during upload',
+      });
 
       render(
-        <FileUploadForm
-          onUploadComplete={mockOnUploadComplete}
-          onUploadError={mockOnUploadError}
-        />
+        <FileUploadForm onUploadComplete={mockOnUploadComplete} onUploadError={mockOnUploadError} />
       );
 
       const content = 'x'.repeat(1500);
@@ -384,26 +353,20 @@ describe('FileUploadForm', () => {
       await user.click(uploadButton);
 
       await waitFor(() => {
-        expect(
-          screen.getByText(/network error during upload/i)
-        ).toBeInTheDocument();
+        expect(screen.getByText(/network error during upload/i)).toBeInTheDocument();
       });
 
-      expect(mockOnUploadError).toHaveBeenCalledWith(
-        'Network error during upload'
-      );
+      expect(mockOnUploadError).toHaveBeenCalledWith('Network error during upload');
       expect(mockOnUploadComplete).not.toHaveBeenCalled();
     });
 
     it('should allow uploading another file after success', async () => {
       const user = userEvent.setup();
 
-      vi.spyOn(uploadService.uploadService, 'uploadDocument').mockResolvedValue(
-        {
-          fileId: 'test-id',
-          success: true,
-        }
-      );
+      vi.spyOn(uploadService.uploadService, 'uploadDocument').mockResolvedValue({
+        fileId: 'test-id',
+        success: true,
+      });
 
       render(<FileUploadForm onUploadComplete={mockOnUploadComplete} />);
 
@@ -416,9 +379,7 @@ describe('FileUploadForm', () => {
       await user.click(uploadButton);
 
       await waitFor(() => {
-        expect(
-          screen.getByText(/file uploaded successfully/i)
-        ).toBeInTheDocument();
+        expect(screen.getByText(/file uploaded successfully/i)).toBeInTheDocument();
       });
 
       const uploadAnotherButton = screen.getByRole('button', {
@@ -427,9 +388,7 @@ describe('FileUploadForm', () => {
       await user.click(uploadAnotherButton);
 
       await waitFor(() => {
-        expect(
-          screen.getByText(/drag and drop your file here/i)
-        ).toBeInTheDocument();
+        expect(screen.getByText(/drag and drop your file here/i)).toBeInTheDocument();
       });
     });
   });
@@ -480,7 +439,8 @@ describe('FileUploadForm', () => {
       const user = userEvent.setup();
       render(<FileUploadForm onUploadComplete={mockOnUploadComplete} />);
 
-      const dropZone = screen.getByText(/drag and drop your file here/i)
+      const dropZone = screen
+        .getByText(/drag and drop your file here/i)
         .closest('div')!.parentElement!;
 
       await user.click(dropZone);

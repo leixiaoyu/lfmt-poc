@@ -7,6 +7,7 @@ This document provides a complete checklist for setting up LFMT POC for producti
 The following steps have been completed automatically via AWS CLI:
 
 ### AWS Infrastructure Setup
+
 - [x] ✅ Verified AWS credentials configured (Account: XXXXXXXXXXXX)
 - [x] ✅ Confirmed OIDC provider exists for GitHub Actions
   - ARN: `arn:aws:iam::XXXXXXXXXXXX:oidc-provider/token.actions.githubusercontent.com`
@@ -17,10 +18,12 @@ The following steps have been completed automatically via AWS CLI:
 - [x] ✅ Created AWS Budget: `LFMT-Production-Monthly` ($100/month)
 
 ### GitHub Configuration
+
 - [x] ✅ Verified GitHub secret `AWS_ROLE_ARN` exists
   - Last updated: 2025-10-17
 
 ### Files Created
+
 - [x] ✅ `github-actions-trust-policy.json` - IAM role trust policy
 - [x] ✅ `production-budget.json` - AWS budget configuration
 
@@ -35,6 +38,7 @@ The following steps **REQUIRE HUMAN INPUT** and must be completed manually:
 **Why:** The AWS_ROLE_ARN secret needs to be updated with the new production role.
 
 **Action:**
+
 1. Navigate to: https://github.com/leixiaoyu/lfmt-poc/settings/secrets/actions
 2. Click on `AWS_ROLE_ARN`
 3. Click "Update secret"
@@ -42,6 +46,7 @@ The following steps **REQUIRE HUMAN INPUT** and must be completed manually:
 5. Click "Update secret"
 
 **Verification:**
+
 ```bash
 # This will NOT show the value (secrets are hidden)
 gh secret list
@@ -54,6 +59,7 @@ gh secret list
 **Why:** Production deployments require manual approval and environment protection.
 
 **Action:**
+
 1. Navigate to: https://github.com/leixiaoyu/lfmt-poc/settings/environments
 2. If "production" environment doesn't exist:
    - Click "New environment"
@@ -68,6 +74,7 @@ gh secret list
 4. Click "Save protection rules"
 
 **Verification:**
+
 - Environment appears in list at: https://github.com/leixiaoyu/lfmt-poc/settings/environments
 - Shows "Required reviewers" and other protection rules
 
@@ -78,6 +85,7 @@ gh secret list
 **Why:** Prevent accidental pushes to production and require CI/CD checks.
 
 **Action:**
+
 1. Navigate to: https://github.com/leixiaoyu/lfmt-poc/settings/branches
 2. Click "Add rule" (or edit existing rule for `main`)
 3. **Branch name pattern**: `main`
@@ -92,6 +100,7 @@ gh secret list
 5. Click "Create" or "Save changes"
 
 **Verification:**
+
 - Branch protection rule shows up at: https://github.com/leixiaoyu/lfmt-poc/settings/branches
 - Pull requests to `main` will require approval
 
@@ -104,6 +113,7 @@ gh secret list
 **Cost:** ~$15-26/month (see PRODUCTION-SECURITY-DEPLOYMENT.md for details)
 
 **Action Option A - Via GitHub Actions (Recommended):**
+
 1. Navigate to: https://github.com/leixiaoyu/lfmt-poc/actions
 2. Select "Deploy LFMT Infrastructure" workflow
 3. Click "Run workflow"
@@ -114,6 +124,7 @@ gh secret list
 6. **IMPORTANT:** Review and approve the deployment when prompted
 
 **Action Option B - Via AWS CLI:**
+
 ```bash
 cd backend/infrastructure
 
@@ -127,6 +138,7 @@ npx cdk deploy LfmtSecurityStack \
 ```
 
 **Verification:**
+
 ```bash
 # Verify CloudTrail
 aws cloudtrail describe-trails --region us-east-1
@@ -150,6 +162,7 @@ aws wafv2 list-web-acls --scope REGIONAL --region us-east-1
 **Why:** Verify GitHub Actions workflow can deploy to production.
 
 **Action:**
+
 1. Navigate to: https://github.com/leixiaoyu/lfmt-poc/actions
 2. Select "Deploy LFMT Infrastructure" workflow
 3. Click "Run workflow"
@@ -163,6 +176,7 @@ aws wafv2 list-web-acls --scope REGIONAL --region us-east-1
    - Approve if changes look correct
 
 **Monitor Progress:**
+
 ```bash
 # Watch workflow in terminal
 gh run watch
@@ -174,6 +188,7 @@ gh run watch
 **Expected Duration:** 8-12 minutes
 
 **Verification After Deployment:**
+
 ```bash
 # Check CloudFormation stack
 aws cloudformation describe-stacks \
@@ -202,6 +217,7 @@ curl -X OPTIONS "https://YOUR_API_ID.execute-api.us-east-1.amazonaws.com/v1/auth
 **Why:** Get email alerts when spending approaches budget threshold.
 
 **Action:**
+
 ```bash
 # Get your email address ready (e.g., your-email@example.com)
 
@@ -223,6 +239,7 @@ aws sns subscribe \
 ```
 
 Then update the budget with notification:
+
 ```bash
 ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
 
@@ -253,6 +270,7 @@ aws budgets create-notification \
 ```
 
 **Verification:**
+
 - Check email for SNS subscription confirmation
 - Confirm subscription by clicking link in email
 
@@ -263,7 +281,9 @@ aws budgets create-notification \
 **Why:** Frontend needs to connect to production API endpoints.
 
 **Action:**
+
 1. After production deployment completes, get the outputs:
+
 ```bash
 aws cloudformation describe-stacks \
   --stack-name LfmtPocProd \
@@ -272,6 +292,7 @@ aws cloudformation describe-stacks \
 ```
 
 2. Create `frontend/.env.production` file with production values:
+
 ```env
 VITE_API_URL=https://YOUR_PROD_API_ID.execute-api.us-east-1.amazonaws.com/v1
 VITE_COGNITO_USER_POOL_ID=us-east-1_YOUR_PROD_POOL_ID
@@ -280,11 +301,13 @@ VITE_AWS_REGION=us-east-1
 ```
 
 3. **IMPORTANT:** Add to `.gitignore` if not already there:
+
 ```bash
 echo ".env.production" >> frontend/.gitignore
 ```
 
 4. Build and deploy frontend:
+
 ```bash
 cd frontend
 npm run build
@@ -296,6 +319,7 @@ npm run build
 ## Quick Start Commands
 
 ### Update GitHub Secret (Step 1)
+
 ```bash
 # Copy this ARN
 arn:aws:iam::XXXXXXXXXXXX:role/GitHubActionsLFMTProd
@@ -305,6 +329,7 @@ arn:aws:iam::XXXXXXXXXXXX:role/GitHubActionsLFMTProd
 ```
 
 ### Deploy to Production (After Steps 1-3)
+
 ```bash
 # Via GitHub Actions UI:
 # https://github.com/leixiaoyu/lfmt-poc/actions
@@ -314,6 +339,7 @@ gh workflow run deploy.yml -f environment=prod
 ```
 
 ### Verify Deployment
+
 ```bash
 # Check stack status
 aws cloudformation describe-stacks \
@@ -333,11 +359,13 @@ aws cloudformation describe-stacks \
 ## Summary
 
 ### ✅ Automated (Already Done)
+
 - AWS IAM role created with OIDC trust policy
 - AWS budget configured
 - All infrastructure code and workflows ready
 
 ### ⏳ Manual Steps Required (Human Input)
+
 1. **Update GitHub Secret** `AWS_ROLE_ARN` (2 minutes)
 2. **Configure Production Environment** on GitHub (3 minutes)
 3. **Enable Branch Protection** on `main` branch (2 minutes)
@@ -353,15 +381,19 @@ aws cloudformation describe-stacks \
 ## Troubleshooting
 
 ### Issue: GitHub Actions workflow fails with "Unable to assume role"
+
 **Solution:** Make sure Step 1 (Update GitHub Secret) was completed correctly.
 
 ### Issue: Budget alerts not working
+
 **Solution:** Ensure you confirmed the SNS subscription via email in Step 6.
 
 ### Issue: Frontend can't connect to API
+
 **Solution:** Verify CORS configuration in API Gateway and update frontend `.env.production` with correct values from Step 7.
 
 ### Issue: Production deployment is slow
+
 **Solution:** This is normal - CloudFormation stacks take 8-12 minutes for initial deployment.
 
 ---
@@ -369,6 +401,7 @@ aws cloudformation describe-stacks \
 ## Next Steps
 
 After completing manual setup:
+
 1. ✅ Run first production deployment
 2. ✅ Verify all services are working
 3. ✅ Test user registration and login
