@@ -23,12 +23,20 @@ import * as cloudfront from 'aws-cdk-lib/aws-cloudfront';
 import * as origins from 'aws-cdk-lib/aws-cloudfront-origins';
 import * as route53 from 'aws-cdk-lib/aws-route53';
 
+// Monitoring constructs
+import { MonitoringDashboards } from './constructs/monitoring-dashboards';
+import { MonitoringAlarms } from './constructs/monitoring-alarms';
+import { CostMonitoring } from './constructs/cost-monitoring';
+
 export interface LfmtInfrastructureStackProps extends StackProps {
   stackName: string;
   environment: string;
   enableLogging: boolean;
   retainData: boolean;
   skipLambdaBundling?: boolean;  // For testing purposes
+  enableMonitoring?: boolean;  // Enable CloudWatch dashboards and alarms
+  operationsEmail?: string;  // Email for alarm notifications
+  monthlyBudgetLimit?: number;  // Monthly budget in USD
 }
 
 export class LfmtInfrastructureStack extends Stack {
@@ -137,7 +145,12 @@ export class LfmtInfrastructureStack extends Stack {
     // 10. API Gateway Endpoints
     this.createApiEndpoints();
 
-    // 11. Outputs
+    // 11. Monitoring (CloudWatch Dashboards, Alarms, Cost Monitoring)
+    if (props.enableMonitoring !== false) {
+      this.createMonitoring(props);
+    }
+
+    // 12. Outputs
     this.createOutputs();
   }
 
@@ -1636,6 +1649,63 @@ export class LfmtInfrastructureStack extends Stack {
     // Note: We need to access the L1 CloudFormation construct to update this property
     const cfnDistribution = this.frontendDistribution.node.defaultChild as cloudfront.CfnDistribution;
     cfnDistribution.addPropertyOverride('DistributionConfig.DefaultCacheBehavior.ResponseHeadersPolicyId', updatedResponseHeadersPolicy.responseHeadersPolicyId);
+  }
+
+  private createMonitoring(props: LfmtInfrastructureStackProps) {
+    const { environment, operationsEmail = 'devops@yourcompany.com', monthlyBudgetLimit = 50 } = props;
+
+    // Collect all Lambda functions for monitoring
+    const allLambdaFunctions: lambda.Function[] = [
+      this.registerFunction,
+      this.loginFunction,
+      this.refreshTokenFunction,
+      this.resetPasswordFunction,
+      this.getCurrentUserFunction,
+      this.uploadRequestFunction,
+      this.uploadCompleteFunction,
+      this.chunkDocumentFunction,
+      this.translateChunkFunction,
+      this.startTranslationFunction,
+      this.getTranslationStatusFunction,
+    ].filter((fn): fn is lambda.Function => fn !== undefined);
+
+    // 1. Create CloudWatch Dashboards
+    new MonitoringDashboards(this, 'MonitoringDashboards', {
+      stackName: this.stackName,
+      environment,
+      api: this.api,
+      lambdaFunctions: allLambdaFunctions,
+      jobsTable: this.jobsTable,
+      usersTable: this.usersTable,
+      attestationsTable: this.attestationsTable,
+      rateLimitBucketsTable: (this as any).rateLimitBucketsTable,
+      documentBucket: this.documentBucket,
+      resultsBucket: this.resultsBucket,
+      frontendBucket: this.frontendBucket,
+      translationStateMachine: this.translationStateMachine,
+    });
+
+    // 2. Create CloudWatch Alarms
+    new MonitoringAlarms(this, 'MonitoringAlarms', {
+      stackName: this.stackName,
+      environment,
+      operationsEmail,
+      api: this.api,
+      lambdaFunctions: allLambdaFunctions,
+      jobsTable: this.jobsTable,
+      usersTable: this.usersTable,
+      attestationsTable: this.attestationsTable,
+      rateLimitBucketsTable: (this as any).rateLimitBucketsTable,
+      translationStateMachine: this.translationStateMachine,
+    });
+
+    // 3. Create Cost Monitoring (Budgets and Alarms)
+    new CostMonitoring(this, 'CostMonitoring', {
+      stackName: this.stackName,
+      environment,
+      operationsEmail,
+      monthlyBudgetLimit,
+    });
   }
 
   private createOutputs() {
