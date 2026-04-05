@@ -73,12 +73,88 @@ export default defineConfig(({ command, mode }) => {
     ],
     coverage: {
       provider: 'v8',
-      reporter: ['text', 'json', 'html'],
+      reporter: ['text', 'json', 'html', 'lcov'],
       exclude: [
         'node_modules/',
         'src/setupTests.ts',
+        'src/test-utils.tsx',
+        'src/main.tsx',
+        'src/vite-env.d.ts',
         'e2e/**', // Exclude E2E tests from coverage
+        '**/__tests__/**',
+        '**/*.test.tsx',
+        '**/*.test.ts',
       ],
+      thresholds: {
+        // Global baseline for general code
+        lines: 80,
+        functions: 80,
+        branches: 80,
+        statements: 80,
+        // Critical path: Authentication components - 100% coverage required
+        'src/components/Auth/LoginForm.tsx': {
+          lines: 100,
+          functions: 100,
+          branches: 100,
+          statements: 100,
+        },
+        'src/components/Auth/RegisterForm.tsx': {
+          lines: 100,
+          functions: 100,
+          branches: 100,
+          statements: 100,
+        },
+        'src/components/Auth/ForgotPasswordForm.tsx': {
+          lines: 100,
+          functions: 100,
+          branches: 100,
+          statements: 100,
+        },
+        'src/components/Auth/ProtectedRoute.tsx': {
+          lines: 100,
+          functions: 100,
+          branches: 100,
+          statements: 100,
+        },
+        // Critical path: Translation components - 100% coverage required
+        'src/components/Translation/FileUpload.tsx': {
+          lines: 100,
+          functions: 100,
+          branches: 100,
+          statements: 100,
+        },
+        'src/components/Translation/FileUploadForm.tsx': {
+          lines: 100,
+          functions: 100,
+          branches: 100,
+          statements: 100,
+        },
+        'src/components/Translation/LegalAttestation.tsx': {
+          lines: 100,
+          functions: 100,
+          branches: 100,
+          statements: 100,
+        },
+        'src/components/Translation/TranslationConfig.tsx': {
+          lines: 100,
+          functions: 100,
+          branches: 100,
+          statements: 100,
+        },
+        'src/components/Translation/TranslationProgress.tsx': {
+          lines: 100,
+          functions: 100,
+          branches: 100,
+          statements: 100,
+        },
+        // Critical path: AuthContext - 100% coverage required
+        'src/contexts/AuthContext.tsx': {
+          lines: 100,
+          functions: 100,
+          branches: 100,
+          statements: 100,
+        },
+      },
     },
   },
   };
