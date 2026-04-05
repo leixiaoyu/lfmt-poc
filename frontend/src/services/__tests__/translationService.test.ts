@@ -267,6 +267,37 @@ describe('TranslationService - uploadDocument', () => {
       }
     });
 
+    it('should re-throw TranslationServiceError without wrapping', async () => {
+      // Arrange: Test that TranslationServiceError is re-thrown as-is (lines 88-90)
+      const mockFile = new File(['test'], 'test.txt', { type: 'text/plain' });
+      const mockLegalAttestation: LegalAttestation = {
+        acceptCopyrightOwnership: true,
+        acceptTranslationRights: true,
+        acceptLiabilityTerms: true,
+        userIPAddress: '192.168.1.1',
+        userAgent: 'Mozilla/5.0',
+        timestamp: '2024-10-31T12:00:00Z',
+      };
+
+      const originalError = new TranslationServiceError('Custom error message', 403);
+      mockedApiClient.post.mockRejectedValueOnce(originalError);
+
+      // Act & Assert
+      try {
+        await uploadDocument({
+          file: mockFile,
+          legalAttestation: mockLegalAttestation,
+        });
+        expect.fail('Should have thrown TranslationServiceError');
+      } catch (error) {
+        expect(error).toBeInstanceOf(TranslationServiceError);
+        expect((error as TranslationServiceError).message).toBe('Custom error message');
+        expect((error as TranslationServiceError).statusCode).toBe(403);
+        // Verify it's the SAME instance (not wrapped)
+        expect(error).toBe(originalError);
+      }
+    });
+
     it('should handle network errors gracefully', async () => {
       // Arrange
       const mockFile = new File(['test'], 'test.txt', { type: 'text/plain' });
