@@ -267,7 +267,7 @@ export class LfmtInfrastructureStack extends Stack {
       bucketName: `lfmt-results-${this.stackName.toLowerCase()}`,
       removalPolicy,
       autoDeleteObjects: removalPolicy === RemovalPolicy.DESTROY,
-      versioned: false,
+      versioned: true, // Enable versioning for data protection (Phase C3.3.2)
       encryption: s3.BucketEncryption.S3_MANAGED,
       publicReadAccess: false,
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
@@ -276,6 +276,7 @@ export class LfmtInfrastructureStack extends Stack {
         id: 'ResultsCleanup',
         enabled: true,
         expiration: Duration.days(90), // 90 days retention for results
+        noncurrentVersionExpiration: Duration.days(30), // Clean up old versions after 30 days
         transitions: [{
           storageClass: s3.StorageClass.INFREQUENT_ACCESS,
           transitionAfter: Duration.days(30), // AWS minimum for STANDARD_IA
