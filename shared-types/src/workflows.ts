@@ -173,12 +173,25 @@ export interface TranslationState {
   next: 'AssembleDocument';
 }
 
+export interface TranslatedChunkResult {
+  chunkIndex: number;
+  translatedKey: string;
+  tokensUsed: number;
+  estimatedCost: number;
+}
+
+export interface WorkflowJobCosts {
+  totalTokens: number;
+  totalCost: number;
+  chunkCount: number;
+}
+
 export interface AssemblyState {
   type: 'Task';
   resource: string;
   parameters: {
     jobId: string;
-    translatedChunks: any[];
+    translatedChunks: TranslatedChunkResult[];
   };
   retry: RetryConfig;
   catch: CatchConfig[];
@@ -191,7 +204,7 @@ export interface FinalizationState {
   parameters: {
     jobId: string;
     finalDocumentUrl: string;
-    costs: any;
+    costs: WorkflowJobCosts;
   };
   end: boolean;
 }

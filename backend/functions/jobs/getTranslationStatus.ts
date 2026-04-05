@@ -35,6 +35,7 @@ interface TranslationStatusResponse {
   translationCompletedAt?: string;
   estimatedCompletion?: string;
   error?: string;
+  [key: string]: unknown;
 }
 
 /**

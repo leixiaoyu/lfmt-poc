@@ -158,10 +158,26 @@ export const TranslationUpload: React.FC = () => {
         legalAttestation,
       });
 
+      // Validate targetLanguage and tone before starting translation
+      const validLanguages = ['es', 'fr', 'de', 'it', 'zh'] as const;
+      const validTones = ['formal', 'informal', 'neutral'] as const;
+
+      if (!formData.translationConfig.targetLanguage ||
+          !validLanguages.includes(formData.translationConfig.targetLanguage as typeof validLanguages[number])) {
+        setSubmitError('Invalid target language selected');
+        return;
+      }
+
+      if (!formData.translationConfig.tone ||
+          !validTones.includes(formData.translationConfig.tone as typeof validTones[number])) {
+        setSubmitError('Invalid translation tone selected');
+        return;
+      }
+
       // Start translation immediately
       await translationService.startTranslation(job.jobId, {
-        targetLanguage: formData.translationConfig.targetLanguage as any,
-        tone: formData.translationConfig.tone as any,
+        targetLanguage: formData.translationConfig.targetLanguage as typeof validLanguages[number],
+        tone: formData.translationConfig.tone as typeof validTones[number],
       });
 
       // Navigate to translation detail page
