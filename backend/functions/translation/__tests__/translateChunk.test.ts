@@ -785,7 +785,7 @@ describe('translateChunk Lambda', () => {
         jobId: 'job-123',
         userId: 'user-123',
         chunkIndex: 0,
-        targetLanguage: '',
+        targetLanguage: '' as unknown,
       } as TranslateChunkEvent;
 
       const result = await handler(event);

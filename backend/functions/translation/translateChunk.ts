@@ -17,10 +17,11 @@ import {
   PutObjectCommand,
 } from '@aws-sdk/client-s3';
 import { marshall, unmarshall } from '@aws-sdk/util-dynamodb';
+import { DynamoDBJob } from '@lfmt/shared-types';
 import { GeminiClient } from './geminiClient';
 import { DistributedRateLimiter } from '../shared/distributedRateLimiter';
 import { GEMINI_RATE_LIMITS, RateLimitType } from '../shared/types/rateLimiting';
-import { TranslationOptions, TranslationContext, GeminiApiError } from './types';
+import { TranslationOptions, TranslationContext, GeminiApiError, isValidTargetLanguage, TargetLanguage } from './types';
 import Logger from '../shared/logger';
 import { getRequiredEnv } from '../shared/env';
 import { countTokens } from '../shared/tokenizer';
@@ -53,7 +54,7 @@ export interface TranslateChunkEvent {
   jobId: string;
   userId: string;
   chunkIndex: number;
-  targetLanguage: string;
+  targetLanguage: TargetLanguage;
   tone?: 'formal' | 'informal' | 'neutral';
   contextChunks?: number; // Number of previous chunks to use as context (default: 2)
 }
@@ -176,7 +177,7 @@ export const handler = async (
 
     // Translate the chunk
     const translationOptions: TranslationOptions = {
-      targetLanguage: event.targetLanguage as any,
+      targetLanguage: event.targetLanguage,
       tone: event.tone,
       preserveFormatting: true,
     };
@@ -299,7 +300,7 @@ function validateEvent(event: TranslateChunkEvent): void {
  * Load job metadata from DynamoDB
  * Uses composite primary key (jobId, userId)
  */
-async function loadJob(jobId: string, userId: string): Promise<any> {
+async function loadJob(jobId: string, userId: string): Promise<DynamoDBJob> {
   const command = new GetItemCommand({
     TableName: JOBS_TABLE,
     Key: marshall({ jobId, userId }),
@@ -311,7 +312,7 @@ async function loadJob(jobId: string, userId: string): Promise<any> {
     throw new Error(`Job not found: ${jobId}`);
   }
 
-  return unmarshall(response.Item);
+  return unmarshall(response.Item) as DynamoDBJob;
 }
 
 /**
@@ -319,7 +320,7 @@ async function loadJob(jobId: string, userId: string): Promise<any> {
  * Uses the actual S3 key from job.chunkingMetadata.chunkKeys array
  */
 async function loadChunk(
-  job: any,
+  job: DynamoDBJob,
   chunkIndex: number
 ): Promise<{ primaryContent: string; chunkId: string; previousSummary: string }> {
   // Get the actual S3 key from job metadata
@@ -379,7 +380,7 @@ async function storeTranslatedChunk(
   jobId: string,
   chunkIndex: number,
   translatedText: string,
-  metadata: Record<string, any>
+  metadata: Record<string, unknown>
 ): Promise<string> {
   const key = `translated/${jobId}/chunk-${chunkIndex}.txt`;
 
@@ -412,13 +413,13 @@ async function updateJobProgress(
   userId: string,
   progress: {
     translatedChunks: number;
-    totalChunks: number;
+    totalChunks: number | undefined;
     tokensUsed: number;
     estimatedCost: number;
   }
 ): Promise<void> {
   const translationStatus =
-    progress.translatedChunks >= progress.totalChunks
+    progress.totalChunks && progress.translatedChunks >= progress.totalChunks
       ? 'COMPLETED'
       : 'IN_PROGRESS';
 
@@ -454,13 +455,13 @@ async function updateJobStatus(
   jobId: string,
   userId: string,
   status: string,
-  additionalData: Record<string, any> = {}
+  additionalData: Record<string, unknown> = {}
 ): Promise<void> {
   const updateExpression = ['SET #status = :status, updatedAt = :updatedAt'];
   const expressionAttributeNames: Record<string, string> = {
     '#status': 'status',
   };
-  const expressionAttributeValues: Record<string, any> = {
+  const expressionAttributeValues: Record<string, unknown> = {
     ':status': status,
     ':updatedAt': new Date().toISOString(),
   };

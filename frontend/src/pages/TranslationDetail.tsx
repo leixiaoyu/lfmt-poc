@@ -99,10 +99,24 @@ export const TranslationDetail: React.FC = () => {
   const handleStartTranslation = async () => {
     if (!jobId || !job) return;
 
+    // Validate targetLanguage and tone are valid values
+    const validLanguages = ['es', 'fr', 'de', 'it', 'zh'] as const;
+    const validTones = ['formal', 'informal', 'neutral'] as const;
+
+    if (!job.targetLanguage || !validLanguages.includes(job.targetLanguage as typeof validLanguages[number])) {
+      setError('Invalid target language');
+      return;
+    }
+
+    if (!job.tone || !validTones.includes(job.tone as typeof validTones[number])) {
+      setError('Invalid translation tone');
+      return;
+    }
+
     try {
       await translationService.startTranslation(jobId, {
-        targetLanguage: job.targetLanguage as any,
-        tone: job.tone as any,
+        targetLanguage: job.targetLanguage as typeof validLanguages[number],
+        tone: job.tone as typeof validTones[number],
       });
       // Refresh job details
       await fetchJobDetails();
