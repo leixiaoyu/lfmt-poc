@@ -40,6 +40,29 @@ describe('RateLimiter', () => {
       expect(result.usage.tpm.limit).toBe(500_000);
       expect(result.usage.rpd.limit).toBe(50);
     });
+
+    it('should initialize with partial config and use defaults for missing values', () => {
+      const limiter = new RateLimiter({
+        requestsPerMinute: 10,
+        // tokensPerMinute and requestsPerDay will use defaults
+      });
+
+      const result = limiter.checkLimit(1000);
+
+      expect(result.usage.rpm.limit).toBe(10);
+      expect(result.usage.tpm.limit).toBe(250_000); // default
+      expect(result.usage.rpd.limit).toBe(25); // default
+    });
+
+    it('should initialize with custom timezone', () => {
+      const limiter = new RateLimiter({
+        dailyResetTimezone: 'America/New_York',
+      });
+
+      const result = limiter.checkLimit(1000);
+
+      expect(result.allowed).toBe(true);
+    });
   });
 
   describe('checkLimit - RPM (requests per minute)', () => {
@@ -301,6 +324,12 @@ describe('RateLimiter', () => {
   });
 
   describe('retryAfterMs calculation', () => {
+    it('should return 0 retry time when limit is not exceeded', () => {
+      const result = rateLimiter.checkLimit(1000);
+      expect(result.allowed).toBe(true);
+      expect(result.retryAfterMs).toBeUndefined();
+    });
+
     it('should calculate correct retry time for RPM limit', () => {
       // Consume all 5 requests
       for (let i = 0; i < 5; i++) {
@@ -433,31 +462,33 @@ describe('RateLimiter', () => {
       // Use fake timers for this test
       jest.useFakeTimers();
 
+      // Set initial time BEFORE creating the limiter
+      const initialTime = new Date('2024-01-15T23:59:00.000-08:00').getTime();
+      jest.setSystemTime(initialTime);
+
       const config: RateLimitConfig = {
-        requestsPerMinute: 5,
-        tokensPerMinute: 10000,
-        requestsPerDay: 20,
+        requestsPerMinute: 10,
+        tokensPerMinute: 500000,
+        requestsPerDay: 50,
         dailyResetTimezone: 'America/Los_Angeles',
       };
 
       const limiter = new RateLimiter(config);
 
-      // Set initial time
-      const initialTime = new Date('2024-01-15T23:59:00.000-08:00').getTime();
-      jest.setSystemTime(initialTime);
-
-      // Make some requests to increase daily counter (but stay well under limit)
-      limiter.checkLimit(1000);
-      limiter.checkLimit(1000);
+      // Make a request before midnight
+      const result1 = limiter.checkLimit(1000);
+      expect(result1.allowed).toBe(true);
+      limiter.consume(1000);
+      expect(limiter.getCurrentUsage(0).rpd.used).toBe(1);
 
       // Fast-forward to next day (after midnight PST)
       const nextDay = new Date('2024-01-16T00:01:00.000-08:00').getTime();
       jest.setSystemTime(nextDay);
 
       // This request should trigger the daily reset and log the reset info
-      const result = limiter.checkLimit(1000);
-      expect(result.allowed).toBe(true);
-      expect(result.usage.rpd.used).toBe(1); // Should be reset to 1
+      const result2 = limiter.checkLimit(1000);
+      expect(result2.allowed).toBe(true);
+      expect(result2.usage.rpd.used).toBe(0); // Should be reset to 0 (before consuming)
 
       // Restore real timers
       jest.useRealTimers();
