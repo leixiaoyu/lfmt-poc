@@ -1,5 +1,6 @@
 // Set environment variables before importing handlers
 process.env.COGNITO_CLIENT_ID = 'test-client-id';
+process.env.COGNITO_USER_POOL_ID = 'test-user-pool-id';
 process.env.ENVIRONMENT = 'test';
 
 import { handler as registerHandler } from './register';
@@ -9,6 +10,7 @@ import { handler as resetPasswordHandler } from './resetPassword';
 import {
   CognitoIdentityProviderClient,
   SignUpCommand,
+  AdminConfirmSignUpCommand,
   InitiateAuthCommand,
   ForgotPasswordCommand,
   UsernameExistsException,
@@ -52,6 +54,43 @@ describe('Auth Service', () => {
         acceptedTerms: true,
         acceptedPrivacy: true,
       });
+      const result = await registerHandler(event);
+      expect(result.statusCode).toBe(201);
+    });
+
+    it('should handle null body', async () => {
+      const event = {
+        body: null,
+        headers: {
+          origin: 'http://localhost:3000',
+        },
+        requestContext: {
+          requestId: 'test-request-id',
+        },
+      } as any;
+      const result = await registerHandler(event);
+      expect(result.statusCode).toBe(400);
+    });
+
+    it('should handle Origin header (capitalized)', async () => {
+      cognitoMock.on(SignUpCommand).resolves({});
+      const event = {
+        body: JSON.stringify({
+          email: 'test@test.com',
+          password: 'Password123!',
+          confirmPassword: 'Password123!',
+          firstName: 'Test',
+          lastName: 'User',
+          acceptedTerms: true,
+          acceptedPrivacy: true,
+        }),
+        headers: {
+          Origin: 'http://localhost:3000',
+        },
+        requestContext: {
+          requestId: 'test-request-id',
+        },
+      } as any;
       const result = await registerHandler(event);
       expect(result.statusCode).toBe(201);
     });
@@ -181,6 +220,54 @@ describe('Auth Service', () => {
       expect(result.statusCode).toBe(400);
       expect(JSON.parse(result.body).message).toBe('Invalid registration data provided');
     });
+
+    it('should handle non-Error exceptions during registration', async () => {
+      cognitoMock.on(SignUpCommand).rejects('Non-error object');
+      const event = createMockEvent({
+        email: 'test@test.com',
+        password: 'Password123!',
+        confirmPassword: 'Password123!',
+        firstName: 'Test',
+        lastName: 'User',
+        acceptedTerms: true,
+        acceptedPrivacy: true,
+      });
+      const result = await registerHandler(event);
+      expect(result.statusCode).toBe(500);
+      expect(JSON.parse(result.body).message).toBe(
+        'Registration failed due to an internal error. Please try again later.'
+      );
+    });
+
+    it('should handle missing acceptedTerms', async () => {
+      const event = createMockEvent({
+        email: 'test@test.com',
+        password: 'Password123!',
+        confirmPassword: 'Password123!',
+        firstName: 'Test',
+        lastName: 'User',
+        acceptedPrivacy: true,
+      });
+      const result = await registerHandler(event);
+      expect(result.statusCode).toBe(400);
+      const body = JSON.parse(result.body);
+      expect(body.errors.acceptedTerms).toBeDefined();
+    });
+
+    it('should handle missing acceptedPrivacy', async () => {
+      const event = createMockEvent({
+        email: 'test@test.com',
+        password: 'Password123!',
+        confirmPassword: 'Password123!',
+        firstName: 'Test',
+        lastName: 'User',
+        acceptedTerms: true,
+      });
+      const result = await registerHandler(event);
+      expect(result.statusCode).toBe(400);
+      const body = JSON.parse(result.body);
+      expect(body.errors.acceptedPrivacy).toBeDefined();
+    });
   });
 
   describe('Login', () => {
@@ -298,6 +385,135 @@ describe('Auth Service', () => {
       expect(result.statusCode).toBe(429);
       expect(JSON.parse(result.body).message).toBe('Too many login attempts. Please try again later.');
     });
+
+    it('should handle missing given_name and family_name in JWT token', async () => {
+      // Mock JWT token without given_name and family_name
+      const mockIdToken =
+        Buffer.from(JSON.stringify({ header: 'value' })).toString('base64') +
+        '.' +
+        Buffer.from(
+          JSON.stringify({
+            sub: 'user-123',
+            email: 'test@test.com',
+            // No given_name or family_name
+          })
+        ).toString('base64') +
+        '.' +
+        Buffer.from(JSON.stringify({ signature: 'value' })).toString('base64');
+
+      cognitoMock.on(InitiateAuthCommand).resolves({
+        AuthenticationResult: {
+          AccessToken: 'accesstoken',
+          RefreshToken: 'refreshtoken',
+          IdToken: mockIdToken,
+          ExpiresIn: 3600,
+        },
+      });
+
+      const event = createMockEvent({
+        email: 'test@test.com',
+        password: 'password',
+      });
+
+      const result = await loginHandler(event);
+      const body = JSON.parse(result.body);
+
+      expect(result.statusCode).toBe(200);
+      expect(body.user).toEqual({
+        id: 'user-123',
+        email: 'test@test.com',
+        firstName: '',
+        lastName: '',
+      });
+    });
+
+
+    it('should handle null body', async () => {
+      const event = {
+        body: null,
+        headers: {
+          origin: 'http://localhost:3000',
+        },
+        requestContext: {
+          requestId: 'test-request-id',
+        },
+      } as any;
+
+      const result = await loginHandler(event);
+      expect(result.statusCode).toBe(400);
+    });
+
+    it('should handle Origin header (capitalized)', async () => {
+      const mockIdToken =
+        Buffer.from(JSON.stringify({ header: 'value' })).toString('base64') +
+        '.' +
+        Buffer.from(
+          JSON.stringify({
+            sub: 'user-123',
+            email: 'test@test.com',
+            given_name: 'Test',
+            family_name: 'User',
+          })
+        ).toString('base64') +
+        '.' +
+        Buffer.from(JSON.stringify({ signature: 'value' })).toString('base64');
+
+      cognitoMock.on(InitiateAuthCommand).resolves({
+        AuthenticationResult: {
+          AccessToken: 'accesstoken',
+          RefreshToken: 'refreshtoken',
+          IdToken: mockIdToken,
+          ExpiresIn: 3600,
+        },
+      });
+
+      const event = {
+        body: JSON.stringify({
+          email: 'test@test.com',
+          password: 'password',
+        }),
+        headers: {
+          Origin: 'http://localhost:3000',
+        },
+        requestContext: {
+          requestId: 'test-request-id',
+        },
+      } as any;
+
+      const result = await loginHandler(event);
+      expect(result.statusCode).toBe(200);
+    });
+
+    it('should handle non-AWS errors', async () => {
+      // Generic Error (not a Cognito exception)
+      cognitoMock.on(InitiateAuthCommand).rejects(new Error('Network timeout'));
+
+      const event = createMockEvent({
+        email: 'test@test.com',
+        password: 'password',
+      });
+
+      const result = await loginHandler(event);
+      expect(result.statusCode).toBe(500);
+      expect(JSON.parse(result.body).message).toBe(
+        'Login failed due to an internal error. Please try again later.'
+      );
+    });
+
+    it('should handle non-Error exceptions during login', async () => {
+      cognitoMock.on(InitiateAuthCommand).rejects('Non-error object');
+
+      const event = createMockEvent({
+        email: 'test@test.com',
+        password: 'password',
+      });
+
+      const result = await loginHandler(event);
+      expect(result.statusCode).toBe(500);
+      expect(JSON.parse(result.body).message).toBe(
+        'Login failed due to an internal error. Please try again later.'
+      );
+    });
   });
 
   describe('Refresh Token', () => {
@@ -371,6 +587,70 @@ describe('Auth Service', () => {
       const result = await refreshTokenHandler(event);
       expect(result.statusCode).toBe(429);
       expect(JSON.parse(result.body).message).toBe('Too many refresh attempts. Please try again later.');
+    });
+
+    it('should return 500 when refresh succeeds but no tokens returned', async () => {
+      cognitoMock.on(InitiateAuthCommand).resolves({
+        AuthenticationResult: undefined,
+      });
+      const event = createMockEvent({
+        refreshToken: 'refreshtoken',
+      });
+      const result = await refreshTokenHandler(event);
+      expect(result.statusCode).toBe(500);
+      expect(JSON.parse(result.body).message).toBe('Token refresh failed unexpectedly');
+    });
+
+    it('should handle null body', async () => {
+      const event = {
+        body: null,
+        headers: {
+          origin: 'http://localhost:3000',
+        },
+        requestContext: {
+          requestId: 'test-request-id',
+        },
+      } as any;
+
+      const result = await refreshTokenHandler(event);
+      expect(result.statusCode).toBe(400);
+    });
+
+    it('should handle Origin header (capitalized)', async () => {
+      cognitoMock.on(InitiateAuthCommand).resolves({
+        AuthenticationResult: {
+          AccessToken: 'newaccesstoken',
+          IdToken: 'newidtoken',
+          ExpiresIn: 3600,
+        },
+      });
+
+      const event = {
+        body: JSON.stringify({
+          refreshToken: 'refreshtoken',
+        }),
+        headers: {
+          Origin: 'http://localhost:3000',
+        },
+        requestContext: {
+          requestId: 'test-request-id',
+        },
+      } as any;
+
+      const result = await refreshTokenHandler(event);
+      expect(result.statusCode).toBe(200);
+    });
+
+    it('should handle non-Error exceptions', async () => {
+      cognitoMock.on(InitiateAuthCommand).rejects('Non-error object');
+      const event = createMockEvent({
+        refreshToken: 'refreshtoken',
+      });
+      const result = await refreshTokenHandler(event);
+      expect(result.statusCode).toBe(500);
+      expect(JSON.parse(result.body).message).toBe(
+        'Token refresh failed due to an internal error. Please try again later.'
+      );
     });
   });
 
@@ -457,6 +737,52 @@ describe('Auth Service', () => {
       const result = await resetPasswordHandler(event);
       expect(result.statusCode).toBe(429);
       expect(JSON.parse(result.body).message).toBe('Password reset limit exceeded. Please try again later.');
+    });
+
+    it('should handle null body', async () => {
+      const event = {
+        body: null,
+        headers: {
+          origin: 'http://localhost:3000',
+        },
+        requestContext: {
+          requestId: 'test-request-id',
+        },
+      } as any;
+
+      const result = await resetPasswordHandler(event);
+      expect(result.statusCode).toBe(400);
+    });
+
+    it('should handle Origin header (capitalized)', async () => {
+      cognitoMock.on(ForgotPasswordCommand).resolves({});
+
+      const event = {
+        body: JSON.stringify({
+          email: 'test@test.com',
+        }),
+        headers: {
+          Origin: 'http://localhost:3000',
+        },
+        requestContext: {
+          requestId: 'test-request-id',
+        },
+      } as any;
+
+      const result = await resetPasswordHandler(event);
+      expect(result.statusCode).toBe(200);
+    });
+
+    it('should handle non-Error exceptions', async () => {
+      cognitoMock.on(ForgotPasswordCommand).rejects('Non-error object');
+      const event = createMockEvent({
+        email: 'test@test.com',
+      });
+      const result = await resetPasswordHandler(event);
+      expect(result.statusCode).toBe(500);
+      expect(JSON.parse(result.body).message).toBe(
+        'Password reset failed due to an internal error. Please try again later.'
+      );
     });
   });
 });

@@ -169,6 +169,29 @@ describe('getCurrentUser Lambda Function', () => {
 
       expect(response.headers?.['Access-Control-Allow-Origin']).toBe('http://localhost:3000');
     });
+
+    it('should handle Origin header (capitalized)', async () => {
+      const event = createMockEvent({
+        headers: {
+          Authorization: 'Bearer token',
+          Origin: 'http://localhost:3000',
+        },
+        requestContext: {
+          ...createMockEvent().requestContext,
+          authorizer: {
+            claims: {
+              sub: 'test-user',
+              email: 'test@example.com',
+            },
+          },
+        },
+      });
+
+      const response = await handler(event);
+
+      expect(response.statusCode).toBe(200);
+      expect(response.headers).toHaveProperty('Access-Control-Allow-Origin');
+    });
   });
 
   /**
@@ -285,6 +308,34 @@ describe('getCurrentUser Lambda Function', () => {
       // Mock an error in createSuccessResponse or somewhere else
       jest.spyOn(JSON, 'stringify').mockImplementationOnce(() => {
         throw new Error('Unexpected error');
+      });
+
+      const response = await handler(event);
+
+      expect(response.statusCode).toBe(500);
+      const body = JSON.parse(response.body);
+      expect(body.message).toContain('Failed to retrieve user information');
+
+      jest.restoreAllMocks();
+    });
+
+    it('should handle non-Error exceptions', async () => {
+      const event = createMockEvent({
+        headers: { Authorization: 'Bearer valid-token' },
+        requestContext: {
+          ...createMockEvent().requestContext,
+          authorizer: {
+            claims: {
+              sub: 'user-123',
+              email: 'test@example.com',
+            },
+          },
+        },
+      });
+
+      // Mock a non-Error exception
+      jest.spyOn(JSON, 'stringify').mockImplementationOnce(() => {
+        throw 'Non-error object';
       });
 
       const response = await handler(event);
