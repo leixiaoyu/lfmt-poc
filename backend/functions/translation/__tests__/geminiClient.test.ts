@@ -527,4 +527,108 @@ describe('GeminiClient', () => {
       expect(result.estimatedCost).toBeCloseTo(0.00075, 6);
     });
   });
+
+  describe('additional error scenarios', () => {
+    let client: GeminiClient;
+    let mockGenerateContent: jest.Mock;
+
+    beforeEach(async () => {
+      secretsMock.on(GetSecretValueCommand).resolves({
+        SecretString: mockApiKey,
+      } as any);
+
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const { GoogleGenAI } = require('@google/genai');
+      mockGenerateContent = jest.fn();
+
+      (GoogleGenAI as jest.Mock).mockImplementation(() => ({
+        models: {
+          generateContent: mockGenerateContent,
+        },
+      }));
+
+      client = new GeminiClient(mockConfig);
+      await client.initialize();
+    });
+
+    it('should handle 429 error message without status code', async () => {
+      const error = new Error('Error 429: Rate limit exceeded');
+      (error as any).message = 'Error 429: Rate limit exceeded';
+
+      mockGenerateContent.mockRejectedValue(error);
+
+      const options: TranslationOptions = {
+        targetLanguage: 'es',
+      };
+
+      await expect(client.translate('Text', options)).rejects.toThrow(RateLimitError);
+    });
+
+    it('should handle 403 authentication error', async () => {
+      const error = new Error('Forbidden');
+      (error as any).status = 403;
+
+      mockGenerateContent.mockRejectedValue(error);
+
+      const options: TranslationOptions = {
+        targetLanguage: 'es',
+      };
+
+      await expect(client.translate('Text', options)).rejects.toThrow(AuthenticationError);
+    });
+
+    it('should handle error without status property', async () => {
+      const error = new Error('Generic error');
+      // No status or statusCode property
+
+      mockGenerateContent.mockRejectedValue(error);
+
+      const options: TranslationOptions = {
+        targetLanguage: 'es',
+      };
+
+      await expect(client.translate('Text', options)).rejects.toMatchObject({
+        message: expect.stringContaining('Translation failed'),
+        errorCode: 'UNKNOWN_ERROR',
+      });
+    });
+
+    it('should handle statusCode property instead of status', async () => {
+      const error = new Error('Using statusCode');
+      (error as any).statusCode = 500;
+
+      const successResponse = {
+        text: 'Success',
+        usageMetadata: {
+          promptTokenCount: 10,
+          candidatesTokenCount: 5,
+          totalTokenCount: 15,
+        },
+      };
+
+      mockGenerateContent.mockRejectedValueOnce(error).mockResolvedValueOnce(successResponse);
+
+      const options: TranslationOptions = {
+        targetLanguage: 'es',
+      };
+
+      const result = await client.translate('Text', options);
+      expect(result.translatedText).toBe('Success');
+    });
+
+    it('should exhaust retries on 429 and throw RateLimitError', async () => {
+      const error = new Error('Rate limit');
+      (error as any).status = 429;
+
+      mockGenerateContent.mockRejectedValue(error);
+
+      const options: TranslationOptions = {
+        targetLanguage: 'es',
+      };
+
+      await expect(client.translate('Text', options)).rejects.toThrow(RateLimitError);
+      // Should have tried: initial + 3 retries = 4 times
+      expect(mockGenerateContent).toHaveBeenCalledTimes(4);
+    });
+  });
 });

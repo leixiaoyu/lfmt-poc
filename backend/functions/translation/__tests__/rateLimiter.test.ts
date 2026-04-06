@@ -2,7 +2,7 @@
  * Unit tests for Rate Limiter
  */
 
-import { RateLimiter, createRateLimiter } from '../rateLimiter';
+import { RateLimiter, RateLimitConfig, createRateLimiter } from '../rateLimiter';
 
 describe('RateLimiter', () => {
   let rateLimiter: RateLimiter;
@@ -424,6 +424,40 @@ describe('RateLimiter', () => {
       result = limiter.checkLimit(1000);
       expect(result.allowed).toBe(true);
       expect(result.usage.rpd.used).toBe(1); // Counter should be reset to 1
+
+      // Restore real timers
+      jest.useRealTimers();
+    });
+
+    it('should log daily rate limit reset details', () => {
+      // Use fake timers for this test
+      jest.useFakeTimers();
+
+      const config: RateLimitConfig = {
+        requestsPerMinute: 5,
+        tokensPerMinute: 10000,
+        requestsPerDay: 20,
+        dailyResetTimezone: 'America/Los_Angeles',
+      };
+
+      const limiter = new RateLimiter(config);
+
+      // Set initial time
+      const initialTime = new Date('2024-01-15T23:59:00.000-08:00').getTime();
+      jest.setSystemTime(initialTime);
+
+      // Make some requests to increase daily counter (but stay well under limit)
+      limiter.checkLimit(1000);
+      limiter.checkLimit(1000);
+
+      // Fast-forward to next day (after midnight PST)
+      const nextDay = new Date('2024-01-16T00:01:00.000-08:00').getTime();
+      jest.setSystemTime(nextDay);
+
+      // This request should trigger the daily reset and log the reset info
+      const result = limiter.checkLimit(1000);
+      expect(result.allowed).toBe(true);
+      expect(result.usage.rpd.used).toBe(1); // Should be reset to 1
 
       // Restore real timers
       jest.useRealTimers();

@@ -257,8 +257,10 @@ export class GeminiClient {
 
       return result;
     } catch (error: any) {
-      // Handle rate limit errors
-      if (error.status === 429 || error.message?.includes('429')) {
+      // eslint-disable-line @typescript-eslint/no-explicit-any
+      // Handle rate limit errors - error type from Gemini SDK is not strictly typed
+      const status = error.status || error.statusCode;
+      if (status === 429 || error.message?.includes('429')) {
         const retryAfterMs = this.calculateRetryDelay(retryCount);
 
         if (retryCount < this.config.maxRetries) {
@@ -278,15 +280,11 @@ export class GeminiClient {
       }
 
       // Handle transient errors (500, 503)
-      if (
-        error.status >= 500 &&
-        error.status < 600 &&
-        retryCount < this.config.maxRetries
-      ) {
+      if (status >= 500 && status < 600 && retryCount < this.config.maxRetries) {
         const retryDelayMs = this.calculateRetryDelay(retryCount);
 
         logger.warn('Transient error, retrying', {
-          status: error.status,
+          status,
           retryCount: retryCount + 1,
           retryDelayMs,
         });
