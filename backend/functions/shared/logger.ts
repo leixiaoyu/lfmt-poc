@@ -38,6 +38,11 @@ class Logger {
   }
 
   private log(level: LogLevel, message: string, context?: LogContext): void {
+    // Suppress structured logging during test runs to prevent console noise in CI
+    if (process.env.NODE_ENV === 'test') {
+      return;
+    }
+
     if (!this.shouldLog(level)) {
       return;
     }

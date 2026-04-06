@@ -249,6 +249,32 @@ describe('getCurrentUser Lambda Function', () => {
         lastName: '',
       });
     });
+
+    it('should handle users with missing email field', async () => {
+      const event = createMockEvent({
+        headers: { Authorization: 'Bearer valid-token' },
+        requestContext: {
+          ...createMockEvent().requestContext,
+          authorizer: {
+            claims: {
+              sub: 'user-789',
+              given_name: 'No',
+              family_name: 'Email',
+            },
+          },
+        },
+      });
+
+      const response = await handler(event);
+      const body = JSON.parse(response.body);
+
+      expect(body.user).toEqual({
+        id: expect.any(String),
+        email: '',
+        firstName: 'No',
+        lastName: 'Email',
+      });
+    });
   });
 
   /**
