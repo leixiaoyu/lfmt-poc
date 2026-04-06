@@ -20,20 +20,20 @@ export default function NewTranslationPage() {
       await logout();
       navigate(ROUTES.LOGIN);
     } catch (error) {
-      console.error('Logout failed:', error);
+      // console.error('Logout failed:', error);
       // Do NOT navigate on error - user is still authenticated
     }
   };
 
-  const handleUploadComplete = (fileId: string) => {
-    console.log('Upload complete, fileId:', fileId);
+  const handleUploadComplete = (_fileId: string) => {
+    // console.log('Upload complete, fileId:', fileId);
     // TODO: Navigate to translation detail page when implemented
     // For now, show success and stay on page
     // Example: navigate(ROUTES.TRANSLATION_DETAIL.replace(':jobId', fileId));
   };
 
-  const handleUploadError = (error: string) => {
-    console.error('Upload error:', error);
+  const handleUploadError = (_error: string) => {
+    // console.error('Upload error:', error);
     // Error is already displayed in the FileUploadForm component
   };
 
@@ -68,13 +68,9 @@ export default function NewTranslationPage() {
             New Translation
           </Typography>
 
-          <Typography
-            variant="body1"
-            color="text.secondary"
-            sx={{ mb: 4, textAlign: 'center' }}
-          >
-            Upload your document to begin the translation process. We support
-            text files up to 100MB.
+          <Typography variant="body1" color="text.secondary" sx={{ mb: 4, textAlign: 'center' }}>
+            Upload your document to begin the translation process. We support text files up to
+            100MB.
           </Typography>
 
           <Paper

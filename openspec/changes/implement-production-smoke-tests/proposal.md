@@ -67,7 +67,7 @@ test.describe('@smoke Critical User Path', () => {
     await testFile.setInputFiles({
       name: 'smoke-test.txt',
       mimeType: 'text/plain',
-      buffer: Buffer.from('This is a smoke test document for automated validation.')
+      buffer: Buffer.from('This is a smoke test document for automated validation.'),
     });
 
     // 3. Accept legal attestation
@@ -81,7 +81,7 @@ test.describe('@smoke Critical User Path', () => {
 
     // 5. Poll for completion (max 2 minutes for small file)
     await expect(page.locator('[data-testid="job-status"]')).toHaveText('COMPLETED', {
-      timeout: 120000 // 2 minutes max
+      timeout: 120000, // 2 minutes max
     });
 
     // 6. Verify translated file available
@@ -132,7 +132,7 @@ smoke-test-production:
       run: npx playwright install --with-deps chromium
 
     - name: Wait for deployment to stabilize
-      run: sleep 60  # Allow CloudFront/Lambda cold starts
+      run: sleep 60 # Allow CloudFront/Lambda cold starts
 
     - name: Run production smoke tests
       working-directory: frontend
@@ -172,6 +172,7 @@ smoke-test-production:
 ### 3. Configure Production-Specific Secrets
 
 Add to GitHub repository secrets:
+
 - `PROD_URL`: Production CloudFront URL
 - `SMOKE_TEST_USER_EMAIL`: Dedicated smoke test user email
 - `SMOKE_TEST_USER_PASSWORD`: Dedicated smoke test user password
@@ -216,6 +217,7 @@ rollback-on-smoke-failure:
 ## Success Criteria
 
 ### Functional Requirements
+
 - ✅ Smoke tests execute after every production deployment
 - ✅ Tests validate critical user path end-to-end
 - ✅ Test failure creates immediate alert/issue
@@ -223,12 +225,14 @@ rollback-on-smoke-failure:
 - ✅ Tests complete within 3 minutes
 
 ### Quality Requirements
+
 - ✅ **Test Reliability**: >99% success rate (no false positives)
 - ✅ **Coverage**: Tests cover authentication, upload, translation, download
 - ✅ **Isolation**: Tests use dedicated test user, don't affect production data
 - ✅ **Cleanup**: Tests clean up after themselves
 
 ### Performance Requirements
+
 - ✅ **Execution Time**: <3 minutes for full smoke test suite
 - ✅ **Deployment Time Impact**: <5 minutes added to deployment pipeline
 - ✅ **Resource Usage**: Minimal (one Playwright test run)
@@ -236,28 +240,33 @@ rollback-on-smoke-failure:
 ## Implementation Plan
 
 ### Phase 1: Create Smoke Test Suite (Day 1-2)
+
 1. Create `frontend/e2e/smoke/` directory
 2. Implement critical path smoke test
 3. Add error handling smoke test
 4. Test locally against dev environment
 
 ### Phase 2: GitHub Actions Integration (Day 2-3)
+
 1. Add `smoke-test-production` job to deploy.yml
 2. Configure production secrets
 3. Test workflow with staging environment
 
 ### Phase 3: Production User Setup (Day 3)
+
 1. Create dedicated Cognito smoke test user
 2. Configure user permissions
 3. Document credentials in 1Password
 
 ### Phase 4: Validation & Monitoring (Day 4)
+
 1. Deploy to production with smoke tests
 2. Monitor first 5 deployments
 3. Tune test timeouts if needed
 4. Document runbook for smoke test failures
 
 ### Phase 5: Future Enhancements (Future Sprint)
+
 1. Investigate automated rollback on failure
 2. Add more smoke test scenarios
 3. Implement smoke test metrics dashboard
@@ -265,35 +274,43 @@ rollback-on-smoke-failure:
 ## Risks & Mitigation
 
 ### Risk 1: Smoke Tests Are Flaky
+
 **Likelihood**: Medium
 **Impact**: High (false alarms reduce trust)
 **Mitigation**:
+
 - Use stable test selectors (`data-testid`)
 - Add generous timeouts for async operations
 - Implement retry logic for transient failures
 - Monitor test reliability metrics
 
 ### Risk 2: Smoke Test User Permissions Issues
+
 **Likelihood**: Low
 **Impact**: Medium (tests fail incorrectly)
 **Mitigation**:
+
 - Document user setup process
 - Verify permissions before deployment
 - Add user validation in test setup
 
 ### Risk 3: Test Execution Timeout
+
 **Likelihood**: Low
 **Impact**: Medium (blocks deployment pipeline)
 **Mitigation**:
+
 - Set reasonable timeout (3 minutes)
 - Use small test file (<1KB)
 - Monitor test execution times
 - Optimize test steps
 
 ### Risk 4: Production Secrets Leakage
+
 **Likelihood**: Very Low
 **Impact**: Critical
 **Mitigation**:
+
 - Use GitHub encrypted secrets
 - Never log sensitive values
 - Rotate credentials quarterly
@@ -302,33 +319,39 @@ rollback-on-smoke-failure:
 ## Dependencies
 
 ### Required Resources
+
 - Playwright test framework (already installed)
 - GitHub Actions workflow access
 - Production environment access
 - AWS Cognito user creation access
 
 ### Blocked By
+
 - None (can implement independently)
 
 ### Blocks
+
 - Automated rollback implementation (Phase 2)
 - Deployment confidence metrics
 
 ## Testing Strategy
 
 ### Smoke Test Development Testing
+
 1. Run smoke tests against dev environment
 2. Verify all assertions pass
 3. Test error handling scenarios
 4. Validate cleanup logic
 
 ### CI/CD Integration Testing
+
 1. Create test deployment to staging
 2. Verify smoke tests trigger automatically
 3. Confirm test results upload
 4. Test failure notification workflow
 
 ### Production Validation
+
 1. Monitor first production deployment with smoke tests
 2. Verify test user can complete workflow
 3. Confirm test execution time is acceptable
@@ -343,18 +366,21 @@ rollback-on-smoke-failure:
 ## Metrics & Monitoring
 
 ### Key Performance Indicators (KPIs)
+
 - **Smoke Test Success Rate**: >99% (excluding actual deployment failures)
 - **Test Execution Time**: <3 minutes average
 - **Deployment Detection Rate**: 100% of broken deployments caught
 - **False Positive Rate**: <1% of test runs
 
 ### Smoke Test Metrics
+
 - Test execution duration
 - Test pass/fail rates
 - Failure reasons (categorized)
 - Production deployment frequency
 
 ### Alerts
+
 - 🚨 **Critical**: Smoke test failure (immediate investigation)
 - ⚠️ **Warning**: Smoke test execution time >3 minutes
 - 📊 **Info**: Smoke test success (deployment validated)

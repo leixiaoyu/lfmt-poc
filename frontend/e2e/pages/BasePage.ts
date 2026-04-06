@@ -4,7 +4,7 @@
  * Provides common functionality for all page objects.
  */
 
-import { Page, Locator } from '@playwright/test';
+import { Page } from '@playwright/test';
 
 export class BasePage {
   readonly page: Page;

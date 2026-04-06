@@ -8,16 +8,9 @@ process.env.CHUNKS_BUCKET = 'test-chunks-bucket';
 process.env.GEMINI_API_KEY_SECRET_NAME = 'test-gemini-secret';
 
 import { mockClient } from 'aws-sdk-client-mock';
-import {
-  DynamoDBClient,
-  GetItemCommand,
-  UpdateItemCommand,
-} from '@aws-sdk/client-dynamodb';
+import { DynamoDBClient, GetItemCommand, UpdateItemCommand } from '@aws-sdk/client-dynamodb';
 import { S3Client, GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
-import {
-  SecretsManagerClient,
-  GetSecretValueCommand,
-} from '@aws-sdk/client-secrets-manager';
+import { SecretsManagerClient, GetSecretValueCommand } from '@aws-sdk/client-secrets-manager';
 import { Readable } from 'stream';
 import { handler, TranslateChunkEvent, resetClients } from '../translateChunk';
 import { sdkStreamMixin } from '@smithy/util-stream';
@@ -53,7 +46,6 @@ function createMockStream(content: string) {
 function createMockJob(overrides: any = {}) {
   const jobId = overrides.jobId || 'job-123';
   const userId = overrides.userId || 'user-123';
-  const chunkIndex = overrides.chunkIndex !== undefined ? overrides.chunkIndex : 0;
   const totalChunks = overrides.totalChunks || 5;
 
   return {
@@ -69,12 +61,12 @@ function createMockJob(overrides: any = {}) {
         totalChunks: { N: totalChunks.toString() },
         chunkKeys: {
           L: Array.from({ length: totalChunks }, (_, i) => ({
-            S: `chunks/${userId}/${jobId}/chunk-${String(i).padStart(4, '0')}-of-${String(totalChunks).padStart(4, '0')}.json`
-          }))
-        }
-      }
+            S: `chunks/${userId}/${jobId}/chunk-${String(i).padStart(4, '0')}-of-${String(totalChunks).padStart(4, '0')}.json`,
+          })),
+        },
+      },
     },
-    ...(overrides.extraFields || {})
+    ...(overrides.extraFields || {}),
   };
 }
 
@@ -168,7 +160,8 @@ describe('translateChunk Lambda', () => {
         chunkId: 'chunk-2',
         chunkIndex: 2,
         totalChunks: 5,
-        previousSummary: 'This is the summarized context from previous chunks. It was pre-calculated during the chunking phase and stored in the chunk metadata.',
+        previousSummary:
+          'This is the summarized context from previous chunks. It was pre-calculated during the chunking phase and stored in the chunk metadata.',
       });
 
       // Mock ONLY the current chunk (no calls to translated/ directory)
@@ -328,12 +321,12 @@ describe('translateChunk Lambda', () => {
 
         // Mock necessary data
         dynamoMock.on(GetItemCommand).resolves({
-        Item: createMockJob({
-          jobId: 'job-123',
-          userId: 'user-123',
-          status: 'CHUNKED',
-          totalChunks: 1,
-        }),
+          Item: createMockJob({
+            jobId: 'job-123',
+            userId: 'user-123',
+            status: 'CHUNKED',
+            totalChunks: 1,
+          }),
         } as any);
 
         const chunkContent = JSON.stringify({
@@ -915,9 +908,7 @@ describe('translateChunk Lambda', () => {
       } as any);
 
       // Mock DynamoDB to fail on UpdateItemCommand (status update)
-      dynamoMock.on(UpdateItemCommand).rejects(
-        new Error('DynamoDB connection timeout')
-      );
+      dynamoMock.on(UpdateItemCommand).rejects(new Error('DynamoDB connection timeout'));
 
       const event: TranslateChunkEvent = {
         jobId: 'job-123',

@@ -10,12 +10,7 @@
  * These services are account/region-level and should be deployed once per environment.
  */
 
-import {
-  Stack,
-  StackProps,
-  RemovalPolicy,
-  Duration
-} from 'aws-cdk-lib';
+import { Stack, StackProps, RemovalPolicy, Duration } from 'aws-cdk-lib';
 import { Construct } from 'constructs';
 import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as cloudtrail from 'aws-cdk-lib/aws-cloudtrail';
@@ -161,9 +156,7 @@ export class SecurityStack extends Stack {
     // IAM role for Config
     const configRole = new iam.Role(this, 'ConfigRole', {
       assumedBy: new iam.ServicePrincipal('config.amazonaws.com'),
-      managedPolicies: [
-        iam.ManagedPolicy.fromAwsManagedPolicyName('service-role/ConfigRole'),
-      ],
+      managedPolicies: [iam.ManagedPolicy.fromAwsManagedPolicyName('service-role/ConfigRole')],
     });
 
     configBucket.grantReadWrite(configRole);

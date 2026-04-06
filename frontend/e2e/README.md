@@ -122,11 +122,13 @@ All pages follow the Page Object Model pattern for maintainability and reusabili
 ### Existing Page Objects
 
 #### Authentication Pages
+
 - **LoginPage** (`e2e/pages/LoginPage.ts`): Login form interactions
 - **RegisterPage** (`e2e/pages/RegisterPage.ts`): Registration form interactions
 - **DashboardPage** (`e2e/pages/DashboardPage.ts`): Dashboard page interactions
 
 #### Translation Pages (Phase 2)
+
 - **TranslationUploadPage** (`e2e/pages/TranslationUploadPage.ts`): Multi-step upload workflow
   - Legal attestation step
   - Translation configuration (language, tone)
@@ -180,6 +182,7 @@ const file = createTestFile('MINIMAL');
 ```
 
 Available documents:
+
 - **MINIMAL**: 1 chunk (~200 words), 30-60 seconds
 - **SMALL**: 2-3 chunks (~500 words), 1-2 minutes
 
@@ -263,12 +266,14 @@ await expect(loginPage.isOnLoginPage()).resolves.toBe(true);
 ### Current Coverage
 
 #### Authentication (Completed)
+
 - ✅ Login functionality (valid/invalid credentials, validation)
 - ✅ Registration functionality (valid/invalid data, duplicate users)
 - ✅ Session management (persistence, logout)
 - ✅ Navigation between auth pages
 
 #### Translation Workflow (Completed - Phase 2)
+
 - ✅ **Translation Upload** (`translation/upload-workflow.spec.ts`) - Basic upload flow
 - ✅ **Translation Progress** (`translation/translation-progress.spec.ts`) - 8 tests
   - Status transitions (PENDING → CHUNKING → CHUNKED → IN_PROGRESS → COMPLETED)
@@ -358,12 +363,14 @@ E2E tests are fully integrated into CI/CD pipeline:
 ### Configuration
 
 Playwright config automatically detects environment:
+
 - **No `PLAYWRIGHT_BASE_URL`**: Start local dev server on `localhost:3000`
 - **Has `PLAYWRIGHT_BASE_URL`**: Skip dev server, test against deployed URL
 
 ### Artifacts
 
 Test results are uploaded as GitHub Actions artifacts:
+
 - **Playwright Report**: HTML report with test results (30-day retention)
 - **Test Results**: Screenshots, videos, traces on failure (7-day retention)
 
@@ -392,6 +399,7 @@ npm run test:e2e:report
 ```
 
 This opens an interactive HTML report with:
+
 - Test results and timings
 - Screenshots and videos of failures
 - Trace viewer for debugging

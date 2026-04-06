@@ -276,9 +276,7 @@ describe('getTranslationStatus endpoint', () => {
     });
 
     it('should handle DynamoDB errors gracefully', async () => {
-      dynamoMock
-        .on(GetItemCommand)
-        .rejects(new Error('DynamoDB connection timeout'));
+      dynamoMock.on(GetItemCommand).rejects(new Error('DynamoDB connection timeout'));
 
       const event = createEvent('job-123');
       const result = await handler(event as APIGatewayProxyEvent);

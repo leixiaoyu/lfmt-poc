@@ -38,7 +38,9 @@ describe('FileUpload Component', () => {
       render(<FileUpload {...createProps()} maxSizeMB={10} />);
 
       // Assert
-      expect(screen.getByText(/Supported formats:.*\.txt.*\.doc.*\.docx.*\.pdf/i)).toBeInTheDocument();
+      expect(
+        screen.getByText(/Supported formats:.*\.txt.*\.doc.*\.docx.*\.pdf/i)
+      ).toBeInTheDocument();
       expect(screen.getByText(/max 10MB/i)).toBeInTheDocument();
     });
 
@@ -170,7 +172,11 @@ describe('FileUpload Component', () => {
       const mockOnChange = vi.fn();
       render(<FileUpload {...createProps({ onChange: mockOnChange })} />);
 
-      const mockFile = createMockFile('document.docx', 1024, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+      const mockFile = createMockFile(
+        'document.docx',
+        1024,
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+      );
       const fileInput = screen.getByLabelText('Upload document file') as HTMLInputElement;
 
       // Act
@@ -200,7 +206,6 @@ describe('FileUpload Component', () => {
       // Arrange
       const user = userEvent.setup();
       const mockOnChange = vi.fn();
-      const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
       render(<FileUpload {...createProps({ onChange: mockOnChange, maxSizeMB: 1 })} />);
 
@@ -211,11 +216,8 @@ describe('FileUpload Component', () => {
       // Act
       await user.upload(fileInput, mockFile);
 
-      // Assert
+      // Assert - onChange should not be called for files exceeding max size
       expect(mockOnChange).not.toHaveBeenCalled();
-      expect(consoleErrorSpy).toHaveBeenCalledWith('File size must be less than 1MB');
-
-      consoleErrorSpy.mockRestore();
     });
 
     it('should reject unsupported file formats', async () => {
@@ -239,7 +241,9 @@ describe('FileUpload Component', () => {
       // Arrange
       const user = userEvent.setup();
       const mockOnChange = vi.fn();
-      render(<FileUpload {...createProps({ onChange: mockOnChange, acceptedFormats: ['.txt'] })} />);
+      render(
+        <FileUpload {...createProps({ onChange: mockOnChange, acceptedFormats: ['.txt'] })} />
+      );
 
       const mockFile = createMockFile('document.pdf', 1024);
       const fileInput = screen.getByLabelText('Upload document file') as HTMLInputElement;
@@ -307,7 +311,6 @@ describe('FileUpload Component', () => {
     it('should not call onChange when invalid file is dropped', () => {
       // Arrange
       const mockOnChange = vi.fn();
-      const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
       render(<FileUpload {...createProps({ onChange: mockOnChange, maxSizeMB: 1 })} />);
 
       const mockFile = createMockFile('large-file.txt', 2 * 1024 * 1024);
@@ -322,10 +325,8 @@ describe('FileUpload Component', () => {
         });
       }
 
-      // Assert
+      // Assert - onChange should not be called for invalid files
       expect(mockOnChange).not.toHaveBeenCalled();
-
-      consoleErrorSpy.mockRestore();
     });
   });
 

@@ -13,7 +13,8 @@ export enum LogLevel {
 export interface LogContext {
   requestId?: string;
   userId?: string;
-  [key: string]: unknown;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  [key: string]: any; // Allow any additional context properties for flexible logging
 }
 
 class Logger {

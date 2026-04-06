@@ -20,7 +20,11 @@ import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom';
-import { TranslationConfig, type TranslationConfigData, type TranslationConfigProps } from '../TranslationConfig';
+import {
+  TranslationConfig,
+  type TranslationConfigData,
+  type TranslationConfigProps,
+} from '../TranslationConfig';
 
 describe('TranslationConfig', () => {
   // Default props for testing
@@ -39,7 +43,9 @@ describe('TranslationConfig', () => {
       render(<TranslationConfig {...defaultProps} />);
 
       expect(screen.getByText('Translation Settings')).toBeInTheDocument();
-      expect(screen.getByText('Choose the target language and desired tone for your translation.')).toBeInTheDocument();
+      expect(
+        screen.getByText('Choose the target language and desired tone for your translation.')
+      ).toBeInTheDocument();
     });
 
     it('should render both form controls', () => {

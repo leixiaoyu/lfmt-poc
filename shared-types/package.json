@@ -8,9 +8,15 @@
     "build": "tsc",
     "watch": "tsc --watch",
     "test": "jest",
-    "lint": "eslint src/**/*.ts"
+    "lint": "eslint src/**/*.ts",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
   },
-  "keywords": ["lfmt", "translation", "types"],
+  "keywords": [
+    "lfmt",
+    "translation",
+    "types"
+  ],
   "author": "LFMT Team",
   "license": "MIT",
   "devDependencies": {

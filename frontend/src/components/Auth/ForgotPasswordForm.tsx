@@ -17,15 +17,7 @@ import { useState, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import {
-  Box,
-  TextField,
-  Button,
-  Link,
-  Typography,
-  Alert,
-  CircularProgress,
-} from '@mui/material';
+import { Box, TextField, Button, Link, Typography, Alert, CircularProgress } from '@mui/material';
 import { Link as RouterLink } from 'react-router-dom';
 import { CheckCircleOutline as CheckIcon } from '@mui/icons-material';
 import { ROUTES } from '../../config/constants';
@@ -34,10 +26,7 @@ import { ROUTES } from '../../config/constants';
  * Forgot password form validation schema
  */
 const forgotPasswordSchema = z.object({
-  email: z
-    .string()
-    .min(1, 'Email is required')
-    .email('Invalid email address'),
+  email: z.string().min(1, 'Email is required').email('Invalid email address'),
 });
 
 type ForgotPasswordFormData = z.infer<typeof forgotPasswordSchema>;
@@ -120,20 +109,15 @@ export function ForgotPasswordForm({ onSubmit }: ForgotPasswordFormProps) {
         </Typography>
 
         <Typography variant="body1" color="text.secondary" sx={{ mb: 4 }}>
-          We've sent password reset instructions to your email address.
-          Please check your inbox and follow the link to reset your password.
+          We've sent password reset instructions to your email address. Please check your inbox and
+          follow the link to reset your password.
         </Typography>
 
         <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
           Didn't receive the email? Check your spam folder or try again.
         </Typography>
 
-        <Link
-          component={RouterLink}
-          to={ROUTES.LOGIN}
-          variant="body2"
-          underline="hover"
-        >
+        <Link component={RouterLink} to={ROUTES.LOGIN} variant="body2" underline="hover">
           Back to login
         </Link>
       </Box>
@@ -152,13 +136,7 @@ export function ForgotPasswordForm({ onSubmit }: ForgotPasswordFormProps) {
         Forgot Password?
       </Typography>
 
-      <Typography
-        variant="body2"
-        color="text.secondary"
-        gutterBottom
-        align="center"
-        sx={{ mb: 3 }}
-      >
+      <Typography variant="body2" color="text.secondary" gutterBottom align="center" sx={{ mb: 3 }}>
         Enter your email address and we'll send you a link to reset your password.
       </Typography>
 
@@ -175,7 +153,6 @@ export function ForgotPasswordForm({ onSubmit }: ForgotPasswordFormProps) {
         fullWidth
         margin="normal"
         autoComplete="email"
-        autoFocus
         error={!!errors.email}
         helperText={errors.email?.message}
         disabled={isSubmitting}
@@ -200,12 +177,7 @@ export function ForgotPasswordForm({ onSubmit }: ForgotPasswordFormProps) {
       </Button>
 
       <Box sx={{ textAlign: 'center', mt: 2 }}>
-        <Link
-          component={RouterLink}
-          to={ROUTES.LOGIN}
-          variant="body2"
-          underline="hover"
-        >
+        <Link component={RouterLink} to={ROUTES.LOGIN} variant="body2" underline="hover">
           Back to login
         </Link>
       </Box>

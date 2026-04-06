@@ -15,6 +15,7 @@ The Lambda functions are successfully deployed and operational. The initial JSON
 **Endpoint:** `POST /auth`
 
 **Request Schema:**
+
 ```json
 {
   "email": "string (email format)",
@@ -30,6 +31,7 @@ The Lambda functions are successfully deployed and operational. The initial JSON
 ```
 
 **Working curl Example (Multi-line):**
+
 ```bash
 curl -X POST https://8brwlwf68h.execute-api.us-east-1.amazonaws.com/v1/auth \
   -H "Content-Type: application/json" \
@@ -45,6 +47,7 @@ curl -X POST https://8brwlwf68h.execute-api.us-east-1.amazonaws.com/v1/auth \
 ```
 
 **Success Response (201):**
+
 ```json
 {
   "message": "User registered successfully. Please check your email to verify your account.",
@@ -53,6 +56,7 @@ curl -X POST https://8brwlwf68h.execute-api.us-east-1.amazonaws.com/v1/auth \
 ```
 
 **Error Responses:**
+
 - `400` - Validation failed / Invalid password / Invalid parameter
 - `409` - Account with this email already exists
 - `500` - Internal error
@@ -64,6 +68,7 @@ curl -X POST https://8brwlwf68h.execute-api.us-east-1.amazonaws.com/v1/auth \
 **Endpoint:** `POST /auth/login`
 
 **Request Schema:**
+
 ```json
 {
   "email": "string (email format)",
@@ -74,6 +79,7 @@ curl -X POST https://8brwlwf68h.execute-api.us-east-1.amazonaws.com/v1/auth \
 ```
 
 **curl Example:**
+
 ```bash
 curl -X POST https://8brwlwf68h.execute-api.us-east-1.amazonaws.com/v1/auth/login \
   -H "Content-Type: application/json" \
@@ -84,6 +90,7 @@ curl -X POST https://8brwlwf68h.execute-api.us-east-1.amazonaws.com/v1/auth/logi
 ```
 
 **Success Response (200):**
+
 ```json
 {
   "accessToken": "...",
@@ -99,6 +106,7 @@ curl -X POST https://8brwlwf68h.execute-api.us-east-1.amazonaws.com/v1/auth/logi
 ```
 
 **Error Responses:**
+
 - `400` - Validation failed
 - `401` - Incorrect email or password / Email not verified
 - `500` - Internal error
@@ -110,6 +118,7 @@ curl -X POST https://8brwlwf68h.execute-api.us-east-1.amazonaws.com/v1/auth/logi
 **Endpoint:** `POST /auth/refresh`
 
 **Request Schema:**
+
 ```json
 {
   "refreshToken": "string"
@@ -117,6 +126,7 @@ curl -X POST https://8brwlwf68h.execute-api.us-east-1.amazonaws.com/v1/auth/logi
 ```
 
 **curl Example:**
+
 ```bash
 curl -X POST https://8brwlwf68h.execute-api.us-east-1.amazonaws.com/v1/auth/refresh \
   -H "Content-Type: application/json" \
@@ -126,6 +136,7 @@ curl -X POST https://8brwlwf68h.execute-api.us-east-1.amazonaws.com/v1/auth/refr
 ```
 
 **Success Response (200):**
+
 ```json
 {
   "accessToken": "...",
@@ -141,6 +152,7 @@ curl -X POST https://8brwlwf68h.execute-api.us-east-1.amazonaws.com/v1/auth/refr
 **Endpoint:** `POST /auth/reset-password`
 
 **Request Schema:**
+
 ```json
 {
   "email": "string (email format)"
@@ -148,6 +160,7 @@ curl -X POST https://8brwlwf68h.execute-api.us-east-1.amazonaws.com/v1/auth/refr
 ```
 
 **curl Example:**
+
 ```bash
 curl -X POST https://8brwlwf68h.execute-api.us-east-1.amazonaws.com/v1/auth/reset-password \
   -H "Content-Type: application/json" \
@@ -157,6 +170,7 @@ curl -X POST https://8brwlwf68h.execute-api.us-east-1.amazonaws.com/v1/auth/rese
 ```
 
 **Success Response (200):**
+
 ```json
 {
   "message": "Password reset instructions sent to your email"
@@ -170,12 +184,14 @@ curl -X POST https://8brwlwf68h.execute-api.us-east-1.amazonaws.com/v1/auth/rese
 ### Issue: JSON Parsing Error with Special Characters
 
 **Problem:** Using single-line curl with passwords containing `!` fails:
+
 ```bash
 # ❌ FAILS - Shell escapes the !
 curl -d '{"password":"Pass123!"}' ...
 ```
 
 **Solution:** Use multi-line format or escape properly:
+
 ```bash
 # ✅ WORKS - Multi-line format
 curl -d '{
@@ -189,6 +205,7 @@ curl -d $'{"password":"Pass123!"}' ...
 ### Issue: Password Requirements
 
 Cognito requires passwords to have:
+
 - Minimum 8 characters
 - At least one uppercase letter
 - At least one lowercase letter
@@ -196,6 +213,7 @@ Cognito requires passwords to have:
 - At least one symbol
 
 **Example valid passwords:**
+
 - `SecurePass123!`
 - `MyP@ssw0rd`
 - `Test#1234Abc`
@@ -205,6 +223,7 @@ Cognito requires passwords to have:
 After registration, users must verify their email before logging in. Cognito sends a verification email with a code/link.
 
 **Workaround for testing:**
+
 ```bash
 # Verify user manually via AWS CLI
 aws cognito-idp admin-confirm-sign-up \
@@ -218,6 +237,7 @@ aws cognito-idp admin-confirm-sign-up \
 ## Testing Workflow
 
 ### 1. Register a New User
+
 ```bash
 curl -X POST https://8brwlwf68h.execute-api.us-east-1.amazonaws.com/v1/auth \
   -H "Content-Type: application/json" \
@@ -233,6 +253,7 @@ curl -X POST https://8brwlwf68h.execute-api.us-east-1.amazonaws.com/v1/auth \
 ```
 
 ### 2. Verify Email (Manual)
+
 ```bash
 aws cognito-idp admin-confirm-sign-up \
   --user-pool-id us-east-1_XXXXXXXXX \
@@ -241,6 +262,7 @@ aws cognito-idp admin-confirm-sign-up \
 ```
 
 ### 3. Login
+
 ```bash
 curl -X POST https://8brwlwf68h.execute-api.us-east-1.amazonaws.com/v1/auth/login \
   -H "Content-Type: application/json" \
@@ -251,6 +273,7 @@ curl -X POST https://8brwlwf68h.execute-api.us-east-1.amazonaws.com/v1/auth/logi
 ```
 
 ### 4. Save Tokens
+
 ```bash
 # Extract tokens from login response
 ACCESS_TOKEN="eyJraWQiOiI..."
@@ -258,6 +281,7 @@ REFRESH_TOKEN="eyJjdHki..."
 ```
 
 ### 5. Refresh Token
+
 ```bash
 curl -X POST https://8brwlwf68h.execute-api.us-east-1.amazonaws.com/v1/auth/refresh \
   -H "Content-Type: application/json" \
@@ -271,10 +295,12 @@ curl -X POST https://8brwlwf68h.execute-api.us-east-1.amazonaws.com/v1/auth/refr
 ## CORS Configuration
 
 Current CORS settings allow requests from:
+
 - `http://localhost:3000` (development)
 - `https://localhost:3000` (development)
 
 For production, update in `backend/infrastructure/lib/lfmt-infrastructure-stack.ts`:
+
 ```typescript
 getAllowedApiOrigins() {
   switch (this.node.tryGetContext('environment')) {
@@ -290,6 +316,7 @@ getAllowedApiOrigins() {
 ## Monitoring & Debugging
 
 ### View Lambda Logs
+
 ```bash
 # Register function
 aws logs tail /aws/lambda/lfmt-register-LfmtPocDev \
@@ -303,6 +330,7 @@ aws logs tail /aws/lambda/lfmt-login-LfmtPocDev \
 ```
 
 ### Check Cognito Users
+
 ```bash
 aws cognito-idp list-users \
   --user-pool-id us-east-1_XXXXXXXXX \
@@ -310,6 +338,7 @@ aws cognito-idp list-users \
 ```
 
 ### Get User Details
+
 ```bash
 aws cognito-idp admin-get-user \
   --user-pool-id us-east-1_XXXXXXXXX \
@@ -322,6 +351,7 @@ aws cognito-idp admin-get-user \
 ## Response Headers
 
 All responses include CORS headers:
+
 ```
 access-control-allow-origin: http://localhost:3000
 access-control-allow-headers: Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token
@@ -345,9 +375,11 @@ access-control-allow-credentials: true
 ## Testing Tools
 
 ### Postman Collection
+
 Create a Postman collection with these endpoints for easier testing.
 
 ### Automated Testing
+
 ```bash
 # Run function tests
 cd backend/functions

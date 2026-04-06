@@ -22,12 +22,14 @@ This document provides complete technical reference for the Translation Workflow
 ## Overview
 
 The translation workflow UI provides a complete user experience for:
+
 - ✅ Uploading documents with legal attestation
 - ✅ Tracking translation progress in real-time
 - ✅ Downloading completed translations
 - ✅ Managing translation history
 
 **Test Coverage**:
+
 - **Unit Tests**: 499 tests across 24 files (99% coverage)
 - **E2E Tests**: 58 tests across 7 test suites
 - **Total Test Files**: 31 test files
@@ -46,6 +48,7 @@ The translation workflow UI provides a complete user experience for:
 **Location**: `frontend/src/pages/TranslationUpload.tsx`
 
 **Features**:
+
 - ✅ Multi-step wizard workflow
   1. Legal Attestation
   2. Configuration (language + tone)
@@ -67,6 +70,7 @@ The translation workflow UI provides a complete user experience for:
 - ✅ Input validation and error handling
 
 **User Flow**:
+
 ```
 1. Legal Attestation → Check all 3 boxes
 2. Configuration → Select language + tone
@@ -80,6 +84,7 @@ The translation workflow UI provides a complete user experience for:
 **Location**: `frontend/src/pages/TranslationDetail.tsx`
 
 **Features**:
+
 - ✅ Real-time progress tracking with adaptive polling
   - Initial: 15-second intervals
   - Mid-progress: 30-second intervals
@@ -105,14 +110,15 @@ The translation workflow UI provides a complete user experience for:
   - Retry button for manual retry
 
 **Polling Strategy**:
+
 ```typescript
 // Adaptive polling intervals based on elapsed time
 if (elapsedTime < 60000) {
-  interval = 15000;  // First minute: 15s
+  interval = 15000; // First minute: 15s
 } else if (elapsedTime < 300000) {
-  interval = 30000;  // 1-5 minutes: 30s
+  interval = 30000; // 1-5 minutes: 30s
 } else {
-  interval = 60000;  // After 5 minutes: 60s
+  interval = 60000; // After 5 minutes: 60s
 }
 ```
 
@@ -121,6 +127,7 @@ if (elapsedTime < 60000) {
 **Location**: `frontend/src/pages/TranslationHistory.tsx`
 
 **Features**:
+
 - ✅ Job list with pagination
 - ✅ Status badges with color coding
 - ✅ Progress indicators for in-progress jobs
@@ -139,17 +146,20 @@ if (elapsedTime < 60000) {
 ### 4. Supporting Components
 
 **TranslationConfig.tsx** - Language and tone selection
+
 - Dropdown selectors with validation
 - Visual language flags/icons
 - Tone description tooltips
 
 **FileUpload.tsx** - Document upload with validation
+
 - Drag-and-drop area
 - File type validation (.txt, .docx, .pdf)
 - File size validation (max 10MB)
 - Upload progress indicator
 
 **LegalAttestation.tsx** - Legal checkbox enforcement
+
 - 3 required checkboxes:
   1. I own copyright or have permission
   2. I have translation rights
@@ -159,6 +169,7 @@ if (elapsedTime < 60000) {
 - Timestamp recording
 
 **ReviewAndSubmit.tsx** - Final review before submission
+
 - Summary of all selections
 - Edit buttons to go back to previous steps
 - Submit button with loading state
@@ -174,6 +185,7 @@ if (elapsedTime < 60000) {
 **Location**: `frontend/src/**/__tests__/*.test.tsx`
 
 **Statistics**:
+
 - **Total Tests**: 499 tests
 - **Test Files**: 24 files
 - **Coverage**: 99% on translation components
@@ -185,6 +197,7 @@ if (elapsedTime < 60000) {
   - API mocking with MSW
 
 **Key Test Files**:
+
 - `TranslationUpload.test.tsx`
 - `TranslationDetail.test.tsx`
 - `TranslationHistory.test.tsx`
@@ -198,6 +211,7 @@ if (elapsedTime < 60000) {
 **Location**: `frontend/e2e/tests/translation/*.spec.ts`
 
 **Statistics**:
+
 - **Total Tests**: 58 tests
 - **Test Suites**: 7 suites
 - **Page Objects**: 7 POMs
@@ -289,6 +303,7 @@ if (elapsedTime < 60000) {
    - Navigation to detail page
 
 **POM Best Practice Example**:
+
 ```typescript
 // ✅ GOOD: Use Page Object Model
 const uploadPage = new TranslationUploadPage(page);
@@ -311,6 +326,7 @@ await page.locator('#language-select').selectOption('es');
 ### Unit Tests
 
 **Run All Unit Tests**:
+
 ```bash
 cd frontend
 npm test                    # Watch mode
@@ -318,21 +334,25 @@ npm test -- --run          # Run once
 ```
 
 **With Coverage Report**:
+
 ```bash
 npm run test:coverage
 ```
 
 **Interactive UI Mode**:
+
 ```bash
 npm run test:ui
 ```
 
 **Specific Test File**:
+
 ```bash
 npm test -- TranslationConfig.test.tsx
 ```
 
 **Watch Specific Component**:
+
 ```bash
 npm test -- TranslationUpload
 ```
@@ -340,36 +360,43 @@ npm test -- TranslationUpload
 ### E2E Tests
 
 **Prerequisites**:
+
 - Frontend dev server must be running on port 3000
 - Backend API must be available (or mock API configured)
 
 **Run All E2E Tests**:
+
 ```bash
 cd frontend
 npm run test:e2e           # Headless mode
 ```
 
 **Interactive Playwright UI**:
+
 ```bash
 npm run test:e2e:ui
 ```
 
 **Headed Mode (See Browser)**:
+
 ```bash
 npm run test:e2e:headed
 ```
 
 **Debug Mode (Step-by-Step)**:
+
 ```bash
 npm run test:e2e:debug
 ```
 
 **View Last Test Report**:
+
 ```bash
 npm run test:e2e:report
 ```
 
 **Run Specific Test Suite**:
+
 ```bash
 npx playwright test e2e/tests/translation/upload.spec.ts
 ```
@@ -379,18 +406,21 @@ npx playwright test e2e/tests/translation/upload.spec.ts
 **GitHub Actions**: `.github/workflows/ci.yml`
 
 **Unit Tests**: ✅ Fully integrated
+
 - Run on every PR
 - Run on every push to main
 - Must pass before merge
 - Coverage report uploaded
 
 **E2E Tests**: ⚠️ Temporarily disabled
+
 - **Status**: Commented out (lines 200-280)
 - **Reason**: Require live backend API
 - **Solution**: Configure mock API or deploy test backend
 - **Location**: `.github/workflows/ci.yml:200-280`
 
 **Pre-Push Hooks**: `.githooks/pre-push`
+
 - Run unit tests locally before push
 - Prevent pushing with failing tests
 - Can be bypassed with `--no-verify` (not recommended)
@@ -404,6 +434,7 @@ npx playwright test e2e/tests/translation/upload.spec.ts
 **Port**: 3000 (changed from 5173 in PR #86)
 
 **Vite Configuration** (`frontend/vite.config.ts:18-27`):
+
 ```typescript
 export default defineConfig({
   server: {
@@ -414,6 +445,7 @@ export default defineConfig({
 ```
 
 **Playwright Configuration** (`frontend/playwright.config.ts:41,86`):
+
 ```typescript
 export default defineConfig({
   use: {
@@ -430,6 +462,7 @@ export default defineConfig({
 ### Environment Variables
 
 **For E2E Tests**:
+
 ```bash
 PLAYWRIGHT_BASE_URL=http://localhost:3000  # Dev server URL
 API_BASE_URL=http://localhost:3000         # Backend API URL
@@ -437,6 +470,7 @@ CI=true                                     # Enable CI mode
 ```
 
 **For Frontend**:
+
 ```bash
 VITE_API_URL=https://8brwlwf68h.execute-api.us-east-1.amazonaws.com/v1
 VITE_APP_ENV=development
@@ -458,6 +492,7 @@ VITE_APP_ENV=development
    - Simulate error scenarios
 
 3. ✅ **Test user interactions, not implementation**
+
    ```typescript
    // ✅ GOOD: Test user behavior
    fireEvent.click(screen.getByRole('button', { name: 'Submit' }));
@@ -482,11 +517,13 @@ VITE_APP_ENV=development
    - Encapsulate page logic in POM classes
 
 2. ✅ **Generate unique test users** with timestamps
+
    ```typescript
    const testEmail = `test-${Date.now()}@example.com`;
    ```
 
 3. ✅ **Wait for elements explicitly**
+
    ```typescript
    // ✅ GOOD: Explicit wait
    await page.waitForSelector('[data-testid="upload-complete"]');
@@ -496,6 +533,7 @@ VITE_APP_ENV=development
    ```
 
 4. ✅ **Use descriptive test names** with "should" format
+
    ```typescript
    test('should upload file successfully when all fields valid', async () => {
      // ...
@@ -515,6 +553,7 @@ VITE_APP_ENV=development
    - Refactor
 
 2. ✅ **Run tests locally before committing**
+
    ```bash
    npm test -- --run
    ```
@@ -542,6 +581,7 @@ VITE_APP_ENV=development
 **Status**: Temporarily disabled in CI (PR #86)
 
 **Symptoms**:
+
 - E2E tests fail in CI
 - Tests make real HTTP requests to backend
 
@@ -551,6 +591,7 @@ All E2E tests make real HTTP requests to backend API endpoints. In CI, backend i
 **Solutions**:
 
 **Option 1**: Configure Mock API
+
 ```typescript
 // playwright.config.ts
 webServer: {
@@ -560,11 +601,13 @@ webServer: {
 ```
 
 **Option 2**: Deploy Test Backend
+
 - Deploy separate test backend stack
 - Configure E2E tests to use test backend URL
 - Clean up test data after tests
 
 **Temporary Workaround**:
+
 - E2E tests commented out in CI (`.github/workflows/ci.yml:200-280`)
 - Run E2E tests locally before pushing
 - Manual E2E testing before production deployment
@@ -576,6 +619,7 @@ webServer: {
 **Status**: ✅ Resolved (PR #86)
 
 **Symptoms**:
+
 - Playwright tests fail to connect to dev server
 - Dev server running on port 3000
 - Playwright expecting port 5173
@@ -585,11 +629,13 @@ Vite dev server configured for port 3000, but Playwright config had default port
 
 **Solution**:
 Updated all Playwright configuration and documentation to port 3000:
+
 - `playwright.config.ts`
 - `e2e/README.md`
 - `TESTING-GUIDE.md`
 
 **Files Fixed**:
+
 - `frontend/playwright.config.ts:41,86`
 - `frontend/e2e/README.md`
 - `TESTING-GUIDE.md`
@@ -601,6 +647,7 @@ Updated all Playwright configuration and documentation to port 3000:
 **Status**: ✅ Resolved (PR #86)
 
 **Symptoms**:
+
 - LoginPage POM tests fail
 - Element not found error
 
@@ -609,6 +656,7 @@ POM expected `h4:has-text("Login")`, but actual page had `h1:has-text("Log In")`
 
 **Solution**:
 Fixed selector in LoginPage POM to match actual DOM structure:
+
 ```typescript
 // Before
 await page.locator('h4:has-text("Login")').waitFor();
@@ -628,18 +676,21 @@ await page.locator('h1:has-text("Log In")').waitFor();
 ### From No Testing to Comprehensive Testing (PR #86)
 
 **Before PR #86**:
+
 - 382 unit tests
 - 0 E2E tests
 - No Page Object Model pattern
 - Manual testing only
 
 **After PR #86**:
+
 - 499 unit tests (+117 new tests)
 - 58 E2E tests (new)
 - 7 Page Object Models (new)
 - Comprehensive test infrastructure
 
 **Changes**:
+
 1. ✅ Added 117 new unit tests for translation components
 2. ✅ Created 58 E2E tests with Playwright
 3. ✅ Implemented Page Object Model pattern
@@ -654,6 +705,7 @@ await page.locator('h1:has-text("Log In")').waitFor();
 **Reason**: Consistency with backend API expectations and team preferences.
 
 **Files Updated**:
+
 - `vite.config.ts` - Dev server port
 - `playwright.config.ts` - Base URL and webServer URL
 - `TESTING-GUIDE.md` - Documentation

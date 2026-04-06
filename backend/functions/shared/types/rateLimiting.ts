@@ -129,7 +129,7 @@ export interface TokenAcquisitionResult {
  */
 export const GEMINI_RATE_LIMITS: RateLimitConfig = {
   apiId: 'gemini-api',
-  rpm: 5,       // 5 requests per minute
-  tpm: 250000,  // 250K tokens per minute (combined input + output)
-  rpd: 25,      // 25 requests per day
+  rpm: 5, // 5 requests per minute
+  tpm: 250000, // 250K tokens per minute (combined input + output)
+  rpd: 25, // 25 requests per day
 };

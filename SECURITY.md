@@ -11,6 +11,7 @@ This document outlines the security measures, policies, and best practices for t
 **Audit Conducted**: Comprehensive repository scan for exposed secrets and sensitive information.
 
 **Critical Issues Resolved**:
+
 - ✅ Redacted AWS Account ID from all documentation
 - ✅ Redacted Cognito User Pool ID and Client ID from public files
 - ✅ Redacted API Gateway URL from `.env.example`
@@ -19,6 +20,7 @@ This document outlines the security measures, policies, and best practices for t
 - ✅ Updated git configuration to use GitHub no-reply email
 
 **Verified Safe**:
+
 - `.env.local` was never committed to repository (confirmed via git log)
 - All actual credentials remain secure in local `.env.local` file (gitignored)
 - GitHub Actions properly configured with OIDC authentication
@@ -28,12 +30,14 @@ This document outlines the security measures, policies, and best practices for t
 ### Authentication & Authorization
 
 **AWS Cognito**:
+
 - User Pool ID: Managed via CloudFormation outputs (not hardcoded)
 - Client ID: CDK-managed, rotated via infrastructure updates
 - Password Policy: Minimum 8 characters with complexity requirements
 - MFA: Not enabled for POC (recommended for production)
 
 **GitHub Actions**:
+
 - OIDC authentication with AWS (no long-lived credentials)
 - Role assumption via `AWS_ROLE_ARN` secret
 - Least-privilege IAM policies
@@ -41,27 +45,32 @@ This document outlines the security measures, policies, and best practices for t
 ### Secrets Management
 
 **What's Protected**:
+
 - `.env` and `.env.local` files (gitignored)
 - AWS credentials (never stored in code)
 - API keys and tokens (environment variables only)
 - Private keys and certificates (gitignored)
 
 **GitHub Secrets** (Current):
+
 - `AWS_ROLE_ARN` - IAM role for OIDC authentication
 
 **Previously Removed**:
+
 - `AWS_ACCESS_KEY_ID` - Replaced with OIDC
 - `AWS_SECRET_ACCESS_KEY` - Replaced with OIDC
 
 ### Code Security
 
 **Pre-Push Validation**:
+
 - Shared-types tests (11/11 passing)
 - Infrastructure tests (20/20 passing)
 - TypeScript compilation checks
 - Security scans for hardcoded secrets
 
 **Git Configuration**:
+
 - Author email: `leixiaoyu@users.noreply.github.com` (prevents email harvesting)
 - Git hooks enforce pre-push validation
 
@@ -190,6 +199,7 @@ GitHub Advanced Security provides automatic secret scanning for repositories. To
 ### Custom Patterns
 
 Add custom patterns for project-specific secrets:
+
 - Cognito User Pool IDs: `us-east-1_[a-zA-Z0-9]{9}`
 - Cognito Client IDs: `[a-z0-9]{26}`
 - API Gateway IDs: `[a-z0-9]{10}`
@@ -199,6 +209,7 @@ Add custom patterns for project-specific secrets:
 ### Recommended Tools
 
 - **Git-secrets**: Prevents committing secrets to git
+
   ```bash
   brew install git-secrets
   git secrets --install
@@ -206,6 +217,7 @@ Add custom patterns for project-specific secrets:
   ```
 
 - **TruffleHog**: Find secrets in git history
+
   ```bash
   docker run --rm -v $(pwd):/repo trufflesecurity/trufflehog git file:///repo
   ```
@@ -221,9 +233,9 @@ Add custom patterns for project-specific secrets:
 
 ## Version History
 
-| Date       | Version | Changes                                      |
-|------------|---------|----------------------------------------------|
-| 2025-10-21 | 1.0     | Initial security policy and audit results    |
+| Date       | Version | Changes                                   |
+| ---------- | ------- | ----------------------------------------- |
+| 2025-10-21 | 1.0     | Initial security policy and audit results |
 
 ## Contact
 

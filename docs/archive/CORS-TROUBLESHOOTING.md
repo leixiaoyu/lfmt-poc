@@ -49,6 +49,7 @@ that is not equal to the supplied origin.
 **PR #92**: Pass request origin to all `createSuccessResponse()` and `createErrorResponse()` calls in Lambda functions.
 
 **Status**:
+
 - ✅ Login Lambda fixed
 - ⏳ Deployment in progress via CI/CD
 - 📋 Remaining Lambdas need same fix (follow-up PR planned)
@@ -60,6 +61,7 @@ that is not equal to the supplied origin.
 ### 2025-11-23 (Morning)
 
 **User Report:**
+
 > "I am still getting the following error when trying to log into dev environment."
 
 **Initial Hypothesis:**
@@ -88,6 +90,7 @@ npx cdk diff --context environment=dev
 ```
 
 **Result**:
+
 ```
 Stack LfmtPocDev
 There were no differences
@@ -110,6 +113,7 @@ aws lambda get-function-configuration \
 ```
 
 **Result**:
+
 ```
 http://localhost:3000,https://localhost:3000,https://d39xcun7144jgl.cloudfront.net,https://d39xcun7144jgl.cloudfront.net
 ```
@@ -139,6 +143,7 @@ test('should capture CORS headers from API Gateway', async ({ page }) => {
 ```
 
 **Test Results**:
+
 - ✅ **OPTIONS preflight**: Returns `https://d39xcun7144jgl.cloudfront.net`
 - ❌ **POST /auth/login**: Returns `http://localhost:3000`
 - ❌ **GET /auth/me**: Returns `http://localhost:3000`
@@ -154,13 +159,12 @@ test('should capture CORS headers from API Gateway', async ({ page }) => {
 export function getCorsHeaders(requestOrigin?: string): Record<string, string> {
   const allowedOriginsEnv = process.env.ALLOWED_ORIGINS || process.env.ALLOWED_ORIGIN;
   const allowedOrigins = allowedOriginsEnv
-    ? allowedOriginsEnv.split(',').map(origin => origin.trim())
+    ? allowedOriginsEnv.split(',').map((origin) => origin.trim())
     : ['http://localhost:3000'];
 
   // If requestOrigin matches an allowed origin, use it; otherwise use first allowed origin
-  const allowedOrigin = requestOrigin && allowedOrigins.includes(requestOrigin)
-    ? requestOrigin
-    : allowedOrigins[0];  // ❌ ALWAYS returns localhost:3000 when requestOrigin is undefined
+  const allowedOrigin =
+    requestOrigin && allowedOrigins.includes(requestOrigin) ? requestOrigin : allowedOrigins[0]; // ❌ ALWAYS returns localhost:3000 when requestOrigin is undefined
 }
 ```
 
@@ -228,12 +232,14 @@ Response Headers
 ### Why OPTIONS Worked But POST Didn't
 
 **OPTIONS Preflight**:
+
 - Handled by **API Gateway** directly
 - Uses `defaultCorsPreflightOptions.allowOrigins` configuration
 - Configuration includes CloudFront URL
 - **Result**: Returns correct origin ✅
 
 **POST /auth/login**:
+
 - Handled by **Lambda function**
 - Uses `getCorsHeaders(requestOrigin)` helper
 - `requestOrigin` is `undefined` (never extracted)
@@ -249,9 +255,7 @@ Response Headers
 **Primary Issue**: `backend/functions/auth/login.ts` (and all other Lambda functions)
 
 ```typescript
-export const handler = async (
-  event: APIGatewayProxyEvent
-): Promise<APIGatewayProxyResult> => {
+export const handler = async (event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> => {
   const requestId = event.requestContext.requestId;
   // ❌ MISSING: Extract request origin from event.headers
 
@@ -281,11 +285,13 @@ export const handler = async (
 **Impact Level**: **CRITICAL** - Blocks all CloudFront users from logging in
 
 **Severity**:
+
 - P0: Highest priority
 - Production blocker if deployed to prod
 - Affects all Lambda functions with CORS responses
 
 **User Impact**:
+
 - Cannot log in from CloudFront URL
 - Cannot register new accounts
 - Cannot refresh tokens
@@ -306,9 +312,7 @@ export const handler = async (
 #### 1. Extract Request Origin (Case-Insensitive)
 
 ```typescript
-export const handler = async (
-  event: APIGatewayProxyEvent
-): Promise<APIGatewayProxyResult> => {
+export const handler = async (event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> => {
   const requestId = event.requestContext.requestId;
   // ✅ NEW: Extract request origin for CORS handling (case-insensitive header lookup)
   const requestOrigin = event.headers.origin || event.headers.Origin;
@@ -319,6 +323,7 @@ export const handler = async (
 ```
 
 **Why Case-Insensitive?**
+
 - API Gateway may normalize headers to lowercase
 - Browser may send `Origin` or `origin`
 - Safe fallback ensures we always capture it
@@ -340,7 +345,7 @@ return createErrorResponse(
   'Validation failed',
   requestId,
   validationResult.error.flatten().fieldErrors,
-  requestOrigin  // ✅ NEW: Pass request origin
+  requestOrigin // ✅ NEW: Pass request origin
 );
 ```
 
@@ -352,8 +357,8 @@ return createErrorResponse(
   500,
   'Authentication failed unexpectedly',
   requestId,
-  undefined,     // No field errors
-  requestOrigin  // ✅ NEW: Pass request origin
+  undefined, // No field errors
+  requestOrigin // ✅ NEW: Pass request origin
 );
 ```
 
@@ -446,6 +451,7 @@ export const handler = async (
 **Location**: `frontend/e2e/tests/cors-debug.spec.ts`
 
 **Purpose**:
+
 - Capture actual CORS headers from API responses
 - Test OPTIONS preflight and POST requests separately
 - Compare localhost vs CloudFront CORS behavior
@@ -477,7 +483,7 @@ test('should test OPTIONS preflight request', async ({ request }) => {
   const response = await request.fetch(`${API_URL}/auth/login`, {
     method: 'OPTIONS',
     headers: {
-      'Origin': CLOUDFRONT_URL,
+      Origin: CLOUDFRONT_URL,
       'Access-Control-Request-Method': 'POST',
     },
   });
@@ -489,7 +495,7 @@ test('should test OPTIONS preflight request', async ({ request }) => {
 test('should test POST request with CORS', async ({ request }) => {
   const response = await request.post(`${API_URL}/auth/login`, {
     headers: {
-      'Origin': CLOUDFRONT_URL,
+      Origin: CLOUDFRONT_URL,
       'Content-Type': 'application/json',
     },
     data: { email: 'test@test.io', password: 'TestPassword123!' },
@@ -503,13 +509,13 @@ test('should compare localhost vs CloudFront CORS behavior', async ({ request })
   // Test with localhost
   const localhostResponse = await request.fetch(`${API_URL}/auth/me`, {
     method: 'GET',
-    headers: { 'Origin': 'http://localhost:3000' },
+    headers: { Origin: 'http://localhost:3000' },
   });
 
   // Test with CloudFront
   const cloudFrontResponse = await request.fetch(`${API_URL}/auth/me`, {
     method: 'GET',
-    headers: { 'Origin': CLOUDFRONT_URL },
+    headers: { Origin: CLOUDFRONT_URL },
   });
 
   // Both should return matching origin
@@ -519,12 +525,14 @@ test('should compare localhost vs CloudFront CORS behavior', async ({ request })
 ```
 
 **Run Test**:
+
 ```bash
 cd frontend
 npm run test:e2e -- e2e/tests/cors-debug.spec.ts
 ```
 
 **Expected Results After Fix**:
+
 - ✅ All 4 test cases pass
 - ✅ CORS headers match request origin for both localhost and CloudFront
 - ✅ No CORS errors in browser console
@@ -554,6 +562,7 @@ npm run test:e2e -- e2e/tests/cors-debug.spec.ts
 **GitHub Actions Workflow**: `.github/workflows/deploy.yml`
 
 **Validation Steps**:
+
 1. ✅ Unit tests pass (296/296 backend function tests)
 2. ✅ Integration tests pass
 3. ✅ Infrastructure tests pass (50/50)
@@ -579,17 +588,20 @@ npm run test:e2e -- e2e/tests/cors-debug.spec.ts
 The following Lambda functions **need the same fix**:
 
 #### Auth Lambdas
+
 1. ❌ `register.ts` - User registration
 2. ❌ `refresh-token.ts` - Token refresh
 3. ❌ `reset-password.ts` - Password reset
 4. ❌ `get-current-user.ts` - User profile retrieval
 
 #### Upload/Translation Lambdas
+
 5. ❌ `upload-request.ts` - Presigned URL generation
 6. ❌ `upload-complete.ts` - Upload confirmation
 7. ❌ `get-translation-status.ts` - Status polling
 
 **Action Plan**:
+
 1. Create new branch: `fix/cors-all-lambdas`
 2. Apply same fix pattern to all Lambda functions
 3. Update all `createSuccessResponse()` calls
@@ -602,27 +614,32 @@ The following Lambda functions **need the same fix**:
 ### Medium-Term (Testing Infrastructure)
 
 **Auth Lambda Unit Tests**:
+
 - ❌ Update auth tests to mock request origin
 - ❌ Add test cases for CORS header validation
 - ❌ Ensure tests cover both localhost and CloudFront origins
 
 **Integration Tests**:
+
 - ❌ Add CORS validation to integration test suite
 - ❌ Test cross-origin requests in test environment
 
 ### Long-Term (Prevention)
 
 **Code Review Checklist**:
+
 - ✅ All Lambda responses extract `event.headers.origin`
 - ✅ All response helpers receive `requestOrigin` parameter
 - ✅ No manual CORS header construction (use `getCorsHeaders()`)
 - ✅ Test CORS with multiple origins (localhost + CloudFront)
 
 **Linting Rules**:
+
 - Consider ESLint rule to enforce CORS parameter passing
 - Detect manual CORS header construction
 
 **Documentation**:
+
 - ✅ Update Lambda development guide with CORS best practices
 - ✅ Add CORS troubleshooting guide (this document)
 
@@ -753,10 +770,12 @@ fields @timestamp, @message
 ### B. Key Infrastructure Files
 
 **Backend Infrastructure**:
+
 - `backend/infrastructure/lib/lfmt-infrastructure-stack.ts:83-95` - `getAllowedApiOrigins()`
 - `backend/infrastructure/lib/lfmt-infrastructure-stack.ts:377-389` - API Gateway CORS config
 
 **Lambda Functions**:
+
 - `backend/functions/shared/api-response.ts:29-48` - `getCorsHeaders()` helper
 - `backend/functions/auth/login.ts` - Login Lambda (✅ fixed in PR #92)
 - `backend/functions/auth/register.ts` - Register Lambda (❌ needs fix)
@@ -765,6 +784,7 @@ fields @timestamp, @message
 - `backend/functions/auth/get-current-user.ts` - Get user Lambda (❌ needs fix)
 
 **Frontend Testing**:
+
 - `frontend/e2e/tests/cors-debug.spec.ts` - CORS debugging test suite
 
 ### C. Environment Variables
@@ -772,10 +792,12 @@ fields @timestamp, @message
 **Lambda Environment Variables** (configured in CDK):
 
 ```typescript
-ALLOWED_ORIGINS = "http://localhost:3000,https://localhost:3000,https://d39xcun7144jgl.cloudfront.net"
+ALLOWED_ORIGINS =
+  'http://localhost:3000,https://localhost:3000,https://d39xcun7144jgl.cloudfront.net';
 ```
 
 **How to Check**:
+
 ```bash
 aws lambda get-function-configuration \
   --function-name "lfmt-login-LfmtPocDev" \

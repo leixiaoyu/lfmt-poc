@@ -13,15 +13,7 @@
  */
 
 import { useState, useCallback, useRef } from 'react';
-import {
-  Box,
-  Button,
-  Typography,
-  Alert,
-  LinearProgress,
-  Paper,
-  Stack,
-} from '@mui/material';
+import { Box, Button, Typography, Alert, LinearProgress, Paper, Stack } from '@mui/material';
 import {
   CloudUpload as CloudUploadIcon,
   CheckCircle as CheckCircleIcon,
@@ -68,10 +60,7 @@ export interface FileUploadFormProps {
  * />
  * ```
  */
-export function FileUploadForm({
-  onUploadComplete,
-  onUploadError,
-}: FileUploadFormProps) {
+export function FileUploadForm({ onUploadComplete, onUploadError }: FileUploadFormProps) {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [uploadState, setUploadState] = useState<UploadState>('idle');
   const [uploadProgress, setUploadProgress] = useState<number>(0);
@@ -182,10 +171,7 @@ export function FileUploadForm({
       setUploadProgress(0);
       setErrorMessage(null);
 
-      const result = await uploadService.uploadDocument(
-        selectedFile,
-        handleProgress
-      );
+      const result = await uploadService.uploadDocument(selectedFile, handleProgress);
 
       if (result.success) {
         setUploadState('success');
@@ -195,8 +181,7 @@ export function FileUploadForm({
         throw new Error(result.error || 'Upload failed');
       }
     } catch (error) {
-      const message =
-        error instanceof Error ? error.message : 'Failed to upload file';
+      const message = error instanceof Error ? error.message : 'Failed to upload file';
       setUploadState('error');
       setErrorMessage(message);
       onUploadError?.(message);
@@ -272,13 +257,9 @@ export function FileUploadForm({
             onClick={handleBrowseClick}
           >
             <Stack spacing={2} alignItems="center">
-              <CloudUploadIcon
-                sx={{ fontSize: 60, color: 'text.secondary' }}
-              />
+              <CloudUploadIcon sx={{ fontSize: 60, color: 'text.secondary' }} />
               <Typography variant="h6" align="center">
-                {selectedFile
-                  ? selectedFile.name
-                  : 'Drag and drop your file here'}
+                {selectedFile ? selectedFile.name : 'Drag and drop your file here'}
               </Typography>
               <Typography variant="body2" color="text.secondary" align="center">
                 or click to browse
@@ -313,11 +294,7 @@ export function FileUploadForm({
               Upload
             </Button>
             {selectedFile && (
-              <Button
-                variant="outlined"
-                onClick={handleReset}
-                size="large"
-              >
+              <Button variant="outlined" onClick={handleReset} size="large">
                 Clear
               </Button>
             )}
@@ -331,11 +308,7 @@ export function FileUploadForm({
           <Typography variant="body2" sx={{ mb: 1 }}>
             Uploading {selectedFile?.name}...
           </Typography>
-          <LinearProgress
-            variant="determinate"
-            value={uploadProgress}
-            sx={{ mb: 1 }}
-          />
+          <LinearProgress variant="determinate" value={uploadProgress} sx={{ mb: 1 }} />
           <Typography variant="caption" color="text.secondary">
             {uploadProgress}%
           </Typography>

@@ -27,7 +27,8 @@ describe('DocumentChunker', () => {
     });
 
     it('should return single chunk for small documents', () => {
-      const content = 'This is a short document with only a few sentences. It should fit in one chunk.';
+      const content =
+        'This is a short document with only a few sentences. It should fit in one chunk.';
       const result = chunker.chunkDocument(content);
 
       expect(result.chunks.length).toBe(1);
@@ -51,11 +52,11 @@ describe('DocumentChunker', () => {
       const content = generateLongText(5000);
       const result = chunker.chunkDocument(content);
 
-      const chunkIds = result.chunks.map(c => c.chunkId);
+      const chunkIds = result.chunks.map((c) => c.chunkId);
       const uniqueIds = new Set(chunkIds);
 
       expect(uniqueIds.size).toBe(chunkIds.length);
-      chunkIds.forEach(id => {
+      chunkIds.forEach((id) => {
         expect(id).toMatch(/^chunk-\d{4}-of-\d{4}-\d+$/);
       });
     });
@@ -79,7 +80,7 @@ describe('DocumentChunker', () => {
       const content = generateLongText(10000);
       const result = chunker.chunkDocument(content);
 
-      result.chunks.forEach((chunk, index) => {
+      result.chunks.forEach((chunk, _index) => {
         if (chunk.previousSummary) {
           const prevTokens = countTokens(chunk.previousSummary);
           expect(prevTokens).toBeLessThanOrEqual(250);
@@ -101,7 +102,7 @@ describe('DocumentChunker', () => {
       const content = generateLongText(5000);
       const result = customChunker.chunkDocument(content);
 
-      result.chunks.forEach(chunk => {
+      result.chunks.forEach((chunk) => {
         const tokens = countTokens(chunk.primaryContent);
         expect(tokens).toBeLessThanOrEqual(2000);
 
@@ -172,12 +173,11 @@ describe('DocumentChunker', () => {
 
       const result = chunker.chunkDocument(content);
 
-      result.chunks.forEach(chunk => {
+      result.chunks.forEach((chunk) => {
         // Check that chunks end with sentence terminators
         const trimmed = chunk.primaryContent.trim();
-        const lastChar = trimmed[trimmed.length - 1];
         // Should end with sentence terminator or be incomplete due to chunking
-        expect(['.', '!', '?', ' '].some(char => trimmed.includes(char))).toBe(true);
+        expect(['.', '!', '?', ' '].some((char) => trimmed.includes(char))).toBe(true);
       });
     });
 
@@ -190,7 +190,7 @@ describe('DocumentChunker', () => {
 
       expect(result.chunks.length).toBeGreaterThan(1);
 
-      result.chunks.forEach(chunk => {
+      result.chunks.forEach((chunk) => {
         const tokens = countTokens(chunk.primaryContent);
         expect(tokens).toBeLessThanOrEqual(3500);
       });
@@ -230,13 +230,16 @@ describe('DocumentChunker', () => {
       const result = chunker.chunkDocument(content);
 
       expect(result.chunks.length).toBeGreaterThan(0);
-      result.chunks.forEach(chunk => {
+      result.chunks.forEach((chunk) => {
         expect(countTokens(chunk.primaryContent)).toBeLessThanOrEqual(3500);
       });
     });
 
     it('should handle content with special characters', () => {
-      const content = 'Test with "quotes" and (parentheses) and [brackets]. Also dashes—em and en–dashes. ' .repeat(1000);
+      const content =
+        'Test with "quotes" and (parentheses) and [brackets]. Also dashes—em and en–dashes. '.repeat(
+          1000
+        );
 
       const result = chunker.chunkDocument(content);
 
@@ -257,7 +260,7 @@ describe('DocumentChunker', () => {
       const content = generateLongText(5000);
       const result = chunker.chunkDocument(content);
 
-      result.chunks.forEach(chunk => {
+      result.chunks.forEach((chunk) => {
         expect(chunker.validateChunk(chunk)).toBe(true);
       });
     });
@@ -327,9 +330,7 @@ describe('DocumentChunker', () => {
       const content = generateLongText(5000);
       const result = chunker.chunkDocument(content);
 
-      const reassembled = result.chunks
-        .map(c => c.primaryContent)
-        .join(' ');
+      const reassembled = result.chunks.map((c) => c.primaryContent).join(' ');
 
       // Token count should be approximately the same (may vary due to whitespace)
       const originalTokens = countTokens(content);
@@ -350,7 +351,7 @@ describe('DocumentChunker', () => {
         const currentWords = currentContent.split(/\s+/).slice(-10);
         const nextWords = nextContent.split(/\s+/).slice(0, 10);
 
-        const overlap = currentWords.filter(word => nextWords.includes(word));
+        const overlap = currentWords.filter((word) => nextWords.includes(word));
         // Some overlap is acceptable due to common words, but not complete overlap
         expect(overlap.length).toBeLessThan(8);
       }

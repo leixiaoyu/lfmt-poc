@@ -21,13 +21,14 @@ aws cloudfront update-distribution --id EY0NDD10UXFN4
 ```
 
 **Configuration Change:**
+
 ```json
 {
   "CustomErrorResponses": {
     "Quantity": 2,
     "Items": [
-      {"ErrorCode": 403, "ResponsePagePath": "/index.html", "ResponseCode": "200"},
-      {"ErrorCode": 404, "ResponsePagePath": "/index.html", "ResponseCode": "200"}
+      { "ErrorCode": 403, "ResponsePagePath": "/index.html", "ResponseCode": "200" },
+      { "ErrorCode": 404, "ResponsePagePath": "/index.html", "ResponseCode": "200" }
     ]
   }
 }
@@ -36,6 +37,7 @@ aws cloudfront update-distribution --id EY0NDD10UXFN4
 ## Verification
 
 **Manual Tests:**
+
 ```
 ✅ / → 200 OK (redirects to /login)
 ✅ /dashboard → 200 OK (serves index.html, React Router handles redirect)
@@ -47,14 +49,14 @@ aws cloudfront update-distribution --id EY0NDD10UXFN4
 
 ## Timeline
 
-| Time (UTC) | Event |
-|------------|-------|
-| 21:22:44 | CloudFront update initiated |
-| 21:23:24 | Cache invalidation created |
-| 21:25:00 | Documentation created |
-| 21:36:00 | Deployment completed |
-| 21:37:00 | Manual verification successful |
-| 21:37:30 | E2E test rerun triggered |
+| Time (UTC) | Event                          |
+| ---------- | ------------------------------ |
+| 21:22:44   | CloudFront update initiated    |
+| 21:23:24   | Cache invalidation created     |
+| 21:25:00   | Documentation created          |
+| 21:36:00   | Deployment completed           |
+| 21:37:00   | Manual verification successful |
+| 21:37:30   | E2E test rerun triggered       |
 
 ## Impact
 

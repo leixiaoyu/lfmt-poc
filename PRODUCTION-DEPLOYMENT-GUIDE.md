@@ -18,6 +18,7 @@ Complete guide for deploying LFMT POC to production with CI/CD enabled.
 ## Pre-Deployment Checklist
 
 ### Code Quality
+
 - [ ] All tests passing (31/31)
 - [ ] No TypeScript compilation errors
 - [ ] Security scan completed
@@ -25,6 +26,7 @@ Complete guide for deploying LFMT POC to production with CI/CD enabled.
 - [ ] Documentation up to date
 
 ### AWS Prerequisites
+
 - [ ] Production AWS account created
 - [ ] Account ID documented: `_________________`
 - [ ] IAM permissions configured
@@ -33,12 +35,14 @@ Complete guide for deploying LFMT POC to production with CI/CD enabled.
 - [ ] Region selected: `us-east-1` (recommended)
 
 ### GitHub Prerequisites
+
 - [ ] Repository: `github.com/leixiaoyu/lfmt-poc`
 - [ ] Protected branch rules configured for `main`
 - [ ] GitHub Actions enabled
 - [ ] Secrets configured (see below)
 
 ### Security Prerequisites
+
 - [ ] Static credentials removed (✅ already done)
 - [ ] Sensitive IDs redacted (✅ already done)
 - [ ] `.env.local` never committed (✅ verified)
@@ -62,6 +66,7 @@ aws iam list-open-id-connect-providers
 ```
 
 **Expected Output:**
+
 ```
 arn:aws:iam::YOUR_ACCOUNT_ID:oidc-provider/token.actions.githubusercontent.com
 ```
@@ -120,6 +125,7 @@ aws iam attach-role-policy \
 ```
 
 **Production Note:** Replace `AdministratorAccess` with a custom policy that includes only:
+
 - CloudFormation full access
 - S3 access for CDK assets
 - Lambda deployment permissions
@@ -139,6 +145,7 @@ aws budgets create-budget \
 ```
 
 **production-budget.json:**
+
 ```json
 {
   "BudgetName": "LFMT-Production-Monthly",
@@ -163,6 +170,7 @@ aws budgets create-budget \
 Navigate to: `Settings → Environments → New environment`
 
 **Create Production Environment:**
+
 - Name: `production`
 - Protection rules:
   - ✅ Required reviewers: 1 (add yourself)
@@ -175,11 +183,12 @@ Navigate to: `Settings → Secrets and variables → Actions → New repository 
 
 **Required Secret:**
 
-| Secret Name | Value | Description |
-|------------|-------|-------------|
+| Secret Name    | Value                                                  | Description              |
+| -------------- | ------------------------------------------------------ | ------------------------ |
 | `AWS_ROLE_ARN` | `arn:aws:iam::XXXXXXXXXXXX:role/GitHubActionsLFMTProd` | IAM role ARN from Step 2 |
 
 **Verification:**
+
 ```bash
 # List secrets (names only)
 gh secret list
@@ -192,6 +201,7 @@ Navigate to: `Settings → Branches → Add rule`
 **Branch name pattern:** `main`
 
 **Protection rules:**
+
 - ✅ Require a pull request before merging
 - ✅ Require approvals: 1
 - ✅ Require status checks to pass before merging
@@ -221,6 +231,7 @@ gh run watch
 ```
 
 **Deployment Steps:**
+
 1. ✅ Run tests (11 shared-types + 20 infrastructure)
 2. ✅ Build infrastructure
 3. ✅ Verify AWS identity
@@ -286,6 +297,7 @@ aws cloudformation describe-stacks \
 ```
 
 **Expected Outputs:**
+
 - `ApiUrl`: API Gateway endpoint
 - `UserPoolId`: Cognito User Pool ID
 - `UserPoolClientId`: Cognito Client ID
@@ -453,6 +465,7 @@ npx cdk deploy LfmtPocProd --context environment=prod
 **Cause:** OIDC provider or IAM role misconfigured
 
 **Solution:**
+
 ```bash
 # Verify OIDC provider
 aws iam list-open-id-connect-providers
@@ -466,6 +479,7 @@ aws iam get-role --role-name GitHubActionsLFMTProd
 **Cause:** Insufficient permissions
 
 **Solution:**
+
 ```bash
 # Check current identity
 aws sts get-caller-identity
@@ -479,6 +493,7 @@ aws iam list-attached-role-policies --role-name GitHubActionsLFMTProd
 **Cause:** CORS misconfiguration or API key required
 
 **Solution:**
+
 - Verify CORS headers in API Gateway console
 - Check API Gateway resource policies
 - Verify Lambda execution role permissions
@@ -488,6 +503,7 @@ aws iam list-attached-role-policies --role-name GitHubActionsLFMTProd
 **Cause:** Password policy not met or email already exists
 
 **Solution:**
+
 ```bash
 # Check user pool password policy
 aws cognito-idp describe-user-pool --user-pool-id $USER_POOL_ID \

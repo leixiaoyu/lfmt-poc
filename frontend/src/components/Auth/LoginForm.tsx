@@ -17,15 +17,7 @@ import { useState, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import {
-  Box,
-  TextField,
-  Button,
-  Link,
-  Typography,
-  Alert,
-  CircularProgress,
-} from '@mui/material';
+import { Box, TextField, Button, Link, Typography, Alert, CircularProgress } from '@mui/material';
 import { Link as RouterLink } from 'react-router-dom';
 import { ROUTES } from '../../config/constants';
 import type { LoginRequest } from '../../services/authService';
@@ -34,13 +26,8 @@ import type { LoginRequest } from '../../services/authService';
  * Login form validation schema
  */
 const loginSchema = z.object({
-  email: z
-    .string()
-    .min(1, 'Email is required')
-    .email('Invalid email address'),
-  password: z
-    .string()
-    .min(1, 'Password is required'),
+  email: z.string().min(1, 'Email is required').email('Invalid email address'),
+  password: z.string().min(1, 'Password is required'),
 });
 
 type LoginFormData = z.infer<typeof loginSchema>;
@@ -121,13 +108,7 @@ export function LoginForm({ onSubmit }: LoginFormProps) {
         Log In
       </Typography>
 
-      <Typography
-        variant="body2"
-        color="text.secondary"
-        gutterBottom
-        align="center"
-        sx={{ mb: 3 }}
-      >
+      <Typography variant="body2" color="text.secondary" gutterBottom align="center" sx={{ mb: 3 }}>
         Sign in to your account to continue
       </Typography>
 
@@ -144,7 +125,6 @@ export function LoginForm({ onSubmit }: LoginFormProps) {
         fullWidth
         margin="normal"
         autoComplete="email"
-        autoFocus
         error={!!errors.email}
         helperText={errors.email?.message}
         disabled={isSubmitting}
@@ -169,12 +149,7 @@ export function LoginForm({ onSubmit }: LoginFormProps) {
       />
 
       <Box sx={{ textAlign: 'right', mt: 1, mb: 2 }}>
-        <Link
-          component={RouterLink}
-          to={ROUTES.FORGOT_PASSWORD}
-          variant="body2"
-          underline="hover"
-        >
+        <Link component={RouterLink} to={ROUTES.FORGOT_PASSWORD} variant="body2" underline="hover">
           Forgot password?
         </Link>
       </Box>
@@ -200,12 +175,7 @@ export function LoginForm({ onSubmit }: LoginFormProps) {
       <Box sx={{ textAlign: 'center', mt: 2 }}>
         <Typography variant="body2" color="text.secondary">
           Don't have an account?{' '}
-          <Link
-            component={RouterLink}
-            to={ROUTES.REGISTER}
-            variant="body2"
-            underline="hover"
-          >
+          <Link component={RouterLink} to={ROUTES.REGISTER} variant="body2" underline="hover">
             Sign up
           </Link>
         </Typography>

@@ -16,8 +16,6 @@ import { handler } from '../getCurrentUser';
 import {
   CognitoIdentityProviderClient,
   GetUserCommand,
-  NotAuthorizedException,
-  UserNotFoundException,
 } from '@aws-sdk/client-cognito-identity-provider';
 import { mockClient } from 'aws-sdk-client-mock';
 
@@ -391,7 +389,7 @@ describe('getCurrentUser Lambda Function', () => {
         id: 'partial-user-id-456',
         email: 'partial@example.com',
         firstName: '', // Should default to empty string
-        lastName: '',  // Should default to empty string
+        lastName: '', // Should default to empty string
       });
 
       // Verify GetUserCommand was NOT called (authorizer path used)

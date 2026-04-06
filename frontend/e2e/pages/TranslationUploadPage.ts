@@ -104,7 +104,11 @@ export class TranslationUploadPage extends BasePage {
   /**
    * Complete full upload workflow
    */
-  async completeUploadWorkflow(filePath: string, language: string = 'es', tone: string = 'neutral') {
+  async completeUploadWorkflow(
+    filePath: string,
+    language: string = 'es',
+    tone: string = 'neutral'
+  ) {
     // Step 1: Legal Attestation
     await this.completeLegalAttestation();
     await this.clickNext();

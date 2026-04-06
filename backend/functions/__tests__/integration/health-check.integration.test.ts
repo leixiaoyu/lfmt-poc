@@ -74,11 +74,7 @@ describe('API Health Check Integration Tests', () => {
       const results: HealthCheckResult[] = [];
 
       for (const endpoint of endpoints) {
-        const result = await checkEndpoint(
-          endpoint.path,
-          endpoint.method,
-          endpoint.expectedCodes
-        );
+        const result = await checkEndpoint(endpoint.path, endpoint.method, endpoint.expectedCodes);
         results.push(result);
       }
 
@@ -93,9 +89,7 @@ describe('API Health Check Integration Tests', () => {
 
       console.log('Auth Endpoints Health:');
       results.forEach((r) => {
-        console.log(
-          `  ${r.endpoint}: ${r.status} (${r.responseTime}ms) ${r.success ? '✓' : '✗'}`
-        );
+        console.log(`  ${r.endpoint}: ${r.status} (${r.responseTime}ms) ${r.success ? '✓' : '✗'}`);
       });
     });
 
@@ -109,8 +103,7 @@ describe('API Health Check Integration Tests', () => {
         responseTimes.push(result.responseTime);
       }
 
-      const avgResponseTime =
-        responseTimes.reduce((a, b) => a + b, 0) / iterations;
+      const avgResponseTime = responseTimes.reduce((a, b) => a + b, 0) / iterations;
       const maxResponseTime = Math.max(...responseTimes);
 
       console.log(`Auth endpoint average response time: ${avgResponseTime}ms`);
@@ -143,11 +136,7 @@ describe('API Health Check Integration Tests', () => {
       const results: HealthCheckResult[] = [];
 
       for (const endpoint of endpoints) {
-        const result = await checkEndpoint(
-          endpoint.path,
-          endpoint.method,
-          endpoint.expectedCodes
-        );
+        const result = await checkEndpoint(endpoint.path, endpoint.method, endpoint.expectedCodes);
         results.push(result);
       }
 
@@ -162,9 +151,7 @@ describe('API Health Check Integration Tests', () => {
 
       console.log('Jobs Endpoints Health:');
       results.forEach((r) => {
-        console.log(
-          `  ${r.endpoint}: ${r.status} (${r.responseTime}ms) ${r.success ? '✓' : '✗'}`
-        );
+        console.log(`  ${r.endpoint}: ${r.status} (${r.responseTime}ms) ${r.success ? '✓' : '✗'}`);
       });
     });
 
@@ -178,16 +165,11 @@ describe('API Health Check Integration Tests', () => {
         responseTimes.push(result.responseTime);
       }
 
-      const avgResponseTime =
-        responseTimes.reduce((a, b) => a + b, 0) / iterations;
+      const avgResponseTime = responseTimes.reduce((a, b) => a + b, 0) / iterations;
       const maxResponseTime = Math.max(...responseTimes);
 
-      console.log(
-        `Translation endpoint average response time: ${avgResponseTime}ms`
-      );
-      console.log(
-        `Translation endpoint max response time: ${maxResponseTime}ms`
-      );
+      console.log(`Translation endpoint average response time: ${avgResponseTime}ms`);
+      console.log(`Translation endpoint max response time: ${maxResponseTime}ms`);
 
       // Average should be under 1 second
       expect(avgResponseTime).toBeLessThan(1000);
@@ -215,9 +197,7 @@ describe('API Health Check Integration Tests', () => {
         const corsOrigin = response.headers.get('access-control-allow-origin');
         const corsMethods = response.headers.get('access-control-allow-methods');
         const corsHeaders = response.headers.get('access-control-allow-headers');
-        const corsCredentials = response.headers.get(
-          'access-control-allow-credentials'
-        );
+        const corsCredentials = response.headers.get('access-control-allow-credentials');
 
         expect(corsOrigin).toBeTruthy();
         expect(corsMethods).toBeTruthy();
@@ -248,11 +228,7 @@ describe('API Health Check Integration Tests', () => {
 
   describe('API Gateway Health', () => {
     it('should not return API Gateway errors', async () => {
-      const endpoints = [
-        '/auth/me',
-        '/jobs/fake-id',
-        '/jobs/fake-id/translation-status',
-      ];
+      const endpoints = ['/auth/me', '/jobs/fake-id', '/jobs/fake-id/translation-status'];
 
       for (const endpoint of endpoints) {
         const response = await fetch(`${API_BASE_URL}${endpoint}`, {
@@ -335,7 +311,7 @@ describe('API Health Check Integration Tests', () => {
 
         expect(response.status).toBe(endpoint.expectedStatus);
 
-        const data = await response.json() as any;
+        const data = (await response.json()) as any;
 
         // All error responses should have these fields
         expect(data).toHaveProperty('message');
@@ -373,9 +349,7 @@ describe('API Health Check Integration Tests', () => {
         expect(response.status).not.toBe(503);
       });
 
-      console.log(
-        `${concurrentRequests} concurrent requests handled successfully`
-      );
+      console.log(`${concurrentRequests} concurrent requests handled successfully`);
     });
 
     it('should not throttle reasonable sequential requests', async () => {
@@ -440,8 +414,7 @@ describe('API Health Check Integration Tests', () => {
         total: results.length,
         healthy: results.filter((r) => r.success).length,
         unhealthy: results.filter((r) => !r.success).length,
-        avgResponseTime:
-          results.reduce((sum, r) => sum + r.responseTime, 0) / results.length,
+        avgResponseTime: results.reduce((sum, r) => sum + r.responseTime, 0) / results.length,
         maxResponseTime: Math.max(...results.map((r) => r.responseTime)),
         byCategory: {} as Record<string, { healthy: number; total: number }>,
       };
@@ -465,9 +438,7 @@ describe('API Health Check Integration Tests', () => {
       console.log(`Max Response Time: ${summary.maxResponseTime}ms`);
       console.log('\nBy Category:');
       Object.entries(summary.byCategory).forEach(([category, stats]) => {
-        console.log(
-          `  ${category}: ${stats.healthy}/${stats.total} healthy`
-        );
+        console.log(`  ${category}: ${stats.healthy}/${stats.total} healthy`);
       });
       console.log('\nDetailed Results:');
       results.forEach((r) => {

@@ -7,7 +7,7 @@ import {
   loginRequestSchema,
   createJobRequestSchema,
   attestationRequestSchema,
-  ValidationUtils
+  ValidationUtils,
 } from '../index';
 
 describe('Shared Types Validation', () => {
@@ -15,19 +15,19 @@ describe('Shared Types Validation', () => {
     test('JobStatus contains all required values from design documents', () => {
       const expectedStatuses = [
         'QUEUED',
-        'PROCESSING', 
+        'PROCESSING',
         'RETRYING',
         'RATE_LIMITED',
         'RECOVERING',
         'COMPLETED',
         'FAILED',
         'CANCELLED', // Added from cancellation requirements
-        'RESUMED'
+        'RESUMED',
       ];
-      
+
       // This test ensures we haven't missed any status values
       // and that the enum matches Document 7 specifications exactly
-      expectedStatuses.forEach(status => {
+      expectedStatuses.forEach((status) => {
         expect(expectedStatuses).toContain(status);
       });
     });
@@ -43,7 +43,7 @@ describe('Shared Types Validation', () => {
         firstName: 'John',
         lastName: 'Doe',
         acceptedTerms: true,
-        acceptedPrivacy: true
+        acceptedPrivacy: true,
       };
 
       const result = registerRequestSchema.safeParse(validRequest);
@@ -60,7 +60,7 @@ describe('Shared Types Validation', () => {
         firstName: '',
         lastName: 'Doe',
         acceptedTerms: false,
-        acceptedPrivacy: true
+        acceptedPrivacy: true,
       };
 
       const result = registerRequestSchema.safeParse(invalidRequest);
@@ -78,9 +78,9 @@ describe('Shared Types Validation', () => {
         documentMetadata: {
           wordCount: 75000,
           fileSize: 1024 * 1024, // 1MB
-          contentHash: 'abc123'
+          contentHash: 'abc123',
         },
-        priority: 'NORMAL' as const
+        priority: 'NORMAL' as const,
       };
 
       const result = createJobRequestSchema.safeParse(validJob);
@@ -96,9 +96,9 @@ describe('Shared Types Validation', () => {
         documentMetadata: {
           wordCount: 50000, // Below 65K minimum
           fileSize: 1024 * 1024,
-          contentHash: 'abc123'
+          contentHash: 'abc123',
         },
-        priority: 'NORMAL' as const
+        priority: 'NORMAL' as const,
       };
 
       const result = createJobRequestSchema.safeParse(invalidJob);
@@ -117,7 +117,7 @@ describe('Shared Types Validation', () => {
           liabilityAcceptance: true,
           publicDomainAcknowledgment: true,
           dataProcessingConsent: true,
-          termsOfServiceAcceptance: true
+          termsOfServiceAcceptance: true,
         },
         interactionMetrics: {
           pageViewDuration: 45000, // 45 seconds
@@ -125,7 +125,7 @@ describe('Shared Types Validation', () => {
           mouseMovements: 15,
           keystrokes: 0,
           attestationMethod: 'checkbox' as const,
-          readingPattern: []
+          readingPattern: [],
         },
         browserFingerprint: {
           userAgent: 'Mozilla/5.0...',
@@ -134,15 +134,15 @@ describe('Shared Types Validation', () => {
           screen: { width: 1920, height: 1080, colorDepth: 24 },
           canvas: 'canvas-fingerprint',
           webgl: 'webgl-fingerprint',
-          timestamp: Date.now()
+          timestamp: Date.now(),
         },
         documentMetadata: {
           filename: 'document.txt',
           fileSize: 1024000,
           wordCount: 75000,
           documentHash: 'hash123',
-          uploadTimestamp: new Date().toISOString()
-        }
+          uploadTimestamp: new Date().toISOString(),
+        },
       };
 
       const result = attestationRequestSchema.safeParse(validAttestation);
@@ -159,7 +159,7 @@ describe('Shared Types Validation', () => {
           liabilityAcceptance: true,
           publicDomainAcknowledgment: true,
           dataProcessingConsent: true,
-          termsOfServiceAcceptance: true
+          termsOfServiceAcceptance: true,
         },
         interactionMetrics: {
           pageViewDuration: 15000, // Only 15 seconds - too fast
@@ -167,7 +167,7 @@ describe('Shared Types Validation', () => {
           mouseMovements: 2,
           keystrokes: 0,
           attestationMethod: 'checkbox' as const,
-          readingPattern: []
+          readingPattern: [],
         },
         browserFingerprint: {
           userAgent: 'Mozilla/5.0...',
@@ -176,15 +176,15 @@ describe('Shared Types Validation', () => {
           screen: { width: 1920, height: 1080, colorDepth: 24 },
           canvas: 'canvas-fingerprint',
           webgl: 'webgl-fingerprint',
-          timestamp: Date.now()
+          timestamp: Date.now(),
         },
         documentMetadata: {
           filename: 'document.txt',
           fileSize: 1024000,
           wordCount: 75000,
           documentHash: 'hash123',
-          uploadTimestamp: new Date().toISOString()
-        }
+          uploadTimestamp: new Date().toISOString(),
+        },
       };
 
       const result = attestationRequestSchema.safeParse(quickAttestation);

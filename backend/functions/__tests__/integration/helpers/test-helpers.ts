@@ -56,8 +56,7 @@ export interface TranslationStatus {
 
 // Configuration
 export const API_BASE_URL =
-  process.env.API_BASE_URL ||
-  'https://8brwlwf68h.execute-api.us-east-1.amazonaws.com/v1';
+  process.env.API_BASE_URL || 'https://8brwlwf68h.execute-api.us-east-1.amazonaws.com/v1';
 
 export const TEST_EMAIL_DOMAIN = '@integration-test.com';
 
@@ -194,13 +193,11 @@ export const loginUser = async (
 /**
  * Register and login in one step
  */
-export const registerAndLogin = async (
-  email?: string,
-  password?: string
-): Promise<AuthTokens> => {
-  const user = email && password
-    ? { email, password, firstName: 'Test', lastName: 'User' }
-    : generateTestUser();
+export const registerAndLogin = async (email?: string, password?: string): Promise<AuthTokens> => {
+  const user =
+    email && password
+      ? { email, password, firstName: 'Test', lastName: 'User' }
+      : generateTestUser();
 
   // Register (ignore if already exists)
   await registerUser(user);
@@ -250,9 +247,7 @@ export const requestUpload = async (
   );
 
   if (response.status !== 200) {
-    throw new Error(
-      `Upload request failed: ${response.status} - ${JSON.stringify(response.data)}`
-    );
+    throw new Error(`Upload request failed: ${response.status} - ${JSON.stringify(response.data)}`);
   }
 
   return response.data;
@@ -284,9 +279,7 @@ export const uploadToS3 = async (
   });
 
   if (uploadResponse.status !== 204 && uploadResponse.status !== 200) {
-    throw new Error(
-      `S3 upload failed: ${uploadResponse.status} ${uploadResponse.statusText}`
-    );
+    throw new Error(`S3 upload failed: ${uploadResponse.status} ${uploadResponse.statusText}`);
   }
 };
 
@@ -312,21 +305,11 @@ export const uploadDocument = async (
 /**
  * Get job status
  */
-export const getJobStatus = async (
-  authToken: string,
-  jobId: string
-): Promise<JobStatus> => {
-  const response = await apiRequest<JobStatus>(
-    `/jobs/${jobId}`,
-    'GET',
-    undefined,
-    authToken
-  );
+export const getJobStatus = async (authToken: string, jobId: string): Promise<JobStatus> => {
+  const response = await apiRequest<JobStatus>(`/jobs/${jobId}`, 'GET', undefined, authToken);
 
   if (response.status !== 200) {
-    throw new Error(
-      `Get job status failed: ${response.status} - ${JSON.stringify(response.data)}`
-    );
+    throw new Error(`Get job status failed: ${response.status} - ${JSON.stringify(response.data)}`);
   }
 
   return response.data;
@@ -353,9 +336,7 @@ export const waitForJobStatus = async (
     }
 
     if (status.status.includes('FAILED')) {
-      throw new Error(
-        `Job failed: ${status.status} - ${status.error || 'Unknown error'}`
-      );
+      throw new Error(`Job failed: ${status.status} - ${status.error || 'Unknown error'}`);
     }
 
     await sleep(pollInterval);
@@ -443,9 +424,7 @@ export const waitForTranslation = async (
     }
 
     if (status.translationStatus === 'TRANSLATION_FAILED') {
-      throw new Error(
-        `Translation failed: ${status.error || 'Unknown error'}`
-      );
+      throw new Error(`Translation failed: ${status.error || 'Unknown error'}`);
     }
 
     await sleep(pollInterval);
@@ -507,10 +486,7 @@ export const verifyCorsHeaders = (headers: Headers): void => {
 /**
  * Verify response format
  */
-export const verifyResponseFormat = (
-  data: any,
-  requiredFields: string[]
-): void => {
+export const verifyResponseFormat = (data: any, requiredFields: string[]): void => {
   requiredFields.forEach((field) => {
     if (!(field in data)) {
       throw new Error(`Missing required field: ${field}`);

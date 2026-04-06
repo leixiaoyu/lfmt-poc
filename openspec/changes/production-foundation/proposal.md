@@ -14,6 +14,7 @@
 LFMT is currently a proof-of-concept with ~877 tests and working end-to-end deployment. However, before adding new features or exposing to real users, the codebase requires a production-ready foundation to ensure reliability, security, and maintainability.
 
 **Current State (POC Quality)**:
+
 - Test coverage: Backend 70% (target: 95%), Frontend unmeasured
 - Code quality: No enforced standards in CI, manual reviews only
 - Infrastructure: IAM permissions not audited for least privilege
@@ -22,6 +23,7 @@ LFMT is currently a proof-of-concept with ~877 tests and working end-to-end depl
 - Security: DynamoDB backups disabled, S3 encryption not enforced
 
 **Business Risk**:
+
 - **Without 95% coverage**: Silent bugs in production, customer data loss
 - **Without code standards**: Technical debt compounds, onboarding slows
 - **Without hardened IAM**: Security breach blast radius increases
@@ -35,7 +37,9 @@ This change establishes the **minimum production-grade foundation** required bef
 ## What Changes
 
 ### 1. Test Coverage with Tiered Targets ✅ **REQUIRED**
+
 **Tiered Coverage Approach** (realistic for production quality):
+
 - **Critical Path (Auth + Translation)**: 100% coverage (zero tolerance for bugs)
   - `backend/functions/auth/*`: 100% (authentication = security critical)
   - `backend/functions/translation/*`: 100% (core business logic)
@@ -50,6 +54,7 @@ This change establishes the **minimum production-grade foundation** required bef
   - **Note**: CDK snapshot tests are brittle/noisy — use sparingly, focus on unit tests for custom constructs
 
 **Why Tiered?**
+
 - **Reviewer Feedback**: 95% across all code (including infra) is unrealistic for one person in 1 week
 - **95% CDK coverage = testing AWS's framework**, not our logic
 - **Focus effort where it matters**: Security (auth) and business value (translation)
@@ -57,6 +62,7 @@ This change establishes the **minimum production-grade foundation** required bef
 **CI Enforcement**: Fail builds if critical path < 100%, general < 80%, infra < 40%
 
 ### 2. Code Quality Standards ✅ **REQUIRED**
+
 - **TypeScript Strict Mode**: Enforce `strict: true`, `noImplicitAny: true` in all `tsconfig.json`
 - **ESLint Rules**: Standardize `.eslintrc.cjs` across frontend/backend with auto-fix in CI
 - **Prettier Formatting**: Add `.prettierrc.json`, format all code, enforce in pre-commit hooks
@@ -68,6 +74,7 @@ This change establishes the **minimum production-grade foundation** required bef
   - Code coverage must meet tiered thresholds (Critical Path 100%, General 80%, Infra 40-50%)
 
 ### 3. Infrastructure Hardening ✅ **REQUIRED**
+
 - **IAM Least Privilege Audit**:
   - Review all 10 PolicyStatements in `lfmt-infrastructure-stack.ts` (lines 502-1027)
   - Remove wildcards, scope to exact resources
@@ -108,6 +115,7 @@ This change establishes the **minimum production-grade foundation** required bef
   - **Right to Deletion**: API endpoint for users to request immediate document deletion
 
 ### 4. Monitoring & Observability ✅ **REQUIRED**
+
 - **Backend Observability (CloudWatch)**:
   - **Dashboards**: API Gateway, Lambda, DynamoDB, S3, Step Functions
   - **Alarms**: Lambda errors > 5%, API 5xx > 1%, DynamoDB throttling, translation failures
@@ -132,6 +140,7 @@ This change establishes the **minimum production-grade foundation** required bef
   - Trace API Gateway → Lambda → DynamoDB/S3 flows
 
 ### 5. CI/CD Hardening ✅ **REQUIRED**
+
 - **Deployment Strategy**:
   - **Dev**: Auto-deploy on `main` push (current behavior)
   - **Staging**: Manual approval via `workflow_dispatch` (new)
@@ -154,6 +163,7 @@ This change establishes the **minimum production-grade foundation** required bef
   - Quarterly dependency audit
 
 ### 6. Operational Procedures ✅ **REQUIRED**
+
 - **Deployment Runbooks**:
   - Step-by-step deployment guides for staging/prod
   - Rollback procedures with time estimates
@@ -172,7 +182,9 @@ This change establishes the **minimum production-grade foundation** required bef
 ## Impact
 
 ### Affected Specs
+
 This is a **cross-cutting foundational change** affecting all existing capabilities:
+
 - **ALL** backend Lambda functions (testing, IAM, logging)
 - **ALL** frontend components (testing, linting, formatting)
 - **ALL** infrastructure resources (hardening, monitoring)
@@ -181,6 +193,7 @@ This is a **cross-cutting foundational change** affecting all existing capabilit
 **No delta specs required** - this change improves quality/security without altering functional behavior.
 
 ### Affected Code
+
 - **Test Configuration**: `jest.config.js`, `vitest.config.ts` (3 files)
 - **Linting**: `.eslintrc.cjs`, `.prettierrc.json` (4+ files)
 - **Infrastructure**: `backend/infrastructure/lib/lfmt-infrastructure-stack.ts` (1,523 lines)
@@ -195,6 +208,7 @@ This is a **cross-cutting foundational change** affecting all existing capabilit
   - `.prettierrc.json`
 
 ### Breaking Changes
+
 **NONE** - This change is backward-compatible. All changes are additive or internal improvements.
 
 ### Migration Path ⚠️ **CRITICAL: PHASE REORDERING**
@@ -202,6 +216,7 @@ This is a **cross-cutting foundational change** affecting all existing capabilit
 **Reviewer Feedback**: Phase 1 (Test Coverage) before Phase 2 (TypeScript Strict) is backwards — writing tests against incorrect types wastes effort. Fix types FIRST, then write tests.
 
 **REVISED Phase Order**:
+
 1. **Phase 1 (Week 1)**: Code Quality - TypeScript Strict, ESLint, Prettier (fix foundation first)
 2. **Phase 2 (Week 2)**: Test Coverage - Add missing tests against correct types (realistic timeline, tiered targets)
 3. **Phase 3 (Week 3)**: Infrastructure Hardening - IAM audit, encryption, backups, AWS account separation
@@ -214,6 +229,7 @@ This is a **cross-cutting foundational change** affecting all existing capabilit
 ## Success Criteria
 
 ### Quantitative Metrics
+
 - ✅ **Test Coverage**: ≥95% across backend, frontend, infrastructure, shared-types
 - ✅ **CI Quality Gates**: All builds pass linting, type-checking, coverage thresholds
 - ✅ **IAM Audit**: Zero wildcard permissions, all resources scoped to exact ARNs
@@ -221,12 +237,14 @@ This is a **cross-cutting foundational change** affecting all existing capabilit
 - ✅ **Deployment Rigor**: Staging environment operational, rollback tested
 
 ### Qualitative Metrics
+
 - ✅ **Code Review**: PR template reduces review time by 30%
 - ✅ **Debugging**: CloudWatch dashboards reduce incident triage time by 50%
 - ✅ **Confidence**: Team can deploy to production without anxiety
 - ✅ **Security**: Pass AWS Trusted Advisor security checks
 
 ### Acceptance Tests
+
 1. **Coverage Enforcement**: Temporarily delete a test → CI build fails
 2. **Linting Enforcement**: Introduce a linting error → Pre-commit hook blocks commit
 3. **IAM Validation**: Attempt unauthorized DynamoDB access → Access denied
@@ -238,34 +256,42 @@ This is a **cross-cutting foundational change** affecting all existing capabilit
 ## Risks & Mitigation
 
 ### Risk 1: Coverage Target Too Aggressive (95% Uniform is Unrealistic)
+
 **Probability**: High ⚠️ **REVIEWER CONFIRMED**
 **Impact**: Medium (timeline slip OR meaningless green-wash tests)
 **Reviewer Feedback**: Going from 0% to 95% across frontend + infra in 5 days for one person = recipe for garbage tests just to hit numbers
 **Mitigation**:
+
 - **Tiered Coverage Targets**: Critical 100%, General 80%, Infra 40-50% (see What Changes section)
 - Focus on security-critical code first (auth = 100%), then business logic (translation = 100%)
 - Infrastructure tests focus on custom logic, not CDK framework validation
 
 ### Risk 2: Breaking Changes from Strict TypeScript
+
 **Probability**: Low
 **Impact**: High (requires significant refactoring)
 **Mitigation**:
+
 - Audit current codebase for `any` types (estimated <50 occurrences)
 - Fix incrementally, file-by-file
 - Allocate 2 days for TypeScript strict mode migration
 
 ### Risk 3: IAM Changes Break Existing Functionality
+
 **Probability**: Medium
 **Impact**: High (service outage)
 **Mitigation**:
+
 - Test IAM changes in dev environment for 3 days before staging
 - Run full integration test suite after IAM updates
 - Keep rollback plan ready (previous CDK stack version)
 
 ### Risk 4: Timeline Pressure (4 Weeks is Ambitious)
+
 **Probability**: Medium
 **Impact**: Medium (delayed production readiness)
 **Mitigation**:
+
 - Prioritize P0 items (coverage, IAM, monitoring)
 - Defer P1 items if necessary (X-Ray tracing, advanced runbooks)
 - Weekly progress reviews with stakeholders
@@ -275,11 +301,13 @@ This is a **cross-cutting foundational change** affecting all existing capabilit
 ## Dependencies
 
 ### External Dependencies
+
 - AWS Services: CloudWatch, X-Ray, SNS (for alarms)
 - GitHub Actions: No additional runners required
 - Tools: Husky, lint-staged, Prettier (npm packages)
 
 ### Internal Dependencies
+
 - **Blocked By**: Phase A stabilization (PR #115) - **COMPLETED** ✅
 - **Blocks**: All future feature development (Phase B+)
 - **Concurrent Work**: Demo content preparation (Phase 10) can proceed in parallel
@@ -289,17 +317,20 @@ This is a **cross-cutting foundational change** affecting all existing capabilit
 ## References
 
 ### Related Work
+
 - **Phase A Stabilization**: PR #115 (merged Mar 31, 2026) - Translation workflow fixes
 - **Existing Security Work**: `openspec/changes/harden-security/` (IAM patterns)
 - **Test Infrastructure**: `backend/functions/jest.config.js` (current 70% threshold)
 
 ### Documentation
+
 - **AWS CDK Best Practices**: `docs/CDK-BEST-PRACTICES.md`
 - **CORS Configuration**: `docs/CORS-REFERENCE.md`
 - **Infrastructure Setup**: `docs/INFRASTRUCTURE-SETUP.md`
 - **Current Progress**: `PROGRESS.md` (Phase 10 status)
 
 ### Industry Standards
+
 - **Test Coverage**: Industry standard 80-95% for production systems
 - **IAM Least Privilege**: AWS Well-Architected Framework, Security Pillar
 - **Monitoring**: Google SRE Book - Chapter 6 (Monitoring Distributed Systems)
@@ -310,17 +341,20 @@ This is a **cross-cutting foundational change** affecting all existing capabilit
 ## Timeline
 
 ### Week 1: Code Quality Standards (MOVED TO FIRST - FIX TYPES BEFORE TESTS)
+
 - Days 1-2: Audit `any` types, enable TypeScript strict mode across all packages
 - Days 3-4: Configure ESLint, Prettier, enforce in CI
 - Days 5: Add pre-commit hooks (Husky + lint-staged)
 - Days 6-7: Fix TypeScript errors incrementally, validate with type-check
 
 ### Week 2: Test Coverage Foundation (REALISTIC TIMELINE, TIERED TARGETS)
+
 - Days 1-2: Configure coverage reporting with tiered thresholds (Critical 100%, General 80%, Infra 40-50%)
 - Days 3-5: Write missing unit tests for **critical path** (auth 100%, translation 100%)
 - Days 6-7: Write missing tests for general code (80% target), frontend components (80% target)
 
 ### Week 3: Infrastructure Hardening (+ AWS ACCOUNT SEPARATION)
+
 - Days 1-2: IAM least privilege audit and fixes
 - Days 3: Enable DynamoDB backups, S3 encryption
 - Day 4: Cognito hardening (password policy + migration plan for existing users)
@@ -328,6 +362,7 @@ This is a **cross-cutting foundational change** affecting all existing capabilit
 - Day 7: Deploy prod stack to new account, validate
 
 ### Week 4: Monitoring & Deployment (+ AUTOMATED ROLLBACK + COST CONTROLS)
+
 - Day 1: CloudWatch dashboards (backend + **frontend RUM**)
 - Day 2: CloudWatch alarms + SNS notifications
 - Day 3: **AWS Budgets + Cost Anomaly Detection** setup

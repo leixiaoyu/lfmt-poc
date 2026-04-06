@@ -2,38 +2,38 @@ import { defineConfig, devices } from '@playwright/test';
 
 /**
  * Playwright E2E Test Configuration
- * 
+ *
  * Full end-to-end testing for LFMT POC frontend.
  * Tests cover complete user journeys from registration to translation completion.
  */
 
 export default defineConfig({
   testDir: './e2e',
-  
+
   // Maximum time one test can run
   timeout: 60 * 1000,
-  
+
   // Expect timeout for assertions
   expect: {
     timeout: 10000,
   },
-  
+
   // Run tests in files in parallel
   fullyParallel: true,
-  
+
   // Fail the build on CI if you accidentally left test.only in the source code
   forbidOnly: !!process.env.CI,
-  
+
   // Retry on CI only
   retries: process.env.CI ? 2 : 0,
-  
+
   // Reporter to use
   reporter: [
     ['html'],
     ['json', { outputFile: 'test-results/e2e-results.json' }],
     ['junit', { outputFile: 'test-results/e2e-junit.xml' }],
   ],
-  
+
   // Shared settings for all the projects below
   use: {
     // Base URL for tests
@@ -81,10 +81,12 @@ export default defineConfig({
   // Run your local dev server before starting the tests
   // Only start dev server if PLAYWRIGHT_BASE_URL is not set (i.e., local/CI testing)
   // Skip dev server if testing against deployed environment (has PLAYWRIGHT_BASE_URL)
-  webServer: process.env.PLAYWRIGHT_BASE_URL ? undefined : {
-    command: 'npm run dev',
-    url: 'http://localhost:3000',
-    reuseExistingServer: !process.env.CI,
-    timeout: 180 * 1000, // 3 minutes - CI needs more time for dev server startup
-  },
+  webServer: process.env.PLAYWRIGHT_BASE_URL
+    ? undefined
+    : {
+        command: 'npm run dev',
+        url: 'http://localhost:3000',
+        reuseExistingServer: !process.env.CI,
+        timeout: 180 * 1000, // 3 minutes - CI needs more time for dev server startup
+      },
 });

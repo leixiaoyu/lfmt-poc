@@ -6,7 +6,8 @@
 
 // Set required environment variables BEFORE imports
 process.env.JOBS_TABLE = 'test-jobs-table';
-process.env.ALLOWED_ORIGINS = 'http://localhost:3000,https://localhost:3000,https://d39xcun7144jgl.cloudfront.net,https://staging.lfmt.yourcompany.com';
+process.env.ALLOWED_ORIGINS =
+  'http://localhost:3000,https://localhost:3000,https://d39xcun7144jgl.cloudfront.net,https://staging.lfmt.yourcompany.com';
 
 // Mock AWS SDK clients BEFORE importing handler
 jest.mock('@aws-sdk/client-dynamodb', () => {
@@ -33,30 +34,33 @@ import { handler } from '../getTranslationStatus';
 import { APIGatewayProxyEvent } from 'aws-lambda';
 
 describe('Get Translation Status - CORS Tests', () => {
-  const mockEvent = (origin: string): APIGatewayProxyEvent => ({
-    headers: {
-      origin,
-      Authorization: 'Bearer mock-token',
-    },
-    pathParameters: {
-      jobId: 'test-job-id',
-    },
-    requestContext: {
-      requestId: 'test-request-id',
-      authorizer: {
-        claims: {
-          sub: 'test-user-123',
-        },
+  const mockEvent = (origin: string): APIGatewayProxyEvent =>
+    ({
+      headers: {
+        origin,
+        Authorization: 'Bearer mock-token',
       },
-    } as any,
-  } as any);
+      pathParameters: {
+        jobId: 'test-job-id',
+      },
+      requestContext: {
+        requestId: 'test-request-id',
+        authorizer: {
+          claims: {
+            sub: 'test-user-123',
+          },
+        },
+      } as any,
+    }) as any;
 
   it('should include CORS headers with CloudFront origin', async () => {
     const event = mockEvent('https://d39xcun7144jgl.cloudfront.net');
     const response = await handler(event);
 
     expect(response.headers).toBeDefined();
-    expect(response.headers!['Access-Control-Allow-Origin']).toBe('https://d39xcun7144jgl.cloudfront.net');
+    expect(response.headers!['Access-Control-Allow-Origin']).toBe(
+      'https://d39xcun7144jgl.cloudfront.net'
+    );
     expect(response.headers!['Access-Control-Allow-Credentials']).toBe('true');
   });
 
@@ -64,7 +68,9 @@ describe('Get Translation Status - CORS Tests', () => {
     const event = mockEvent('https://d39xcun7144jgl.cloudfront.net');
     const response = await handler(event);
 
-    expect(response.headers!['Access-Control-Allow-Origin']).toBe('https://d39xcun7144jgl.cloudfront.net');
+    expect(response.headers!['Access-Control-Allow-Origin']).toBe(
+      'https://d39xcun7144jgl.cloudfront.net'
+    );
   });
 
   it('should support localhost origin', async () => {

@@ -4,20 +4,14 @@
  */
 
 import { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
-import {
-  S3Client,
-  PutObjectCommand,
-} from '@aws-sdk/client-s3';
+import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
-import {
-  DynamoDBClient,
-  PutItemCommand,
-} from '@aws-sdk/client-dynamodb';
+import { DynamoDBClient, PutItemCommand } from '@aws-sdk/client-dynamodb';
 import { marshall } from '@aws-sdk/util-dynamodb';
 import {
   PresignedUrlRequest,
   PresignedUrlResponse,
-  fileValidationSchema
+  fileValidationSchema,
 } from '@lfmt/shared-types';
 import { createSuccessResponse, createErrorResponse } from '../shared/api-response';
 import Logger from '../shared/logger';
@@ -32,9 +26,7 @@ const DOCUMENT_BUCKET = getRequiredEnv('DOCUMENT_BUCKET');
 const JOBS_TABLE = getRequiredEnv('JOBS_TABLE');
 const PRESIGNED_URL_EXPIRATION = 900; // 15 minutes
 
-export const handler = async (
-  event: APIGatewayProxyEvent
-): Promise<APIGatewayProxyResult> => {
+export const handler = async (event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> => {
   const requestId = event.requestContext.requestId;
   const requestOrigin = event.headers.origin || event.headers.Origin;
 
@@ -61,7 +53,7 @@ export const handler = async (
     const validationResult = fileValidationSchema.safeParse({
       filename: body.fileName,
       fileSize: body.fileSize,
-      contentType: body.contentType
+      contentType: body.contentType,
     });
 
     if (!validationResult.success) {

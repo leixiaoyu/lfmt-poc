@@ -38,7 +38,7 @@ export function countTokens(text: string): number {
  * @returns Array of token counts corresponding to each text
  */
 export function countTokensBatch(texts: string[]): number[] {
-  return texts.map(text => countTokens(text));
+  return texts.map((text) => countTokens(text));
 }
 
 /**
@@ -113,9 +113,7 @@ export function splitIntoSentences(text: string): string[] {
   }
 
   // Clean up and filter empty sentences
-  return sentences
-    .map(s => s.trim())
-    .filter(s => s.length > 0);
+  return sentences.map((s) => s.trim()).filter((s) => s.length > 0);
 }
 
 /**

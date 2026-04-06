@@ -43,14 +43,13 @@ export const LegalAttestation: React.FC<LegalAttestationProps> = ({
 }) => {
   const [tooltipOpen, setTooltipOpen] = useState<string | null>(null);
 
-  const handleCheckboxChange = (field: keyof LegalAttestationData) => (
-    event: React.ChangeEvent<HTMLInputElement>
-  ) => {
-    onChange({
-      ...value,
-      [field]: event.target.checked,
-    });
-  };
+  const handleCheckboxChange =
+    (field: keyof LegalAttestationData) => (event: React.ChangeEvent<HTMLInputElement>) => {
+      onChange({
+        ...value,
+        [field]: event.target.checked,
+      });
+    };
 
   const handleTooltipToggle = (field: string) => {
     setTooltipOpen(tooltipOpen === field ? null : field);
@@ -181,8 +180,8 @@ export const LegalAttestation: React.FC<LegalAttestationProps> = ({
                 }
                 label={
                   <Typography>
-                    I understand that I am solely responsible for ensuring I have the legal right
-                    to translate this document, and I indemnify LFMT from any copyright claims
+                    I understand that I am solely responsible for ensuring I have the legal right to
+                    translate this document, and I indemnify LFMT from any copyright claims
                   </Typography>
                 }
                 sx={{ flex: 1 }}

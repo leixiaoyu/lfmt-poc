@@ -81,10 +81,9 @@ describe('API Token Refresh Interceptor', () => {
       const response = await apiClient.get('/auth/me');
 
       // Assert: Refresh was called with correct token
-      expect(axiosPostSpy).toHaveBeenCalledWith(
-        expect.stringContaining('/auth/refresh'),
-        { refreshToken }
-      );
+      expect(axiosPostSpy).toHaveBeenCalledWith(expect.stringContaining('/auth/refresh'), {
+        refreshToken,
+      });
 
       // Assert: New tokens were stored
       expect(localStorage.getItem(AUTH_CONFIG.ACCESS_TOKEN_KEY)).toBe(newAccessToken);
@@ -253,11 +252,11 @@ describe('API Token Refresh Interceptor', () => {
       axiosPostSpy.mockRejectedValueOnce(mock401);
 
       // Execute & Assert: Should reject without attempting another refresh
-      await expect(
-        apiClient.post('/auth/refresh', { refreshToken: 'test' })
-      ).rejects.toMatchObject({
-        status: 401,
-      });
+      await expect(apiClient.post('/auth/refresh', { refreshToken: 'test' })).rejects.toMatchObject(
+        {
+          status: 401,
+        }
+      );
 
       // Assert: Only the original refresh call was made, no retry
       expect(axiosPostSpy).toHaveBeenCalledTimes(1);

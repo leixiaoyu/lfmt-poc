@@ -149,7 +149,7 @@ test.describe('Translation Progress Tracking', () => {
       await detailPage.clickStart();
     } catch (e) {
       // May already be IN_PROGRESS or COMPLETED
-      console.log('Job may have auto-started or completed');
+      // console.log('Job may have auto-started or completed');
     }
 
     // Verify progress section exists
@@ -194,7 +194,7 @@ test.describe('Translation Progress Tracking', () => {
       expect(progress).toBeLessThanOrEqual(100);
     } catch (e) {
       // Progress may not be visible if job completed instantly
-      console.log('Progress not visible, job may have completed');
+      // console.log('Progress not visible, job may have completed');
     }
   });
 
@@ -231,7 +231,7 @@ test.describe('Translation Progress Tracking', () => {
         expect(chunks.processed).toBeGreaterThanOrEqual(0);
         expect(chunks.processed).toBeLessThanOrEqual(chunks.total);
       } catch (e) {
-        console.log('Chunk counts not visible yet');
+        // console.log('Chunk counts not visible yet');
       }
     }
   });
@@ -264,7 +264,6 @@ test.describe('Translation Progress Tracking', () => {
     await expect(refreshButton).toBeVisible();
 
     // Click refresh and verify page updates
-    const statusBefore = await detailPage.getJobStatus();
     await detailPage.clickRefresh();
 
     // Wait a moment for refresh to complete
@@ -343,7 +342,7 @@ test.describe('Translation Progress Tracking', () => {
       await expect(downloadButton).toBeVisible();
       await expect(downloadButton).toBeEnabled();
     } catch (e) {
-      console.log('Translation not completed within timeout, skipping download button check');
+      // console.log('Translation not completed within timeout, skipping download button check');
     }
   });
 });

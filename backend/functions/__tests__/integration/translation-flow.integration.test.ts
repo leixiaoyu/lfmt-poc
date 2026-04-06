@@ -101,8 +101,7 @@ const generateTestEmail = (): string => {
   return `test-${randomId}${TEST_EMAIL_DOMAIN}`;
 };
 
-const sleep = (ms: number): Promise<void> =>
-  new Promise((resolve) => setTimeout(resolve, ms));
+const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
 const apiRequest = async (
   endpoint: string,
@@ -138,10 +137,7 @@ const apiRequest = async (
   };
 };
 
-const registerAndLogin = async (
-  email: string,
-  password: string
-): Promise<AuthTokens> => {
+const registerAndLogin = async (email: string, password: string): Promise<AuthTokens> => {
   // Register
   const registerResponse = await apiRequest('/auth/register', 'POST', {
     email,
@@ -356,9 +352,7 @@ const waitForTranslation = async (
     }
 
     if (status.translationStatus === 'TRANSLATION_FAILED') {
-      throw new Error(
-        `Translation failed: ${status.error || 'Unknown error'}`
-      );
+      throw new Error(`Translation failed: ${status.error || 'Unknown error'}`);
     }
 
     await sleep(pollInterval);
@@ -416,25 +410,16 @@ describe('End-to-End Translation Flow Integration Tests', () => {
 
         // Step 5: Check initial translation status
         console.log('Step 5: Checking translation status...');
-        const initialStatus = await getTranslationStatus(
-          authTokens.idToken,
-          jobId
-        );
+        const initialStatus = await getTranslationStatus(authTokens.idToken, jobId);
         expect(initialStatus.jobId).toBe(jobId);
         expect(initialStatus.targetLanguage).toBe('es');
         expect(initialStatus.tone).toBe('formal');
         expect(initialStatus.totalChunks).toBeGreaterThan(0);
-        expect(['NOT_STARTED', 'IN_PROGRESS']).toContain(
-          initialStatus.translationStatus
-        );
+        expect(['NOT_STARTED', 'IN_PROGRESS']).toContain(initialStatus.translationStatus);
 
         // Step 6: Wait for translation completion
         console.log('Step 6: Waiting for translation to complete...');
-        const finalStatus = await waitForTranslation(
-          authTokens.idToken,
-          jobId,
-          180000
-        );
+        const finalStatus = await waitForTranslation(authTokens.idToken, jobId, 180000);
 
         // Verify final status
         expect(finalStatus.translationStatus).toBe('COMPLETED');
@@ -463,10 +448,7 @@ describe('End-to-End Translation Flow Integration Tests', () => {
         authTokens = await registerAndLogin(testEmail, testPassword);
 
         // Upload and chunk document
-        const { jobId } = await uploadDocument(
-          authTokens.idToken,
-          TEST_DOCUMENT_CONTENT
-        );
+        const { jobId } = await uploadDocument(authTokens.idToken, TEST_DOCUMENT_CONTENT);
         await waitForChunking(authTokens.idToken, jobId);
 
         // Start translation
@@ -504,9 +486,7 @@ describe('End-to-End Translation Flow Integration Tests', () => {
 
         // Progress should be monotonically increasing
         for (let i = 1; i < progressSnapshots.length; i++) {
-          expect(progressSnapshots[i]).toBeGreaterThanOrEqual(
-            progressSnapshots[i - 1]
-          );
+          expect(progressSnapshots[i]).toBeGreaterThanOrEqual(progressSnapshots[i - 1]);
         }
 
         console.log(`Progress snapshots: ${progressSnapshots.join(', ')}`);
@@ -534,19 +514,10 @@ describe('End-to-End Translation Flow Integration Tests', () => {
           await waitForChunking(authTokens.idToken, jobId);
 
           // Start translation
-          await startTranslation(
-            authTokens.idToken,
-            jobId,
-            language,
-            'neutral'
-          );
+          await startTranslation(authTokens.idToken, jobId, language, 'neutral');
 
           // Wait for completion
-          const finalStatus = await waitForTranslation(
-            authTokens.idToken,
-            jobId,
-            180000
-          );
+          const finalStatus = await waitForTranslation(authTokens.idToken, jobId, 180000);
 
           expect(finalStatus.translationStatus).toBe('COMPLETED');
           expect(finalStatus.targetLanguage).toBe(language);
@@ -565,11 +536,7 @@ describe('End-to-End Translation Flow Integration Tests', () => {
   });
 
   describe('Translation Tone Options', () => {
-    const tones: Array<'formal' | 'informal' | 'neutral'> = [
-      'formal',
-      'informal',
-      'neutral',
-    ];
+    const tones: Array<'formal' | 'informal' | 'neutral'> = ['formal', 'informal', 'neutral'];
 
     tones.forEach((tone) => {
       it(
@@ -590,11 +557,7 @@ describe('End-to-End Translation Flow Integration Tests', () => {
           await startTranslation(authTokens.idToken, jobId, 'es', tone);
 
           // Wait for completion
-          const finalStatus = await waitForTranslation(
-            authTokens.idToken,
-            jobId,
-            180000
-          );
+          const finalStatus = await waitForTranslation(authTokens.idToken, jobId, 180000);
 
           expect(finalStatus.translationStatus).toBe('COMPLETED');
           expect(finalStatus.tone).toBe(tone);
@@ -617,10 +580,7 @@ describe('End-to-End Translation Flow Integration Tests', () => {
     });
 
     it('should reject translation status request without authentication', async () => {
-      const response = await apiRequest(
-        '/jobs/fake-job-id/translation-status',
-        'GET'
-      );
+      const response = await apiRequest('/jobs/fake-job-id/translation-status', 'GET');
 
       expect(response.status).toBe(401);
     });
@@ -649,10 +609,7 @@ describe('End-to-End Translation Flow Integration Tests', () => {
         authTokens = await registerAndLogin(testEmail, testPassword);
 
         // Upload document but don't wait for chunking
-        const { jobId } = await uploadDocument(
-          authTokens.idToken,
-          TEST_DOCUMENT_CONTENT
-        );
+        const { jobId } = await uploadDocument(authTokens.idToken, TEST_DOCUMENT_CONTENT);
 
         // Immediately try to start translation (should fail)
         const response = await apiRequest(
@@ -675,10 +632,7 @@ describe('End-to-End Translation Flow Integration Tests', () => {
       async () => {
         authTokens = await registerAndLogin(testEmail, testPassword);
 
-        const { jobId } = await uploadDocument(
-          authTokens.idToken,
-          TEST_DOCUMENT_CONTENT
-        );
+        const { jobId } = await uploadDocument(authTokens.idToken, TEST_DOCUMENT_CONTENT);
         await waitForChunking(authTokens.idToken, jobId);
 
         const response = await apiRequest(
@@ -703,20 +657,13 @@ describe('End-to-End Translation Flow Integration Tests', () => {
       async () => {
         authTokens = await registerAndLogin(testEmail, testPassword);
 
-        const { jobId } = await uploadDocument(
-          authTokens.idToken,
-          TEST_DOCUMENT_CONTENT
-        );
+        const { jobId } = await uploadDocument(authTokens.idToken, TEST_DOCUMENT_CONTENT);
         await waitForChunking(authTokens.idToken, jobId);
 
         const startTime = Date.now();
         await startTranslation(authTokens.idToken, jobId, 'es', 'neutral');
 
-        const finalStatus = await waitForTranslation(
-          authTokens.idToken,
-          jobId,
-          180000
-        );
+        const finalStatus = await waitForTranslation(authTokens.idToken, jobId, 180000);
 
         const totalTime = Date.now() - startTime;
 
@@ -742,9 +689,7 @@ describe('End-to-End Translation Flow Integration Tests', () => {
         const response = await apiRequest(endpoint.path, endpoint.method);
 
         const corsOrigin = response.headers.get('access-control-allow-origin');
-        const corsCredentials = response.headers.get(
-          'access-control-allow-credentials'
-        );
+        const corsCredentials = response.headers.get('access-control-allow-credentials');
 
         expect(corsOrigin).toBeTruthy();
         expect(corsCredentials).toBeTruthy();

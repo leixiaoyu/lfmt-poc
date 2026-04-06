@@ -145,8 +145,7 @@ const makeRequest = async <T = any>(
 /**
  * Wait for specified time
  */
-const sleep = (ms: number): Promise<void> =>
-  new Promise((resolve) => setTimeout(resolve, ms));
+const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
 // ============================================================================
 // Test State & Cleanup
@@ -175,12 +174,8 @@ describe('Production Smoke Tests', () => {
 
     // Attempt to delete users via Cognito AdminDeleteUser API
     if (!USER_POOL_ID) {
-      console.warn(
-        '⚠️  USER_POOL_ID not set - skipping Cognito user cleanup'
-      );
-      console.warn(
-        '   Set USER_POOL_ID environment variable to enable automatic cleanup'
-      );
+      console.warn('⚠️  USER_POOL_ID not set - skipping Cognito user cleanup');
+      console.warn('   Set USER_POOL_ID environment variable to enable automatic cleanup');
       return;
     }
 
@@ -311,14 +306,10 @@ describe('Production Smoke Tests', () => {
     });
 
     it('should login with registered credentials', async () => {
-      const response = await makeRequest<AuthTokens & { user: any }>(
-        '/auth/login',
-        'POST',
-        {
-          email: testUser.email,
-          password: testUser.password,
-        }
-      );
+      const response = await makeRequest<AuthTokens & { user: any }>('/auth/login', 'POST', {
+        email: testUser.email,
+        password: testUser.password,
+      });
 
       // Should succeed
       expect(response.status).toBe(200);
@@ -385,14 +376,10 @@ describe('Production Smoke Tests', () => {
         createdUsers.push(user.email); // Track for cleanup
       }
 
-      const loginResponse = await makeRequest<AuthTokens>(
-        '/auth/login',
-        'POST',
-        {
-          email: user.email,
-          password: user.password,
-        }
-      );
+      const loginResponse = await makeRequest<AuthTokens>('/auth/login', 'POST', {
+        email: user.email,
+        password: user.password,
+      });
 
       authToken = loginResponse.data.accessToken;
     });
@@ -491,14 +478,10 @@ describe('Production Smoke Tests', () => {
         createdUsers.push(user.email); // Track for cleanup
       }
 
-      const loginResponse = await makeRequest<AuthTokens>(
-        '/auth/login',
-        'POST',
-        {
-          email: user.email,
-          password: user.password,
-        }
-      );
+      const loginResponse = await makeRequest<AuthTokens>('/auth/login', 'POST', {
+        email: user.email,
+        password: user.password,
+      });
 
       authToken = loginResponse.data.accessToken;
 
@@ -525,12 +508,7 @@ describe('Production Smoke Tests', () => {
     });
 
     it('should poll job status', async () => {
-      const response = await makeRequest(
-        `/jobs/${jobId}`,
-        'GET',
-        undefined,
-        authToken
-      );
+      const response = await makeRequest(`/jobs/${jobId}`, 'GET', undefined, authToken);
 
       // Should succeed
       expect(response.status).toBe(200);
@@ -574,12 +552,7 @@ describe('Production Smoke Tests', () => {
 
     it('should reject status request for non-existent job', async () => {
       const fakeJobId = 'non-existent-job-id-12345';
-      const response = await makeRequest(
-        `/jobs/${fakeJobId}`,
-        'GET',
-        undefined,
-        authToken
-      );
+      const response = await makeRequest(`/jobs/${fakeJobId}`, 'GET', undefined, authToken);
 
       // Should return 404 Not Found
       expect(response.status).toBe(404);
@@ -633,14 +606,10 @@ describe('Production Smoke Tests', () => {
         createdUsers.push(user.email); // Track for cleanup
       }
 
-      const loginResponse = await makeRequest<AuthTokens>(
-        '/auth/login',
-        'POST',
-        {
-          email: user.email,
-          password: user.password,
-        }
-      );
+      const loginResponse = await makeRequest<AuthTokens>('/auth/login', 'POST', {
+        email: user.email,
+        password: user.password,
+      });
 
       authToken = loginResponse.data.accessToken;
 
@@ -667,12 +636,7 @@ describe('Production Smoke Tests', () => {
     });
 
     it('should delete a job', async () => {
-      const response = await makeRequest(
-        `/jobs/${jobId}`,
-        'DELETE',
-        undefined,
-        authToken
-      );
+      const response = await makeRequest(`/jobs/${jobId}`, 'DELETE', undefined, authToken);
 
       // Should succeed (200) or return appropriate status
       expect([200, 204]).toContain(response.status);
@@ -682,12 +646,7 @@ describe('Production Smoke Tests', () => {
     });
 
     it('should return 404 for deleted job', async () => {
-      const response = await makeRequest(
-        `/jobs/${jobId}`,
-        'GET',
-        undefined,
-        authToken
-      );
+      const response = await makeRequest(`/jobs/${jobId}`, 'GET', undefined, authToken);
 
       // Should return 404 Not Found
       expect(response.status).toBe(404);
@@ -717,10 +676,7 @@ describe('Production Smoke Tests', () => {
 
       const testJobId = uploadResponse.data.jobId;
 
-      const response = await makeRequest(
-        `/jobs/${testJobId}`,
-        'DELETE'
-      );
+      const response = await makeRequest(`/jobs/${testJobId}`, 'DELETE');
 
       // Should return 401 Unauthorized
       expect(response.status).toBe(401);

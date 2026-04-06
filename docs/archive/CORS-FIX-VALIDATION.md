@@ -105,12 +105,12 @@ Got: undefined
 
 ## Summary: Before Deployment
 
-| Test | Status | Details |
-|------|--------|---------|
-| OPTIONS Preflight | ✅ PASS | API Gateway CORS config correct |
-| POST Request CORS | ❌ FAIL | Lambda returns localhost:3000 |
-| CloudFront Login | ❌ FAIL | Browser blocks CORS policy violation |
-| Origin Comparison | ❌ FAIL | Lambda ignores request origin |
+| Test              | Status  | Details                              |
+| ----------------- | ------- | ------------------------------------ |
+| OPTIONS Preflight | ✅ PASS | API Gateway CORS config correct      |
+| POST Request CORS | ❌ FAIL | Lambda returns localhost:3000        |
+| CloudFront Login  | ❌ FAIL | Browser blocks CORS policy violation |
+| Origin Comparison | ❌ FAIL | Lambda ignores request origin        |
 
 **Overall**: 1/4 tests passing (25%)
 
@@ -121,15 +121,18 @@ Got: undefined
 Once PR #92 is deployed, we expect:
 
 ### Test 1: OPTIONS Preflight ✅ PASS
+
 - No change (already working)
 - **Action**: Update test to expect status 204 instead of 200
 
 ### Test 2: POST Request with CORS ✅ PASS
+
 ```
 Access-Control-Allow-Origin: https://d39xcun7144jgl.cloudfront.net
 ```
 
 ### Test 3: CORS Header Capture ✅ PASS
+
 ```
 CORS Headers Captured: {
   'access-control-allow-origin': 'https://d39xcun7144jgl.cloudfront.net',
@@ -138,6 +141,7 @@ CORS Headers Captured: {
 ```
 
 ### Test 4: Origin Comparison ✅ PASS
+
 ```
 ✅ localhost origin works
 ✅ CloudFront origin works
@@ -159,17 +163,20 @@ CORS Headers Captured: {
 ## Test Commands
 
 ### Run All CORS Debug Tests
+
 ```bash
 cd frontend
 npx playwright test e2e/tests/cors-debug.spec.ts --project=chromium
 ```
 
 ### Run Single Test (Interactive)
+
 ```bash
 npx playwright test e2e/tests/cors-debug.spec.ts --headed --project=chromium
 ```
 
 ### Run with Debug Mode
+
 ```bash
 npx playwright test e2e/tests/cors-debug.spec.ts --debug
 ```
@@ -179,6 +186,7 @@ npx playwright test e2e/tests/cors-debug.spec.ts --debug
 ## Manual Validation Steps
 
 ### 1. Test API Directly (curl)
+
 ```bash
 # Test with CloudFront origin
 curl -i -X POST https://8brwlwf68h.execute-api.us-east-1.amazonaws.com/v1/auth/login \
@@ -191,6 +199,7 @@ curl -i -X POST https://8brwlwf68h.execute-api.us-east-1.amazonaws.com/v1/auth/l
 ```
 
 ### 2. Test in Browser
+
 1. Navigate to: https://d39xcun7144jgl.cloudfront.net/login
 2. Open browser DevTools → Network tab
 3. Enter credentials: test@test.io / TestPassword123!
@@ -286,12 +295,12 @@ Access-Control-Allow-Origin: http://localhost:3000
 
 ## Summary: After Deployment
 
-| Test | Before | After | Status |
-|------|--------|-------|--------|
-| OPTIONS Preflight | ✅ PASS | ✅ PASS | No change (already working) |
-| POST /auth/login (CloudFront) | ❌ FAIL | ✅ PASS | **FIXED** ✅ |
-| POST /auth/login (localhost) | ✅ PASS | ✅ PASS | Working (backward compat) |
-| GET /auth/me (CloudFront) | ❌ FAIL | ❌ FAIL | Not yet fixed |
+| Test                          | Before  | After   | Status                      |
+| ----------------------------- | ------- | ------- | --------------------------- |
+| OPTIONS Preflight             | ✅ PASS | ✅ PASS | No change (already working) |
+| POST /auth/login (CloudFront) | ❌ FAIL | ✅ PASS | **FIXED** ✅                |
+| POST /auth/login (localhost)  | ✅ PASS | ✅ PASS | Working (backward compat)   |
+| GET /auth/me (CloudFront)     | ❌ FAIL | ❌ FAIL | Not yet fixed               |
 
 **Overall Before**: 1/4 tests passing (25%)
 **Overall After**: 2/4 tests passing (50%)
@@ -302,12 +311,14 @@ Access-Control-Allow-Origin: http://localhost:3000
 ## Impact Assessment
 
 ### What Works Now ✅
+
 1. **CloudFront Login**: Users can successfully log in from the deployed frontend
 2. **Localhost Development**: Development workflow still works
 3. **API Gateway CORS**: Infrastructure layer working correctly
 4. **Backward Compatibility**: Old clients using localhost still work
 
 ### What Still Needs Fixing ❌
+
 1. **GET /auth/me**: Current user endpoint
 2. **POST /auth/register**: User registration
 3. **POST /auth/refresh-token**: Token refresh
@@ -317,10 +328,12 @@ Access-Control-Allow-Origin: http://localhost:3000
 ### User Journey Impact
 
 **Before PR #92**:
+
 - ❌ Cannot log in from CloudFront (CORS blocked)
 - ❌ Application completely unusable
 
 **After PR #92**:
+
 - ✅ Can log in from CloudFront
 - ✅ Can access protected routes (if token stored)
 - ❌ Token refresh may fail (if /auth/me called)
@@ -333,6 +346,7 @@ Access-Control-Allow-Origin: http://localhost:3000
 ## curl Validation Evidence
 
 ### Test: POST /auth/login with CloudFront Origin ✅
+
 ```bash
 curl -i -X POST https://8brwlwf68h.execute-api.us-east-1.amazonaws.com/v1/auth/login \
   -H "Origin: https://d39xcun7144jgl.cloudfront.net" \
@@ -347,6 +361,7 @@ content-type: application/json
 ```
 
 ### Test: GET /auth/me with CloudFront Origin ❌
+
 ```bash
 curl -i -X GET https://8brwlwf68h.execute-api.us-east-1.amazonaws.com/v1/auth/me \
   -H "Origin: https://d39xcun7144jgl.cloudfront.net"

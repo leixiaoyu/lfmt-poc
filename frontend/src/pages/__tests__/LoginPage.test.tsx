@@ -79,9 +79,12 @@ describe('LoginPage - Integration Tests', () => {
       await user.click(screen.getByRole('button', { name: /log in/i }));
 
       // Should redirect to dashboard
-      await waitFor(() => {
-        expect(screen.getByRole('heading', { name: /dashboard/i })).toBeInTheDocument();
-      }, { timeout: 3000 });
+      await waitFor(
+        () => {
+          expect(screen.getByRole('heading', { name: /dashboard/i })).toBeInTheDocument();
+        },
+        { timeout: 3000 }
+      );
     });
 
     it.skip('should store auth tokens after login', async () => {
@@ -93,9 +96,12 @@ describe('LoginPage - Integration Tests', () => {
 
       await user.click(screen.getByRole('button', { name: /log in/i }));
 
-      await waitFor(() => {
-        expect(screen.getByRole('heading', { name: /dashboard/i })).toBeInTheDocument();
-      }, { timeout: 3000 });
+      await waitFor(
+        () => {
+          expect(screen.getByRole('heading', { name: /dashboard/i })).toBeInTheDocument();
+        },
+        { timeout: 3000 }
+      );
 
       // Check tokens
       expect(localStorage.getItem('lfmt_access_token')).toBeTruthy();
@@ -111,9 +117,12 @@ describe('LoginPage - Integration Tests', () => {
 
       await user.click(screen.getByRole('button', { name: /log in/i }));
 
-      await waitFor(() => {
-        expect(screen.getByRole('heading', { name: /dashboard/i })).toBeInTheDocument();
-      }, { timeout: 3000 });
+      await waitFor(
+        () => {
+          expect(screen.getByRole('heading', { name: /dashboard/i })).toBeInTheDocument();
+        },
+        { timeout: 3000 }
+      );
     });
   });
 
@@ -172,13 +181,14 @@ describe('LoginPage - Integration Tests', () => {
 
       await user.click(screen.getByRole('button', { name: /log in/i }));
 
-      await waitFor(() => {
-        expect(screen.getByRole('heading', { name: /dashboard/i })).toBeInTheDocument();
-      }, { timeout: 3000 });
-
-      expect(consoleError).not.toHaveBeenCalledWith(
-        expect.stringContaining('is not valid JSON')
+      await waitFor(
+        () => {
+          expect(screen.getByRole('heading', { name: /dashboard/i })).toBeInTheDocument();
+        },
+        { timeout: 3000 }
       );
+
+      expect(consoleError).not.toHaveBeenCalledWith(expect.stringContaining('is not valid JSON'));
 
       consoleError.mockRestore();
     });
@@ -192,9 +202,12 @@ describe('LoginPage - Integration Tests', () => {
 
       await user.click(screen.getByRole('button', { name: /log in/i }));
 
-      await waitFor(() => {
-        expect(screen.getByRole('heading', { name: /dashboard/i })).toBeInTheDocument();
-      }, { timeout: 3000 });
+      await waitFor(
+        () => {
+          expect(screen.getByRole('heading', { name: /dashboard/i })).toBeInTheDocument();
+        },
+        { timeout: 3000 }
+      );
     });
   });
 
@@ -210,7 +223,10 @@ describe('LoginPage - Integration Tests', () => {
       renderWithAppContext();
 
       expect(screen.getByLabelText(/email/i)).toHaveAttribute('autocomplete', 'email');
-      expect(screen.getByLabelText(/password/i)).toHaveAttribute('autocomplete', 'current-password');
+      expect(screen.getByLabelText(/password/i)).toHaveAttribute(
+        'autocomplete',
+        'current-password'
+      );
     });
   });
 });

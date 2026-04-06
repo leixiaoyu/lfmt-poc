@@ -212,10 +212,12 @@ Since the backend is not yet implemented, the application uses mock authenticati
 The AuthContext is configured to accept ANY credentials for testing purposes.
 
 **To simulate successful login:**
+
 - Email: any valid email format (e.g., `test@example.com`)
 - Password: any non-empty string (e.g., `password`)
 
 **Mock user data returned:**
+
 ```json
 {
   "id": "mock-user-id",
@@ -243,6 +245,7 @@ npm test
 ```
 
 **Expected Output:**
+
 ```
 ✓ src/services/__tests__/authService.test.ts  (17 tests)
 ✓ src/contexts/__tests__/AuthContext.test.tsx  (16 tests)
@@ -263,6 +266,7 @@ npm run type-check
 ```
 
 **Expected Output:**
+
 ```
 > tsc --noEmit
 
@@ -289,6 +293,7 @@ npm run lint
 ### Issue: Port 5173 already in use
 
 **Solution:**
+
 ```bash
 # Kill the process using port 5173
 lsof -ti:5173 | xargs kill -9
@@ -300,6 +305,7 @@ npm run dev -- --port 3000
 ### Issue: Module not found errors
 
 **Solution:**
+
 ```bash
 # Clean install dependencies
 rm -rf node_modules package-lock.json
@@ -309,6 +315,7 @@ npm install
 ### Issue: TypeScript errors in IDE
 
 **Solution:**
+
 ```bash
 # Restart TypeScript server in VS Code
 # Command Palette (Cmd+Shift+P) → "TypeScript: Restart TS Server"
@@ -320,6 +327,7 @@ npm run type-check
 ### Issue: Tests failing
 
 **Solution:**
+
 ```bash
 # Clear test cache
 npm test -- --clearCache
@@ -349,6 +357,7 @@ npm test
 ### ARIA Compliance
 
 All form components use Material-UI which provides:
+
 - Proper ARIA labels
 - ARIA-describedby for error messages
 - Role attributes

@@ -16,6 +16,7 @@ interface AllTheProvidersProps {
   children: React.ReactNode;
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 const AllTheProviders: React.FC<AllTheProvidersProps> = ({ children }) => {
   return <ThemeProvider theme={theme}>{children}</ThemeProvider>;
 };
@@ -24,6 +25,7 @@ const customRender = (ui: ReactElement, options?: Omit<RenderOptions, 'wrapper'>
   render(ui, { wrapper: AllTheProviders, ...options });
 
 // Re-export everything
+// eslint-disable-next-line react-refresh/only-export-components
 export * from '@testing-library/react';
 
 // Override render method

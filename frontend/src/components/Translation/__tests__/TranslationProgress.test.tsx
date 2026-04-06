@@ -203,9 +203,7 @@ describe('TranslationProgress Component', () => {
   describe('Error Handling', () => {
     it('should display error when fetch fails', async () => {
       // Arrange
-      vi.mocked(translationService.getJobStatus).mockRejectedValueOnce(
-        new Error('Network error')
-      );
+      vi.mocked(translationService.getJobStatus).mockRejectedValueOnce(new Error('Network error'));
 
       // Act
       render(<TranslationProgress jobId="job-123" />);
@@ -219,9 +217,7 @@ describe('TranslationProgress Component', () => {
     it('should call onError callback when fetch fails', async () => {
       // Arrange
       const mockOnError = vi.fn();
-      vi.mocked(translationService.getJobStatus).mockRejectedValueOnce(
-        new Error('API error')
-      );
+      vi.mocked(translationService.getJobStatus).mockRejectedValueOnce(new Error('API error'));
 
       // Act
       render(<TranslationProgress jobId="job-123" onError={mockOnError} />);

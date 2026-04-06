@@ -7,9 +7,11 @@ This document describes comprehensive test coverage created to prevent regressio
 ## Issues Covered
 
 ### Issue #1: Lambda Functions Missing CORS Headers
+
 **Problem**: Upload, startTranslation, and getTranslationStatus Lambda functions didn't extract `requestOrigin` from request headers, causing CORS errors.
 
 **Test Coverage**:
+
 - `backend/functions/jobs/__tests__/uploadRequest.cors.test.ts`
   - ✅ CORS headers with CloudFront origin
   - ✅ CORS headers with localhost origin
@@ -25,9 +27,11 @@ This document describes comprehensive test coverage created to prevent regressio
 ---
 
 ### Issue #2: Wrong API Endpoints in Frontend
+
 **Problem**: Frontend used `/translation/*` paths instead of `/jobs/*` paths.
 
 **Test Coverage**:
+
 - `frontend/src/services/__tests__/translationService.upload.test.ts`
   - ✅ Correct path: `/jobs/upload` (not `/translation/upload`)
   - ✅ Correct path: `/jobs/{jobId}/translate` (not `/translation/{jobId}/start`)
@@ -42,20 +46,24 @@ This document describes comprehensive test coverage created to prevent regressio
 ---
 
 ### Issue #3: CSP Blocking External IP Fetch
+
 **Problem**: Frontend tried to fetch user IP from `api.ipify.org`, violating Content Security Policy.
 
 **Resolution**: Removed external IP fetch, backend captures IP from request headers.
 
 **Test Coverage**:
+
 - Frontend service doesn't make external IP requests (covered by upload workflow tests)
 - Backend receives IP in legal attestation payload (covered by integration tests)
 
 ---
 
 ### Issue #4: API Gateway CORS Hardcoded to Localhost
+
 **Problem**: API Gateway CORS configuration only allowed `http://localhost:3000`, blocking CloudFront requests.
 
 **Test Coverage**:
+
 - `backend/infrastructure/lib/__tests__/cors-configuration.test.ts`
   - ✅ OPTIONS method CORS for `/jobs/upload`
   - ✅ OPTIONS method CORS for `/jobs/{jobId}/translate`
@@ -77,9 +85,11 @@ This document describes comprehensive test coverage created to prevent regressio
 ---
 
 ### Issue #5: Wrong Upload Implementation
+
 **Problem**: Frontend sent file directly to `/jobs/upload` instead of using presigned URL flow.
 
 **Test Coverage**:
+
 - `frontend/src/services/__tests__/translationService.upload.test.ts`
   - ✅ JSON payload sent to `/jobs/upload` (not FormData)
   - ✅ Content-Type: application/json (not multipart/form-data)
@@ -116,19 +126,23 @@ This document describes comprehensive test coverage created to prevent regressio
 ---
 
 ### Issue #6: Content-Type Mismatch
+
 **Problem**: Frontend sent `multipart/form-data` instead of `application/json` to presigned URL endpoint.
 
 **Test Coverage**:
 Covered by Issue #5 tests above, specifically:
+
 - ✅ Content-Type verification in unit tests
 - ✅ Content-Type verification in E2E tests
 
 ---
 
 ### Issue #7: Authentication Token Issues
+
 **Problem**: Token expiration and format validation needed.
 
 **Test Coverage**:
+
 - `frontend/src/utils/__tests__/auth.token.test.ts`
   - ✅ Retrieve valid access token from localStorage
   - ✅ Return null when no token exists
@@ -159,48 +173,54 @@ Covered by Issue #5 tests above, specifically:
 
 ## Test Coverage Summary
 
-| Category | Unit Tests | Integration Tests | E2E Tests | Total |
-|----------|------------|-------------------|-----------|-------|
-| Lambda CORS | 12 | 0 | 0 | 12 |
-| API Gateway Config | 14 | 0 | 0 | 14 |
-| Frontend Upload Service | 12 | 0 | 2 | 14 |
-| Presigned URL Flow | 0 | 8 | 6 | 14 |
-| Authentication | 17 | 0 | 3 | 20 |
-| **TOTAL** | **55** | **8** | **11** | **74** |
+| Category                | Unit Tests | Integration Tests | E2E Tests | Total  |
+| ----------------------- | ---------- | ----------------- | --------- | ------ |
+| Lambda CORS             | 12         | 0                 | 0         | 12     |
+| API Gateway Config      | 14         | 0                 | 0         | 14     |
+| Frontend Upload Service | 12         | 0                 | 2         | 14     |
+| Presigned URL Flow      | 0          | 8                 | 6         | 14     |
+| Authentication          | 17         | 0                 | 3         | 20     |
+| **TOTAL**               | **55**     | **8**             | **11**    | **74** |
 
 ## Running the Tests
 
 ### Backend Unit Tests
+
 ```bash
 cd backend/functions
 npm test
 ```
 
 ### Backend Integration Tests
+
 ```bash
 cd backend/functions
 npm run test:integration
 ```
 
 ### Infrastructure Tests
+
 ```bash
 cd backend/infrastructure
 npm test
 ```
 
 ### Frontend Unit Tests
+
 ```bash
 cd frontend
 npm test
 ```
 
 ### Frontend E2E Tests
+
 ```bash
 cd frontend
 npm run test:e2e
 ```
 
 ### Run All Tests
+
 ```bash
 # From project root
 npm run test:all
@@ -209,6 +229,7 @@ npm run test:all
 ## Continuous Integration
 
 All tests are configured to run automatically in GitHub Actions:
+
 - `.github/workflows/ci.yml` - Runs on every PR and push to main
 - Backend tests run in parallel with frontend tests
 - E2E tests require backend API (currently disabled in CI, need mock setup)
