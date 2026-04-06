@@ -74,6 +74,9 @@ Related to #
 - [ ] I have added tests that prove my fix is effective or that my feature works
 - [ ] New and existing unit tests pass locally with my changes
 - [ ] Any dependent changes have been merged and published
+- [ ] Coverage meets project targets (≥80% general, 100% critical path)
+- [ ] ESLint passes with 0 errors (`npm run lint`)
+- [ ] TypeScript type-check passes (`npm run type-check`)
 
 ## Additional Notes
 
