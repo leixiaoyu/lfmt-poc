@@ -14,12 +14,16 @@
 process.env.DOCUMENT_BUCKET = 'test-document-bucket';
 process.env.JOBS_TABLE = 'test-jobs-table';
 
-import { APIGatewayProxyEvent, Context } from 'aws-lambda';
+import { APIGatewayProxyEvent } from 'aws-lambda';
 import { mockClient } from 'aws-sdk-client-mock';
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
-import { DynamoDBClient, PutItemCommand, PutItemCommandInput, ConditionalCheckFailedException } from '@aws-sdk/client-dynamodb';
+import {
+  DynamoDBClient,
+  PutItemCommand,
+  PutItemCommandInput,
+  ConditionalCheckFailedException,
+} from '@aws-sdk/client-dynamodb';
 import { handler } from './uploadRequest';
-import Logger from '../shared/logger';
 
 // Mock AWS SDK clients
 const s3Mock = mockClient(S3Client);
@@ -62,12 +66,14 @@ describe('uploadRequest Lambda Function - Comprehensive Coverage', () => {
     requestContext: {
       accountId: '123456789012',
       apiId: 'test-api',
-      authorizer: userId ? {
-        claims: {
-          sub: userId,
-          email: 'test@example.com',
-        },
-      } : undefined,
+      authorizer: userId
+        ? {
+            claims: {
+              sub: userId,
+              email: 'test@example.com',
+            },
+          }
+        : undefined,
       protocol: 'HTTP/1.1',
       httpMethod: 'POST',
       identity: {
@@ -122,7 +128,9 @@ describe('uploadRequest Lambda Function - Comprehensive Coverage', () => {
 
       // Verify DynamoDB put was called
       expect(dynamoMock.calls()).toHaveLength(1);
-      expect((dynamoMock.call(0).args[0].input as PutItemCommandInput).TableName).toBe('test-jobs-table');
+      expect((dynamoMock.call(0).args[0].input as PutItemCommandInput).TableName).toBe(
+        'test-jobs-table'
+      );
     });
 
     it('should create job record with correct structure and all required fields', async () => {
@@ -159,11 +167,14 @@ describe('uploadRequest Lambda Function - Comprehensive Coverage', () => {
       dynamoMock.on(PutItemCommand).resolves({});
 
       const userId = 'user-abc-123';
-      const event = createMockEvent({
-        fileName: 'my-document.txt',
-        fileSize: 50000,
-        contentType: 'text/plain',
-      }, userId);
+      const event = createMockEvent(
+        {
+          fileName: 'my-document.txt',
+          fileSize: 50000,
+          contentType: 'text/plain',
+        },
+        userId
+      );
 
       await handler(event);
 
@@ -188,7 +199,9 @@ describe('uploadRequest Lambda Function - Comprehensive Coverage', () => {
 
       const afterRequest = Date.now();
       const putCall = dynamoMock.call(0).args[0];
-      const expiresAt = new Date((putCall.input as PutItemCommandInput).Item!.expiresAt!.S!).getTime();
+      const expiresAt = new Date(
+        (putCall.input as PutItemCommandInput).Item!.expiresAt!.S!
+      ).getTime();
 
       // Expiration should be 15 minutes (900 seconds) from now
       const expectedMin = beforeRequest + 900 * 1000;
@@ -601,7 +614,9 @@ describe('uploadRequest Lambda Function - Comprehensive Coverage', () => {
       await handler(event);
 
       const putCall = dynamoMock.call(0).args[0];
-      expect((putCall.input as PutItemCommandInput).ConditionExpression).toBe('attribute_not_exists(jobId)');
+      expect((putCall.input as PutItemCommandInput).ConditionExpression).toBe(
+        'attribute_not_exists(jobId)'
+      );
     });
 
     it('should use marshall with removeUndefinedValues option', async () => {
@@ -750,7 +765,7 @@ describe('uploadRequest Lambda Function - Comprehensive Coverage', () => {
 
       const results = await Promise.all(events.map(handler));
 
-      const fileIds = results.map(r => JSON.parse(r.body).data.fileId);
+      const fileIds = results.map((r) => JSON.parse(r.body).data.fileId);
       const uniqueFileIds = new Set(fileIds);
 
       expect(uniqueFileIds.size).toBe(3); // All fileIds should be unique
@@ -794,8 +809,14 @@ describe('uploadRequest Lambda Function - Comprehensive Coverage', () => {
       const userId1 = 'user-1';
       const userId2 = 'user-2';
 
-      const event1 = createMockEvent({ fileName: 'doc1.txt', fileSize: 50000, contentType: 'text/plain' }, userId1);
-      const event2 = createMockEvent({ fileName: 'doc2.txt', fileSize: 50000, contentType: 'text/plain' }, userId2);
+      const event1 = createMockEvent(
+        { fileName: 'doc1.txt', fileSize: 50000, contentType: 'text/plain' },
+        userId1
+      );
+      const event2 = createMockEvent(
+        { fileName: 'doc2.txt', fileSize: 50000, contentType: 'text/plain' },
+        userId2
+      );
 
       await handler(event1);
       await handler(event2);

@@ -11,19 +11,20 @@
 
 A comprehensive audit of the translation workflow implementation reveals **0% test coverage** for ~2,870 lines of new production code. This represents a critical risk to code quality, maintainability, and production stability.
 
-| Category | Lines of Code | Test Coverage | Status |
-|----------|--------------|---------------|--------|
-| Translation Service | 261 lines | 0% | 🔴 **CRITICAL** |
-| Translation Components | 1,674 lines | 0% | 🔴 **CRITICAL** |
-| Translation Pages | 935 lines | 0% | 🔴 **CRITICAL** |
-| E2E Tests | 0 tests | N/A | 🔴 **CRITICAL** |
-| **TOTAL** | **2,870 lines** | **0%** | 🔴 **BLOCKER** |
+| Category               | Lines of Code   | Test Coverage | Status          |
+| ---------------------- | --------------- | ------------- | --------------- |
+| Translation Service    | 261 lines       | 0%            | 🔴 **CRITICAL** |
+| Translation Components | 1,674 lines     | 0%            | 🔴 **CRITICAL** |
+| Translation Pages      | 935 lines       | 0%            | 🔴 **CRITICAL** |
+| E2E Tests              | 0 tests         | N/A           | 🔴 **CRITICAL** |
+| **TOTAL**              | **2,870 lines** | **0%**        | 🔴 **BLOCKER**  |
 
 ### Impact Assessment
 
 **Risk Level**: 🔴 **HIGH - Production Blocker**
 
 **Immediate Concerns**:
+
 1. **Zero API Integration Tests**: Translation service makes HTTP calls with no mocking or error handling verification
 2. **Zero Component Validation**: Complex multi-step form has no validation testing
 3. **Zero E2E Coverage**: Critical user journey (upload → translate → download) completely untested
@@ -87,13 +88,16 @@ A comprehensive audit of the translation workflow implementation reveals **0% te
 #### Critical Untested Components
 
 ##### LegalAttestation.tsx (162 lines)
+
 **Functionality**:
+
 - 3 required checkboxes with validation
 - Tooltip information display
 - ARIA accessibility attributes
 - Error state display with FormHelperText
 
 **Untested Scenarios**:
+
 - ❌ Checkbox selection/deselection
 - ❌ Validation error display
 - ❌ Required field validation
@@ -104,13 +108,16 @@ A comprehensive audit of the translation workflow implementation reveals **0% te
 **Legal Compliance Risk**: 🔴 **HIGH** - This component handles legal attestations required for copyright compliance. Bugs here could expose the company to legal liability.
 
 ##### TranslationConfig.tsx (138 lines)
+
 **Functionality**:
+
 - Target language selection (5 languages)
 - Tone selection (3 options)
 - Material-UI Select dropdowns
 - Error state handling
 
 **Untested Scenarios**:
+
 - ❌ Language dropdown rendering
 - ❌ Tone dropdown rendering
 - ❌ Default value behavior
@@ -119,7 +126,9 @@ A comprehensive audit of the translation workflow implementation reveals **0% te
 - ❌ Integration with parent form state
 
 ##### FileUpload.tsx (163 lines)
+
 **Functionality**:
+
 - Drag-and-drop file upload
 - File type validation (.txt, .doc, .docx, .pdf)
 - File size validation (100MB limit)
@@ -128,6 +137,7 @@ A comprehensive audit of the translation workflow implementation reveals **0% te
 - Error display
 
 **Untested Scenarios**:
+
 - ❌ File selection via browse button
 - ❌ Drag-and-drop file upload
 - ❌ File type validation (accept/reject)
@@ -139,7 +149,9 @@ A comprehensive audit of the translation workflow implementation reveals **0% te
 **Production Risk**: 🔴 **HIGH** - File validation bugs could allow invalid files to reach backend, causing processing failures.
 
 ##### TranslationProgress.tsx (252 lines)
+
 **Functionality**:
+
 - Real-time job status polling
 - Adaptive polling intervals (15s → 30s → 60s)
 - Progress bar calculation based on chunk completion
@@ -148,6 +160,7 @@ A comprehensive audit of the translation workflow implementation reveals **0% te
 - Time elapsed tracking
 
 **Untested Scenarios**:
+
 - ❌ Polling interval progression (15s → 30s → 60s)
 - ❌ Progress calculation based on chunk counts
 - ❌ Terminal state detection and polling stop
@@ -179,7 +192,9 @@ A comprehensive audit of the translation workflow implementation reveals **0% te
 #### Critical Untested Pages
 
 ##### TranslationUpload.tsx (313 lines)
+
 **Functionality**:
+
 - Multi-step wizard (4 steps)
 - Per-step validation logic
 - Form state management across steps
@@ -192,6 +207,7 @@ A comprehensive audit of the translation workflow implementation reveals **0% te
 - Error handling and display
 
 **Untested Scenarios**:
+
 - ❌ Step-by-step navigation
 - ❌ Per-step validation logic
 - ❌ Form state persistence across steps
@@ -205,7 +221,9 @@ A comprehensive audit of the translation workflow implementation reveals **0% te
 **Production Risk**: 🔴 **CRITICAL** - This is the **primary user journey**. Any bugs here directly block users from submitting translations.
 
 ##### TranslationDetail.tsx (265 lines)
+
 **Functionality**:
+
 - Job detail display
 - TranslationProgress integration
 - Action buttons (Download, Retry, Refresh)
@@ -214,6 +232,7 @@ A comprehensive audit of the translation workflow implementation reveals **0% te
 - Blob download handling
 
 **Untested Scenarios**:
+
 - ❌ Job detail rendering
 - ❌ Action button visibility based on status
 - ❌ Download functionality
@@ -224,7 +243,9 @@ A comprehensive audit of the translation workflow implementation reveals **0% te
 - ❌ Error state handling
 
 ##### TranslationHistory.tsx (242 lines)
+
 **Functionality**:
+
 - Job list table with columns
 - Search by filename/job ID
 - Status filter dropdown
@@ -233,6 +254,7 @@ A comprehensive audit of the translation workflow implementation reveals **0% te
 - Empty state handling
 
 **Untested Scenarios**:
+
 - ❌ Table rendering with jobs
 - ❌ Empty state display
 - ❌ Search functionality
@@ -259,6 +281,7 @@ A comprehensive audit of the translation workflow implementation reveals **0% te
 **Status**: 🟡 **PARTIAL SETUP**
 
 **What Exists**:
+
 - ✅ Playwright configuration (`playwright.config.ts`)
 - ✅ Page Object Models created:
   - `TranslationUploadPage.ts` (131 lines)
@@ -268,6 +291,7 @@ A comprehensive audit of the translation workflow implementation reveals **0% te
 - ✅ Test scripts in `package.json`
 
 **What's Missing**:
+
 - ❌ **ZERO actual test specs** in `e2e/tests/translation/` directory
 - ❌ **ZERO integration test specs** in `e2e/tests/integration/` directory
 
@@ -321,11 +345,11 @@ As a senior engineer, I recommend following the standard testing pyramid with th
 
 ### Coverage Targets
 
-| Test Type | Target Coverage | Current | Priority |
-|-----------|----------------|---------|----------|
-| Unit Tests | 80% | 0% | P0 |
-| Integration Tests | 60% | 0% | P0 |
-| E2E Tests | Critical Paths Only | 0% | P0 |
+| Test Type         | Target Coverage     | Current | Priority |
+| ----------------- | ------------------- | ------- | -------- |
+| Unit Tests        | 80%                 | 0%      | P0       |
+| Integration Tests | 60%                 | 0%      | P0       |
+| E2E Tests         | Critical Paths Only | 0%      | P0       |
 
 ---
 
@@ -336,9 +360,11 @@ As a senior engineer, I recommend following the standard testing pyramid with th
 **Goal**: Establish basic test coverage for high-risk code
 
 #### 1.1 Translation Service Unit Tests (2 days)
+
 **File**: `src/services/__tests__/translationService.test.ts`
 
 **Test Cases** (Minimum 25 tests):
+
 - ✅ API call success scenarios (5 tests)
 - ✅ Error handling for 4xx errors (5 tests)
 - ✅ Error handling for 5xx errors (5 tests)
@@ -350,12 +376,15 @@ As a senior engineer, I recommend following the standard testing pyramid with th
 **Success Criteria**: 90% code coverage on translationService.ts
 
 #### 1.2 Critical Component Tests (3 days)
+
 **Files**:
+
 - `src/components/Translation/__tests__/LegalAttestation.test.tsx`
 - `src/components/Translation/__tests__/FileUpload.test.tsx`
 - `src/components/Translation/__tests__/TranslationProgress.test.tsx`
 
 **Test Cases** (Minimum 40 tests):
+
 - **LegalAttestation** (12 tests):
   - Checkbox rendering and selection
   - Validation error display
@@ -381,9 +410,11 @@ As a senior engineer, I recommend following the standard testing pyramid with th
 **Success Criteria**: 85% code coverage on critical components
 
 #### 1.3 E2E Happy Path Test (2 days)
+
 **File**: `e2e/tests/translation/complete-upload-workflow.spec.ts`
 
 **Test Cases** (Minimum 1 test):
+
 - Complete upload workflow from login to detail page
 - Verify all steps of multi-step form
 - Verify navigation to detail page
@@ -400,10 +431,12 @@ As a senior engineer, I recommend following the standard testing pyramid with th
 **Goal**: Achieve target coverage levels
 
 #### 2.1 Remaining Component Tests (2 days)
+
 - TranslationConfig component tests
 - Page integration tests
 
 #### 2.2 E2E Test Suite Expansion (3 days)
+
 - Progress tracking E2E test
 - History management E2E test
 - Error scenario E2E tests
@@ -417,12 +450,14 @@ As a senior engineer, I recommend following the standard testing pyramid with th
 **Goal**: Production-ready testing infrastructure
 
 #### 3.1 Test Infrastructure (2 days)
+
 - Coverage reporting setup
 - CI/CD test gates
 - Pre-commit hooks for tests
 - Test data factories
 
 #### 3.2 Documentation (1 day)
+
 - Testing best practices guide
 - Test naming conventions
 - How to run tests locally
@@ -553,9 +588,7 @@ describe('TranslationService - uploadDocument', () => {
       // Assert
       const formData = mockedAxios.post.mock.calls[0][1] as FormData;
       expect(formData.get('file')).toBe(mockFile);
-      expect(formData.get('legalAttestation')).toBe(
-        JSON.stringify(mockLegalAttestation)
-      );
+      expect(formData.get('legalAttestation')).toBe(JSON.stringify(mockLegalAttestation));
     });
   });
 
@@ -769,6 +802,7 @@ describe('TranslationService - uploadDocument', () => {
 **Pattern**: `should [expected behavior] when [scenario]`
 
 **Good Examples**:
+
 ```typescript
 it('should upload document successfully with correct form data', ...)
 it('should throw TranslationServiceError on 401 Unauthorized', ...)
@@ -776,6 +810,7 @@ it('should include Bearer token in Authorization header', ...)
 ```
 
 **Bad Examples**:
+
 ```typescript
 it('upload works', ...)  // Too vague
 it('test error', ...)    // Not descriptive
@@ -804,37 +839,40 @@ describe('TranslationService - uploadDocument', () => {
 
 ### 3. When to Use Different Test Types
 
-| Test Type | Use When | Example |
-|-----------|----------|---------|
-| **Unit Test** | Testing single function/component in isolation | `translationService.uploadDocument()` |
-| **Integration Test** | Testing component interactions | `TranslationUpload` + `LegalAttestation` + `FileUpload` |
-| **E2E Test** | Testing complete user journeys | Login → Upload → Translate → Download |
+| Test Type            | Use When                                       | Example                                                 |
+| -------------------- | ---------------------------------------------- | ------------------------------------------------------- |
+| **Unit Test**        | Testing single function/component in isolation | `translationService.uploadDocument()`                   |
+| **Integration Test** | Testing component interactions                 | `TranslationUpload` + `LegalAttestation` + `FileUpload` |
+| **E2E Test**         | Testing complete user journeys                 | Login → Upload → Translate → Download                   |
 
 ### 4. Mocking Strategy
 
 **Rule**: Mock external dependencies, not internal logic
 
 **Mock**:
+
 - ✅ HTTP requests (axios)
 - ✅ Authentication tokens
 - ✅ Browser APIs (localStorage, fetch)
 - ✅ External services
 
 **Don't Mock**:
+
 - ❌ Internal business logic
 - ❌ Pure utility functions
 - ❌ Components under test
 
 ### 5. Coverage Goals
 
-| Priority | Coverage Target | Enforcement |
-|----------|----------------|-------------|
-| **P0 (Critical)** | 90% | CI blocking |
-| **P1 (High)** | 80% | CI blocking |
-| **P2 (Medium)** | 70% | CI warning |
-| **P3 (Low)** | 60% | No enforcement |
+| Priority          | Coverage Target | Enforcement    |
+| ----------------- | --------------- | -------------- |
+| **P0 (Critical)** | 90%             | CI blocking    |
+| **P1 (High)**     | 80%             | CI blocking    |
+| **P2 (Medium)**   | 70%             | CI warning     |
+| **P3 (Low)**      | 60%             | No enforcement |
 
 **Critical Code** (P0):
+
 - Authentication logic
 - Payment/billing code
 - Legal compliance code
@@ -981,4 +1019,4 @@ Testing is not optional—it's a core engineering discipline. Code without tests
 
 ---
 
-*This review was conducted with the goal of setting a professional example for the team. Testing is how we protect our users, our code, and our company.*
+_This review was conducted with the goal of setting a professional example for the team. Testing is how we protect our users, our code, and our company._

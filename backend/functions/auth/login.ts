@@ -14,7 +14,7 @@ import {
   TooManyRequestsException,
 } from '@aws-sdk/client-cognito-identity-provider';
 import { loginRequestSchema } from '@lfmt/shared-types';
-import { createSuccessResponse, createErrorResponse, getCorsHeaders } from '../shared/api-response';
+import { createErrorResponse, getCorsHeaders } from '../shared/api-response';
 import Logger from '../shared/logger';
 import { getRequiredEnv } from '../shared/env';
 import { decodeJwtPayload } from '../shared/jwt-utils';
@@ -24,9 +24,7 @@ const cognitoClient = new CognitoIdentityProviderClient({});
 
 const COGNITO_CLIENT_ID = getRequiredEnv('COGNITO_CLIENT_ID');
 
-export const handler = async (
-  event: APIGatewayProxyEvent
-): Promise<APIGatewayProxyResult> => {
+export const handler = async (event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> => {
   const requestId = event.requestContext.requestId;
   // Extract request origin for CORS handling (case-insensitive header lookup)
   const requestOrigin = event.headers.origin || event.headers.Origin;
@@ -35,9 +33,7 @@ export const handler = async (
 
   try {
     // Handle both string and object body (API Gateway integration differences)
-    const body = typeof event.body === 'string'
-      ? JSON.parse(event.body)
-      : event.body || {};
+    const body = typeof event.body === 'string' ? JSON.parse(event.body) : event.body || {};
     const validationResult = loginRequestSchema.safeParse(body);
 
     if (!validationResult.success) {

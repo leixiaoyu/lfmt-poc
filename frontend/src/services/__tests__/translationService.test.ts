@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 /**
  * Translation Service Unit Tests
  *
@@ -52,14 +53,14 @@ vi.mock('axios', () => {
 });
 
 const mockedApiClient = apiClient as unknown as {
-  post: ReturnType<typeof vi.fn>,
-  get: ReturnType<typeof vi.fn>,
-  put: ReturnType<typeof vi.fn>,
+  post: ReturnType<typeof vi.fn>;
+  get: ReturnType<typeof vi.fn>;
+  put: ReturnType<typeof vi.fn>;
 };
 
 const mockedAxios = axios as unknown as {
-  put: ReturnType<typeof vi.fn>,
-  isAxiosError: (error: any) => boolean
+  put: ReturnType<typeof vi.fn>;
+  isAxiosError: (error: any) => boolean;
 };
 
 describe('TranslationService - uploadDocument', () => {
@@ -114,15 +115,12 @@ describe('TranslationService - uploadDocument', () => {
 
       // Assert - Step 1: Request presigned URL
       expect(mockedApiClient.post).toHaveBeenCalledTimes(1);
-      expect(mockedApiClient.post).toHaveBeenCalledWith(
-        '/jobs/upload',
-        {
-          fileName: 'test.txt',
-          fileSize: mockFile.size,
-          contentType: 'text/plain',
-          legalAttestation: mockLegalAttestation,
-        }
-      );
+      expect(mockedApiClient.post).toHaveBeenCalledWith('/jobs/upload', {
+        fileName: 'test.txt',
+        fileSize: mockFile.size,
+        contentType: 'text/plain',
+        legalAttestation: mockLegalAttestation,
+      });
 
       // Assert - Step 2: Upload to S3
       expect(mockedAxios.put).toHaveBeenCalledTimes(1);
@@ -191,19 +189,19 @@ describe('TranslationService - uploadDocument', () => {
       // Arrange
       // Note: In the new implementation, auth is handled by apiClient interceptors.
       // However, the service has a check `if (error instanceof TranslationServiceError)`.
-      // If getAuthToken returns null (which happens inside apiClient interceptor logic usually, 
+      // If getAuthToken returns null (which happens inside apiClient interceptor logic usually,
       // but here we mock apiClient), we simulate apiClient throwing a 401 error.
-      
+
       // Simulate apiClient 401 error
       const mockError = {
         isAxiosError: true,
         response: {
           status: 401,
-          data: { message: 'Not authenticated' }
+          data: { message: 'Not authenticated' },
         },
-        message: 'Request failed with status code 401'
+        message: 'Request failed with status code 401',
       } as AxiosError;
-      
+
       mockedApiClient.post.mockRejectedValueOnce(mockError);
 
       const mockFile = new File(['test'], 'test.txt', { type: 'text/plain' });
@@ -432,9 +430,7 @@ describe('TranslationService - startTranslation', () => {
       mockedApiClient.post.mockRejectedValueOnce(mockError);
 
       // Act & Assert
-      await expect(startTranslation(jobId, request)).rejects.toThrow(
-        'Translation job not found'
-      );
+      await expect(startTranslation(jobId, request)).rejects.toThrow('Translation job not found');
     });
 
     it('should throw error when not authenticated', async () => {
@@ -443,9 +439,9 @@ describe('TranslationService - startTranslation', () => {
       const mockError = {
         isAxiosError: true,
         response: { status: 401, data: { message: 'Not authenticated' } },
-        message: 'Not authenticated'
+        message: 'Not authenticated',
       } as AxiosError;
-      
+
       mockedApiClient.post.mockRejectedValueOnce(mockError);
 
       const jobId = 'job-123';
@@ -610,9 +606,7 @@ describe('TranslationService - getTranslationJobs', () => {
 
       // Assert
       expect(mockedApiClient.get).toHaveBeenCalledTimes(1);
-      expect(mockedApiClient.get).toHaveBeenCalledWith(
-        expect.stringContaining('/jobs')
-      );
+      expect(mockedApiClient.get).toHaveBeenCalledWith(expect.stringContaining('/jobs'));
       expect(result).toEqual(mockJobs);
       expect(result).toHaveLength(2);
     });
@@ -639,9 +633,9 @@ describe('TranslationService - getTranslationJobs', () => {
       const mockError = {
         isAxiosError: true,
         response: { status: 401, data: { message: 'Not authenticated' } },
-        message: 'Not authenticated'
+        message: 'Not authenticated',
       } as AxiosError;
-      
+
       mockedApiClient.get.mockRejectedValueOnce(mockError);
 
       // Act & Assert
@@ -717,7 +711,7 @@ describe('TranslationService - downloadTranslation', () => {
 describe('TranslationService - createLegalAttestation', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    // NOTE: The refactored service no longer calls axios to get IP. 
+    // NOTE: The refactored service no longer calls axios to get IP.
     // It just returns a placeholder that backend will replace.
     // So we don't need to mock axios.get here anymore for IP check.
   });

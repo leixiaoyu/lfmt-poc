@@ -9,6 +9,7 @@ This is a proof-of-concept implementation of a Long-Form Translation Service tha
 ## Architecture
 
 ### Core Components
+
 - **Frontend**: React 18 + TypeScript + Material-UI + React Query
 - **Backend**: AWS Lambda + API Gateway + Step Functions
 - **Database**: DynamoDB with appropriate GSIs
@@ -19,6 +20,7 @@ This is a proof-of-concept implementation of a Long-Form Translation Service tha
   - **Future**: May upgrade to Claude Sonnet 4 for production if quality requirements increase
 
 ### Key Features
+
 - **Intelligent Chunking**: 3,500-token chunks with 250-token overlap
 - **S3 Event-Driven Architecture**: Automatic upload→chunking workflow
 - **Step Functions Orchestration**: Scalable translation workflow with retry logic
@@ -30,12 +32,14 @@ This is a proof-of-concept implementation of a Long-Form Translation Service tha
 ## Quick Start
 
 ### Prerequisites
+
 - Node.js 18+
 - AWS CLI configured
 - AWS CDK v2
 - Git
 
 ### Installation
+
 ```bash
 # Clone repository
 git clone https://github.com/leixiaoyu/lfmt-poc
@@ -60,6 +64,7 @@ npm test
 ```
 
 ### Local Development
+
 ```bash
 # Start frontend development server
 cd frontend
@@ -77,6 +82,7 @@ npm test
 ### Deployment
 
 #### Infrastructure Deployment
+
 ```bash
 # Deploy backend infrastructure to development
 cd backend/infrastructure
@@ -90,6 +96,7 @@ npx cdk deploy --context environment=prod
 ```
 
 #### Frontend Deployment
+
 ```bash
 # Deploy frontend to development environment
 ./scripts/deploy-frontend.sh LfmtPocDev .env.dev
@@ -99,24 +106,29 @@ npx cdk deploy --context environment=prod
 ```
 
 **Manual Frontend Deployment Steps**:
+
 1. Configure environment variables (`.env.dev` or `.env.production`)
 2. Build frontend: `cd frontend && npm run build`
 3. Deploy to S3: `aws s3 sync dist/ s3://lfmt-frontend-<env>/ --delete`
 4. Invalidate CloudFront: `aws cloudfront create-invalidation --distribution-id <ID> --paths "/*"`
 
 **Deployed Environments**:
+
 - **Development**: https://d39xcun7144jgl.cloudfront.net (LfmtPocDev)
 - **Production**: TBD (LfmtPocProd)
 
 For detailed deployment instructions, see:
+
 - [DEPLOYMENT-GUIDE.md](DEPLOYMENT-GUIDE.md) - Complete frontend deployment guide
 - [PRODUCTION-SETUP-CHECKLIST.md](PRODUCTION-SETUP-CHECKLIST.md) - Production setup checklist
 
 #### Automated Deployment (GitHub Actions)
+
 - **Development**: Automatic deployment on push to `main` branch
 - **Staging/Production**: Manual workflow dispatch from GitHub Actions UI
 
 ## Project Structure
+
 ```
 lfmt-poc/
 ├── .github/
@@ -148,18 +160,21 @@ lfmt-poc/
 ## Development Guidelines
 
 ### Git Workflow
+
 - **Main Branch**: `main` - Production-ready code with branch protection
 - **Feature Branches**: `feature/description` - Individual features
 - **Pull Requests**: Required for all changes to main
 - **CI/CD**: Automated testing on all PRs
 
 ### Branch Protection Rules
+
 - Require pull request before merging
 - Require status checks to pass (Run Tests, Build Infrastructure)
 - Require conversation resolution
 - No direct pushes to main
 
 ### Commit Messages
+
 ```
 <type>(<scope>): <subject>
 
@@ -172,6 +187,7 @@ lfmt-poc/
 **Scopes**: auth, docs, api, ui, infra, deploy, security
 
 ### Code Standards
+
 - TypeScript strict mode enabled
 - 90%+ test coverage required
 - ESLint and Prettier configured
@@ -181,6 +197,7 @@ lfmt-poc/
 ## Testing
 
 ### Infrastructure Tests
+
 ```bash
 cd backend/infrastructure
 npm test                    # Run all tests
@@ -188,6 +205,7 @@ npm run test:coverage      # Coverage report
 ```
 
 ### Frontend Tests
+
 ```bash
 cd frontend
 npm test                    # Run all unit tests (499 tests)
@@ -198,7 +216,9 @@ npm run test:e2e:ui        # Interactive E2E testing with Playwright UI
 ```
 
 ### CI/CD Pipeline Tests
+
 All pull requests automatically run:
+
 - Shared-types validation (11 tests)
 - Backend function unit tests (328 tests)
 - Infrastructure tests (33 tests)
@@ -211,6 +231,7 @@ All pull requests automatically run:
 ## Documentation
 
 ### Core Documentation
+
 - **[PROGRESS.md](PROGRESS.md)** - Detailed implementation status and progress tracking
 - **[TESTING-GUIDE.md](TESTING-GUIDE.md)** - Comprehensive local testing guide (unit, integration, E2E)
 - **[DEVELOPMENT-ROADMAP.md](DEVELOPMENT-ROADMAP.md)** - Project roadmap and priorities
@@ -223,24 +244,28 @@ All pull requests automatically run:
 - **[frontend/e2e/README.md](frontend/e2e/README.md)** - E2E testing with Playwright guide
 
 ### External References
+
 - **[Implementation Plan v2](../LFMT%20Implementation%20Plan%20v2.md)** - Detailed implementation roadmap
 - **[Technical Architecture v2](../Long-Form%20Translation%20Service%20-%20Technical%20Architecture%20Design%20v2.0.md)** - High-level architecture
 
 ## Monitoring & Observability
 
 ### CloudWatch Dashboards
+
 - API Gateway metrics (latency, errors, requests)
 - Lambda function performance (duration, errors, throttles)
 - DynamoDB metrics (read/write capacity, throttles)
 - S3 storage utilization and costs
 
 ### Cost Monitoring
+
 - AWS Budget configured ($100/month for production)
 - CloudWatch alarms for cost thresholds
 - Resource tagging for cost allocation
 - Monthly cost reports
 
 ### Alerts (Configured)
+
 - API Gateway error rate > 5%
 - Lambda function errors > 1%
 - DynamoDB throttling events
@@ -248,6 +273,7 @@ All pull requests automatically run:
 ## Security
 
 ### Data Protection
+
 - **Encryption**: AES-256 at rest, TLS 1.3 in transit
 - **Access Control**: IAM roles with least-privilege principles
 - **Authentication**: Cognito with strong password policies (min 8 chars, complexity requirements)
@@ -255,6 +281,7 @@ All pull requests automatically run:
 - **OIDC**: GitHub Actions uses OIDC for secure AWS access (no static credentials)
 
 ### Security Features
+
 - Branch protection on main branch
 - Required pull request reviews
 - Automated security scanning (npm audit)
@@ -263,6 +290,7 @@ All pull requests automatically run:
 - All production credentials redacted from documentation
 
 ### Compliance
+
 - Legal attestation system
 - Audit trails for all user actions
 - 7-year data retention for legal compliance
@@ -271,11 +299,13 @@ All pull requests automatically run:
 ## Cost Optimization
 
 ### Current Estimates (Monthly)
+
 - **Development**: ~$10-20/month
 - **Staging**: ~$15-30/month
 - **Production**: ~$30-50/month (target for 1000 translations)
 
 ### Optimization Features
+
 - DynamoDB on-demand billing
 - S3 intelligent tiering and lifecycle policies
 - Lambda ARM64 for 20% cost reduction
@@ -285,6 +315,7 @@ All pull requests automatically run:
 ## Deployed Environments
 
 ### Production Environment
+
 - **AWS Region**: us-east-1
 - **Stack Name**: LfmtPocProd
 - **API Endpoint**: https://YOUR_PROD_API_ID.execute-api.us-east-1.amazonaws.com/v1/
@@ -294,6 +325,7 @@ All pull requests automatically run:
 **Note**: Actual endpoint URLs and resource IDs are stored in local `.env.production` file (gitignored)
 
 ### Development Environment
+
 - **Stack Name**: LfmtPocDev
 - **API Endpoint**: https://YOUR_DEV_API_ID.execute-api.us-east-1.amazonaws.com/v1/
 - **Auto-deploys**: On push to main branch
@@ -312,6 +344,7 @@ All pull requests automatically run:
 ## Support
 
 ### Getting Help
+
 - Check documentation in root directory
 - Review [PROGRESS.md](PROGRESS.md) for current implementation status
 - Review [DEVELOPMENT-ROADMAP.md](DEVELOPMENT-ROADMAP.md) for project priorities
@@ -319,6 +352,7 @@ All pull requests automatically run:
 - Verify AWS resource status in CloudFormation console
 
 ### Common Issues
+
 - **CDK Bootstrap Required**: Run `cdk bootstrap aws://ACCOUNT/REGION`
 - **Insufficient Permissions**: Ensure AWS credentials have required permissions
 - **Resource Conflicts**: Check for existing resources with same names

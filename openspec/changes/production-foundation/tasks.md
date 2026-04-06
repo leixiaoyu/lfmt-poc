@@ -11,6 +11,7 @@
 **Reviewer Feedback**: Writing tests before fixing types = wasted effort. Fix foundation first, then test against correct types.
 
 ### 1.1 TypeScript Strict Mode Migration (MOVED FROM PHASE 2)
+
 - [ ] 1.1.1 Audit current `any` types across codebase
   - Run `grep -r "any" --include="*.ts" --include="*.tsx"` to find all instances
   - Create inventory spreadsheet (file path, line number, justification needed)
@@ -32,6 +33,7 @@
 - **Success Criteria**: `npm run type-check` passes in all packages with 0 errors
 
 ### 1.2 ESLint Configuration Standardization (MOVED FROM PHASE 2)
+
 - [ ] 1.2.1 Create standardized `.eslintrc.cjs` for backend
   - Extend `@typescript-eslint/recommended-requiring-type-checking`
   - Add rules: `no-console: warn`, `no-unused-vars: error`, `prefer-const: error`
@@ -54,6 +56,7 @@
 - **Success Criteria**: `npm run lint` passes with 0 errors across all packages
 
 ### 1.3 Prettier Formatting (MOVED FROM PHASE 2)
+
 - [ ] 1.3.1 Create `.prettierrc.json` configuration
   - `printWidth: 100`, `tabWidth: 2`, `semi: true`, `singleQuote: true`
   - `trailingComma: 'es5'`, `arrowParens: 'always'`
@@ -75,6 +78,7 @@
 - **Success Criteria**: `npm run format:check` passes
 
 ### 1.4 Pre-commit Hooks (MOVED FROM PHASE 2)
+
 - [ ] 1.4.1 Install Husky and lint-staged
   - `npm install --save-dev husky lint-staged` in project root
   - Run `npx husky init` to create `.husky/` directory
@@ -97,6 +101,7 @@
 - **Success Criteria**: Pre-commit hooks block commits with linting/formatting errors
 
 ### 1.5 PR Templates and Review Process (MOVED FROM PHASE 2)
+
 - [ ] 1.5.1 Create PR template
   - Add `.github/pull_request_template.md`
   - Sections: Description, Changes, Testing, Checklist (tests added, coverage meets targets, linting passed)
@@ -120,6 +125,7 @@
 **Reviewer Feedback**: 0% → 95% in 5 days = unrealistic, leads to meaningless green-wash tests. Use tiered approach.
 
 ### 2.1 Configure Tiered Coverage Reporting Infrastructure 🆕
+
 - [ ] 2.1.1 Update `backend/functions/jest.config.js` with **tiered** coverage thresholds
   - **Critical Path** (auth/, translation/): `coverageThreshold.critical: 100%`
   - **General Code**: `coverageThreshold.global: 80%`
@@ -146,6 +152,7 @@
 - **Success Criteria**: Tiered coverage thresholds configured, CI enforces them
 
 ### 2.2 Critical Path Tests (100% Coverage) - Backend Auth
+
 - [ ] 2.2.1 Add missing tests for authentication handlers
   - `auth/register.ts`: Test validation errors, duplicate email, password hashing
   - `auth/login.ts`: Test invalid credentials, account lockout, token generation
@@ -158,6 +165,7 @@
 - **Success Criteria**: `npm run test:coverage` shows 100% coverage for auth/
 
 ### 2.3 Critical Path Tests (100% Coverage) - Backend Translation
+
 - [ ] 2.3.1 Add missing tests for translation workflow
   - `translation/chunkDocument.ts`: Test edge cases (empty file, single sentence, 500K words)
   - `translation/translateChunk.ts`: Test Gemini API errors, rate limiting, retries, **circuit breaker**
@@ -169,6 +177,7 @@
 - **Success Criteria**: `npm run test:coverage` shows 100% coverage for translation/
 
 ### 2.4 General Code Tests (80% Coverage) - Backend & Frontend
+
 - [ ] 2.4.1 Add tests for general backend handlers (upload, utils)
   - `upload/uploadPresignedUrl.ts`: Test file size limits, file type validation, S3 errors
   - `upload/uploadComplete.ts`: Test S3 verification, metadata updates, missing files
@@ -192,6 +201,7 @@
 - **Success Criteria**: Critical path 100%, general code 80%
 
 ### 2.5 Infrastructure Tests (40-50% Coverage) - Custom Logic Only
+
 - [ ] 2.5.1 Test custom CDK constructs (NOT framework validation)
   - Test IAM policy generation logic (custom PolicyStatements)
   - Test environment-specific configurations (dev vs staging vs prod)
@@ -206,6 +216,7 @@
 ## Phase 3: Infrastructure Hardening (Week 3 - 40 hours)
 
 ### 3.1 IAM Least Privilege Audit
+
 - [ ] 3.1.1 Audit all PolicyStatements in CDK stack
   - Review 10 PolicyStatements in `lfmt-infrastructure-stack.ts` (lines 502-1027)
   - Document current permissions and resources
@@ -250,6 +261,7 @@
 - **Success Criteria**: Zero wildcard permissions, all integration tests pass
 
 ### 3.2 DynamoDB Backup and Recovery
+
 - [ ] 3.2.1 Enable Point-in-Time Recovery (PITR)
   - Modify `jobsTable` definition: Add `pointInTimeRecovery: true`
   - Modify `usersTable` definition: Add `pointInTimeRecovery: true`
@@ -277,6 +289,7 @@
 - **Success Criteria**: PITR enabled on all tables, restore tested successfully
 
 ### 3.3 S3 Security Hardening
+
 - [ ] 3.3.1 Enable server-side encryption (SSE-S3)
   - Modify `documentBucket`: `encryption: s3.BucketEncryption.S3_MANAGED`
   - Modify `resultsBucket`: `encryption: s3.BucketEncryption.S3_MANAGED`
@@ -305,6 +318,7 @@
 - **Success Criteria**: All buckets encrypted, versioning enabled on data buckets
 
 ### 3.4 Cognito Security Hardening (+ PASSWORD MIGRATION PLAN) 🆕
+
 - [ ] 3.4.1 Enforce password complexity
   - Update `userPool` password policy:
     - `minLength: 12` (currently 8) ⚠️ **BREAKING FOR EXISTING USERS**
@@ -350,6 +364,7 @@
 - **Success Criteria**: Password policy enforced, existing users not broken, migration documented
 
 ### 3.5 Environment Separation (+ AWS ORGANIZATIONS FOR PROD) ⚠️ **CRITICAL CHANGE**
+
 - [ ] 3.5.1 **Set up AWS Organizations** 🆕 **REVIEWER REQUIRED**
   - Create AWS Organization from current AWS account (becomes management account)
   - Create new AWS account for **production** (via AWS Console or CLI)
@@ -381,6 +396,7 @@
 - **Success Criteria**: Prod stack deployed to separate AWS account, cross-account IAM working
 
 ### 3.6 Secrets Management & Rotation 🆕 **CRITICAL GAP**
+
 - [ ] 3.6.1 Configure secrets rotation policy for Gemini API key
   - **Production**: AWS Secrets Manager automatic rotation (90 days)
     - Create rotation Lambda (generate new Gemini key via API, update Secrets Manager, invalidate old key)
@@ -400,6 +416,7 @@
 - **Success Criteria**: Rotation Lambda deployed, CloudWatch alarm configured, tested in dev
 
 ### 3.7 Cost Controls (AWS BUDGETS + ANOMALY DETECTION) 🆕 **CRITICAL GAP**
+
 - [ ] 3.7.1 Create AWS Budget ($50/month with 80% alert)
   - Set up $50/month budget via AWS Budgets console or CDK
   - Configure SNS alerts at:
@@ -425,6 +442,7 @@
 - **Success Criteria**: Budget configured, anomaly detection enabled, cost alarms firing correctly
 
 ### 3.8 Data Privacy & GDPR Compliance 🆕 **CRITICAL GAP**
+
 - [ ] 3.8.1 Implement formal data retention policy
   - **Policy**: User-uploaded documents deleted 30 days after translation (or immediate if user opts in)
   - S3 Lifecycle Policies: Auto-delete from `documentBucket` after 30 days
@@ -453,6 +471,7 @@
 ## Phase 4: Monitoring & CI/CD Hardening (Week 4 - 40 hours)
 
 ### 4.1 CloudWatch Dashboards (Backend + FRONTEND RUM) 🆕
+
 - [ ] 4.1.1 Create API Gateway dashboard
   - Widgets: Request count, 4xx/5xx errors, latency (p50, p90, p99)
   - **Estimated Time**: 3 hours
@@ -482,6 +501,7 @@
 - **Success Criteria**: 7 CloudWatch dashboards deployed (6 backend + 1 frontend RUM), metrics visible
 
 ### 4.1b Cost Controls Dashboard 🆕 **CRITICAL GAP (FROM PHASE 3)**
+
 - [ ] 4.1.8 **Create AWS Budget ($50/month with 80% alert)** 🆕 **REVIEWER REQUIRED**
   - Set up $50/month budget via AWS Budgets console or CDK
   - Configure SNS alerts at 80% ($40) and 100% ($50)
@@ -498,6 +518,7 @@
 - **Success Criteria**: Budget configured, anomaly detection enabled, cost visibility in dashboards
 
 ### 4.2 CloudWatch Alarms
+
 - [ ] 4.2.1 Create SNS topic for alarm notifications
   - Topic: `lfmt-alarms-{env}`
   - Subscribe operations email address
@@ -529,6 +550,7 @@
 - **Success Criteria**: 10+ alarms configured, test notifications received
 
 ### 4.3 Structured Logging (+ CORRELATION ID ORIGIN) 🆕
+
 - [ ] 4.3.1 Add correlation IDs to all Lambda handlers ⚠️ **REVIEWER CLARIFICATION**
   - **Correlation ID Origin**: **API Gateway** (`event.requestContext.requestId`)
     - Born when request enters AWS infrastructure (NOT in frontend)
@@ -557,6 +579,7 @@
 - **Success Criteria**: All logs include correlationId (from API Gateway), CloudWatch Insights queries work
 
 ### 4.4 CI/CD Hardening (+ GEMINI CIRCUIT BREAKER) 🆕
+
 - [ ] 4.4.1 **Implement Gemini Rate Limiting Circuit Breaker** 🆕 **CRITICAL GAP**
   - **Problem**: Current rate limiter doesn't handle Gemini 429 errors gracefully
   - **Circuit Breaker Pattern**:
@@ -606,6 +629,7 @@
 - **Success Criteria**: Circuit breaker working, staging/prod deployments require approval, smoke tests pass
 
 ### 4.5 Operational Runbooks (+ AUTOMATED ROLLBACK SCRIPTS) ⚠️ **CRITICAL CHANGE**
+
 - [ ] 4.5.1 Create deployment runbook
   - Add `docs/runbooks/deployment.md`
   - Sections: Pre-deployment checklist, deployment steps, rollback procedure
@@ -655,6 +679,7 @@
 ## Validation & Sign-off
 
 ### Validation Checklist
+
 - [ ] All tests pass: `npm test` in all packages
 - [ ] Coverage meets threshold: `npm run test:coverage` shows ≥95%
 - [ ] Linting passes: `npm run lint` shows 0 errors
@@ -666,6 +691,7 @@
 - [ ] Runbooks tested: Deployment and rollback procedures validated
 
 ### Acceptance Criteria
+
 1. **Test Coverage**: ≥95% across all packages, enforced in CI
 2. **Code Quality**: 0 linting errors, TypeScript strict mode enabled
 3. **Infrastructure**: IAM least privilege, encryption enabled, backups configured
@@ -673,6 +699,7 @@
 5. **CI/CD**: Staging environment deployed, rollback tested successfully
 
 ### Sign-off
+
 - [ ] Project Owner approval
 - [ ] Technical review complete
 - [ ] Documentation reviewed
@@ -683,7 +710,9 @@
 ## Notes
 
 ### Coverage Exclusions & Exemptions
+
 The following code is **excluded from coverage reporting** (not our code):
+
 - Generated code (CDK `cdk.out/` directory)
 - Third-party code (`node_modules/`)
 - Type definition files (`.d.ts`)
@@ -692,13 +721,16 @@ The following code is **excluded from coverage reporting** (not our code):
 **Application code exemptions are the NUCLEAR OPTION — last resort only.** Unless it is truly impossible to test a piece of application code, no exemptions are granted. 95% means 95%. If code can't be tested, question whether the code should exist.
 
 ### Rollback Plan
+
 If any phase introduces breaking changes:
+
 1. Revert Git commit
 2. Re-deploy previous CDK stack version
 3. Restore DynamoDB from PITR (if data corruption)
 4. Post-mortem analysis
 
 ### Future Work (Out of Scope)
+
 - AWS X-Ray distributed tracing (P1, can add later)
 - Third-party monitoring (Datadog, New Relic)
 - Separate AWS accounts for environments

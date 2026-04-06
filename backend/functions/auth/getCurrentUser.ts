@@ -9,9 +9,7 @@ import Logger from '../shared/logger';
 
 const logger = new Logger('lfmt-auth-getCurrentUser');
 
-export const handler = async (
-  event: APIGatewayProxyEvent
-): Promise<APIGatewayProxyResult> => {
+export const handler = async (event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> => {
   const requestId = event.requestContext.requestId;
   const requestOrigin = event.headers.origin || event.headers.Origin;
 
@@ -23,11 +21,14 @@ export const handler = async (
     const authorizerClaims = event.requestContext.authorizer?.claims;
 
     if (!authorizerClaims || !authorizerClaims.sub) {
-      logger.error('Missing authorizer claims - endpoint should be protected by Cognito authorizer', {
-        requestId,
-        hasAuthorizer: !!event.requestContext.authorizer,
-        hasClaims: !!authorizerClaims,
-      });
+      logger.error(
+        'Missing authorizer claims - endpoint should be protected by Cognito authorizer',
+        {
+          requestId,
+          hasAuthorizer: !!event.requestContext.authorizer,
+          hasClaims: !!authorizerClaims,
+        }
+      );
 
       return createErrorResponse(
         401,

@@ -11,6 +11,7 @@
 ### Documentation Inventory
 
 **Root Level**: 19 MD files (5,040 total lines)
+
 - `CLAUDE.md` (834 lines) - Claude Code instructions
 - `PROGRESS.md` (1,226 lines) - Historical progress log
 - `DEVELOPMENT-ROADMAP.md` (450 lines) - Project roadmap
@@ -22,12 +23,14 @@
 - Plus 11 other specialized docs
 
 **Docs Folder**: 4 files
+
 - `docs/CORS-TROUBLESHOOTING.md` - CORS debugging guide
 - `docs/CORS-FIX-VALIDATION.md` - PR #92 validation report
 - `docs/cdk-best-practices.md` - CDK guidelines
 - `docs/infrastructure-setup.md` - Infrastructure docs
 
 **Serena Memories**: 1 file
+
 - `.serena/memories/playwright-bug-validation-pattern.md` - Testing pattern
 
 ---
@@ -39,10 +42,12 @@
 **Issue**: Two separate testing guides with ~70% content overlap
 
 **Files**:
+
 - `TESTING.md` (455 lines) - General testing overview
 - `TESTING-GUIDE.md` (517 lines) - Detailed local testing instructions
 
 **Overlap**:
+
 - Frontend unit test commands (identical)
 - Backend unit test commands (identical)
 - E2E test setup instructions
@@ -50,10 +55,12 @@
 - Prerequisites and setup
 
 **Difference**:
+
 - `TESTING.md`: More concise, includes CI/CD overview
 - `TESTING-GUIDE.md`: More detailed, includes Playwright UI mode instructions
 
 **Recommendation**: **MERGE** into single `TESTING.md`
+
 - Keep comprehensive commands from TESTING-GUIDE.md
 - Retain CI/CD section from TESTING.md
 - Archive TESTING-GUIDE.md
@@ -65,20 +72,24 @@
 **Issue**: Two deployment guides with different scopes but overlapping content
 
 **Files**:
+
 - `DEPLOYMENT-GUIDE.md` (458 lines) - Frontend deployment workflow
 - `PRODUCTION-DEPLOYMENT-GUIDE.md` (544 lines) - Full production setup
 
 **Overlap**:
+
 - Environment configuration (.env files)
 - Build commands (npm run build)
 - S3 sync commands
 - CloudFront invalidation process
 
 **Difference**:
+
 - `DEPLOYMENT-GUIDE.md`: Focus on day-to-day frontend deployments
 - `PRODUCTION-DEPLOYMENT-GUIDE.md`: One-time production setup (OIDC, IAM, GitHub secrets)
 
 **Recommendation**: **KEEP BOTH** but clarify scope
+
 - Rename `DEPLOYMENT-GUIDE.md` → `FRONTEND-DEPLOYMENT.md` (daily workflow)
 - Keep `PRODUCTION-DEPLOYMENT-GUIDE.md` for initial setup
 - Add cross-references between them
@@ -90,21 +101,25 @@
 **Issue**: CORS information spread across 3 files
 
 **Files**:
+
 - `CLAUDE.md` (lines 298-323) - CORS configuration in CDK
 - `CORS-CONFIGURATION.md` (556 lines) - Comprehensive CORS technical guide
 - `docs/CORS-TROUBLESHOOTING.md` - Debugging guide
 
 **Overlap**:
+
 - getAllowedApiOrigins() code explanation (CLAUDE.md + CORS-CONFIGURATION.md)
 - API Gateway CORS setup
 - CloudFront URL inclusion logic
 
 **Difference**:
+
 - `CLAUDE.md`: Brief overview for Claude Code context
 - `CORS-CONFIGURATION.md`: Deep technical reference
 - `CORS-TROUBLESHOOTING.md`: Debugging workflows
 
 **Recommendation**: **CONSOLIDATE** CORS sections
+
 - Keep brief reference in CLAUDE.md (link to detailed docs)
 - Merge CORS-CONFIGURATION.md + CORS-TROUBLESHOOTING.md → `docs/CORS-REFERENCE.md`
 - Remove redundant code snippets from CLAUDE.md
@@ -116,16 +131,19 @@
 **Issue**: CloudFront setup duplicated in two locations
 
 **Files**:
+
 - `CLAUDE.md` (lines 223-456) - CloudFront CDK infrastructure (234 lines)
 - `docs/infrastructure-setup.md` - General infrastructure guide
 
 **Overlap**:
+
 - CloudFront distribution configuration
 - S3 bucket setup
 - Custom error responses for SPA routing
 - Security headers configuration
 
 **Recommendation**: **EXTRACT** CloudFront from CLAUDE.md
+
 - Create `docs/CLOUDFRONT-SETUP.md` for detailed reference
 - Keep only brief overview + link in CLAUDE.md
 - Reduce CLAUDE.md by ~200 lines
@@ -137,9 +155,11 @@
 **Issue**: Auto-confirm feature detailed in CLAUDE.md (178 lines)
 
 **Files**:
+
 - `CLAUDE.md` (lines 45-222) - Auto-confirm email verification feature
 
 **Recommendation**: **EXTRACT** to separate doc
+
 - Create `docs/AUTH-AUTO-CONFIRM.md`
 - Keep 2-3 line summary in CLAUDE.md with link
 - Reduce CLAUDE.md by ~170 lines
@@ -151,9 +171,11 @@
 **Issue**: Translation UI implementation details in CLAUDE.md (156 lines)
 
 **Files**:
+
 - `CLAUDE.md` (lines 678-834) - Translation UI components and testing
 
 **Recommendation**: **EXTRACT** to separate doc
+
 - Create `docs/TRANSLATION-UI-REFERENCE.md`
 - Keep 2-3 line summary in CLAUDE.md with link
 - Reduce CLAUDE.md by ~150 lines
@@ -202,6 +224,7 @@ docs/
 ### Investigation Reports → Archive
 
 Move all one-time investigation reports to `docs/archive/`:
+
 - `P0-INVESTIGATION-CLOUDFRONT-SPA-ROUTING.md`
 - `P0-INVESTIGATION-COGNITO-SES-LIMIT.md`
 - `P0-INVESTIGATION-E2E-FAILURES.md`
@@ -290,7 +313,7 @@ Move all one-time investigation reports to `docs/archive/`:
 ### Phase 4: Archive Historical Docs (Priority 3)
 
 1. **Move to `docs/archive/`**:
-   - All P0-INVESTIGATION-*.md files
+   - All P0-INVESTIGATION-\*.md files
    - CLOUDFRONT-FIX-SUMMARY.md
    - CORS-FIX-VALIDATION.md
 
@@ -328,6 +351,7 @@ Move all one-time investigation reports to `docs/archive/`:
 ## Rollback Plan
 
 All changes tracked in Git. If consolidation causes issues:
+
 1. Revert PR with consolidation changes
 2. Restore original file structure
 3. Reassess consolidation strategy
@@ -337,15 +361,18 @@ All changes tracked in Git. If consolidation causes issues:
 ## Risk Assessment
 
 **Low Risk**:
+
 - No code changes, only documentation
 - All content preserved (moved, not deleted)
 - Git history maintains all original versions
 
 **Medium Risk**:
+
 - Broken internal links (need to update cross-references)
 - Developers unfamiliar with new structure (need announcement)
 
 **Mitigation**:
+
 - Update all cross-references in same PR
 - Add "Document Moved" notices in Git history
 - Announce changes in team communication

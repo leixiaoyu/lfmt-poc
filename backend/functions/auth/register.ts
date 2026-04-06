@@ -35,9 +35,7 @@ const ENVIRONMENT = getOptionalEnv('ENVIRONMENT', 'dev');
 // Auto-confirm users in dev environment (email verification disabled)
 const AUTO_CONFIRM_USERS = ENVIRONMENT.includes('Dev');
 
-export const handler = async (
-  event: APIGatewayProxyEvent
-): Promise<APIGatewayProxyResult> => {
+export const handler = async (event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> => {
   const requestId = event.requestContext.requestId;
   const requestOrigin = event.headers.origin || event.headers.Origin;
 
@@ -53,9 +51,7 @@ export const handler = async (
       bodyPreview: event.body ? event.body.substring(0, 100) : 'null',
     });
 
-    const body = typeof event.body === 'string'
-      ? JSON.parse(event.body)
-      : event.body || {};
+    const body = typeof event.body === 'string' ? JSON.parse(event.body) : event.body || {};
     const validationResult = registerRequestSchema.safeParse(body);
 
     if (!validationResult.success) {

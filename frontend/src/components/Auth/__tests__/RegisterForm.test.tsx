@@ -166,7 +166,9 @@ describe('RegisterForm - Validation - Password Strength', () => {
     await user.click(submitButton);
 
     await waitFor(() => {
-      expect(screen.getByText(/password must contain at least one uppercase letter/i)).toBeInTheDocument();
+      expect(
+        screen.getByText(/password must contain at least one uppercase letter/i)
+      ).toBeInTheDocument();
     });
   });
 
@@ -181,7 +183,9 @@ describe('RegisterForm - Validation - Password Strength', () => {
     await user.click(submitButton);
 
     await waitFor(() => {
-      expect(screen.getByText(/password must contain at least one lowercase letter/i)).toBeInTheDocument();
+      expect(
+        screen.getByText(/password must contain at least one lowercase letter/i)
+      ).toBeInTheDocument();
     });
   });
 
@@ -211,7 +215,9 @@ describe('RegisterForm - Validation - Password Strength', () => {
     await user.click(submitButton);
 
     await waitFor(() => {
-      expect(screen.getByText(/password must contain at least one special character/i)).toBeInTheDocument();
+      expect(
+        screen.getByText(/password must contain at least one special character/i)
+      ).toBeInTheDocument();
     });
   });
 });
@@ -341,7 +347,7 @@ describe('RegisterForm - Submission', () => {
 
   it('should disable submit button while submitting', async () => {
     const user = userEvent.setup();
-    const onSubmit = vi.fn(() => new Promise<void>(resolve => setTimeout(resolve, 100)));
+    const onSubmit = vi.fn(() => new Promise<void>((resolve) => setTimeout(resolve, 100)));
     renderWithRouter(<RegisterForm onSubmit={onSubmit} />);
 
     const firstNameInput = screen.getByLabelText(/first name/i);
@@ -372,7 +378,7 @@ describe('RegisterForm - Submission', () => {
 
   it('should show loading text while submitting', async () => {
     const user = userEvent.setup();
-    const onSubmit = vi.fn(() => new Promise<void>(resolve => setTimeout(resolve, 100)));
+    const onSubmit = vi.fn(() => new Promise<void>((resolve) => setTimeout(resolve, 100)));
     renderWithRouter(<RegisterForm onSubmit={onSubmit} />);
 
     const firstNameInput = screen.getByLabelText(/first name/i);
@@ -578,7 +584,9 @@ describe('RegisterForm - Legal Compliance Checkboxes', () => {
     await user.click(submitButton);
 
     await waitFor(() => {
-      expect(screen.getByText(/you must accept the terms of service to register/i)).toBeInTheDocument();
+      expect(
+        screen.getByText(/you must accept the terms of service to register/i)
+      ).toBeInTheDocument();
     });
   });
 
@@ -602,7 +610,9 @@ describe('RegisterForm - Legal Compliance Checkboxes', () => {
     await user.click(submitButton);
 
     await waitFor(() => {
-      expect(screen.getByText(/you must accept the privacy policy to register/i)).toBeInTheDocument();
+      expect(
+        screen.getByText(/you must accept the privacy policy to register/i)
+      ).toBeInTheDocument();
     });
   });
 

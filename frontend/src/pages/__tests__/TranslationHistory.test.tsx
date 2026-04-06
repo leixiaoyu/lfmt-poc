@@ -41,7 +41,11 @@ vi.mock('../../services/translationService', () => ({
     downloadTranslation: vi.fn(),
   },
   TranslationServiceError: class TranslationServiceError extends Error {
-    constructor(message: string, public statusCode?: number, public code?: string) {
+    constructor(
+      message: string,
+      public statusCode?: number,
+      public code?: string
+    ) {
       super(message);
       this.name = 'TranslationServiceError';
     }

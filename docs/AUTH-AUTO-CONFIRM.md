@@ -25,6 +25,7 @@ This document describes the auto-confirm email verification feature that allows 
 ### Purpose
 
 The auto-confirm feature streamlines the development and testing workflow by:
+
 - ✅ Eliminating email verification step in dev environment
 - ✅ Allowing immediate login after registration
 - ✅ Reducing SES configuration requirements for local development
@@ -33,10 +34,10 @@ The auto-confirm feature streamlines the development and testing workflow by:
 ### Environment-Based Behavior
 
 | Environment | Auto-Confirm | Email Verification |
-|-------------|--------------|-------------------|
-| **Dev** | ✅ Enabled | ❌ Disabled |
-| **Staging** | ❌ Disabled | ✅ Required |
-| **Prod** | ❌ Disabled | ✅ Required |
+| ----------- | ------------ | ------------------ |
+| **Dev**     | ✅ Enabled   | ❌ Disabled        |
+| **Staging** | ❌ Disabled  | ✅ Required        |
+| **Prod**    | ❌ Disabled  | ✅ Required        |
 
 **Key Point**: Auto-confirm is **only active** when `ENVIRONMENT` variable contains "Dev".
 
@@ -58,10 +59,12 @@ const AUTO_CONFIRM_USERS = ENVIRONMENT.includes('Dev');
 ```
 
 **How It Works**:
+
 - If `ENVIRONMENT` contains "Dev" → `AUTO_CONFIRM_USERS = true`
 - Otherwise → `AUTO_CONFIRM_USERS = false`
 
 **Examples**:
+
 - `ENVIRONMENT=Dev` → ✅ Auto-confirm enabled
 - `ENVIRONMENT=LfmtPocDev` → ✅ Auto-confirm enabled
 - `ENVIRONMENT=Staging` → ❌ Auto-confirm disabled
@@ -128,11 +131,13 @@ return createSuccessResponse(
 ### Why AdminConfirmSignUpCommand?
 
 **Standard Flow** (without auto-confirm):
+
 1. User registers → Cognito status: `UNCONFIRMED`
 2. User receives email with verification code
 3. User confirms email → Cognito status: `CONFIRMED`
 
 **Auto-Confirm Flow** (dev environment):
+
 1. User registers → Cognito status: `UNCONFIRMED`
 2. Lambda calls `AdminConfirmSignUpCommand` → Cognito status: `CONFIRMED`
 3. User can immediately log in
@@ -161,7 +166,7 @@ const authLambdaPolicy = new iam.PolicyStatement({
     'cognito-idp:AdminSetUserPassword',
     'cognito-idp:AdminGetUser',
     'cognito-idp:AdminUpdateUserAttributes',
-    'cognito-idp:AdminConfirmSignUp',  // ⭐ Required for auto-confirm
+    'cognito-idp:AdminConfirmSignUp', // ⭐ Required for auto-confirm
   ],
   resources: [userPool.userPoolArn],
 });
@@ -176,6 +181,7 @@ registerFunction.role?.attachInlinePolicy(
 **Why Admin Action?**
 
 `AdminConfirmSignUpCommand` is an **admin action** that requires:
+
 - IAM permissions (cannot be called by frontend clients)
 - UserPoolId parameter (not just ClientId)
 - Backend-only execution (Lambda, not browser)
@@ -195,7 +201,7 @@ const userPool = new cognito.UserPool(this, 'UserPool', {
   userPoolName: `lfmt-${this.stackName}`,
 
   // Email Verification Configuration
-  autoVerify: {},  // ⭐ Empty = email verification disabled
+  autoVerify: {}, // ⭐ Empty = email verification disabled
   selfSignUpEnabled: true,
 
   // Sign-in Configuration
@@ -224,6 +230,7 @@ const userPool = new cognito.UserPool(this, 'UserPool', {
 ```
 
 **Key Settings**:
+
 - `autoVerify: {}` - No automatic email verification configured
 - `selfSignUpEnabled: true` - Users can register without admin approval
 - `signInAliases: { email: true }` - Users sign in with email address
@@ -255,7 +262,6 @@ try {
   const authResponse = await cognitoClient.send(authCommand);
 
   // ... success handling
-
 } catch (error) {
   // Handle unconfirmed user error
   if (error instanceof UserNotConfirmedException) {
@@ -288,6 +294,7 @@ try {
 **Location**: `backend/functions/auth/__tests__/register.test.ts`
 
 **Key Test Cases**:
+
 - ✅ Successful registration returns 201
 - ✅ Missing required fields returns 400
 - ✅ Duplicate email returns 409
@@ -298,6 +305,7 @@ try {
 **Location**: `backend/functions/__tests__/integration/translation-flow.integration.test.ts`
 
 **Key Test Flow**:
+
 1. Register user
 2. Immediately attempt login (no email verification step)
 3. Access protected endpoints
@@ -327,6 +335,7 @@ curl -X POST https://8brwlwf68h.execute-api.us-east-1.amazonaws.com/v1/auth/regi
 ```
 
 **Expected Response** (dev):
+
 ```json
 {
   "message": "User registered successfully. You can now log in.",
@@ -335,6 +344,7 @@ curl -X POST https://8brwlwf68h.execute-api.us-east-1.amazonaws.com/v1/auth/regi
 ```
 
 **Expected Response** (prod):
+
 ```json
 {
   "message": "User registered successfully. Please check your email to verify your account.",
@@ -358,6 +368,7 @@ curl -X POST https://8brwlwf68h.execute-api.us-east-1.amazonaws.com/v1/auth/logi
 ```
 
 **Expected Response**:
+
 ```json
 {
   "user": {
@@ -379,10 +390,12 @@ curl -X POST https://8brwlwf68h.execute-api.us-east-1.amazonaws.com/v1/auth/logi
 ### Disabling Auto-Confirm for Production
 
 **Method 1**: Environment Variable (Recommended)
+
 - Ensure `ENVIRONMENT` is set to "Prod" or "Staging" (not "Dev")
 - CDK automatically sets this based on deployment context
 
 **Method 2**: Code Change
+
 ```typescript
 // Force disable auto-confirm
 const AUTO_CONFIRM_USERS = false;
@@ -393,6 +406,7 @@ const AUTO_CONFIRM_USERS = false;
 Once auto-confirm is disabled, configure Cognito email settings:
 
 1. **SES Configuration**:
+
    ```typescript
    userPool.emailSettings = {
      from: 'noreply@yourdomain.com',
@@ -420,6 +434,7 @@ Once auto-confirm is disabled, configure Cognito email settings:
 4. ✅ **User Confirmation**: Ensures user owns the email address
 
 **Additional Production Security**:
+
 - Consider reCAPTCHA for registration
 - Monitor registration patterns for abuse
 - Implement rate limiting on registration endpoint
@@ -430,6 +445,7 @@ Once auto-confirm is disabled, configure Cognito email settings:
 If auto-confirm causes issues in production:
 
 1. **Immediate Rollback**:
+
    ```bash
    # Redeploy with ENVIRONMENT=Prod
    npx cdk deploy --context environment=prod
@@ -447,6 +463,7 @@ If auto-confirm causes issues in production:
 ### Issue: Users Getting 403 "Please Verify Email" in Dev
 
 **Symptoms**:
+
 - User registers successfully
 - Login fails with 403 error: "Please verify your email address"
 - Auto-confirm should be working but isn't
@@ -454,25 +471,31 @@ If auto-confirm causes issues in production:
 **Diagnosis Steps**:
 
 1. **Check Lambda Environment Variable**:
+
    ```bash
    aws lambda get-function-configuration \
      --function-name lfmt-auth-register-dev \
      --query 'Environment.Variables.ENVIRONMENT'
    ```
+
    Expected: Value contains "Dev"
 
 2. **Check IAM Permissions**:
+
    ```bash
    aws iam get-role-policy \
      --role-name lfmt-auth-register-role-dev \
      --policy-name RegisterFunctionPolicy
    ```
+
    Expected: Includes `cognito-idp:AdminConfirmSignUp`
 
 3. **Check CloudWatch Logs**:
+
    ```bash
    aws logs tail /aws/lambda/lfmt-auth-register-dev --follow
    ```
+
    Expected: Log message "Auto-confirming user (dev environment)"
 
 4. **Verify Cognito User Pool ID**:
@@ -484,6 +507,7 @@ If auto-confirm causes issues in production:
    Expected: Non-empty value
 
 **Solutions**:
+
 - Redeploy Lambda with correct `ENVIRONMENT` variable
 - Update IAM role to include `AdminConfirmSignUp` permission
 - Verify `COGNITO_USER_POOL_ID` is set in Lambda environment
@@ -493,6 +517,7 @@ If auto-confirm causes issues in production:
 ### Issue: JSON Parsing Errors with Special Characters
 
 **Symptoms**:
+
 - Registration fails with JSON parsing error
 - Password contains special characters (!, @, $, etc.)
 - Works when testing in Postman but fails with curl
@@ -529,12 +554,15 @@ curl -X POST https://api-url/auth/register \
 ### Issue: Auto-Confirm Not Working After Deployment
 
 **Symptoms**:
+
 - Fresh deployment to dev environment
 - Auto-confirm feature not working
 - No error messages in logs
 
 **Diagnosis**:
+
 1. Check CDK deployment context:
+
    ```bash
    cd backend/infrastructure
    npx cdk synth --context environment=dev | grep ENVIRONMENT
@@ -548,6 +576,7 @@ curl -X POST https://api-url/auth/register \
    ```
 
 **Solution**:
+
 - Force Lambda update: `npx cdk deploy --force`
 - Invalidate CloudFormation cache: Delete and recreate stack
 

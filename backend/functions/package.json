@@ -11,7 +11,9 @@
     "test:watch": "jest --watch --testPathIgnorePatterns=integration",
     "test:coverage": "jest --coverage --testPathIgnorePatterns=integration",
     "build": "tsc",
-    "lint": "eslint . --ext .ts"
+    "lint": "eslint . --ext .ts",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
   },
   "keywords": [
     "lambda",

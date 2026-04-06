@@ -154,7 +154,9 @@ test.describe('Legal Attestation Enforcement', () => {
     await expect(copyrightCheckbox).toBeChecked();
   });
 
-  test('should proceed to next step after checking all boxes and clicking Next', async ({ page }) => {
+  test('should proceed to next step after checking all boxes and clicking Next', async ({
+    page,
+  }) => {
     const copyrightCheckbox = page.locator('[name="acceptCopyrightOwnership"]');
     const rightsCheckbox = page.locator('[name="acceptTranslationRights"]');
     const liabilityCheckbox = page.locator('[name="acceptLiabilityTerms"]');
@@ -188,7 +190,7 @@ test.describe('Legal Attestation Enforcement', () => {
       `${process.env.API_BASE_URL || 'http://localhost:3000'}/v1/translation/jobs/${jobId}`,
       {
         headers: {
-          'Authorization': `Bearer ${authToken}`,
+          Authorization: `Bearer ${authToken}`,
         },
       }
     );
@@ -219,7 +221,7 @@ test.describe('Legal Attestation Enforcement', () => {
       `${process.env.API_BASE_URL || 'http://localhost:3000'}/v1/translation/jobs/${jobId}`,
       {
         headers: {
-          'Authorization': `Bearer ${authToken}`,
+          Authorization: `Bearer ${authToken}`,
         },
       }
     );
@@ -233,8 +235,9 @@ test.describe('Legal Attestation Enforcement', () => {
     // IP should be a valid format (IPv4 or IPv6)
     const ipv4Regex = /^(\d{1,3}\.){3}\d{1,3}$/;
     const ipv6Regex = /^([0-9a-f]{0,4}:){2,7}[0-9a-f]{0,4}$/i;
-    const isValidIp = ipv4Regex.test(job.legalAttestation.ipAddress) ||
-                      ipv6Regex.test(job.legalAttestation.ipAddress);
+    const isValidIp =
+      ipv4Regex.test(job.legalAttestation.ipAddress) ||
+      ipv6Regex.test(job.legalAttestation.ipAddress);
     expect(isValidIp).toBe(true);
   });
 
@@ -254,7 +257,7 @@ test.describe('Legal Attestation Enforcement', () => {
       `${process.env.API_BASE_URL || 'http://localhost:3000'}/v1/translation/jobs/${jobId}`,
       {
         headers: {
-          'Authorization': `Bearer ${authToken}`,
+          Authorization: `Bearer ${authToken}`,
         },
       }
     );
@@ -311,7 +314,9 @@ test.describe('Legal Attestation Enforcement', () => {
   test('should display legal text with important terms highlighted', async ({ page }) => {
     // Verify key legal terms are visible
     await expect(page.locator('text=/I certify that I am the copyright owner/i')).toBeVisible();
-    await expect(page.locator('text=/I have the legal right to create translations/i')).toBeVisible();
+    await expect(
+      page.locator('text=/I have the legal right to create translations/i')
+    ).toBeVisible();
     await expect(page.locator('text=/I accept full liability/i')).toBeVisible();
   });
 });

@@ -106,8 +106,8 @@ describe('DistributedRateLimiter', () => {
           lastRefillTimestamp: lastRefillSec,
           windowStartTimestamp: lastRefillSec,
           ttl: FIXED_TIME_SEC + 7 * 24 * 60 * 60,
-          createdAt: new Date((lastRefillSec) * 1000).toISOString(),
-          updatedAt: new Date((lastRefillSec) * 1000).toISOString(),
+          createdAt: new Date(lastRefillSec * 1000).toISOString(),
+          updatedAt: new Date(lastRefillSec * 1000).toISOString(),
           version: 1,
         }),
       });
@@ -480,7 +480,9 @@ describe('DistributedRateLimiter', () => {
       // Verify TTL is set correctly (within reasonable range)
       const expectedTTL = Math.floor(sevenDaysFromNow / 1000);
       expect(expectedTTL).toBeGreaterThan(FIXED_TIME_SEC);
-      expect(expectedTTL).toBeLessThanOrEqual(Math.floor((FIXED_TIME_MS + 8 * 24 * 60 * 60 * 1000) / 1000));
+      expect(expectedTTL).toBeLessThanOrEqual(
+        Math.floor((FIXED_TIME_MS + 8 * 24 * 60 * 60 * 1000) / 1000)
+      );
     });
   });
 
@@ -546,20 +548,23 @@ describe('DistributedRateLimiter', () => {
      */
     it('should not lose or duplicate tokens during error recovery', async () => {
       // First attempt fails transiently
-      ddbMock.on(GetItemCommand).rejectsOnce(new Error('InternalServerError')).resolves({
-        Item: marshall({
-          bucketKey: 'gemini-api-tpm',
-          tokensAvailable: 10000,
-          maxCapacity: 250000,
-          refillRate: 250000 / 60,
-          lastRefillTimestamp: FIXED_TIME_SEC,
-          windowStartTimestamp: FIXED_TIME_SEC,
-          ttl: FIXED_TIME_SEC + 7 * 24 * 60 * 60,
-          createdAt: new Date(FIXED_TIME_MS).toISOString(),
-          updatedAt: new Date(FIXED_TIME_MS).toISOString(),
-          version: 1,
-        }),
-      });
+      ddbMock
+        .on(GetItemCommand)
+        .rejectsOnce(new Error('InternalServerError'))
+        .resolves({
+          Item: marshall({
+            bucketKey: 'gemini-api-tpm',
+            tokensAvailable: 10000,
+            maxCapacity: 250000,
+            refillRate: 250000 / 60,
+            lastRefillTimestamp: FIXED_TIME_SEC,
+            windowStartTimestamp: FIXED_TIME_SEC,
+            ttl: FIXED_TIME_SEC + 7 * 24 * 60 * 60,
+            createdAt: new Date(FIXED_TIME_MS).toISOString(),
+            updatedAt: new Date(FIXED_TIME_MS).toISOString(),
+            version: 1,
+          }),
+        });
 
       ddbMock.on(UpdateItemCommand).resolves({});
 
@@ -596,7 +601,11 @@ describe('DistributedRateLimiter', () => {
       });
 
       // Always fail UpdateItem with ConditionalCheckFailedException
-      ddbMock.on(UpdateItemCommand).rejects(new ConditionalCheckFailedException({ message: 'Condition failed', $metadata: {} }));
+      ddbMock
+        .on(UpdateItemCommand)
+        .rejects(
+          new ConditionalCheckFailedException({ message: 'Condition failed', $metadata: {} })
+        );
 
       const result = await rateLimiter.acquire(1000, RateLimitType.TPM);
 
@@ -659,7 +668,9 @@ describe('DistributedRateLimiter', () => {
 
       ddbMock
         .on(PutItemCommand)
-        .rejects(new ConditionalCheckFailedException({ message: 'Bucket already exists', $metadata: {} }));
+        .rejects(
+          new ConditionalCheckFailedException({ message: 'Bucket already exists', $metadata: {} })
+        );
 
       ddbMock.on(UpdateItemCommand).resolves({});
 

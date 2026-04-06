@@ -7,6 +7,7 @@ Utility scripts for development, testing, and deployment.
 ### 🧪 Testing & CI
 
 #### `simulate-ci.sh`
+
 Simulates the exact GitHub Actions CI environment locally. **Use this to catch CI failures before pushing!**
 
 ```bash
@@ -24,12 +25,14 @@ Simulates the exact GitHub Actions CI environment locally. **Use this to catch C
 ```
 
 **Why use this?**
+
 - Catches CI failures locally before push
 - Runs tests with **exact same flags** as CI (`--run` for frontend)
 - Saves CI/CD time and AWS costs
 - Instant feedback loop
 
 #### `run-integration-tests.sh`
+
 Runs integration and E2E tests against deployed environment.
 
 ```bash
@@ -49,6 +52,7 @@ Runs integration and E2E tests against deployed environment.
 ### 🔒 Security
 
 #### `security-scan.sh`
+
 Comprehensive security scanner that runs automatically on pre-push.
 
 ```bash
@@ -60,6 +64,7 @@ Comprehensive security scanner that runs automatically on pre-push.
 ```
 
 **Checks for:**
+
 - Hardcoded AWS credentials (AKIA pattern)
 - API keys & tokens (GitHub, Stripe, Google)
 - Sensitive files tracked in git (.env, private keys)
@@ -106,11 +111,13 @@ export API_BASE_URL=https://your-api.execute-api.us-east-1.amazonaws.com/v1
 ### Frontend Tests
 
 **Local (default):**
+
 ```bash
 npm test  # Runs in watch mode, doesn't fail on warnings
 ```
 
 **CI (and our pre-push hook):**
+
 ```bash
 npm test -- --run  # Runs once, exits, strict mode
 ```
@@ -129,7 +136,9 @@ npm test -- --run  # Runs once, exits, strict mode
 ## Automation
 
 ### Pre-Push Hook
+
 The `.githooks/pre-push` hook automatically runs:
+
 1. Shared-types tests
 2. Backend function tests (with 90%+ coverage)
 3. Infrastructure compilation and tests
@@ -137,6 +146,7 @@ The `.githooks/pre-push` hook automatically runs:
 5. Comprehensive security scan
 
 ### CI/CD Pipeline
+
 - **On PR**: All tests run in GitHub Actions
 - **On merge to main**: Tests + deployment + E2E tests
 - **On push**: Security scan runs
@@ -148,6 +158,7 @@ The `.githooks/pre-push` hook automatically runs:
 **Problem:** You're running tests in watch mode locally, but CI uses `--run` flag.
 
 **Solution:**
+
 ```bash
 # Run tests exactly like CI
 cd frontend
@@ -160,6 +171,7 @@ npm test -- --run
 ### "Pre-push hook is slow"
 
 **Optimization:** Use cached `node_modules` and skip unnecessary steps:
+
 ```bash
 # Pre-push uses npm cache
 # First run is slow, subsequent runs are fast
@@ -172,16 +184,19 @@ npm test -- --run
 ## Best Practices
 
 1. **Always run CI simulation before pushing major changes**
+
    ```bash
    ./scripts/simulate-ci.sh
    ```
 
 2. **Use quick smoke tests for iterative development**
+
    ```bash
    ./scripts/run-integration-tests.sh --quick
    ```
 
 3. **Run security scans on sensitive changes**
+
    ```bash
    ./scripts/security-scan.sh --staged
    ```
@@ -194,6 +209,7 @@ npm test -- --run
 ## Contributing
 
 When adding new scripts:
+
 1. Make them executable: `chmod +x scripts/your-script.sh`
 2. Add usage documentation in this README
 3. Include color-coded output for better UX

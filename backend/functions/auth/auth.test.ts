@@ -18,7 +18,7 @@ import {
   TooManyRequestsException,
   LimitExceededException,
   InvalidPasswordException,
-  InvalidParameterException
+  InvalidParameterException,
 } from '@aws-sdk/client-cognito-identity-provider';
 import { mockClient } from 'aws-sdk-client-mock';
 
@@ -111,9 +111,9 @@ describe('Auth Service', () => {
     });
 
     it('should return 409 if user already exists', async () => {
-      cognitoMock.on(SignUpCommand).rejects(
-        new UsernameExistsException({ $metadata: {}, message: 'User already exists' })
-      );
+      cognitoMock
+        .on(SignUpCommand)
+        .rejects(new UsernameExistsException({ $metadata: {}, message: 'User already exists' }));
       const event = createMockEvent({
         email: 'test@test.com',
         password: 'Password123!',
@@ -129,9 +129,7 @@ describe('Auth Service', () => {
     });
 
     it('should return 500 for unexpected Cognito errors', async () => {
-      cognitoMock.on(SignUpCommand).rejects(
-        new Error('Service temporarily unavailable')
-      );
+      cognitoMock.on(SignUpCommand).rejects(new Error('Service temporarily unavailable'));
       const event = createMockEvent({
         email: 'test@test.com',
         password: 'Password123!',
@@ -143,13 +141,20 @@ describe('Auth Service', () => {
       });
       const result = await registerHandler(event);
       expect(result.statusCode).toBe(500);
-      expect(JSON.parse(result.body).message).toBe('Registration failed due to an internal error. Please try again later.');
+      expect(JSON.parse(result.body).message).toBe(
+        'Registration failed due to an internal error. Please try again later.'
+      );
     });
 
     it('should return 400 for invalid password from Cognito', async () => {
-      cognitoMock.on(SignUpCommand).rejects(
-        new InvalidPasswordException({ $metadata: {}, message: 'Password does not meet requirements' })
-      );
+      cognitoMock
+        .on(SignUpCommand)
+        .rejects(
+          new InvalidPasswordException({
+            $metadata: {},
+            message: 'Password does not meet requirements',
+          })
+        );
       const event = createMockEvent({
         email: 'test@test.com',
         password: 'Password123!',
@@ -161,13 +166,15 @@ describe('Auth Service', () => {
       });
       const result = await registerHandler(event);
       expect(result.statusCode).toBe(400);
-      expect(JSON.parse(result.body).message).toBe('Password does not meet security requirements. Must be at least 8 characters with uppercase, lowercase, numbers, and symbols.');
+      expect(JSON.parse(result.body).message).toBe(
+        'Password does not meet security requirements. Must be at least 8 characters with uppercase, lowercase, numbers, and symbols.'
+      );
     });
 
     it('should return 400 for invalid parameter from Cognito', async () => {
-      cognitoMock.on(SignUpCommand).rejects(
-        new InvalidParameterException({ $metadata: {}, message: 'Invalid parameter' })
-      );
+      cognitoMock
+        .on(SignUpCommand)
+        .rejects(new InvalidParameterException({ $metadata: {}, message: 'Invalid parameter' }));
       const event = createMockEvent({
         email: 'test@test.com',
         password: 'Password123!',
@@ -186,8 +193,18 @@ describe('Auth Service', () => {
   describe('Login', () => {
     it('should return 200 and tokens if login is successful', async () => {
       // Mock JWT token with user claims
-      const mockIdToken = Buffer.from(JSON.stringify({ header: 'value' })).toString('base64') + '.' +
-        Buffer.from(JSON.stringify({ sub: 'user-123', email: 'test@test.com', given_name: 'Test', family_name: 'User' })).toString('base64') + '.' +
+      const mockIdToken =
+        Buffer.from(JSON.stringify({ header: 'value' })).toString('base64') +
+        '.' +
+        Buffer.from(
+          JSON.stringify({
+            sub: 'user-123',
+            email: 'test@test.com',
+            given_name: 'Test',
+            family_name: 'User',
+          })
+        ).toString('base64') +
+        '.' +
         Buffer.from(JSON.stringify({ signature: 'value' })).toString('base64');
 
       cognitoMock.on(InitiateAuthCommand).resolves({
@@ -216,9 +233,11 @@ describe('Auth Service', () => {
     });
 
     it('should return 401 for incorrect credentials', async () => {
-      cognitoMock.on(InitiateAuthCommand).rejects(
-        new NotAuthorizedException({ $metadata: {}, message: 'Incorrect username or password' })
-      );
+      cognitoMock
+        .on(InitiateAuthCommand)
+        .rejects(
+          new NotAuthorizedException({ $metadata: {}, message: 'Incorrect username or password' })
+        );
       const event = createMockEvent({
         email: 'test@test.com',
         password: 'wrongpassword',
@@ -229,9 +248,9 @@ describe('Auth Service', () => {
     });
 
     it('should return 401 for user not found', async () => {
-      cognitoMock.on(InitiateAuthCommand).rejects(
-        new UserNotFoundException({ $metadata: {}, message: 'User does not exist' })
-      );
+      cognitoMock
+        .on(InitiateAuthCommand)
+        .rejects(new UserNotFoundException({ $metadata: {}, message: 'User does not exist' }));
       const event = createMockEvent({
         email: 'notfound@test.com',
         password: 'password',
@@ -255,16 +274,16 @@ describe('Auth Service', () => {
     });
 
     it('should return 500 for unexpected Cognito errors', async () => {
-      cognitoMock.on(InitiateAuthCommand).rejects(
-        new Error('Service temporarily unavailable')
-      );
+      cognitoMock.on(InitiateAuthCommand).rejects(new Error('Service temporarily unavailable'));
       const event = createMockEvent({
         email: 'test@test.com',
         password: 'password',
       });
       const result = await loginHandler(event);
       expect(result.statusCode).toBe(500);
-      expect(JSON.parse(result.body).message).toBe('Login failed due to an internal error. Please try again later.');
+      expect(JSON.parse(result.body).message).toBe(
+        'Login failed due to an internal error. Please try again later.'
+      );
     });
 
     it('should return 400 if required fields are missing', async () => {
@@ -274,29 +293,35 @@ describe('Auth Service', () => {
     });
 
     it('should return 403 for user not confirmed', async () => {
-      cognitoMock.on(InitiateAuthCommand).rejects(
-        new UserNotConfirmedException({ $metadata: {}, message: 'User is not confirmed' })
-      );
+      cognitoMock
+        .on(InitiateAuthCommand)
+        .rejects(
+          new UserNotConfirmedException({ $metadata: {}, message: 'User is not confirmed' })
+        );
       const event = createMockEvent({
         email: 'unconfirmed@test.com',
         password: 'password',
       });
       const result = await loginHandler(event);
       expect(result.statusCode).toBe(403);
-      expect(JSON.parse(result.body).message).toBe('Please verify your email address before logging in. Check your inbox for the verification link.');
+      expect(JSON.parse(result.body).message).toBe(
+        'Please verify your email address before logging in. Check your inbox for the verification link.'
+      );
     });
 
     it('should return 429 for too many login attempts', async () => {
-      cognitoMock.on(InitiateAuthCommand).rejects(
-        new TooManyRequestsException({ $metadata: {}, message: 'Too many requests' })
-      );
+      cognitoMock
+        .on(InitiateAuthCommand)
+        .rejects(new TooManyRequestsException({ $metadata: {}, message: 'Too many requests' }));
       const event = createMockEvent({
         email: 'test@test.com',
         password: 'password',
       });
       const result = await loginHandler(event);
       expect(result.statusCode).toBe(429);
-      expect(JSON.parse(result.body).message).toBe('Too many login attempts. Please try again later.');
+      expect(JSON.parse(result.body).message).toBe(
+        'Too many login attempts. Please try again later.'
+      );
     });
   });
 
@@ -320,39 +345,45 @@ describe('Auth Service', () => {
     });
 
     it('should return 401 for an invalid refresh token', async () => {
-      cognitoMock.on(InitiateAuthCommand).rejects(
-        new NotAuthorizedException({ $metadata: {}, message: 'Invalid refresh token' })
-      );
+      cognitoMock
+        .on(InitiateAuthCommand)
+        .rejects(new NotAuthorizedException({ $metadata: {}, message: 'Invalid refresh token' }));
       const event = createMockEvent({
         refreshToken: 'invalidtoken',
       });
       const result = await refreshTokenHandler(event);
       expect(result.statusCode).toBe(401);
-      expect(JSON.parse(result.body).message).toBe('Invalid or expired refresh token. Please log in again.');
+      expect(JSON.parse(result.body).message).toBe(
+        'Invalid or expired refresh token. Please log in again.'
+      );
     });
 
     it('should return 401 for an expired refresh token', async () => {
-      cognitoMock.on(InitiateAuthCommand).rejects(
-        new NotAuthorizedException({ $metadata: {}, message: 'Refresh Token has expired' })
-      );
+      cognitoMock
+        .on(InitiateAuthCommand)
+        .rejects(
+          new NotAuthorizedException({ $metadata: {}, message: 'Refresh Token has expired' })
+        );
       const event = createMockEvent({
         refreshToken: 'expiredtoken',
       });
       const result = await refreshTokenHandler(event);
       expect(result.statusCode).toBe(401);
-      expect(JSON.parse(result.body).message).toBe('Invalid or expired refresh token. Please log in again.');
+      expect(JSON.parse(result.body).message).toBe(
+        'Invalid or expired refresh token. Please log in again.'
+      );
     });
 
     it('should return 500 for unexpected Cognito errors', async () => {
-      cognitoMock.on(InitiateAuthCommand).rejects(
-        new Error('Service temporarily unavailable')
-      );
+      cognitoMock.on(InitiateAuthCommand).rejects(new Error('Service temporarily unavailable'));
       const event = createMockEvent({
         refreshToken: 'refreshtoken',
       });
       const result = await refreshTokenHandler(event);
       expect(result.statusCode).toBe(500);
-      expect(JSON.parse(result.body).message).toBe('Token refresh failed due to an internal error. Please try again later.');
+      expect(JSON.parse(result.body).message).toBe(
+        'Token refresh failed due to an internal error. Please try again later.'
+      );
     });
 
     it('should return 400 if refresh token is missing', async () => {
@@ -362,15 +393,17 @@ describe('Auth Service', () => {
     });
 
     it('should return 429 for too many refresh attempts', async () => {
-      cognitoMock.on(InitiateAuthCommand).rejects(
-        new TooManyRequestsException({ $metadata: {}, message: 'Too many requests' })
-      );
+      cognitoMock
+        .on(InitiateAuthCommand)
+        .rejects(new TooManyRequestsException({ $metadata: {}, message: 'Too many requests' }));
       const event = createMockEvent({
         refreshToken: 'refreshtoken',
       });
       const result = await refreshTokenHandler(event);
       expect(result.statusCode).toBe(429);
-      expect(JSON.parse(result.body).message).toBe('Too many refresh attempts. Please try again later.');
+      expect(JSON.parse(result.body).message).toBe(
+        'Too many refresh attempts. Please try again later.'
+      );
     });
   });
 
@@ -401,9 +434,9 @@ describe('Auth Service', () => {
     });
 
     it('should return 200 even if user does not exist', async () => {
-      cognitoMock.on(ForgotPasswordCommand).rejects(
-        new UserNotFoundException({ $metadata: {}, message: 'User not found' })
-      );
+      cognitoMock
+        .on(ForgotPasswordCommand)
+        .rejects(new UserNotFoundException({ $metadata: {}, message: 'User not found' }));
       const event = createMockEvent({
         email: 'notfound@test.com',
       });
@@ -412,21 +445,21 @@ describe('Auth Service', () => {
     });
 
     it('should return 500 for unexpected Cognito errors', async () => {
-      cognitoMock.on(ForgotPasswordCommand).rejects(
-        new Error('Service temporarily unavailable')
-      );
+      cognitoMock.on(ForgotPasswordCommand).rejects(new Error('Service temporarily unavailable'));
       const event = createMockEvent({
         email: 'test@test.com',
       });
       const result = await resetPasswordHandler(event);
       expect(result.statusCode).toBe(500);
-      expect(JSON.parse(result.body).message).toBe('Password reset failed due to an internal error. Please try again later.');
+      expect(JSON.parse(result.body).message).toBe(
+        'Password reset failed due to an internal error. Please try again later.'
+      );
     });
 
     it('should return 400 for invalid parameter from Cognito', async () => {
-      cognitoMock.on(ForgotPasswordCommand).rejects(
-        new InvalidParameterException({ $metadata: {}, message: 'Invalid parameter' })
-      );
+      cognitoMock
+        .on(ForgotPasswordCommand)
+        .rejects(new InvalidParameterException({ $metadata: {}, message: 'Invalid parameter' }));
       const event = createMockEvent({
         email: 'test@test.com',
       });
@@ -436,27 +469,31 @@ describe('Auth Service', () => {
     });
 
     it('should return 429 for too many reset attempts', async () => {
-      cognitoMock.on(ForgotPasswordCommand).rejects(
-        new TooManyRequestsException({ $metadata: {}, message: 'Too many requests' })
-      );
+      cognitoMock
+        .on(ForgotPasswordCommand)
+        .rejects(new TooManyRequestsException({ $metadata: {}, message: 'Too many requests' }));
       const event = createMockEvent({
         email: 'test@test.com',
       });
       const result = await resetPasswordHandler(event);
       expect(result.statusCode).toBe(429);
-      expect(JSON.parse(result.body).message).toBe('Too many password reset attempts. Please try again later.');
+      expect(JSON.parse(result.body).message).toBe(
+        'Too many password reset attempts. Please try again later.'
+      );
     });
 
     it('should return 429 for limit exceeded', async () => {
-      cognitoMock.on(ForgotPasswordCommand).rejects(
-        new LimitExceededException({ $metadata: {}, message: 'Limit exceeded' })
-      );
+      cognitoMock
+        .on(ForgotPasswordCommand)
+        .rejects(new LimitExceededException({ $metadata: {}, message: 'Limit exceeded' }));
       const event = createMockEvent({
         email: 'test@test.com',
       });
       const result = await resetPasswordHandler(event);
       expect(result.statusCode).toBe(429);
-      expect(JSON.parse(result.body).message).toBe('Password reset limit exceeded. Please try again later.');
+      expect(JSON.parse(result.body).message).toBe(
+        'Password reset limit exceeded. Please try again later.'
+      );
     });
   });
 });

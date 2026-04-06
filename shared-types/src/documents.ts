@@ -131,11 +131,14 @@ export const chunkingRequestSchema = z.object({
   content: z.string().min(1000), // Minimum content length
   targetLanguage: z.enum(['spanish', 'french', 'italian', 'german', 'chinese']),
   chunkSize: z.number().min(3000).max(4000).optional(),
-  overlapSize: z.number().min(200).max(300).optional()
+  overlapSize: z.number().min(200).max(300).optional(),
 });
 
 export const fileValidationSchema = z.object({
   filename: z.string().regex(/^[a-zA-Z0-9._-]+\.txt$/, 'Invalid filename format'),
-  fileSize: z.number().min(1000).max(100 * 1024 * 1024), // 1KB to 100MB
-  contentType: z.literal('text/plain')
+  fileSize: z
+    .number()
+    .min(1000)
+    .max(100 * 1024 * 1024), // 1KB to 100MB
+  contentType: z.literal('text/plain'),
 });

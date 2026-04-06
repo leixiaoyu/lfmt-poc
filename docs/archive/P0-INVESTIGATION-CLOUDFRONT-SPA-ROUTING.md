@@ -59,12 +59,14 @@ This indicated a **fundamental frontend issue**, not just authentication logic.
 Used Playwright MCP to navigate to deployed site:
 
 **Test 1: Root URL**
+
 ```
 URL: https://d1yysvwo9eg20b.cloudfront.net/
 Result: ✅ Login page renders correctly
 ```
 
 **Test 2: Direct Dashboard Access**
+
 ```
 URL: https://d1yysvwo9eg20b.cloudfront.net/dashboard
 Result: 🔴 S3 XML error page: 403 AccessDenied
@@ -79,6 +81,7 @@ aws cloudfront get-distribution-config --id EY0NDD10UXFN4
 ```
 
 **Current Configuration:**
+
 ```json
 {
   "CustomErrorResponses": {
@@ -103,6 +106,7 @@ aws cloudfront get-distribution-config --id EY0NDD10UXFN4
 ### Why S3 Returns 403 Instead of 404
 
 S3 bucket with restricted access returns:
+
 - **403 Forbidden** when object doesn't exist AND requester has no ListBucket permission
 - **404 Not Found** when object doesn't exist AND requester HAS ListBucket permission
 
@@ -117,6 +121,7 @@ Single Page Applications (SPAs) like React apps require:
 3. **Server must return 200 OK** for all paths (not 403/404 errors)
 
 Without proper CloudFront error handling:
+
 - Direct navigation to `/dashboard` → 403 error
 - Browser shows XML error page
 - React Router never loads
@@ -137,6 +142,7 @@ aws cloudfront update-distribution --id EY0NDD10UXFN4 \
 ```
 
 **New Configuration:**
+
 ```json
 {
   "CustomErrorResponses": {
@@ -174,6 +180,7 @@ aws cloudfront create-invalidation --distribution-id EY0NDD10UXFN4 --paths "/*"
 ## Impact Analysis
 
 ### Before Fix
+
 - ✅ Root URL (`/`) works → redirects to `/login`
 - ✅ Direct navigation to `/login` works
 - 🔴 Direct navigation to `/dashboard` → 403 error
@@ -182,6 +189,7 @@ aws cloudfront create-invalidation --distribution-id EY0NDD10UXFN4 --paths "/*"
 - 🔴 E2E tests: 0/23 passing (0% success rate)
 
 ### After Fix
+
 - ✅ All routes serve `index.html` with 200 status
 - ✅ React Router handles client-side navigation
 - ✅ Protected routes redirect to login (via React Router)
@@ -195,6 +203,7 @@ aws cloudfront create-invalidation --distribution-id EY0NDD10UXFN4 --paths "/*"
 ### Manual Verification
 
 1. **Direct Navigation Test:**
+
    ```bash
    curl -I https://d1yysvwo9eg20b.cloudfront.net/dashboard
    # Expected: HTTP/1.1 200 OK
@@ -224,13 +233,13 @@ gh run rerun --failed <run-id>
 
 ## Deployment Timeline
 
-| Time (UTC) | Event | Status |
-|------------|-------|--------|
-| 21:22:44 | CloudFront update initiated | In Progress |
-| 21:23:24 | Cache invalidation created | In Progress |
-| ~21:37:00 | CloudFront deployment complete (estimated) | Pending |
-| ~21:40:00 | Cache invalidation complete (estimated) | Pending |
-| TBD | E2E test rerun | Pending |
+| Time (UTC) | Event                                      | Status      |
+| ---------- | ------------------------------------------ | ----------- |
+| 21:22:44   | CloudFront update initiated                | In Progress |
+| 21:23:24   | Cache invalidation created                 | In Progress |
+| ~21:37:00  | CloudFront deployment complete (estimated) | Pending     |
+| ~21:40:00  | Cache invalidation complete (estimated)    | Pending     |
+| TBD        | E2E test rerun                             | Pending     |
 
 ---
 
@@ -241,11 +250,13 @@ gh run rerun --failed <run-id>
 For SPAs hosted on CloudFront + S3:
 
 **Must-have configuration:**
+
 - Custom error responses for **both 403 and 404**
 - ResponsePagePath: `/index.html`
 - ResponseCode: `200` (not 404!)
 
 **Why both error codes:**
+
 - 404: When S3 bucket has public read or OAI with ListBucket
 - 403: When S3 bucket has restricted access (common for security)
 
@@ -254,6 +265,7 @@ For SPAs hosted on CloudFront + S3:
 **Problem:** CloudFront distribution created manually, not managed by CDK.
 
 **Evidence:**
+
 - Hardcoded URL in `lfmt-infrastructure-stack.ts`: `https://d1yysvwo9eg20b.cloudfront.net`
 - Manual configuration update required
 - No version control for infrastructure changes
@@ -263,6 +275,7 @@ For SPAs hosted on CloudFront + S3:
 ### 3. E2E Tests as Critical Validators
 
 **Why this wasn't caught earlier:**
+
 - Unit tests don't test full deployment
 - Integration tests call API directly (not via CloudFront)
 - E2E tests were first to validate actual user experience
@@ -327,6 +340,7 @@ Add to `CLAUDE.md`:
 ## CloudFront + S3 SPA Hosting
 
 **Required Configuration:**
+
 - Custom error responses: 403 → /index.html (200)
 - Custom error responses: 404 → /index.html (200)
 - DefaultRootObject: index.html
@@ -345,6 +359,7 @@ Add to `CLAUDE.md`:
 ## Action Items
 
 ### Immediate (P0)
+
 - [x] Identify root cause (403 error handling)
 - [x] Update CloudFront distribution
 - [x] Create cache invalidation
@@ -354,11 +369,13 @@ Add to `CLAUDE.md`:
 - [ ] Document fix in this investigation
 
 ### Short-term (P1)
+
 - [ ] Create CDK construct for CloudFront distribution
 - [ ] Add SPA routing smoke tests to CI/CD pipeline
 - [ ] Update CLAUDE.md with CloudFront best practices
 
 ### Long-term (P2)
+
 - [ ] Migrate all manual infrastructure to IaC
 - [ ] Add infrastructure testing (e.g., terratest or CDK assertions)
 - [ ] Implement deployment health checks

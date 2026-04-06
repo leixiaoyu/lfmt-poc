@@ -17,11 +17,10 @@ import {
   PutObjectCommand,
 } from '@aws-sdk/client-s3';
 import { marshall, unmarshall } from '@aws-sdk/util-dynamodb';
-import { DynamoDBJob } from '@lfmt/shared-types';
 import { GeminiClient } from './geminiClient';
 import { DistributedRateLimiter } from '../shared/distributedRateLimiter';
 import { GEMINI_RATE_LIMITS, RateLimitType } from '../shared/types/rateLimiting';
-import { TranslationOptions, TranslationContext, GeminiApiError, isValidTargetLanguage, TargetLanguage } from './types';
+import { TranslationOptions, TranslationContext, GeminiApiError } from './types';
 import Logger from '../shared/logger';
 import { getRequiredEnv } from '../shared/env';
 import { countTokens } from '../shared/tokenizer';
@@ -54,7 +53,7 @@ export interface TranslateChunkEvent {
   jobId: string;
   userId: string;
   chunkIndex: number;
-  targetLanguage: TargetLanguage;
+  targetLanguage: string;
   tone?: 'formal' | 'informal' | 'neutral';
   contextChunks?: number; // Number of previous chunks to use as context (default: 2)
 }
@@ -127,9 +126,7 @@ export const handler = async (
 
     // Verify job is in correct state
     if (job.status !== 'CHUNKED' && job.translationStatus !== 'IN_PROGRESS') {
-      throw new Error(
-        `Job ${event.jobId} is not ready for translation (status: ${job.status})`
-      );
+      throw new Error(`Job ${event.jobId} is not ready for translation (status: ${job.status})`);
     }
 
     // Load current chunk from S3 (includes pre-calculated previousSummary)
@@ -153,10 +150,7 @@ export const handler = async (
     });
 
     // Acquire rate limit tokens before making API call
-    const rateLimitAcquire = await rateLimiter.acquire(
-      estimatedTokens,
-      RateLimitType.TPM
-    );
+    const rateLimitAcquire = await rateLimiter.acquire(estimatedTokens, RateLimitType.TPM);
 
     if (!rateLimitAcquire.success) {
       logger.warn('Rate limit exceeded, returning retryable error', {
@@ -177,16 +171,12 @@ export const handler = async (
 
     // Translate the chunk
     const translationOptions: TranslationOptions = {
-      targetLanguage: event.targetLanguage,
+      targetLanguage: event.targetLanguage as any, // eslint-disable-line @typescript-eslint/no-explicit-any
       tone: event.tone,
       preserveFormatting: true,
     };
 
-    const result = await geminiClient.translate(
-      chunk.primaryContent,
-      translationOptions,
-      context
-    );
+    const result = await geminiClient.translate(chunk.primaryContent, translationOptions, context);
 
     logger.info('Translation completed', {
       jobId: event.jobId,
@@ -239,8 +229,7 @@ export const handler = async (
     });
 
     // Determine if error is retryable
-    const retryable =
-      error instanceof GeminiApiError ? error.retryable : false;
+    const retryable = error instanceof GeminiApiError ? error.retryable : false;
 
     // Update job status if error is not retryable and we have a valid jobId and userId
     if (!retryable && event.jobId && event.userId) {
@@ -299,8 +288,10 @@ function validateEvent(event: TranslateChunkEvent): void {
 /**
  * Load job metadata from DynamoDB
  * Uses composite primary key (jobId, userId)
+ * Returns any - DynamoDB unmarshalled data has dynamic structure
  */
-async function loadJob(jobId: string, userId: string): Promise<DynamoDBJob> {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function loadJob(jobId: string, userId: string): Promise<any> {
   const command = new GetItemCommand({
     TableName: JOBS_TABLE,
     Key: marshall({ jobId, userId }),
@@ -312,15 +303,16 @@ async function loadJob(jobId: string, userId: string): Promise<DynamoDBJob> {
     throw new Error(`Job not found: ${jobId}`);
   }
 
-  return unmarshall(response.Item) as DynamoDBJob;
+  return unmarshall(response.Item);
 }
 
 /**
  * Load chunk content from S3
  * Uses the actual S3 key from job.chunkingMetadata.chunkKeys array
+ * Job parameter is any - DynamoDB unmarshalled data structure
  */
 async function loadChunk(
-  job: DynamoDBJob,
+  job: any, // eslint-disable-line @typescript-eslint/no-explicit-any
   chunkIndex: number
 ): Promise<{ primaryContent: string; chunkId: string; previousSummary: string }> {
   // Get the actual S3 key from job metadata
@@ -375,12 +367,13 @@ function estimateTokens(content: string, context: TranslationContext): number {
 
 /**
  * Store translated chunk to S3
+ * Metadata is Record<string, any> - S3 metadata supports various types
  */
 async function storeTranslatedChunk(
   jobId: string,
   chunkIndex: number,
   translatedText: string,
-  metadata: Record<string, unknown>
+  metadata: Record<string, any> // eslint-disable-line @typescript-eslint/no-explicit-any
 ): Promise<string> {
   const key = `translated/${jobId}/chunk-${chunkIndex}.txt`;
 
@@ -413,15 +406,13 @@ async function updateJobProgress(
   userId: string,
   progress: {
     translatedChunks: number;
-    totalChunks: number | undefined;
+    totalChunks: number;
     tokensUsed: number;
     estimatedCost: number;
   }
 ): Promise<void> {
   const translationStatus =
-    progress.totalChunks && progress.translatedChunks >= progress.totalChunks
-      ? 'COMPLETED'
-      : 'IN_PROGRESS';
+    progress.translatedChunks >= progress.totalChunks ? 'COMPLETED' : 'IN_PROGRESS';
 
   const command = new UpdateItemCommand({
     TableName: JOBS_TABLE,
@@ -450,18 +441,20 @@ async function updateJobProgress(
 
 /**
  * Update job status in DynamoDB
+ * Additional data and attribute values use any - DynamoDB supports mixed types
  */
 async function updateJobStatus(
   jobId: string,
   userId: string,
   status: string,
-  additionalData: Record<string, unknown> = {}
+  additionalData: Record<string, any> = {} // eslint-disable-line @typescript-eslint/no-explicit-any
 ): Promise<void> {
   const updateExpression = ['SET #status = :status, updatedAt = :updatedAt'];
   const expressionAttributeNames: Record<string, string> = {
     '#status': 'status',
   };
-  const expressionAttributeValues: Record<string, unknown> = {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const expressionAttributeValues: Record<string, any> = {
     ':status': status,
     ':updatedAt': new Date().toISOString(),
   };

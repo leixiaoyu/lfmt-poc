@@ -7,7 +7,7 @@
 import { test, expect } from '@playwright/test';
 import { LoginPage } from '../../pages/LoginPage';
 import { DashboardPage } from '../../pages/DashboardPage';
-import { generateTestUser, registerUser } from '../../fixtures/auth';
+import { generateTestUser } from '../../fixtures/auth';
 
 test.describe('Login Page', () => {
   let loginPage: LoginPage;

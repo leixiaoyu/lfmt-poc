@@ -8,7 +8,8 @@
 process.env.JOBS_TABLE = 'test-jobs-table';
 process.env.STATE_MACHINE_NAME = 'test-state-machine';
 process.env.AWS_REGION = 'us-east-1';
-process.env.ALLOWED_ORIGINS = 'http://localhost:3000,https://localhost:3000,https://d39xcun7144jgl.cloudfront.net,https://staging.lfmt.yourcompany.com';
+process.env.ALLOWED_ORIGINS =
+  'http://localhost:3000,https://localhost:3000,https://d39xcun7144jgl.cloudfront.net,https://staging.lfmt.yourcompany.com';
 
 // Mock AWS SDK clients BEFORE importing handler
 jest.mock('@aws-sdk/client-dynamodb', () => {
@@ -37,7 +38,8 @@ jest.mock('@aws-sdk/client-sfn', () => {
   return {
     SFNClient: jest.fn().mockImplementation(() => ({
       send: jest.fn().mockResolvedValue({
-        executionArn: 'arn:aws:states:us-east-1:123456789012:execution:test-state-machine:test-execution',
+        executionArn:
+          'arn:aws:states:us-east-1:123456789012:execution:test-state-machine:test-execution',
         startDate: new Date(),
       }),
     })),
@@ -49,34 +51,37 @@ import { handler } from '../startTranslation';
 import { APIGatewayProxyEvent } from 'aws-lambda';
 
 describe('Start Translation - CORS Tests', () => {
-  const mockEvent = (origin: string): APIGatewayProxyEvent => ({
-    headers: {
-      origin,
-      Authorization: 'Bearer mock-token',
-    },
-    pathParameters: {
-      jobId: 'test-job-id',
-    },
-    requestContext: {
-      requestId: 'test-request-id',
-      authorizer: {
-        claims: {
-          sub: 'test-user-123',
-        },
+  const mockEvent = (origin: string): APIGatewayProxyEvent =>
+    ({
+      headers: {
+        origin,
+        Authorization: 'Bearer mock-token',
       },
-    } as any,
-    body: JSON.stringify({
-      targetLanguage: 'es',
-      tone: 'formal',
-    }),
-  } as any);
+      pathParameters: {
+        jobId: 'test-job-id',
+      },
+      requestContext: {
+        requestId: 'test-request-id',
+        authorizer: {
+          claims: {
+            sub: 'test-user-123',
+          },
+        },
+      } as any,
+      body: JSON.stringify({
+        targetLanguage: 'es',
+        tone: 'formal',
+      }),
+    }) as any;
 
   it('should include CORS headers with CloudFront origin', async () => {
     const event = mockEvent('https://d39xcun7144jgl.cloudfront.net');
     const response = await handler(event);
 
     expect(response.headers).toBeDefined();
-    expect(response.headers!['Access-Control-Allow-Origin']).toBe('https://d39xcun7144jgl.cloudfront.net');
+    expect(response.headers!['Access-Control-Allow-Origin']).toBe(
+      'https://d39xcun7144jgl.cloudfront.net'
+    );
     expect(response.headers!['Access-Control-Allow-Credentials']).toBe('true');
   });
 
@@ -87,7 +92,9 @@ describe('Start Translation - CORS Tests', () => {
     const response = await handler(event);
 
     expect(response.statusCode).toBe(401);
-    expect(response.headers!['Access-Control-Allow-Origin']).toBe('https://d39xcun7144jgl.cloudfront.net');
+    expect(response.headers!['Access-Control-Allow-Origin']).toBe(
+      'https://d39xcun7144jgl.cloudfront.net'
+    );
   });
 
   it('should handle Origin with capital O', async () => {
@@ -98,6 +105,8 @@ describe('Start Translation - CORS Tests', () => {
     };
 
     const response = await handler(event);
-    expect(response.headers!['Access-Control-Allow-Origin']).toBe('https://d39xcun7144jgl.cloudfront.net');
+    expect(response.headers!['Access-Control-Allow-Origin']).toBe(
+      'https://d39xcun7144jgl.cloudfront.net'
+    );
   });
 });

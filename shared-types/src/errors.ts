@@ -193,7 +193,7 @@ export class RateLimitError extends Error {
 
 export class ValidationError extends Error {
   public details: string[];
-  
+
   constructor(message: string, details: string[] = []) {
     super(message);
     this.name = 'ValidationError';
@@ -229,8 +229,8 @@ export const errorReportRequestSchema = z.object({
     requestId: z.string().uuid().optional(),
     timestamp: z.string().datetime(),
     stackTrace: z.string().optional(),
-    additionalData: z.record(z.any()).optional()
+    additionalData: z.record(z.any()).optional(),
   }),
   retryable: z.boolean(),
-  autoRecover: z.boolean()
+  autoRecover: z.boolean(),
 });

@@ -230,7 +230,8 @@ export class GeminiClient {
       prompt += '\n---CONTEXT FROM PREVIOUS SECTIONS---\n';
       prompt += context.previousChunks.join('\n\n');
       prompt += '\n---END CONTEXT---\n\n';
-      prompt += 'Use the above context to maintain consistency in terminology, style, and narrative flow.\n\n';
+      prompt +=
+        'Use the above context to maintain consistency in terminology, style, and narrative flow.\n\n';
     }
 
     prompt += '---TEXT TO TRANSLATE---\n';
@@ -243,7 +244,9 @@ export class GeminiClient {
 
   /**
    * Make API request with retry logic
+   * Returns any - Gemini API response structure varies
    */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private async makeRequestWithRetry(prompt: string, retryCount = 0): Promise<any> {
     if (!this.genAI) {
       throw new Error('Client not initialized');
@@ -257,7 +260,8 @@ export class GeminiClient {
 
       return result;
     } catch (error: any) {
-      // Handle rate limit errors
+      // eslint-disable-line @typescript-eslint/no-explicit-any
+      // Handle rate limit errors - error type from Gemini SDK is not strictly typed
       if (error.status === 429 || error.message?.includes('429')) {
         const retryAfterMs = this.calculateRetryDelay(retryCount);
 
@@ -271,18 +275,11 @@ export class GeminiClient {
           return this.makeRequestWithRetry(prompt, retryCount + 1);
         }
 
-        throw new RateLimitError(
-          'Rate limit exceeded. Please try again later.',
-          retryAfterMs
-        );
+        throw new RateLimitError('Rate limit exceeded. Please try again later.', retryAfterMs);
       }
 
       // Handle transient errors (500, 503)
-      if (
-        error.status >= 500 &&
-        error.status < 600 &&
-        retryCount < this.config.maxRetries
-      ) {
+      if (error.status >= 500 && error.status < 600 && retryCount < this.config.maxRetries) {
         const retryDelayMs = this.calculateRetryDelay(retryCount);
 
         logger.warn('Transient error, retrying', {
@@ -319,7 +316,9 @@ export class GeminiClient {
 
   /**
    * Handle and classify API errors
+   * Error parameter is any - catches all error types from Gemini SDK
    */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private handleApiError(error: any): GeminiApiError {
     const status = error.status || error.statusCode;
     const message = error.message || 'Unknown API error';
@@ -338,31 +337,16 @@ export class GeminiClient {
 
     // Bad request errors
     if (status === 400) {
-      return new GeminiApiError(
-        `Invalid request: ${message}`,
-        400,
-        'BAD_REQUEST',
-        false
-      );
+      return new GeminiApiError(`Invalid request: ${message}`, 400, 'BAD_REQUEST', false);
     }
 
     // Server errors (retryable)
     if (status >= 500 && status < 600) {
-      return new GeminiApiError(
-        `Server error: ${message}`,
-        status,
-        'SERVER_ERROR',
-        true
-      );
+      return new GeminiApiError(`Server error: ${message}`, status, 'SERVER_ERROR', true);
     }
 
     // Unknown errors
-    return new GeminiApiError(
-      `Translation failed: ${message}`,
-      status,
-      'UNKNOWN_ERROR',
-      false
-    );
+    return new GeminiApiError(`Translation failed: ${message}`, status, 'UNKNOWN_ERROR', false);
   }
 }
 

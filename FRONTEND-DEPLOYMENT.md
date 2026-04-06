@@ -14,6 +14,7 @@ This guide provides step-by-step instructions for deploying the LFMT Translation
 ## Architecture
 
 The frontend is deployed using:
+
 - **S3 Bucket**: `lfmt-frontend-lfmtpocdev` (dev) or `lfmt-frontend-lfmtpocprod` (prod)
 - **CloudFront Distribution**: CDK-managed distribution with OAC (Origin Access Control)
 - **Build Tool**: Vite (React 18 + TypeScript)
@@ -91,6 +92,7 @@ npm run build
 ```
 
 **Expected Output**:
+
 ```
 vite v5.4.20 building for production...
 ✓ 11634 modules transformed.
@@ -115,6 +117,7 @@ aws s3 sync dist/ s3://$BUCKET_NAME/ --delete
 ```
 
 **Expected Output**:
+
 ```
 upload: dist/index.html to s3://lfmt-frontend-lfmtpocdev/index.html
 upload: dist/assets/index-DJtU-4_z.js to s3://lfmt-frontend-lfmtpocdev/assets/index-DJtU-4_z.js
@@ -166,6 +169,7 @@ curl -I $FRONTEND_URL
 ```
 
 **Expected Output**:
+
 ```
 HTTP/2 200
 content-type: text/html
@@ -241,6 +245,7 @@ curl -I "$FRONTEND_URL"
 ```
 
 **Usage**:
+
 ```bash
 # Deploy to development
 ./deploy-frontend.sh LfmtPocDev .env.dev
@@ -254,11 +259,13 @@ curl -I "$FRONTEND_URL"
 After deployment, verify the following:
 
 ### 1. Frontend Accessibility
+
 - [ ] CloudFront URL returns HTTP 200
 - [ ] Homepage loads correctly
 - [ ] No console errors in browser dev tools
 
 ### 2. Security Headers
+
 - [ ] `Content-Security-Policy` header present
 - [ ] `Strict-Transport-Security` header present (HSTS)
 - [ ] `X-Frame-Options: DENY` header present
@@ -266,18 +273,21 @@ After deployment, verify the following:
 - [ ] `Referrer-Policy` header present
 
 ### 3. SPA Routing
+
 - [ ] Direct navigation to `/dashboard` works
 - [ ] Direct navigation to `/translation/upload` works
 - [ ] Browser refresh on any route stays on the same route
 - [ ] No 403 or 404 errors for app routes
 
 ### 4. API Integration
+
 - [ ] Login page connects to Cognito
 - [ ] User registration works
 - [ ] Translation upload triggers backend API
 - [ ] Progress polling works correctly
 
 ### 5. CORS Configuration
+
 - [ ] API requests from CloudFront URL succeed
 - [ ] No CORS errors in browser console
 - [ ] Preflight OPTIONS requests succeed
@@ -289,6 +299,7 @@ After deployment, verify the following:
 **Cause**: S3 bucket permissions or OAC configuration issue
 
 **Solution**:
+
 ```bash
 # Check S3 bucket policy
 aws s3api get-bucket-policy --bucket lfmt-frontend-lfmtpocdev
@@ -302,6 +313,7 @@ aws cloudfront get-distribution --id E3EV4PBKYTNTRE
 **Cause**: CloudFront cache not invalidated
 
 **Solution**:
+
 ```bash
 # Create new invalidation
 aws cloudfront create-invalidation \
@@ -314,6 +326,7 @@ aws cloudfront create-invalidation \
 **Cause**: CloudFront URL not in API Gateway CORS origins
 
 **Solution**:
+
 1. Verify API Gateway CORS configuration includes CloudFront URL
 2. Check `backend/infrastructure/lib/lfmt-infrastructure-stack.ts:337-400`
 3. Redeploy infrastructure if needed: `npx cdk deploy --context environment=dev`
@@ -323,6 +336,7 @@ aws cloudfront create-invalidation \
 **Cause**: Build used wrong `.env` file or variables not prefixed with `VITE_`
 
 **Solution**:
+
 ```bash
 # Ensure .env file is copied correctly
 cp .env.dev .env
@@ -339,6 +353,7 @@ grep -r "VITE_API_URL" dist/
 **Cause**: CloudFront ResponseHeadersPolicy not applied
 
 **Solution**:
+
 ```bash
 # Check CloudFront distribution configuration
 aws cloudfront get-distribution-config --id E3EV4PBKYTNTRE \
@@ -353,6 +368,7 @@ aws cloudfront get-distribution-config --id E3EV4PBKYTNTRE \
 ### CloudWatch Metrics
 
 Monitor the following CloudFront metrics:
+
 - **Requests**: Total requests to distribution
 - **BytesDownloaded**: Total bytes served
 - **4xxErrorRate**: Client error rate (should be low)
@@ -373,6 +389,7 @@ aws cloudwatch get-metric-statistics \
 ### S3 Access Logs
 
 Enable S3 access logging for detailed request tracking:
+
 ```bash
 # Configure access logging (optional)
 aws s3api put-bucket-logging \
@@ -383,16 +400,19 @@ aws s3api put-bucket-logging \
 ## Cost Optimization
 
 ### CloudFront Invalidation Costs
+
 - First 1,000 invalidations per month: **FREE**
 - Additional invalidations: **$0.005 per path**
 - POC impact: Negligible (< 100 deployments/month)
 
 ### S3 Storage Costs
+
 - Standard storage: **$0.023 per GB/month**
 - Frontend build size: ~3-4 MB
 - Monthly cost: < $0.01
 
 ### CloudFront Data Transfer
+
 - First 10 TB/month: **$0.085 per GB**
 - POC traffic: < 1 GB/month
 - Monthly cost: < $0.10
@@ -404,6 +424,7 @@ aws s3api put-bucket-logging \
 If issues occur after deployment:
 
 ### 1. Rollback to Previous S3 Version
+
 ```bash
 # List S3 versions
 aws s3api list-object-versions \
@@ -418,6 +439,7 @@ aws s3api copy-object \
 ```
 
 ### 2. Redeploy Previous Build
+
 ```bash
 # Checkout previous commit
 git checkout <previous-commit-hash>

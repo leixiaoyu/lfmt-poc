@@ -7,6 +7,8 @@
  * Usage: Enable by setting VITE_MOCK_API=true in .env.local
  */
 
+/* eslint-disable no-console */
+
 import type { AxiosInstance, InternalAxiosRequestConfig, AxiosResponse } from 'axios';
 import type { AuthResponse, User, RegisterRequest, LoginRequest } from '../services/authService';
 
@@ -18,7 +20,7 @@ const MOCK_DELAY = 500;
 /**
  * Sleep utility for simulating network delay
  */
-const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
  * Generate mock user from registration data
@@ -75,9 +77,10 @@ async function mockRegister(config: InternalAxiosRequestConfig): Promise<AxiosRe
   await sleep(MOCK_DELAY);
 
   // Axios may have already parsed the data, or it might still be a string
-  const data = typeof config.data === 'string'
-    ? JSON.parse(config.data) as RegisterRequest
-    : config.data as RegisterRequest;
+  const data =
+    typeof config.data === 'string'
+      ? (JSON.parse(config.data) as RegisterRequest)
+      : (config.data as RegisterRequest);
 
   const user = createMockUser(data);
   const authResponse = createMockAuthResponse(user);
@@ -99,9 +102,10 @@ async function mockRegister(config: InternalAxiosRequestConfig): Promise<AxiosRe
 async function mockLogin(config: InternalAxiosRequestConfig): Promise<AxiosResponse> {
   await sleep(MOCK_DELAY);
 
-  const data = typeof config.data === 'string'
-    ? JSON.parse(config.data) as LoginRequest
-    : config.data as LoginRequest;
+  const data =
+    typeof config.data === 'string'
+      ? (JSON.parse(config.data) as LoginRequest)
+      : (config.data as LoginRequest);
 
   const user = createMockUser(data);
   const authResponse = createMockAuthResponse(user);
@@ -190,12 +194,15 @@ async function mockGetCurrentUser(config: InternalAxiosRequestConfig): Promise<A
 /**
  * Handle mock forgot password request
  */
-async function mockRequestPasswordReset(config: InternalAxiosRequestConfig): Promise<AxiosResponse> {
+async function mockRequestPasswordReset(
+  config: InternalAxiosRequestConfig
+): Promise<AxiosResponse> {
   await sleep(MOCK_DELAY);
 
-  const data = typeof config.data === 'string'
-    ? JSON.parse(config.data) as { email: string }
-    : config.data as { email: string };
+  const data =
+    typeof config.data === 'string'
+      ? (JSON.parse(config.data) as { email: string })
+      : (config.data as { email: string });
 
   console.log('[MOCK API] Password reset requested for:', data.email);
 
@@ -257,40 +264,35 @@ async function handleMockRequest(config: InternalAxiosRequestConfig): Promise<Ax
 export function installMockApi(client: AxiosInstance): void {
   console.log('[MOCK API] Mock API enabled - all /auth requests will be mocked');
 
-  client.interceptors.request.use(
-    async (config: InternalAxiosRequestConfig) => {
-      if (shouldMockRequest(config)) {
-        // Create a mock response and fulfill the request immediately
-        const mockResponse = await handleMockRequest(config);
+  client.interceptors.request.use(async (config: InternalAxiosRequestConfig) => {
+    if (shouldMockRequest(config)) {
+      // Create a mock response and fulfill the request immediately
+      const mockResponse = await handleMockRequest(config);
 
-        // Throw a special error that contains the mock response
-        // This allows us to intercept and return the mock data
-        return Promise.reject({
-          __isMockResponse: true,
-          response: mockResponse,
-          config,
-        });
-      }
-
-      return config;
+      // Throw a special error that contains the mock response
+      // This allows us to intercept and return the mock data
+      return Promise.reject({
+        __isMockResponse: true,
+        response: mockResponse,
+        config,
+      });
     }
-  );
+
+    return config;
+  });
 
   // Add response error interceptor to handle mock responses
-  client.interceptors.response.use(
-    undefined,
-    (error: unknown) => {
-      // Check if this is our mock response
-      if (error && typeof error === 'object' && '__isMockResponse' in error) {
-        // Return the mock response as if it was a successful request
-        const mockError = error as unknown as { response: AxiosResponse };
-        return Promise.resolve(mockError.response);
-      }
-
-      // Otherwise, pass through the real error
-      return Promise.reject(error);
+  client.interceptors.response.use(undefined, (error: unknown) => {
+    // Check if this is our mock response
+    if (error && typeof error === 'object' && '__isMockResponse' in error) {
+      // Return the mock response as if it was a successful request
+      const mockError = error as unknown as { response: AxiosResponse };
+      return Promise.resolve(mockError.response);
     }
-  );
+
+    // Otherwise, pass through the real error
+    return Promise.reject(error);
+  });
 }
 
 /**

@@ -136,7 +136,7 @@ export interface PollingHeaders {
   'Content-Type': 'application/json';
   'X-RateLimit-Remaining': string;
   'X-RateLimit-Reset': string;
-  'ETag'?: string;
+  ETag?: string;
 }
 
 // Email Notifications
@@ -172,7 +172,7 @@ export interface CostEstimationResponse {
 }
 
 // Import JobStatus from jobs.ts
-export type JobStatus = 
+export type JobStatus =
   | 'QUEUED'
   | 'PROCESSING'
   | 'RETRYING'
@@ -188,14 +188,20 @@ export const claudeTranslationRequestSchema = z.object({
   chunkId: z.string().uuid(),
   content: z.string().min(1),
   targetLanguage: z.enum(['spanish', 'french', 'italian', 'german', 'chinese']),
-  contextWindow: z.object({
-    preceding: z.string(),
-    following: z.string()
-  }).optional(),
-  translationHints: z.array(z.object({
-    type: z.enum(['terminology', 'style', 'context']),
-    hint: z.string(),
-    priority: z.enum(['LOW', 'MEDIUM', 'HIGH'])
-  })).optional(),
-  retryAttempt: z.number().min(0).max(3).optional()
+  contextWindow: z
+    .object({
+      preceding: z.string(),
+      following: z.string(),
+    })
+    .optional(),
+  translationHints: z
+    .array(
+      z.object({
+        type: z.enum(['terminology', 'style', 'context']),
+        hint: z.string(),
+        priority: z.enum(['LOW', 'MEDIUM', 'HIGH']),
+      })
+    )
+    .optional(),
+  retryAttempt: z.number().min(0).max(3).optional(),
 });

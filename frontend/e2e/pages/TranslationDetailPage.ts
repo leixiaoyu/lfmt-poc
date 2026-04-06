@@ -146,7 +146,9 @@ export class TranslationDetailPage extends BasePage {
     const chunksText = await this.page.locator('text=/Chunks:/').first().textContent();
     if (!chunksText) return { processed: 0, total: 0 };
     const match = chunksText.match(/(\d+)\s*\/\s*(\d+)/);
-    return match ? { processed: parseInt(match[1]), total: parseInt(match[2]) } : { processed: 0, total: 0 };
+    return match
+      ? { processed: parseInt(match[1]), total: parseInt(match[2]) }
+      : { processed: 0, total: 0 };
   }
 
   /**
@@ -157,14 +159,31 @@ export class TranslationDetailPage extends BasePage {
     targetLanguage: string;
     fileSize?: string;
   }> {
-    const fileName = await this.page.locator('text=/File Name/i').locator('..').locator('p').first().textContent() || '';
-    const targetLanguage = await this.page.locator('text=/Target Language/i').locator('..').locator('p').first().textContent() || '';
-    const fileSize = await this.page.locator('text=/File Size/i').locator('..').locator('p').first().textContent();
+    const fileName =
+      (await this.page
+        .locator('text=/File Name/i')
+        .locator('..')
+        .locator('p')
+        .first()
+        .textContent()) || '';
+    const targetLanguage =
+      (await this.page
+        .locator('text=/Target Language/i')
+        .locator('..')
+        .locator('p')
+        .first()
+        .textContent()) || '';
+    const fileSize = await this.page
+      .locator('text=/File Size/i')
+      .locator('..')
+      .locator('p')
+      .first()
+      .textContent();
 
     return {
       fileName: fileName.trim(),
       targetLanguage: targetLanguage.trim(),
-      fileSize: fileSize?.trim()
+      fileSize: fileSize?.trim(),
     };
   }
 

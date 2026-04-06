@@ -49,6 +49,14 @@ jobs:
         working-directory: backend/functions
         run: npm ci
 
+      - name: Lint backend functions
+        working-directory: backend/functions
+        run: npm run lint
+
+      - name: Check backend formatting
+        working-directory: backend/functions
+        run: npm run format:check
+
       - name: Run function tests
         working-directory: backend/functions
         run: npm test
@@ -56,6 +64,22 @@ jobs:
       - name: Check test coverage
         working-directory: backend/functions
         run: npm run test:coverage
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Lint frontend
+        working-directory: frontend
+        run: npm run lint
+
+      - name: Check frontend formatting
+        working-directory: frontend
+        run: npm run format:check
+
+      - name: Type-check frontend
+        working-directory: frontend
+        run: npm run type-check
 
   deploy-dev:
     name: Deploy to Development
@@ -70,8 +94,8 @@ jobs:
       frontend_url: ${{ steps.get-frontend-url.outputs.frontend_url }}
 
     permissions:
-      id-token: write   # Required for OIDC authentication
-      contents: read    # Required to checkout code
+      id-token: write # Required for OIDC authentication
+      contents: read # Required to checkout code
 
     steps:
       - name: Checkout code

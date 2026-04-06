@@ -20,9 +20,7 @@ const cognitoClient = new CognitoIdentityProviderClient({});
 
 const COGNITO_CLIENT_ID = getRequiredEnv('COGNITO_CLIENT_ID');
 
-export const handler = async (
-  event: APIGatewayProxyEvent
-): Promise<APIGatewayProxyResult> => {
+export const handler = async (event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> => {
   const requestId = event.requestContext.requestId;
   const requestOrigin = event.headers.origin || event.headers.Origin;
 

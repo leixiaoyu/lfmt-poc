@@ -20,6 +20,8 @@
     "lint:all": "npm run lint:shared && npm run lint:infra",
     "lint:shared": "cd shared-types && npm run lint || echo 'Linting not configured for shared-types'",
     "lint:infra": "cd backend/infrastructure && npm run lint || echo 'Linting not configured for infrastructure'",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
     "deploy:dev": "cd backend/infrastructure && npm run build && npx cdk deploy --context environment=dev",
     "deploy:staging": "cd backend/infrastructure && npm run build && npx cdk deploy --context environment=staging",
     "synth": "cd backend/infrastructure && npm run build && npx cdk synth --context environment=dev"
@@ -46,6 +48,7 @@
     "node": ">=18.0.0",
     "npm": ">=8.0.0"
   },
-  "devDependencies": {},
-  "dependencies": {}
+  "devDependencies": {
+    "prettier": "^3.8.1"
+  }
 }

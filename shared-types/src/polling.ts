@@ -4,19 +4,19 @@ import { z } from 'zod';
 // Polling Configuration
 export interface PollingConfig {
   intervals: {
-    initial: number;    // 15000ms - first 5 minutes
-    medium: number;     // 30000ms - 5-30 minutes  
-    extended: number;   // 60000ms - 30+ minutes
+    initial: number; // 15000ms - first 5 minutes
+    medium: number; // 30000ms - 5-30 minutes
+    extended: number; // 60000ms - 30+ minutes
     background: number; // 120000ms - when page not visible
   };
   thresholds: {
-    mediumThreshold: number;  // 5 minutes
+    mediumThreshold: number; // 5 minutes
     extendedThreshold: number; // 30 minutes
   };
   circuit: {
-    errorThreshold: number;     // 5 consecutive errors
-    timeoutThreshold: number;   // 10 seconds
-    recoveryTime: number;       // 30 seconds
+    errorThreshold: number; // 5 consecutive errors
+    timeoutThreshold: number; // 10 seconds
+    recoveryTime: number; // 30 seconds
   };
 }
 
@@ -94,7 +94,7 @@ export interface PollingCircuitBreaker {
     timeoutThreshold: number;
     recoveryTime: number;
   };
-  
+
   canExecute(): boolean;
   recordSuccess(): void;
   recordFailure(): void;
@@ -104,14 +104,14 @@ export interface PollingCircuitBreaker {
 // Adaptive Interval Calculation
 export interface AdaptivePollingCalculator {
   config: PollingConfig;
-  
+
   calculateInterval(
     jobAge: number,
     pageVisible: boolean,
     errorCount: number,
     averageResponseTime: number
   ): number;
-  
+
   shouldBackoff(errorCount: number, circuitState: string): boolean;
   getBackoffMultiplier(errorCount: number): number;
 }
@@ -161,7 +161,7 @@ export interface ProgressResponse {
 }
 
 // Import JobStatus for type consistency
-export type JobStatus = 
+export type JobStatus =
   | 'QUEUED'
   | 'PROCESSING'
   | 'RETRYING'
@@ -178,15 +178,15 @@ export const pollingConfigSchema = z.object({
     initial: z.number().min(5000).max(30000), // 5-30 seconds
     medium: z.number().min(15000).max(60000), // 15-60 seconds
     extended: z.number().min(30000).max(300000), // 30s-5min
-    background: z.number().min(60000).max(600000) // 1-10 minutes
+    background: z.number().min(60000).max(600000), // 1-10 minutes
   }),
   thresholds: z.object({
     mediumThreshold: z.number().min(300000), // 5 minutes
-    extendedThreshold: z.number().min(1800000) // 30 minutes
+    extendedThreshold: z.number().min(1800000), // 30 minutes
   }),
   circuit: z.object({
     errorThreshold: z.number().min(3).max(10),
     timeoutThreshold: z.number().min(5000).max(30000),
-    recoveryTime: z.number().min(15000).max(300000)
-  })
+    recoveryTime: z.number().min(15000).max(300000),
+  }),
 });

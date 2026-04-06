@@ -9,11 +9,7 @@ process.env.AWS_REGION = 'us-east-1';
 
 import { APIGatewayProxyEvent } from 'aws-lambda';
 import { mockClient } from 'aws-sdk-client-mock';
-import {
-  DynamoDBClient,
-  GetItemCommand,
-  UpdateItemCommand,
-} from '@aws-sdk/client-dynamodb';
+import { DynamoDBClient, GetItemCommand, UpdateItemCommand } from '@aws-sdk/client-dynamodb';
 import { SFNClient, StartExecutionCommand } from '@aws-sdk/client-sfn';
 import { STSClient, GetCallerIdentityCommand } from '@aws-sdk/client-sts';
 import { handler } from './startTranslation';
@@ -40,10 +36,7 @@ describe('startTranslation endpoint', () => {
     });
   });
 
-  const createEvent = (
-    jobId: string,
-    body: any
-  ): Partial<APIGatewayProxyEvent> => ({
+  const createEvent = (jobId: string, body: any): Partial<APIGatewayProxyEvent> => ({
     httpMethod: 'POST',
     path: `/jobs/${jobId}/translate`,
     pathParameters: { jobId },
@@ -75,7 +68,8 @@ describe('startTranslation endpoint', () => {
 
       dynamoMock.on(UpdateItemCommand).resolves({} as any);
       sfnMock.on(StartExecutionCommand).resolves({
-        executionArn: 'arn:aws:states:us-east-1:123456789012:execution:test-state-machine:test-execution',
+        executionArn:
+          'arn:aws:states:us-east-1:123456789012:execution:test-state-machine:test-execution',
       } as any);
 
       const event = createEvent('job-123', {

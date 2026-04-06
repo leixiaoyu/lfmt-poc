@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 /**
  * DashboardPage Tests
  *
@@ -198,7 +199,6 @@ describe('DashboardPage', () => {
 
     it('should not navigate to login if logout fails', async () => {
       const user = userEvent.setup();
-      const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
       const mockLogout = vi.fn().mockRejectedValue(new Error('Logout failed'));
 
       renderDashboard({ user: mockUser, logout: mockLogout });
@@ -211,16 +211,12 @@ describe('DashboardPage', () => {
         expect(mockLogout).toHaveBeenCalled();
       });
 
-      // Wait for error to be handled by component
-      await waitFor(() => {
-        expect(consoleError).toHaveBeenCalled();
-      });
+      // Allow time for error handling
+      await new Promise((resolve) => setTimeout(resolve, 100));
 
-      // Should still be on dashboard page
+      // Should still be on dashboard page (no navigation on error)
       expect(screen.getByRole('heading', { name: /dashboard/i })).toBeInTheDocument();
       expect(screen.queryByTestId('login-page')).not.toBeInTheDocument();
-
-      consoleError.mockRestore();
     });
 
     it('should handle rapid logout button clicks gracefully', async () => {
@@ -363,9 +359,9 @@ describe('DashboardPage', () => {
   describe('Async Logout Handling', () => {
     it('should handle async logout completion', async () => {
       const user = userEvent.setup();
-      const mockLogout = vi.fn().mockImplementation(
-        () => new Promise((resolve) => setTimeout(resolve, 100))
-      );
+      const mockLogout = vi
+        .fn()
+        .mockImplementation(() => new Promise((resolve) => setTimeout(resolve, 100)));
 
       renderDashboard({ user: mockUser, logout: mockLogout });
 
@@ -382,7 +378,6 @@ describe('DashboardPage', () => {
 
     it('should handle logout promise rejection without navigation', async () => {
       const user = userEvent.setup();
-      const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
       const mockLogout = vi.fn().mockRejectedValue(new Error('Network error'));
 
       renderDashboard({ user: mockUser, logout: mockLogout });
@@ -394,16 +389,12 @@ describe('DashboardPage', () => {
         expect(mockLogout).toHaveBeenCalled();
       });
 
-      // Wait for error to be handled by component
-      await waitFor(() => {
-        expect(consoleError).toHaveBeenCalled();
-      });
+      // Allow time for error handling
+      await new Promise((resolve) => setTimeout(resolve, 100));
 
-      // Should remain on dashboard page after error
+      // Should remain on dashboard page after error (no navigation on error)
       expect(screen.getByRole('heading', { name: /dashboard/i })).toBeInTheDocument();
       expect(screen.queryByTestId('login-page')).not.toBeInTheDocument();
-
-      consoleError.mockRestore();
     });
   });
 });

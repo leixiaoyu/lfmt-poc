@@ -146,7 +146,7 @@ describe('LoginForm - Submission', () => {
 
   it('should disable submit button while submitting', async () => {
     const user = userEvent.setup();
-    const onSubmit = vi.fn(() => new Promise<void>(resolve => setTimeout(resolve, 100)));
+    const onSubmit = vi.fn(() => new Promise<void>((resolve) => setTimeout(resolve, 100)));
     renderWithRouter(<LoginForm onSubmit={onSubmit} />);
 
     const emailInput = screen.getByLabelText(/email/i);
@@ -167,7 +167,7 @@ describe('LoginForm - Submission', () => {
 
   it('should show loading text while submitting', async () => {
     const user = userEvent.setup();
-    const onSubmit = vi.fn(() => new Promise<void>(resolve => setTimeout(resolve, 100)));
+    const onSubmit = vi.fn(() => new Promise<void>((resolve) => setTimeout(resolve, 100)));
     renderWithRouter(<LoginForm onSubmit={onSubmit} />);
 
     const emailInput = screen.getByLabelText(/email/i);

@@ -39,6 +39,7 @@ Integration tests validate the complete workflow from user authentication throug
 **Purpose**: Verify API availability, performance, and infrastructure health
 
 **Coverage**:
+
 - Authentication endpoints availability
 - Jobs and translation endpoints availability
 - Response time benchmarks
@@ -51,11 +52,13 @@ Integration tests validate the complete workflow from user authentication throug
 **Duration**: ~30-60 seconds
 
 **Run Command**:
+
 ```bash
 npm run test:integration -- health-check.integration.test.ts
 ```
 
 **Example Output**:
+
 ```
 === API Health Report ===
 Total Endpoints: 9
@@ -75,6 +78,7 @@ By Category:
 **Purpose**: Validate API contracts, response formats, and error handling
 
 **Coverage**:
+
 - User registration validation
 - Login authentication
 - Token refresh mechanism
@@ -86,6 +90,7 @@ By Category:
 **Duration**: ~1-2 minutes
 
 **Run Command**:
+
 ```bash
 npm run test:integration -- api-integration.test.ts
 ```
@@ -95,6 +100,7 @@ npm run test:integration -- api-integration.test.ts
 **Purpose**: Test complete authentication workflows
 
 **Coverage**:
+
 - User registration with validation
 - Login with correct/incorrect credentials
 - Password requirements enforcement
@@ -105,6 +111,7 @@ npm run test:integration -- api-integration.test.ts
 **Duration**: ~1-2 minutes
 
 **Run Command**:
+
 ```bash
 npm run test:integration -- auth.integration.test.ts
 ```
@@ -114,6 +121,7 @@ npm run test:integration -- auth.integration.test.ts
 **Purpose**: Verify end-to-end translation workflows
 
 **Coverage**:
+
 - Complete workflow: register → upload → chunk → translate → complete
 - Translation progress tracking with polling
 - Multiple target languages (es, fr, de, it, zh)
@@ -125,11 +133,13 @@ npm run test:integration -- auth.integration.test.ts
 **Duration**: ~5-15 minutes (depending on document size)
 
 **Run Command**:
+
 ```bash
 npm run test:integration -- translation-flow.integration.test.ts --testTimeout=600000
 ```
 
 **Example Output**:
+
 ```
 ✓ Complete workflow: register, upload, chunk, translate (145234ms)
   Step 1: Authenticating...
@@ -179,6 +189,7 @@ npm install
 ### 4. AWS Services
 
 Verify these services are running:
+
 - API Gateway with CORS configured
 - Cognito User Pool
 - S3 buckets (documents and chunks)
@@ -229,11 +240,11 @@ npm run test:integration -- --verbose translation-flow.integration.test.ts
 
 ### Environment Variables
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `API_BASE_URL` | Base URL for API Gateway | `https://8brwlwf68h.execute-api.us-east-1.amazonaws.com/v1` |
-| `TEST_TIMEOUT` | Global test timeout in ms | `300000` (5 minutes) |
-| `TEST_EMAIL_DOMAIN` | Domain for test emails | `@integration-test.com` |
+| Variable            | Description               | Default                                                     |
+| ------------------- | ------------------------- | ----------------------------------------------------------- |
+| `API_BASE_URL`      | Base URL for API Gateway  | `https://8brwlwf68h.execute-api.us-east-1.amazonaws.com/v1` |
+| `TEST_TIMEOUT`      | Global test timeout in ms | `300000` (5 minutes)                                        |
+| `TEST_EMAIL_DOMAIN` | Domain for test emails    | `@integration-test.com`                                     |
 
 ### Test Data
 
@@ -245,6 +256,7 @@ Test documents are provided in `fixtures/test-documents.ts`:
 - **LARGE** (~3000 words): Stress tests, 10+ chunks, ~8-12 minutes
 
 Example usage:
+
 ```typescript
 import { getTestDocument, DOCUMENT_METADATA } from './fixtures/test-documents';
 
@@ -322,6 +334,7 @@ integration-tests:
 ### Viewing Results
 
 Check GitHub Actions for test results:
+
 1. Go to repository → Actions tab
 2. Click on the latest workflow run
 3. Expand "Run Integration Tests" job
@@ -355,11 +368,7 @@ describe('Feature Name Integration Tests', () => {
       const content = getTestDocument('MINIMAL');
 
       // Act
-      const jobId = await uploadDocument(
-        authTokens.accessToken,
-        content,
-        'test.txt'
-      );
+      const jobId = await uploadDocument(authTokens.accessToken, content, 'test.txt');
 
       // Assert
       expect(jobId).toBeTruthy();
@@ -408,6 +417,7 @@ describe('New Feature Integration Tests', () => {
 **Symptom**: `ECONNREFUSED` or timeout errors
 
 **Solutions**:
+
 - Verify deployment completed: `aws cloudformation describe-stacks --stack-name LfmtPocDev`
 - Check API Gateway URL: `aws cloudformation describe-stacks --stack-name LfmtPocDev --query "Stacks[0].Outputs[?OutputKey=='ApiUrl'].OutputValue"`
 - Verify Lambda functions are deployed: `aws lambda list-functions --query "Functions[?starts_with(FunctionName, 'lfmt-')]"`
@@ -417,6 +427,7 @@ describe('New Feature Integration Tests', () => {
 **Symptom**: Tests fail with `Timeout - Async callback was not invoked within the 5000ms timeout`
 
 **Solutions**:
+
 - Increase test timeout: `jest.setTimeout(300000);` in test file
 - Or pass `--testTimeout=300000` flag
 - Check CloudWatch logs for Lambda errors
@@ -427,6 +438,7 @@ describe('New Feature Integration Tests', () => {
 **Symptom**: `401 Unauthorized` on all requests
 
 **Solutions**:
+
 - Verify Cognito User Pool exists
 - Check API Gateway authorizer configuration
 - Ensure user registration completed successfully
@@ -437,6 +449,7 @@ describe('New Feature Integration Tests', () => {
 **Symptom**: Translation never completes
 
 **Solutions**:
+
 - Check CloudWatch logs for `lfmt-translate-chunk` Lambda
 - Verify Gemini API key in Secrets Manager: `aws secretsmanager get-secret-value --secret-id lfmt/gemini-api-key-dev`
 - Check rate limiting in Gemini API quota
@@ -447,6 +460,7 @@ describe('New Feature Integration Tests', () => {
 **Symptom**: Tests fail with CORS-related errors
 
 **Solutions**:
+
 - Verify CORS configuration in API Gateway
 - Check allowed origins in infrastructure code
 - Ensure `Access-Control-Allow-Origin` header is present
@@ -454,26 +468,31 @@ describe('New Feature Integration Tests', () => {
 ### Debugging Tips
 
 1. **Enable Verbose Logging**:
+
 ```bash
 npm run test:integration -- --verbose translation-flow.integration.test.ts
 ```
 
 2. **Run Single Test**:
+
 ```bash
 npm run test:integration -- --testNamePattern="should complete full workflow"
 ```
 
 3. **Check CloudWatch Logs**:
+
 ```bash
 aws logs tail /aws/lambda/lfmt-translate-chunk-LfmtPocDev --follow
 ```
 
 4. **Verify S3 Objects**:
+
 ```bash
 aws s3 ls s3://lfmt-chunks-dev/chunks/job-123/ --recursive
 ```
 
 5. **Check DynamoDB Records**:
+
 ```bash
 aws dynamodb get-item --table-name lfmt-jobs-dev --key '{"jobId":{"S":"job-123"}}'
 ```
@@ -487,29 +506,29 @@ aws dynamodb get-item --table-name lfmt-jobs-dev --key '{"jobId":{"S":"job-123"}
 
 ## Test Coverage Goals
 
-| Component | Target Coverage | Current |
-|-----------|----------------|---------|
-| Authentication | 100% | ✓ 100% |
-| Jobs API | 100% | ✓ 100% |
-| Translation API | 100% | ✓ 100% |
-| Health Checks | 100% | ✓ 100% |
-| Error Scenarios | 90%+ | ✓ 95% |
-| End-to-End Workflows | 100% | ✓ 100% |
+| Component            | Target Coverage | Current |
+| -------------------- | --------------- | ------- |
+| Authentication       | 100%            | ✓ 100%  |
+| Jobs API             | 100%            | ✓ 100%  |
+| Translation API      | 100%            | ✓ 100%  |
+| Health Checks        | 100%            | ✓ 100%  |
+| Error Scenarios      | 90%+            | ✓ 95%   |
+| End-to-End Workflows | 100%            | ✓ 100%  |
 
 ## Performance Benchmarks
 
 Expected test durations:
 
-| Test Suite | Duration | Parallelizable |
-|------------|----------|----------------|
-| Health Checks | 30-60s | Yes |
-| API Tests | 1-2min | Yes |
-| Auth Tests | 1-2min | Yes |
-| Translation (MINIMAL) | 2-3min | No |
-| Translation (SMALL) | 3-5min | No |
-| Translation (MEDIUM) | 5-10min | No |
-| Translation (LARGE) | 10-20min | No |
-| **Full Suite** | **15-30min** | Partial |
+| Test Suite            | Duration     | Parallelizable |
+| --------------------- | ------------ | -------------- |
+| Health Checks         | 30-60s       | Yes            |
+| API Tests             | 1-2min       | Yes            |
+| Auth Tests            | 1-2min       | Yes            |
+| Translation (MINIMAL) | 2-3min       | No             |
+| Translation (SMALL)   | 3-5min       | No             |
+| Translation (MEDIUM)  | 5-10min      | No             |
+| Translation (LARGE)   | 10-20min     | No             |
+| **Full Suite**        | **15-30min** | Partial        |
 
 ## Contributing
 

@@ -51,25 +51,27 @@ curl https://generativelanguage.googleapis.com/v1beta/models?key=YOUR_API_KEY
 
 ### Current Limits (as of 2025-10-29)
 
-| Limit Type | Free Tier | Notes |
-|------------|-----------|-------|
-| **Requests Per Minute (RPM)** | 5 | Resets every minute |
-| **Tokens Per Minute (TPM)** | 250,000 | Input + output combined |
-| **Requests Per Day (RPD)** | 25 | Resets at midnight Pacific |
-| **Context Window** | 1M tokens | Gemini 1.5 Pro |
-| **Output Limit** | 8,192 tokens | Per request |
+| Limit Type                    | Free Tier    | Notes                      |
+| ----------------------------- | ------------ | -------------------------- |
+| **Requests Per Minute (RPM)** | 5            | Resets every minute        |
+| **Tokens Per Minute (TPM)**   | 250,000      | Input + output combined    |
+| **Requests Per Day (RPD)**    | 25           | Resets at midnight Pacific |
+| **Context Window**            | 1M tokens    | Gemini 1.5 Pro             |
+| **Output Limit**              | 8,192 tokens | Per request                |
 
 ### Cost Estimate for POC
 
 **Free Tier Pricing:** $0.075 per 1M input tokens
 
 **Example Document (65K words = ~82K tokens):**
+
 - Chunks needed: ~23 chunks (3,500 tokens each)
 - Context per chunk: ~7,500 tokens (2 previous chunks)
 - Total input tokens: 23 × (3,500 + 7,500) = 253K tokens
 - Estimated cost: $0.019 (~2 cents)
 
 **Monthly Budget (1000 docs × 65K words):**
+
 - Total: $19 well within $50 budget ✅
 
 ## API Selection: Gemini 1.5 Pro vs Flash
@@ -77,6 +79,7 @@ curl https://generativelanguage.googleapis.com/v1beta/models?key=YOUR_API_KEY
 ### Recommendation: Gemini 1.5 Pro (Default)
 
 **Gemini 1.5 Pro:**
+
 - ✅ Better translation quality
 - ✅ 1M token context window
 - ✅ Suitable for long-form documents
@@ -84,6 +87,7 @@ curl https://generativelanguage.googleapis.com/v1beta/models?key=YOUR_API_KEY
 - Cost: $0.075 per 1M input tokens
 
 **Gemini 1.5 Flash:**
+
 - ✅ 1000 RPM limit (much faster)
 - ✅ No daily request limit
 - ⚠️ Lower quality (optimized for speed)
@@ -127,10 +131,12 @@ async function testGeminiAPI() {
 
   const model = ai.getGenerativeModel({ model: 'gemini-1.5-pro' });
   const result = await model.generateContent({
-    contents: [{
-      role: 'user',
-      parts: [{ text: 'Translate to Spanish: Hello, world!' }]
-    }]
+    contents: [
+      {
+        role: 'user',
+        parts: [{ text: 'Translate to Spanish: Hello, world!' }],
+      },
+    ],
   });
 
   console.log('Translation:', result.response.text());
@@ -141,12 +147,14 @@ testGeminiAPI().catch(console.error);
 ```
 
 Run test:
+
 ```bash
 export GEMINI_API_KEY="YOUR_API_KEY"
 npx ts-node backend/functions/translation/__tests__/gemini-api-test.ts
 ```
 
 Expected output:
+
 ```
 Translation: ¡Hola, mundo!
 Token usage: { promptTokenCount: 7, candidatesTokenCount: 4, totalTokenCount: 11 }
@@ -157,6 +165,7 @@ Token usage: { promptTokenCount: 7, candidatesTokenCount: 4, totalTokenCount: 11
 ### When to Upgrade
 
 Consider upgrading if:
+
 - Need > 5 requests per minute
 - Processing > 25 documents per day
 - Need guaranteed SLA
@@ -174,6 +183,7 @@ Consider upgrading if:
 ### Pricing (Paid Tier)
 
 **Gemini 1.5 Pro:**
+
 - Input: $1.25 per 1M tokens
 - Output: $5.00 per 1M tokens
 - Context caching available (90% discount)
@@ -223,6 +233,7 @@ aws cloudwatch put-metric-alarm \
 **Problem:** Invalid API key
 
 **Solution:**
+
 ```bash
 # Verify API key in Secrets Manager
 aws secretsmanager get-secret-value \
@@ -240,6 +251,7 @@ curl "https://generativelanguage.googleapis.com/v1beta/models?key=YOUR_KEY"
 **Problem:** Hit 5 RPM or 250K TPM limit
 
 **Solution:**
+
 - Wait for rate limit window to reset (1 minute)
 - Implement proper rate limiting in code
 - Consider upgrading to paid tier
@@ -249,6 +261,7 @@ curl "https://generativelanguage.googleapis.com/v1beta/models?key=YOUR_KEY"
 **Problem:** Invalid request format or unsupported language
 
 **Solution:**
+
 - Check request body format matches API spec
 - Verify target language is supported
 - Check token count doesn't exceed limits
@@ -273,6 +286,7 @@ curl "https://generativelanguage.googleapis.com/v1beta/models?key=YOUR_KEY"
 ## Security Best Practices
 
 ### DO:
+
 - ✅ Store API key in AWS Secrets Manager
 - ✅ Rotate API key periodically (every 90 days)
 - ✅ Use IAM roles for Lambda access to secrets
@@ -280,6 +294,7 @@ curl "https://generativelanguage.googleapis.com/v1beta/models?key=YOUR_KEY"
 - ✅ Set up billing alerts
 
 ### DON'T:
+
 - ❌ Commit API key to git
 - ❌ Store API key in environment variables (use Secrets Manager)
 - ❌ Share API key across environments (dev/staging/prod)
@@ -289,5 +304,6 @@ curl "https://generativelanguage.googleapis.com/v1beta/models?key=YOUR_KEY"
 ## Contact
 
 For questions about Gemini API setup:
+
 - Google AI Studio Support: https://aistudio.google.com/help
 - LFMT POC Project: Raymond Lei (thunder.rain.a@gmail.com)

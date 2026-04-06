@@ -14,6 +14,7 @@ This test suite demonstrates **enterprise-grade test coverage** with comprehensi
 ## Test Coverage Breakdown
 
 ### 1. Happy Path - Successful Upload Request (6 tests)
+
 **Coverage**: Core functionality verification
 
 - ✅ Generate presigned URL and create job record
@@ -24,6 +25,7 @@ This test suite demonstrates **enterprise-grade test coverage** with comprehensi
 - ✅ Verify all logging calls in success flow
 
 **Key Validations**:
+
 - Response structure completeness
 - DynamoDB record schema compliance
 - S3 metadata inclusion
@@ -33,6 +35,7 @@ This test suite demonstrates **enterprise-grade test coverage** with comprehensi
 ---
 
 ### 2. File Validation - Size Constraints (4 tests)
+
 **Coverage**: Boundary condition testing
 
 - ✅ Reject files > 100MB
@@ -41,6 +44,7 @@ This test suite demonstrates **enterprise-grade test coverage** with comprehensi
 - ✅ Accept files at exactly 1KB (boundary)
 
 **Security Validation**:
+
 - Prevents resource exhaustion attacks
 - Ensures minimum content requirements
 - No DynamoDB calls for invalid sizes
@@ -48,6 +52,7 @@ This test suite demonstrates **enterprise-grade test coverage** with comprehensi
 ---
 
 ### 3. File Validation - Content Type and Extension (5 tests)
+
 **Coverage**: File type security
 
 - ✅ Reject invalid content types (PDF, etc.)
@@ -57,6 +62,7 @@ This test suite demonstrates **enterprise-grade test coverage** with comprehensi
 - ✅ Validate logging for validation failures
 
 **Security Considerations**:
+
 - Prevents executable uploads
 - Blocks MIME type spoofing
 - Mitigates polyglot file attacks
@@ -64,16 +70,18 @@ This test suite demonstrates **enterprise-grade test coverage** with comprehensi
 ---
 
 ### 4. File Validation - Filename Security (6 tests)
+
 **Coverage**: Path traversal and injection prevention
 
 - ✅ Reject path traversal attempts (../)
 - ✅ Reject filenames with spaces
-- ✅ Accept valid characters (a-zA-Z0-9._-)
+- ✅ Accept valid characters (a-zA-Z0-9.\_-)
 - ✅ Reject empty filenames
 - ✅ Reject null byte injection
 - ✅ Validate filename sanitization
 
 **Security Protections**:
+
 - Path traversal prevention
 - Command injection mitigation
 - Filename validation per security best practices
@@ -81,6 +89,7 @@ This test suite demonstrates **enterprise-grade test coverage** with comprehensi
 ---
 
 ### 5. Authorization (3 tests)
+
 **Coverage**: Authentication and authorization
 
 - ✅ Reject requests without authorizer context
@@ -89,6 +98,7 @@ This test suite demonstrates **enterprise-grade test coverage** with comprehensi
 - ✅ Verify authorization failure logging
 
 **Security Checks**:
+
 - Cognito integration validation
 - User identity verification
 - Proper 401 responses
@@ -96,6 +106,7 @@ This test suite demonstrates **enterprise-grade test coverage** with comprehensi
 ---
 
 ### 6. Request Validation (6 tests)
+
 **Coverage**: Input validation and error handling
 
 - ✅ Handle malformed JSON gracefully
@@ -107,6 +118,7 @@ This test suite demonstrates **enterprise-grade test coverage** with comprehensi
 - ✅ Reject invalid data types
 
 **Robustness**:
+
 - Zod schema validation coverage
 - Type safety verification
 - Error message clarity
@@ -114,6 +126,7 @@ This test suite demonstrates **enterprise-grade test coverage** with comprehensi
 ---
 
 ### 7. DynamoDB Integration (4 tests)
+
 **Coverage**: Database error handling
 
 - ✅ Handle network errors gracefully
@@ -122,6 +135,7 @@ This test suite demonstrates **enterprise-grade test coverage** with comprehensi
 - ✅ Validate marshall options (removeUndefinedValues)
 
 **Reliability**:
+
 - Graceful degradation
 - Idempotency protection
 - Data integrity checks
@@ -129,6 +143,7 @@ This test suite demonstrates **enterprise-grade test coverage** with comprehensi
 ---
 
 ### 8. S3 Integration (1 test)
+
 **Coverage**: S3 service failures
 
 - ✅ Handle getSignedUrl failures
@@ -136,12 +151,14 @@ This test suite demonstrates **enterprise-grade test coverage** with comprehensi
 - ✅ Proper error logging
 
 **Failure Isolation**:
+
 - Prevents partial state
 - Transaction-like behavior
 
 ---
 
 ### 9. CORS Headers (4 tests)
+
 **Coverage**: Cross-origin resource sharing
 
 - ✅ CORS headers in success response (200)
@@ -150,24 +167,28 @@ This test suite demonstrates **enterprise-grade test coverage** with comprehensi
 - ✅ CORS headers in server error (500)
 
 **Frontend Compatibility**:
+
 - All responses include CORS
 - Consistent header format
 
 ---
 
 ### 10. Response Data Completeness (2 tests)
+
 **Coverage**: API contract validation
 
 - ✅ All required fields in success response
 - ✅ RequestId in all error responses
 
 **API Compliance**:
+
 - Complete response structure
 - Traceability via requestId
 
 ---
 
 ### 11. Edge Cases and Concurrent Requests (4 tests)
+
 **Coverage**: Concurrency and edge cases
 
 - ✅ Unique fileIds for concurrent requests
@@ -176,6 +197,7 @@ This test suite demonstrates **enterprise-grade test coverage** with comprehensi
 - ✅ Multiple users simultaneously
 
 **Scalability**:
+
 - UUID collision prevention
 - Multi-user isolation
 - Extreme input handling
@@ -183,12 +205,14 @@ This test suite demonstrates **enterprise-grade test coverage** with comprehensi
 ---
 
 ### 12. Error Handling - Non-Error Exceptions (2 tests)
+
 **Coverage**: Unexpected error types
 
 - ✅ Handle non-Error thrown exceptions
 - ✅ Handle errors without stack traces
 
 **Defensive Programming**:
+
 - Handles all exception types
 - Graceful degradation
 - Complete error logging
@@ -196,6 +220,7 @@ This test suite demonstrates **enterprise-grade test coverage** with comprehensi
 ---
 
 ### 13. Logging Coverage (4 tests)
+
 **Coverage**: Observability and debugging
 
 - ✅ All steps logged in successful flow
@@ -204,6 +229,7 @@ This test suite demonstrates **enterprise-grade test coverage** with comprehensi
 - ✅ Errors logged with stack traces
 
 **Observability**:
+
 - Complete audit trail
 - Production debugging support
 - CloudWatch integration ready
@@ -212,12 +238,12 @@ This test suite demonstrates **enterprise-grade test coverage** with comprehensi
 
 ## Code Coverage Metrics
 
-| Metric | Target | Actual |
-|--------|--------|--------|
-| Statements | 100% | **100%** |
-| Branches | 100% | **100%** |
-| Functions | 100% | **100%** |
-| Lines | 100% | **100%** |
+| Metric     | Target | Actual   |
+| ---------- | ------ | -------- |
+| Statements | 100%   | **100%** |
+| Branches   | 100%   | **100%** |
+| Functions  | 100%   | **100%** |
+| Lines      | 100%   | **100%** |
 
 ---
 
@@ -270,26 +296,31 @@ This test suite demonstrates **enterprise-grade test coverage** with comprehensi
 ## Test Quality Attributes
 
 ### 1. **Readability**
+
 - Clear test names describing exact scenario
 - Well-organized describe blocks
 - Comprehensive comments
 
 ### 2. **Maintainability**
+
 - Helper function for event creation
 - Consistent mocking patterns
 - DRY principles applied
 
 ### 3. **Reliability**
+
 - No test interdependencies
 - Proper setup/teardown
 - Deterministic outcomes
 
 ### 4. **Performance**
+
 - Fast execution (< 2 seconds)
 - Parallel test execution safe
 - Minimal external dependencies
 
 ### 5. **Comprehensiveness**
+
 - All code paths covered
 - All error conditions tested
 - Edge cases included
@@ -299,41 +330,52 @@ This test suite demonstrates **enterprise-grade test coverage** with comprehensi
 ## What Makes This Test Suite Excellent
 
 ### 1. **100% Code Coverage**
+
 Every line, branch, and function is tested. No blind spots.
 
 ### 2. **Security-First Mindset**
+
 Tests explicitly verify security constraints:
+
 - Path traversal attacks
 - File type validation
 - Authorization checks
 - Input sanitization
 
 ### 3. **Production-Ready Error Handling**
+
 Tests validate:
+
 - Graceful degradation
 - Proper error logging
 - User-friendly error messages
 - Traceability via requestId
 
 ### 4. **Observable Behavior**
+
 Logger mocks verify:
+
 - All decision points logged
 - Proper log levels (info/warn/error)
 - Contextual information included
 
 ### 5. **Realistic Scenarios**
+
 Tests include:
+
 - Concurrent requests
 - Network failures
 - Malformed input
 - Boundary conditions
 
 ### 6. **Living Documentation**
+
 Test names serve as specification:
+
 ```typescript
-it('should reject filename with path traversal attempt (../)')
-it('should generate unique fileIds for concurrent requests')
-it('should set correct expiration timestamp (15 minutes from now)')
+it('should reject filename with path traversal attempt (../)');
+it('should generate unique fileIds for concurrent requests');
+it('should set correct expiration timestamp (15 minutes from now)');
 ```
 
 ---
@@ -341,26 +383,31 @@ it('should set correct expiration timestamp (15 minutes from now)')
 ## Best Practices Demonstrated
 
 ### ✅ Mock External Dependencies
+
 - S3 client mocked
 - DynamoDB client mocked
 - Logger mocked for verification
 
 ### ✅ Test Isolation
+
 - Each test resets mocks
 - No shared state
 - Independent execution
 
 ### ✅ Assertion Quality
+
 - Specific assertions
 - Multiple assertions per test
 - Negative assertions (what should NOT happen)
 
 ### ✅ Error Testing
+
 - All error paths tested
 - Error logging verified
 - Error messages validated
 
 ### ✅ Documentation
+
 - Test philosophy documented
 - Coverage report maintained
 - Security considerations noted
@@ -385,6 +432,7 @@ npm test -- --watch jobs/uploadRequest.test.ts
 ## For Junior Developers: Learning Points
 
 ### 1. **Test Structure**
+
 ```typescript
 describe('Feature Group', () => {
   describe('Specific Scenario', () => {
@@ -398,6 +446,7 @@ describe('Feature Group', () => {
 ```
 
 ### 2. **Mocking Best Practices**
+
 ```typescript
 // Reset mocks before each test
 beforeEach(() => {
@@ -414,6 +463,7 @@ mockGetSignedUrl.mockRejectedValueOnce(new Error('S3 error'));
 ```
 
 ### 3. **What to Test**
+
 - ✅ Happy paths
 - ✅ All error conditions
 - ✅ Boundary values
@@ -424,6 +474,7 @@ mockGetSignedUrl.mockRejectedValueOnce(new Error('S3 error'));
 - ✅ External service failures
 
 ### 4. **What Makes a Good Test**
+
 - **Single responsibility**: One concept per test
 - **Clear naming**: Test name explains what's tested
 - **Independent**: No reliance on other tests
@@ -431,6 +482,7 @@ mockGetSignedUrl.mockRejectedValueOnce(new Error('S3 error'));
 - **Thorough**: All branches covered
 
 ### 5. **Common Patterns**
+
 ```typescript
 // Verify function was called
 expect(mockLogger.info).toHaveBeenCalled();
@@ -454,6 +506,7 @@ expect(result.statusCode).toBe(400);
 ## Continuous Improvement
 
 This test suite should be updated when:
+
 - New features are added
 - Bug fixes are implemented
 - Security vulnerabilities are discovered

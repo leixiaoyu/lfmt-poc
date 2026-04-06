@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 /**
  * Unit tests for TranslationDetail page component
  *
@@ -43,7 +44,11 @@ vi.mock('../../services/translationService', () => ({
     startTranslation: vi.fn(),
   },
   TranslationServiceError: class TranslationServiceError extends Error {
-    constructor(message: string, public statusCode?: number, public code?: string) {
+    constructor(
+      message: string,
+      public statusCode?: number,
+      public code?: string
+    ) {
       super(message);
       this.name = 'TranslationServiceError';
     }
@@ -53,9 +58,7 @@ vi.mock('../../services/translationService', () => ({
 // Mock TranslationProgress component
 vi.mock('../../components/Translation/TranslationProgress', () => ({
   TranslationProgress: ({ jobId }: any) => (
-    <div data-testid="translation-progress">
-      TranslationProgress Component (jobId: {jobId})
-    </div>
+    <div data-testid="translation-progress">TranslationProgress Component (jobId: {jobId})</div>
   ),
 }));
 
@@ -255,7 +258,9 @@ describe('TranslationDetail', () => {
         expect(screen.getByTestId('translation-progress')).toBeInTheDocument();
       });
 
-      expect(screen.getByText(/TranslationProgress Component \(jobId: job-123\)/i)).toBeInTheDocument();
+      expect(
+        screen.getByText(/TranslationProgress Component \(jobId: job-123\)/i)
+      ).toBeInTheDocument();
     });
 
     it('should show progress component for COMPLETED status', async () => {
@@ -323,7 +328,9 @@ describe('TranslationDetail', () => {
         expect(screen.getByText('Job ID')).toBeInTheDocument();
       });
 
-      expect(screen.queryByRole('button', { name: /Download Translation/i })).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole('button', { name: /Download Translation/i })
+      ).not.toBeInTheDocument();
     });
 
     it('should download translation when clicking download button', async () => {
@@ -518,7 +525,9 @@ describe('TranslationDetail', () => {
       });
 
       // Initially IN_PROGRESS, no download button
-      expect(screen.queryByRole('button', { name: /Download Translation/i })).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole('button', { name: /Download Translation/i })
+      ).not.toBeInTheDocument();
 
       const refreshButton = screen.getByRole('button', { name: /Refresh Status/i });
       await user.click(refreshButton);
@@ -556,9 +565,14 @@ describe('TranslationDetail', () => {
       renderComponent();
 
       // Wait for error message using real timers context
-      await vi.waitFor(() => {
-        expect(screen.getByText('You do not have permission to view this translation')).toBeInTheDocument();
-      }, { timeout: 3000 });
+      await vi.waitFor(
+        () => {
+          expect(
+            screen.getByText('You do not have permission to view this translation')
+          ).toBeInTheDocument();
+        },
+        { timeout: 3000 }
+      );
 
       // Fast-forward time to trigger navigation (setTimeout in component)
       await vi.advanceTimersByTimeAsync(3000);
@@ -576,25 +590,29 @@ describe('TranslationDetail', () => {
       renderComponent();
 
       // Wait for error message to appear
-      await waitFor(() => {
-        expect(screen.getByText('Server error')).toBeInTheDocument();
-      }, { timeout: 3000 });
+      await waitFor(
+        () => {
+          expect(screen.getByText('Server error')).toBeInTheDocument();
+        },
+        { timeout: 3000 }
+      );
 
       // Verify alert is shown
       expect(screen.getByRole('alert')).toHaveTextContent('Server error');
     });
 
     it('should show fallback error for unknown errors', async () => {
-      vi.mocked(translationService.getJobStatus).mockRejectedValue(
-        new Error('Network error')
-      );
+      vi.mocked(translationService.getJobStatus).mockRejectedValue(new Error('Network error'));
 
       renderComponent();
 
       // Wait for error message to appear
-      await waitFor(() => {
-        expect(screen.getByText('Failed to load translation details')).toBeInTheDocument();
-      }, { timeout: 3000 });
+      await waitFor(
+        () => {
+          expect(screen.getByText('Failed to load translation details')).toBeInTheDocument();
+        },
+        { timeout: 3000 }
+      );
 
       // Verify alert is shown
       expect(screen.getByRole('alert')).toHaveTextContent('Failed to load translation details');
@@ -611,9 +629,12 @@ describe('TranslationDetail', () => {
       );
 
       // Wait for error message to appear
-      await waitFor(() => {
-        expect(screen.getByText('No job ID provided')).toBeInTheDocument();
-      }, { timeout: 3000 });
+      await waitFor(
+        () => {
+          expect(screen.getByText('No job ID provided')).toBeInTheDocument();
+        },
+        { timeout: 3000 }
+      );
 
       // Verify alert is shown
       expect(screen.getByRole('alert')).toHaveTextContent('No job ID provided');
@@ -627,9 +648,12 @@ describe('TranslationDetail', () => {
       renderComponent();
 
       // Wait for job details to load
-      await waitFor(() => {
-        expect(screen.getByText('Translation Details')).toBeInTheDocument();
-      }, { timeout: 3000 });
+      await waitFor(
+        () => {
+          expect(screen.getByText('Translation Details')).toBeInTheDocument();
+        },
+        { timeout: 3000 }
+      );
 
       const backButton = screen.getByRole('link', { name: /Back to History/i });
       expect(backButton).toHaveAttribute('href', '/translation/history');
@@ -644,9 +668,12 @@ describe('TranslationDetail', () => {
       renderComponent();
 
       // Wait for job details to load
-      await waitFor(() => {
-        expect(screen.getByText('0 Bytes')).toBeInTheDocument();
-      }, { timeout: 3000 });
+      await waitFor(
+        () => {
+          expect(screen.getByText('0 Bytes')).toBeInTheDocument();
+        },
+        { timeout: 3000 }
+      );
     });
 
     it('should format KB correctly', async () => {
@@ -656,9 +683,12 @@ describe('TranslationDetail', () => {
       renderComponent();
 
       // Wait for job details to load
-      await waitFor(() => {
-        expect(screen.getByText('2 KB')).toBeInTheDocument();
-      }, { timeout: 3000 });
+      await waitFor(
+        () => {
+          expect(screen.getByText('2 KB')).toBeInTheDocument();
+        },
+        { timeout: 3000 }
+      );
     });
 
     it('should format MB correctly', async () => {
@@ -668,9 +698,12 @@ describe('TranslationDetail', () => {
       renderComponent();
 
       // Wait for job details to load
-      await waitFor(() => {
-        expect(screen.getByText('2 MB')).toBeInTheDocument();
-      }, { timeout: 3000 });
+      await waitFor(
+        () => {
+          expect(screen.getByText('2 MB')).toBeInTheDocument();
+        },
+        { timeout: 3000 }
+      );
     });
   });
 });
