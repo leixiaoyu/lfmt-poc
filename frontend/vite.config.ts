@@ -36,96 +36,96 @@ export default defineConfig(({ command, mode }) => {
   }
 
   return {
-  plugins: [react()],
-  resolve: {
-    alias: {
-      '@': path.resolve(__dirname, './src'),
-      '@/components': path.resolve(__dirname, './src/components'),
-      '@/services': path.resolve(__dirname, './src/services'),
-      '@/hooks': path.resolve(__dirname, './src/hooks'),
-      '@/contexts': path.resolve(__dirname, './src/contexts'),
-      '@/utils': path.resolve(__dirname, './src/utils'),
-    },
-  },
-  server: {
-    port: 3000,
-    proxy: {
-      '/api': {
-        target: 'https://8brwlwf68h.execute-api.us-east-1.amazonaws.com/v1',
-        changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/api/, ''),
+    plugins: [react()],
+    resolve: {
+      alias: {
+        '@': path.resolve(__dirname, './src'),
+        '@/components': path.resolve(__dirname, './src/components'),
+        '@/services': path.resolve(__dirname, './src/services'),
+        '@/hooks': path.resolve(__dirname, './src/hooks'),
+        '@/contexts': path.resolve(__dirname, './src/contexts'),
+        '@/utils': path.resolve(__dirname, './src/utils'),
       },
     },
-  },
-  build: {
-    outDir: 'dist',
-    sourcemap: true,
-  },
-  test: {
-    globals: true,
-    environment: 'jsdom',
-    setupFiles: './src/setupTests.ts',
-    dangerouslyIgnoreUnhandledErrors: true, // Don't fail on unhandled promise rejections in mocks
-    exclude: [
-      '**/node_modules/**',
-      '**/dist/**',
-      '**/e2e/**', // Exclude Playwright E2E tests
-    ],
-    coverage: {
-      provider: 'v8',
-      reporter: ['text', 'json', 'html', 'lcov'],
+    server: {
+      port: 3000,
+      proxy: {
+        '/api': {
+          target: 'https://8brwlwf68h.execute-api.us-east-1.amazonaws.com/v1',
+          changeOrigin: true,
+          rewrite: (path) => path.replace(/^\/api/, ''),
+        },
+      },
+    },
+    build: {
+      outDir: 'dist',
+      sourcemap: true,
+    },
+    test: {
+      globals: true,
+      environment: 'jsdom',
+      setupFiles: './src/setupTests.ts',
+      dangerouslyIgnoreUnhandledErrors: true, // Don't fail on unhandled promise rejections in mocks
       exclude: [
-        'node_modules/',
-        'src/setupTests.ts',
-        'e2e/**', // Exclude E2E tests from coverage
-        'src/main.tsx', // Application entry point
-        'src/App.tsx', // Top-level routing component
-        'src/theme.ts', // Theme configuration
-        '**/*.d.ts', // Type definitions
-        '**/index.ts', // Re-export files
-        '**/.eslintrc.cjs', // Config files
-        '**/playwright.config.ts', // Test config
+        '**/node_modules/**',
+        '**/dist/**',
+        '**/e2e/**', // Exclude Playwright E2E tests
       ],
-      // Tiered coverage thresholds per Production Foundation spec (Phase 2.1)
-      // Targets: Critical paths 100%, General code 80%
-      thresholds: {
-        // Critical path: Auth components (authentication is zero-tolerance)
-        'src/components/Auth/**/*.tsx': {
-          statements: 100,
-          branches: 95,
-          functions: 100,
-          lines: 100,
-        },
-        // Critical path: Translation components (pragmatic thresholds for complex UI)
-        'src/components/Translation/**/*.tsx': {
-          statements: 98,  // Currently 98.39% - excellent coverage
-          branches: 85,    // Currently 89.15% - exceeds target
-          functions: 90,   // Currently 90.32% - meets target
-          lines: 98,       // Currently 98.39% - excellent coverage
-        },
-        // Critical path: Auth service (business logic is zero-tolerance)
-        'src/services/authService.ts': {
-          statements: 100,
-          branches: 100,
-          functions: 100,
-          lines: 100,
-        },
-        // Critical path: Translation service (business logic is zero-tolerance)
-        'src/services/translationService.ts': {
-          statements: 100,
-          branches: 95,
-          functions: 100,
-          lines: 100,
-        },
-        // General code: 80% target (Production Foundation spec)
-        global: {
-          statements: 80,
-          branches: 75,
-          functions: 80,
-          lines: 80,
+      coverage: {
+        provider: 'v8',
+        reporter: ['text', 'json', 'html', 'lcov'],
+        exclude: [
+          'node_modules/',
+          'src/setupTests.ts',
+          'e2e/**', // Exclude E2E tests from coverage
+          'src/main.tsx', // Application entry point
+          'src/App.tsx', // Top-level routing component
+          'src/theme.ts', // Theme configuration
+          '**/*.d.ts', // Type definitions
+          '**/index.ts', // Re-export files
+          '**/.eslintrc.cjs', // Config files
+          '**/playwright.config.ts', // Test config
+        ],
+        // Tiered coverage thresholds per Production Foundation spec (Phase 2.1)
+        // Targets: Critical paths 100%, General code 80%
+        thresholds: {
+          // Critical path: Auth components (authentication is zero-tolerance)
+          'src/components/Auth/**/*.tsx': {
+            statements: 100,
+            branches: 95,
+            functions: 100,
+            lines: 100,
+          },
+          // Critical path: Translation components (pragmatic thresholds for complex UI)
+          'src/components/Translation/**/*.tsx': {
+            statements: 98,  // Currently 98.39% - excellent coverage
+            branches: 85,    // Currently 89.15% - exceeds target
+            functions: 90,   // Currently 90.32% - meets target
+            lines: 98,       // Currently 98.39% - excellent coverage
+          },
+          // Critical path: Auth service (business logic is zero-tolerance)
+          'src/services/authService.ts': {
+            statements: 100,
+            branches: 100,
+            functions: 100,
+            lines: 100,
+          },
+          // Critical path: Translation service (business logic is zero-tolerance)
+          'src/services/translationService.ts': {
+            statements: 100,
+            branches: 99,
+            functions: 100,
+            lines: 100,
+          },
+          // General code: 80% target (Production Foundation spec)
+          global: {
+            statements: 80,
+            branches: 75,
+            functions: 80,
+            lines: 80,
+          },
         },
       },
     },
-  },
   };
 });
