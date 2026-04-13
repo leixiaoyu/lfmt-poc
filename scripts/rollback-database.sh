@@ -6,11 +6,12 @@
 # Restores a DynamoDB table to a previous point in time using PITR.
 #
 # Usage:
-#   ./scripts/rollback-database.sh <table-name> <timestamp> [--yes]
+#   ./scripts/rollback-database.sh <table-name> <timestamp> [--yes] [--dry-run]
 #
 # Examples:
 #   ./scripts/rollback-database.sh lfmt-jobs-LfmtPocDev "2025-04-05T10:30:00Z"
 #   ./scripts/rollback-database.sh lfmt-users-LfmtPocDev "2025-04-05T10:30:00Z" --yes
+#   ./scripts/rollback-database.sh lfmt-jobs-LfmtPocDev "2025-04-05T10:30:00Z" --dry-run
 #
 # Timestamp Format: ISO 8601 (UTC), e.g., "2025-04-05T10:30:00Z"
 #
@@ -38,19 +39,28 @@ NC='\033[0m' # No Color
 # Check arguments
 if [ $# -lt 2 ]; then
     echo -e "${RED}Error: Missing required arguments${NC}"
-    echo "Usage: $0 <table-name> <timestamp> [--yes]"
+    echo "Usage: $0 <table-name> <timestamp> [--yes] [--dry-run]"
     echo ""
     echo "Timestamp Format: ISO 8601 (UTC), e.g., \"2025-04-05T10:30:00Z\""
     echo ""
     echo "Examples:"
     echo "  $0 lfmt-jobs-LfmtPocDev \"2025-04-05T10:30:00Z\""
     echo "  $0 lfmt-users-LfmtPocDev \"2025-04-05T10:30:00Z\" --yes"
+    echo "  $0 lfmt-jobs-LfmtPocDev \"2025-04-05T10:30:00Z\" --dry-run"
     exit 1
 fi
 
 SOURCE_TABLE="$1"
 RESTORE_TIMESTAMP="$2"
 AUTO_CONFIRM="${3:-}"
+DRY_RUN=false
+
+# Parse additional flags
+for arg in "$@"; do
+    if [ "$arg" = "--dry-run" ]; then
+        DRY_RUN=true
+    fi
+done
 
 # Generate target table name (append -restored-<date>)
 RESTORE_DATE=$(echo "$RESTORE_TIMESTAMP" | cut -d'T' -f1)
@@ -167,7 +177,29 @@ if [ "$AUTO_CONFIRM" != "--yes" ]; then
     fi
 fi
 
-# 7. Initiate restore
+# 7. Dry-run mode check
+if [ "$DRY_RUN" = true ]; then
+    echo ""
+    echo -e "${YELLOW}========================================${NC}"
+    echo -e "${YELLOW}DRY-RUN MODE - No changes will be made${NC}"
+    echo -e "${YELLOW}========================================${NC}"
+    echo ""
+    echo "Would restore:"
+    echo "  Source Table: $SOURCE_TABLE"
+    echo "  Restore Timestamp: $RESTORE_TIMESTAMP"
+    echo "  Target Table: $TARGET_TABLE"
+    echo ""
+    echo "Command that would be executed:"
+    echo "  aws dynamodb restore-table-to-point-in-time \\"
+    echo "    --source-table-name $SOURCE_TABLE \\"
+    echo "    --target-table-name $TARGET_TABLE \\"
+    echo "    --restore-date-time $RESTORE_TIMESTAMP"
+    echo ""
+    echo "To execute, run without --dry-run flag"
+    exit 0
+fi
+
+# 8. Initiate restore
 echo ""
 echo "Step 6: Initiating Point-in-Time Recovery..."
 aws dynamodb restore-table-to-point-in-time \
@@ -180,7 +212,7 @@ aws dynamodb restore-table-to-point-in-time \
 echo -e "${GREEN}✓ Restore initiated${NC}"
 echo ""
 
-# 8. Monitor restore progress
+# 9. Monitor restore progress
 echo "Step 7: Monitoring restore progress..."
 echo "Press Ctrl+C to stop monitoring (restore will continue in background)"
 echo ""
@@ -194,36 +226,9 @@ while true; do
     case "$TABLE_STATUS" in
         ACTIVE)
             echo ""
-            echo -e "${GREEN}========================================${NC}"
-            echo -e "${GREEN}✓ Restore completed successfully!${NC}"
-            echo -e "${GREEN}========================================${NC}"
+            echo -e "${GREEN}✓ Restore completed!${NC}"
             echo ""
-            echo "Source Table: $SOURCE_TABLE"
-            echo "Restored Table: $TARGET_TABLE"
-            echo "Restore Timestamp: $RESTORE_TIMESTAMP"
-            echo ""
-            echo "Next steps (MANUAL):"
-            echo "1. Verify restored data in table '$TARGET_TABLE'"
-            echo "2. Stop all applications using '$SOURCE_TABLE'"
-            echo "3. Rename tables to swap:"
-            echo "   a. Rename $SOURCE_TABLE → $SOURCE_TABLE-old"
-            echo "   b. Rename $TARGET_TABLE → $SOURCE_TABLE"
-            echo "4. Restart applications"
-            echo "5. After verification, delete $SOURCE_TABLE-old"
-            echo ""
-            echo "AWS CLI commands to rename tables:"
-            echo "  # Backup source table"
-            echo "  aws dynamodb create-backup --table-name $SOURCE_TABLE --backup-name ${SOURCE_TABLE}-backup-$(date +%Y%m%d)"
-            echo ""
-            echo "  # Delete source table (CAUTION!)"
-            echo "  aws dynamodb delete-table --table-name $SOURCE_TABLE"
-            echo "  aws dynamodb wait table-not-exists --table-name $SOURCE_TABLE"
-            echo ""
-            echo "  # Rename restored table"
-            echo "  aws dynamodb restore-table-from-backup \\"
-            echo "    --target-table-name $SOURCE_TABLE \\"
-            echo "    --backup-arn \$(aws dynamodb describe-backup --backup-arn <backup-arn> | jq -r '.BackupDescription.BackupArn')"
-            exit 0
+            break
             ;;
         CREATING)
             # Still in progress
@@ -243,3 +248,121 @@ while true; do
 
     sleep 15
 done
+
+# 10. Validate restored data
+echo ""
+echo -e "${YELLOW}========================================${NC}"
+echo -e "${YELLOW}Step 8: Validating Restored Data${NC}"
+echo -e "${YELLOW}========================================${NC}"
+echo ""
+
+# 10.1. Compare row counts
+echo "10.1. Comparing row counts..."
+SOURCE_ITEM_COUNT=$(aws dynamodb describe-table --table-name "$SOURCE_TABLE" | jq -r '.Table.ItemCount')
+TARGET_ITEM_COUNT=$(aws dynamodb describe-table --table-name "$TARGET_TABLE" | jq -r '.Table.ItemCount')
+
+echo "  Source table ($SOURCE_TABLE): $SOURCE_ITEM_COUNT items"
+echo "  Restored table ($TARGET_TABLE): $TARGET_ITEM_COUNT items"
+
+if [ "$SOURCE_ITEM_COUNT" -eq 0 ] && [ "$TARGET_ITEM_COUNT" -eq 0 ]; then
+    echo -e "${GREEN}✓ Both tables are empty (counts match)${NC}"
+elif [ "$SOURCE_ITEM_COUNT" -eq "$TARGET_ITEM_COUNT" ]; then
+    echo -e "${GREEN}✓ Row counts match${NC}"
+else
+    DIFF=$((SOURCE_ITEM_COUNT - TARGET_ITEM_COUNT))
+    echo -e "${YELLOW}⚠  Row count mismatch: difference of $DIFF items${NC}"
+    echo ""
+    echo "This is expected if:"
+    echo "  - Data was added/deleted between restore timestamp and now"
+    echo "  - You are restoring to an earlier point in time"
+    echo ""
+fi
+echo ""
+
+# 10.2. Spot-check known records
+echo "10.2. Spot-checking records..."
+echo "To verify data integrity, please provide a known record key to spot-check."
+echo "Leave blank to skip spot-check."
+echo ""
+
+# Get primary key schema
+PRIMARY_KEY=$(aws dynamodb describe-table --table-name "$SOURCE_TABLE" \
+    | jq -r '.Table.KeySchema[] | select(.KeyType=="HASH") | .AttributeName')
+echo "Primary key attribute: $PRIMARY_KEY"
+echo ""
+
+read -p "Enter value for $PRIMARY_KEY to spot-check (or press Enter to skip): " SPOT_CHECK_KEY
+
+if [ -n "$SPOT_CHECK_KEY" ]; then
+    # Check if record exists in source
+    SOURCE_RECORD=$(aws dynamodb get-item \
+        --table-name "$SOURCE_TABLE" \
+        --key "{\"$PRIMARY_KEY\": {\"S\": \"$SPOT_CHECK_KEY\"}}" \
+        2>/dev/null || echo "")
+
+    # Check if record exists in target
+    TARGET_RECORD=$(aws dynamodb get-item \
+        --table-name "$TARGET_TABLE" \
+        --key "{\"$PRIMARY_KEY\": {\"S\": \"$SPOT_CHECK_KEY\"}}" \
+        2>/dev/null || echo "")
+
+    if [ -z "$SOURCE_RECORD" ] && [ -z "$TARGET_RECORD" ]; then
+        echo -e "${YELLOW}⚠  Record not found in either table${NC}"
+    elif [ -n "$SOURCE_RECORD" ] && [ -z "$TARGET_RECORD" ]; then
+        echo -e "${YELLOW}⚠  Record exists in source but not in restored table${NC}"
+        echo "  This is expected if the record was created after $RESTORE_TIMESTAMP"
+    elif [ -z "$SOURCE_RECORD" ] && [ -n "$TARGET_RECORD" ]; then
+        echo -e "${YELLOW}⚠  Record exists in restored table but not in source${NC}"
+        echo "  This is expected if the record was deleted after $RESTORE_TIMESTAMP"
+    else
+        echo -e "${GREEN}✓ Record found in both tables${NC}"
+    fi
+else
+    echo "Skipped spot-check"
+fi
+echo ""
+
+# 10.3. Validation summary
+echo -e "${YELLOW}========================================${NC}"
+echo -e "${YELLOW}Validation Complete${NC}"
+echo -e "${YELLOW}========================================${NC}"
+echo ""
+echo "Source Table: $SOURCE_TABLE"
+echo "Restored Table: $TARGET_TABLE"
+echo "Restore Timestamp: $RESTORE_TIMESTAMP"
+echo ""
+echo -e "${GREEN}Next steps (MANUAL):${NC}"
+echo "1. Review validation results above"
+echo "2. Perform additional spot-checks if needed:"
+echo "   aws dynamodb scan --table-name $TARGET_TABLE --limit 10"
+echo "3. Stop all applications using '$SOURCE_TABLE'"
+echo "4. Rename tables to swap (see commands below)"
+echo "5. Restart applications"
+echo "6. After verification, delete $SOURCE_TABLE-old"
+echo ""
+echo "AWS CLI commands to rename tables:"
+echo "  # Backup source table"
+echo "  aws dynamodb create-backup --table-name $SOURCE_TABLE --backup-name ${SOURCE_TABLE}-backup-\$(date +%Y%m%d)"
+echo ""
+echo "  # Delete source table (CAUTION!)"
+echo "  aws dynamodb delete-table --table-name $SOURCE_TABLE"
+echo "  aws dynamodb wait table-not-exists --table-name $SOURCE_TABLE"
+echo ""
+echo "  # Rename restored table (requires manual table recreation or use AWS Backup)"
+echo "  # DynamoDB does not support direct table renaming"
+echo "  # Alternative: Update application config to point to $TARGET_TABLE"
+echo ""
+
+# Exit with error if validation failed critically
+if [ "$SOURCE_ITEM_COUNT" -ne "$TARGET_ITEM_COUNT" ] && [ "$SOURCE_ITEM_COUNT" -gt 0 ]; then
+    DIFF_PERCENT=$(echo "scale=2; ($DIFF * 100) / $SOURCE_ITEM_COUNT" | bc)
+    if (( $(echo "$DIFF_PERCENT > 10" | bc -l) )); then
+        echo -e "${RED}⚠  VALIDATION WARNING: Row count differs by more than 10%${NC}"
+        echo "  Investigate before proceeding with table swap."
+        echo ""
+        exit 1
+    fi
+fi
+
+echo -e "${GREEN}✓ Validation checks passed${NC}"
+exit 0

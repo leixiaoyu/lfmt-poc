@@ -115,56 +115,69 @@ if [ "$CONFIRM" != "yes" ]; then
     exit 0
 fi
 
-# 7. Perform rollback
+# 7. Check if 'live' alias exists, create if needed
 echo ""
-echo "Step 5: Rolling back Lambda function..."
-
-# Update $LATEST alias to point to target version code
-# This is done by updating the function code with the target version's code
-aws lambda update-function-code \
+echo "Step 5: Checking for 'live' alias..."
+ALIAS_EXISTS=$(aws lambda get-alias \
     --function-name "$FUNCTION_NAME" \
-    --s3-bucket "$(echo "$TARGET_CONFIG" | jq -r '.Code.Location' | cut -d'/' -f3)" \
-    --s3-key "$(echo "$TARGET_CONFIG" | jq -r '.Code.Location' | awk -F'/' '{print $NF}')" \
+    --name live 2>/dev/null || echo "")
+
+if [ -z "$ALIAS_EXISTS" ]; then
+    echo "'live' alias does not exist, creating it pointing to version $TARGET_VERSION..."
+    aws lambda create-alias \
+        --function-name "$FUNCTION_NAME" \
+        --name live \
+        --function-version "$TARGET_VERSION" \
+        --description "Live version pointer for rollback management" \
+        > /dev/null
+    echo -e "${GREEN}✓ Created 'live' alias pointing to version $TARGET_VERSION${NC}"
+else
+    CURRENT_ALIAS_VERSION=$(echo "$ALIAS_EXISTS" | jq -r '.FunctionVersion')
+    echo "'live' alias exists, currently pointing to version: $CURRENT_ALIAS_VERSION"
+fi
+
+# 8. Perform rollback by updating alias
+echo ""
+echo "Step 6: Rolling back Lambda function (updating 'live' alias)..."
+
+aws lambda update-alias \
+    --function-name "$FUNCTION_NAME" \
+    --name live \
+    --function-version "$TARGET_VERSION" \
     > /dev/null
 
-echo -e "${GREEN}✓ Function code updated to version $TARGET_VERSION${NC}"
-
-# 8. Publish new version (backup)
-echo ""
-echo "Step 6: Publishing new version (backup of current state)..."
-NEW_VERSION=$(aws lambda publish-version \
-    --function-name "$FUNCTION_NAME" \
-    --description "Backup before rollback to version $TARGET_VERSION" \
-    | jq -r '.Version')
-
-echo -e "${GREEN}✓ Created backup version: $NEW_VERSION${NC}"
+echo -e "${GREEN}✓ Updated 'live' alias to point to version $TARGET_VERSION${NC}"
 
 # 9. Verify rollback
 echo ""
 echo "Step 7: Verifying rollback..."
-FINAL_CONFIG=$(aws lambda get-function --function-name "$FUNCTION_NAME")
-FINAL_SHA=$(echo "$FINAL_CONFIG" | jq -r '.Configuration.CodeSha256')
+FINAL_ALIAS=$(aws lambda get-alias --function-name "$FUNCTION_NAME" --name live)
+FINAL_VERSION=$(echo "$FINAL_ALIAS" | jq -r '.FunctionVersion')
 
-if [ "$FINAL_SHA" = "$TARGET_SHA" ]; then
+if [ "$FINAL_VERSION" = "$TARGET_VERSION" ]; then
     echo -e "${GREEN}========================================${NC}"
     echo -e "${GREEN}✓ Rollback successful!${NC}"
     echo -e "${GREEN}========================================${NC}"
     echo ""
     echo "Function: $FUNCTION_NAME"
-    echo "Rolled back to version: $TARGET_VERSION"
-    echo "Backup version created: $NEW_VERSION"
+    echo "'live' alias now points to version: $TARGET_VERSION"
     echo ""
     echo "Next steps:"
-    echo "1. Test the Lambda function"
+    echo "1. Test the Lambda function using the 'live' alias:"
+    echo "   aws lambda invoke --function-name $FUNCTION_NAME:live --payload '{}' response.json"
     echo "2. Monitor CloudWatch Logs for errors"
-    echo "3. If issues persist, run: $0 $FUNCTION_NAME $NEW_VERSION"
+    echo "3. If issues persist, run: $0 $FUNCTION_NAME <another-version>"
+    echo ""
+    echo "Note: Update your CDK/Terraform to use the 'live' alias for rollback capability:"
+    echo "  - CloudFront: Point to $FUNCTION_NAME:live"
+    echo "  - API Gateway: Point to $FUNCTION_NAME:live"
 else
     echo -e "${RED}========================================${NC}"
     echo -e "${RED}✗ Rollback verification failed${NC}"
     echo -e "${RED}========================================${NC}"
     echo ""
-    echo "Expected CodeSha256: $TARGET_SHA"
-    echo "Actual CodeSha256: $FINAL_SHA"
+    echo "Expected version: $TARGET_VERSION"
+    echo "Actual version: $FINAL_VERSION"
     echo ""
     echo "Manual intervention required. Check AWS Console."
     exit 1

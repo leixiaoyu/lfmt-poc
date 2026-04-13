@@ -16,6 +16,7 @@
 #   1. Stop all running Step Functions executions
 #   2. Disable API Gateway (throttle to 0 requests/sec)
 #   3. Set all Lambda functions to 0 concurrency
+#   4. Configure S3 lifecycle policy to abort incomplete multipart uploads
 #
 # WARNING: This will cause complete service outage!
 ###############################################################################
@@ -52,6 +53,7 @@ echo "This script will:"
 echo "  1. Stop all running Step Functions executions"
 echo "  2. Disable API Gateway (throttle to 0 requests/sec)"
 echo "  3. Set all Lambda functions to 0 concurrency"
+echo "  4. Configure S3 lifecycle policy to abort incomplete multipart uploads"
 echo ""
 echo -e "${RED}WARNING: This will cause COMPLETE SERVICE OUTAGE${NC}"
 echo ""
@@ -132,6 +134,47 @@ if [ -n "$LAMBDA_FUNCTIONS" ]; then
     echo -e "${GREEN}✓ Set $COUNT Lambda functions to 0 concurrency${NC}"
 else
     echo -e "${YELLOW}Warning: No Lambda functions found for stack${NC}"
+fi
+
+# 4. Add S3 lifecycle policy to abort incomplete multipart uploads
+# ⚠️  LIMITATION: This only prevents NEW incomplete uploads from accumulating costs.
+#    It does NOT stop existing multipart uploads or delete existing data.
+#    For emergency cleanup of existing uploads, you must:
+#      1. List incomplete uploads: aws s3api list-multipart-uploads --bucket <bucket>
+#      2. Abort them manually: aws s3api abort-multipart-upload --bucket <bucket> --key <key> --upload-id <id>
+echo ""
+echo "Step 4: Configuring S3 lifecycle policy for incomplete multipart uploads..."
+
+S3_BUCKET=$(aws cloudformation describe-stacks \
+    --stack-name "$STACK_NAME" \
+    --query 'Stacks[0].Outputs[?OutputKey==`UploadBucket`].OutputValue' \
+    --output text 2>/dev/null || echo "")
+
+if [ -n "$S3_BUCKET" ]; then
+    # Create lifecycle policy to abort incomplete multipart uploads after 1 day
+    LIFECYCLE_POLICY=$(cat <<'EOF'
+{
+  "Rules": [
+    {
+      "Id": "AbortIncompleteMultipartUpload",
+      "Status": "Enabled",
+      "Prefix": "",
+      "AbortIncompleteMultipartUpload": {
+        "DaysAfterInitiation": 1
+      }
+    }
+  ]
+}
+EOF
+)
+    echo "$LIFECYCLE_POLICY" | aws s3api put-bucket-lifecycle-configuration \
+        --bucket "$S3_BUCKET" \
+        --lifecycle-configuration file:///dev/stdin \
+        > /dev/null 2>&1
+    echo -e "${GREEN}✓ S3 lifecycle policy configured (aborts incomplete uploads after 1 day)${NC}"
+    echo -e "${YELLOW}Note: This only affects NEW incomplete uploads. See comments in script for manual cleanup.${NC}"
+else
+    echo -e "${YELLOW}Warning: Could not find S3 upload bucket${NC}"
 fi
 
 # Summary

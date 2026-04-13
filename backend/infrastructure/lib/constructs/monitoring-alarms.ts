@@ -40,6 +40,7 @@ export class MonitoringAlarms extends Construct {
   public readonly lambdaErrorAlarms: cloudwatch.Alarm[];
   public readonly apiGateway5xxAlarm: cloudwatch.Alarm;
   public readonly dynamoDbThrottlingAlarms: cloudwatch.Alarm[];
+  public readonly usersTableTightThrottlingAlarm: cloudwatch.Alarm;
   public readonly stepFunctionsFailureAlarm: cloudwatch.Alarm;
 
   constructor(scope: Construct, id: string, props: MonitoringAlarmsProps) {
@@ -75,6 +76,13 @@ export class MonitoringAlarms extends Construct {
     // 4. Create DynamoDB throttling alarms
     this.dynamoDbThrottlingAlarms = this.createDynamoDbThrottlingAlarms(
       [jobsTable, usersTable, attestationsTable, rateLimitBucketsTable],
+      this.alarmTopic
+    );
+
+    // 4.1. Create tighter throttling alarm for auth/users table
+    // Auth/users table is critical for login/signup - any throttling is serious
+    this.usersTableTightThrottlingAlarm = this.createTightThrottlingAlarm(
+      usersTable,
       this.alarmTopic
     );
 
@@ -254,6 +262,57 @@ export class MonitoringAlarms extends Construct {
       alarmDescription: `Step Functions failures > 3 in 1 hour for ${stateMachine.stateMachineName}`,
       metric: executionsFailed,
       threshold: 3,
+      evaluationPeriods: 1,
+      datapointsToAlarm: 1,
+      comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+    });
+
+    alarm.addAlarmAction(new cloudwatch_actions.SnsAction(alarmTopic));
+    return alarm;
+  }
+
+  private createTightThrottlingAlarm(
+    table: dynamodb.Table,
+    alarmTopic: sns.Topic
+  ): cloudwatch.Alarm {
+    // Tighter alarm for auth/users table - threshold: 5, evaluationPeriods: 1
+    // Any throttling on auth table is critical and requires immediate attention
+
+    const throttledReads = new cloudwatch.Metric({
+      namespace: 'AWS/DynamoDB',
+      metricName: 'ReadThrottleEvents',
+      dimensionsMap: {
+        TableName: table.tableName,
+      },
+      statistic: 'Sum',
+      period: Duration.minutes(1),
+    });
+
+    const throttledWrites = new cloudwatch.Metric({
+      namespace: 'AWS/DynamoDB',
+      metricName: 'WriteThrottleEvents',
+      dimensionsMap: {
+        TableName: table.tableName,
+      },
+      statistic: 'Sum',
+      period: Duration.minutes(1),
+    });
+
+    const totalThrottled = new cloudwatch.MathExpression({
+      expression: 'reads + writes',
+      usingMetrics: {
+        reads: throttledReads,
+        writes: throttledWrites,
+      },
+      label: 'Total Throttled Requests',
+    });
+
+    const alarm = new cloudwatch.Alarm(this, `${table.node.id}TightThrottlingAlarm`, {
+      alarmName: `${table.tableName}-tight-throttling`,
+      alarmDescription: `CRITICAL: DynamoDB throttled requests > 5 for auth table ${table.tableName}`,
+      metric: totalThrottled,
+      threshold: 5,
       evaluationPeriods: 1,
       datapointsToAlarm: 1,
       comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,

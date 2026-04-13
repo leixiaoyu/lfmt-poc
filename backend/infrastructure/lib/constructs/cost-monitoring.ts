@@ -33,6 +33,11 @@ export class CostMonitoring extends Construct {
 
     const { stackName, environment, operationsEmail, monthlyBudgetLimit } = props;
 
+    // Emit warning during CDK synth about tag filter risk
+    console.warn('\n⚠️  [CostMonitoring] Budget tag filter is set to "user:Project$lfmt"');
+    console.warn('   If NO resources have this tag, the budget will track ALL account costs!');
+    console.warn('   Verify tag coverage: aws resourcegroupstaggingapi get-resources --tag-filters Key=Project,Values=lfmt\n');
+
     // 1. Create SNS topic for cost alerts
     this.costAlarmTopic = new sns.Topic(this, 'CostAlarmTopic', {
       topicName: `lfmt-cost-alarms-${stackName}`,
@@ -43,6 +48,19 @@ export class CostMonitoring extends Construct {
     // The operations team will receive an email to confirm subscription
 
     // 2. Create monthly budget with 80% and 100% alerts
+    //
+    // ⚠️ CRITICAL WARNING: Tag Filter Behavior
+    // The costFilter below uses `user:Project$lfmt` to track only LFMT resources.
+    // HOWEVER, if NO resources have this tag, AWS Budgets will SILENTLY track ALL
+    // account costs instead of tracking nothing or erroring.
+    //
+    // Risk Mitigation:
+    // 1. Ensure ALL resources are tagged with "Project: lfmt" (see CDK tagging below)
+    // 2. Periodically verify tags: aws resourcegroupstaggingapi get-resources --tag-filters Key=Project,Values=lfmt
+    // 3. Check AWS Cost Explorer to confirm budget is tracking correct resources
+    // 4. If budget unexpectedly exceeds limit, verify tag coverage FIRST
+    //
+    // See: backend/infrastructure/bin/infrastructure.ts for stack-level tagging
     this.monthlyBudget = new budgets.CfnBudget(this, 'MonthlyBudget', {
       budget: {
         budgetName: `lfmt-monthly-budget-${stackName}`,
@@ -54,6 +72,7 @@ export class CostMonitoring extends Construct {
         },
         costFilters: {
           // Filter by project tags (requires tagging all resources)
+          // ⚠️ See warning above about tag filter behavior
           TagKeyValue: [`user:Project$lfmt`],
         },
       },
