@@ -20,9 +20,9 @@ export default defineConfig(({ command, mode }) => {
   if (command === 'build' && process.env.CI !== 'true' && !env.VITE_API_URL) {
     throw new Error(
       '❌ Build failed: VITE_API_URL is required for production builds.\n' +
-      '   Please set it in your .env file or environment.\n' +
-      '   See .env.example for reference.\n\n' +
-      '   Note: CI builds skip this validation because they rebuild after deployment.'
+        '   Please set it in your .env file or environment.\n' +
+        '   See .env.example for reference.\n\n' +
+        '   Note: CI builds skip this validation because they rebuild after deployment.'
     );
   }
 
@@ -30,8 +30,8 @@ export default defineConfig(({ command, mode }) => {
   if (command === 'build' && process.env.CI === 'true' && !env.VITE_API_URL) {
     console.warn(
       '⚠️  Warning: Building without VITE_API_URL in CI.\n' +
-      '   This is expected for the initial build step.\n' +
-      '   The final deployment will rebuild with the correct API URL.'
+        '   This is expected for the initial build step.\n' +
+        '   The final deployment will rebuild with the correct API URL.'
     );
   }
 
@@ -111,6 +111,9 @@ export default defineConfig(({ command, mode }) => {
             lines: 100,
           },
           // Critical path: Translation service (business logic is zero-tolerance)
+          // Note: 99% branches — the 1% uncovered is an untestable defensive guard
+          // `if (error instanceof TranslationServiceError) throw error` — unreachable
+          // via realistic inputs since apiClient.post only throws AxiosError
           'src/services/translationService.ts': {
             statements: 100,
             branches: 99,
