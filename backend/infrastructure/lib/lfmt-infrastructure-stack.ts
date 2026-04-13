@@ -495,14 +495,14 @@ export class LfmtInfrastructureStack extends Stack {
     // - DynamoDB: Scoped to specific tables (no wildcards)
     // - S3: Scoped to specific buckets (no wildcards)
     // - Cognito: Scoped to specific User Pool (no wildcards)
-    // - Secrets Manager: Scoped to lfmt/gemini-api-key-* pattern
-    // - Lambda Invoke: Scoped to lfmt-* functions in this account/region
+    // - Secrets Manager: Scoped to lfmt/gemini-api-key-${this.stackName} (environment-specific, no wildcards)
+    // - Lambda Invoke: Removed from Translation role (Step Functions invokes Lambda, not vice versa)
     //
     // Least Privilege Principle: Separate roles per Lambda function group
     // Function-specific permission requirements:
     // - Auth functions: Cognito + DynamoDB (users table)
     // - Upload functions: S3 + DynamoDB (jobs + attestations tables)
-    // - Translation functions: S3 + DynamoDB (all tables) + Secrets Manager + Lambda Invoke
+    // - Translation functions: S3 + DynamoDB (all tables) + Secrets Manager (no Lambda Invoke)
     // - Chunking functions: S3 + DynamoDB (jobs table)
 
     // ===================================================================
@@ -540,6 +540,8 @@ export class LfmtInfrastructureStack extends Stack {
     });
 
     // Auth: DynamoDB Access (users + rate limit buckets tables only)
+    // SECURITY: Scan removed - auth functions use GetItem/Query for specific records, not full table scans
+    // SECURITY: DeleteItem removed - auth role doesn't delete users directly (handled via Cognito)
     new iam.ManagedPolicy(this, 'AuthDynamoDBPolicy', {
       roles: [(this as any).authRole],
       statements: [
@@ -549,9 +551,7 @@ export class LfmtInfrastructureStack extends Stack {
             'dynamodb:GetItem',
             'dynamodb:PutItem',
             'dynamodb:UpdateItem',
-            'dynamodb:DeleteItem',
             'dynamodb:Query',
-            'dynamodb:Scan',
           ],
           resources: [
             this.usersTable.tableArn,
@@ -602,6 +602,8 @@ export class LfmtInfrastructureStack extends Stack {
     });
 
     // Upload: DynamoDB Access (jobs + attestations + rate limit buckets tables)
+    // SECURITY: Scan removed - upload uses Query on GSIs, not full table scans
+    // SECURITY: DeleteItem removed - not used by upload functions
     new iam.ManagedPolicy(this, 'UploadDynamoDBPolicy', {
       roles: [(this as any).uploadRole],
       statements: [
@@ -611,9 +613,7 @@ export class LfmtInfrastructureStack extends Stack {
             'dynamodb:GetItem',
             'dynamodb:PutItem',
             'dynamodb:UpdateItem',
-            'dynamodb:DeleteItem',
             'dynamodb:Query',
-            'dynamodb:Scan',
           ],
           resources: [
             this.jobsTable.tableArn,
@@ -666,6 +666,9 @@ export class LfmtInfrastructureStack extends Stack {
     });
 
     // Chunking: DynamoDB Access (jobs + rate limit buckets tables)
+    // SECURITY: Scan removed - not used by chunking (uses GetItem with composite key)
+    // SECURITY: DeleteItem removed - not used by chunking
+    // SECURITY: Query removed - not used by chunking functions
     new iam.ManagedPolicy(this, 'ChunkingDynamoDBPolicy', {
       roles: [(this as any).chunkingRole],
       statements: [
@@ -675,9 +678,6 @@ export class LfmtInfrastructureStack extends Stack {
             'dynamodb:GetItem',
             'dynamodb:PutItem',
             'dynamodb:UpdateItem',
-            'dynamodb:DeleteItem',
-            'dynamodb:Query',
-            'dynamodb:Scan',
           ],
           resources: [
             this.jobsTable.tableArn,
@@ -690,7 +690,7 @@ export class LfmtInfrastructureStack extends Stack {
 
     // ===================================================================
     // Role 4: Translation Lambda Functions Role
-    // Permissions: S3 + DynamoDB (all tables) + Secrets Manager + Lambda Invoke
+    // Permissions: S3 + DynamoDB (all tables) + Secrets Manager (no Lambda Invoke)
     // ===================================================================
     (this as any).translationRole = new iam.Role(this, 'TranslationLambdaRole', {
       assumedBy: new iam.ServicePrincipal('lambda.amazonaws.com'),
@@ -728,6 +728,8 @@ export class LfmtInfrastructureStack extends Stack {
     });
 
     // Translation: DynamoDB Access (all tables)
+    // SECURITY: Scan removed - translation uses GetItem/Query, not full table scans
+    // SECURITY: DeleteItem removed - translation doesn't delete records
     new iam.ManagedPolicy(this, 'TranslationDynamoDBPolicy', {
       roles: [(this as any).translationRole],
       statements: [
@@ -737,9 +739,7 @@ export class LfmtInfrastructureStack extends Stack {
             'dynamodb:GetItem',
             'dynamodb:PutItem',
             'dynamodb:UpdateItem',
-            'dynamodb:DeleteItem',
             'dynamodb:Query',
-            'dynamodb:Scan',
           ],
           resources: [
             this.jobsTable.tableArn,
@@ -762,6 +762,7 @@ export class LfmtInfrastructureStack extends Stack {
     //     --secret-string "YOUR_GEMINI_API_KEY"
     //
     // This secret is NOT created by CDK for security reasons (avoid storing secrets in code)
+    // SECURITY: Changed wildcard to environment-specific secret name
     new iam.ManagedPolicy(this, 'TranslationSecretsPolicy', {
       roles: [(this as any).translationRole],
       statements: [
@@ -769,31 +770,22 @@ export class LfmtInfrastructureStack extends Stack {
           effect: iam.Effect.ALLOW,
           actions: ['secretsmanager:GetSecretValue'],
           resources: [
-            `arn:aws:secretsmanager:${this.region}:${this.account}:secret:lfmt/gemini-api-key-*`,
+            `arn:aws:secretsmanager:${this.region}:${this.account}:secret:lfmt/gemini-api-key-${this.stackName}`,
           ],
         }),
       ],
     });
 
-    // Translation: Lambda Invoke Access (for invoking translation functions)
-    new iam.ManagedPolicy(this, 'TranslationLambdaInvokePolicy', {
-      roles: [(this as any).translationRole],
-      statements: [
-        new iam.PolicyStatement({
-          effect: iam.Effect.ALLOW,
-          actions: ['lambda:InvokeFunction'],
-          resources: [
-            `arn:aws:lambda:${this.region}:${this.account}:function:lfmt-*`,
-          ],
-        }),
-      ],
-    });
+    // SECURITY: Removed TranslationLambdaInvokePolicy
+    // Translation functions do NOT invoke other Lambda functions directly
+    // startTranslation invokes Step Functions (states:StartExecution), not Lambda
 
     // Maintain backward compatibility with legacy code that references this.lambdaRole
     // New deployments should use specific roles (authRole, uploadRole, chunkingRole, translationRole)
     this.lambdaRole = (this as any).translationRole; // Default to most permissive role for backward compatibility
 
     // Step Functions Execution Role
+    // SECURITY: Changed wildcard to specific function (only translate-chunk is invoked by Step Functions)
     const stepFunctionsRole = new iam.Role(this, 'StepFunctionsExecutionRole', {
       assumedBy: new iam.ServicePrincipal('states.amazonaws.com'),
       inlinePolicies: {
@@ -802,7 +794,7 @@ export class LfmtInfrastructureStack extends Stack {
             new iam.PolicyStatement({
               effect: iam.Effect.ALLOW,
               actions: ['lambda:InvokeFunction'],
-              resources: [`arn:aws:lambda:${this.region}:${this.account}:function:lfmt-*`],
+              resources: [`arn:aws:lambda:${this.region}:${this.account}:function:lfmt-translate-chunk-${this.stackName}`],
             }),
           ],
         }),
@@ -1212,8 +1204,7 @@ export class LfmtInfrastructureStack extends Stack {
     this.jobsTable.grantReadWriteData(this.translationStateMachine);
 
     // Grant startTranslation Lambda permission to start state machine executions
-    // Create managed policy with constructed ARN to avoid circular dependency
-    // (grantStartExecution() creates State Machine → Lambda dependency even when called here)
+    // SECURITY: Use CDK reference instead of hardcoded ARN string
     if (this.lambdaRole) {
       new iam.ManagedPolicy(this, 'LambdaStepFunctionsPolicy', {
         roles: [this.lambdaRole],
@@ -1224,8 +1215,7 @@ export class LfmtInfrastructureStack extends Stack {
               'states:StartExecution',
             ],
             resources: [
-              // Construct ARN pattern without referencing the state machine resource
-              `arn:aws:states:${Stack.of(this).region}:${Stack.of(this).account}:stateMachine:lfmt-translation-workflow-${this.stackName}`
+              this.translationStateMachine.stateMachineArn
             ],
           }),
         ],

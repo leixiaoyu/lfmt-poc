@@ -59,9 +59,9 @@ Actions: [
   'dynamodb:GetItem',    // Required: Fetch user profile during login
   'dynamodb:PutItem',    // Required: Create user record on registration
   'dynamodb:UpdateItem', // Required: Update user attributes (last login, etc.)
-  'dynamodb:DeleteItem', // Required: User account deletion (GDPR compliance)
   'dynamodb:Query',      // Required: EmailIndex queries for duplicate detection
-  'dynamodb:Scan',       // Required: Admin user listing (minimal use)
+  // SECURITY: DeleteItem removed - GDPR deletions handled via Cognito user deletion (not DynamoDB)
+  // SECURITY: Scan removed - auth functions use GetItem/Query for specific records only
 ]
 Resources: [
   this.usersTable.tableArn,                    // Users table
@@ -72,9 +72,9 @@ Resources: [
 
 **Justification:**
 - Auth functions only need access to Users table (no Jobs/Attestations access)
-- `DeleteItem` required for GDPR "right to be forgotten" compliance
 - `Query` on EmailIndex required for duplicate email detection during registration
-- `Scan` only used for admin user listing (infrequent, paginated)
+- `DeleteItem` not needed - GDPR "right to be forgotten" handled via Cognito user pool deletion (not DynamoDB)
+- `Scan` not needed - auth functions use GetItem with specific keys or Query on indexes
 - Rate limit buckets needed for login/registration rate limiting
 
 **Missing Permissions (Intentionally Excluded):**
@@ -128,9 +128,9 @@ Actions: [
   'dynamodb:GetItem',
   'dynamodb:PutItem',
   'dynamodb:UpdateItem',
-  'dynamodb:DeleteItem', // Required for failed job cleanup
   'dynamodb:Query',      // Required for UserJobsIndex queries
-  'dynamodb:Scan',       // Required for job listing with filters
+  // SECURITY: DeleteItem removed - not used by upload functions
+  // SECURITY: Scan removed - upload uses Query on GSIs, not full table scans
 ]
 Resources: [
   this.jobsTable.tableArn,
@@ -146,6 +146,8 @@ Resources: [
 - Attestations table required to record legal agreements before upload
 - Query on UserJobsIndex required to list user's jobs
 - Rate limit buckets needed for upload rate limiting (prevent abuse)
+- `DeleteItem` not needed - failed job cleanup handled by separate cleanup process
+- `Scan` not needed - upload uses Query on specific GSIs, not full table scans
 
 **Missing Permissions:**
 - ❌ No Cognito access (authorization handled by API Gateway Cognito Authorizer)
@@ -192,9 +194,7 @@ Actions: [
   'dynamodb:GetItem',
   'dynamodb:PutItem',
   'dynamodb:UpdateItem',
-  'dynamodb:DeleteItem', // Required for failed chunking cleanup
-  'dynamodb:Query',
-  'dynamodb:Scan',
+  // SECURITY: DeleteItem, Query, Scan removed - chunking uses GetItem with composite keys only
 ]
 Resources: [
   this.jobsTable.tableArn,
@@ -205,6 +205,7 @@ Resources: [
 
 **Justification:**
 - Chunking updates job record with chunk count and metadata
+- Uses GetItem with composite key (jobId + userId) to read job record
 - No attestations table access needed (already validated during upload)
 - No users table access needed (user ID comes from job record)
 
@@ -254,9 +255,9 @@ Actions: [
   'dynamodb:GetItem',
   'dynamodb:PutItem',
   'dynamodb:UpdateItem',
-  'dynamodb:DeleteItem',
   'dynamodb:Query',
-  'dynamodb:Scan',
+  // SECURITY: DeleteItem removed - translation doesn't delete records
+  // SECURITY: Scan removed - translation uses GetItem/Query for specific records
 ]
 Resources: [
   this.jobsTable.tableArn,
@@ -275,45 +276,24 @@ Resources: [
 - Attestations table: Verify legal agreement before final output delivery
 - Rate limit buckets: Distributed rate limiting across concurrent Lambda invocations
 - All 4 tables required for complete translation workflow
+- `DeleteItem` not needed - translation workflow doesn't delete any records
+- `Scan` not needed - uses GetItem with specific keys and Query on indexes
 
 #### Secrets Manager Access
 ```typescript
 Actions: ['secretsmanager:GetSecretValue']  // Read-only, no create/update/delete
 Resources: [
-  `arn:aws:secretsmanager:${region}:${account}:secret:lfmt/gemini-api-key-*`
+  `arn:aws:secretsmanager:${region}:${account}:secret:lfmt/gemini-api-key-${stackName}`
 ]
 ```
 
 **Justification:**
 - Required to fetch Gemini API key for translation
 - **Read-only permission** (no create/update/delete)
-- Scoped to `lfmt/gemini-api-key-*` pattern (not `*` wildcard)
-- Pattern allows for environment-specific keys (`lfmt/gemini-api-key-dev`, `lfmt/gemini-api-key-prod`)
+- Scoped to environment-specific secret name `lfmt/gemini-api-key-${stackName}`
 - Secret must be created manually (not in CDK) for security
-
-**Why Not `lfmt/gemini-api-key-${stackName}`?**
-- CDK cannot reference non-existent secrets (chicken-egg problem)
-- Wildcard pattern allows flexibility for future key rotation strategies
-- Still highly constrained (only `lfmt/gemini-api-key-*` prefix)
-
-#### Lambda Invoke Access
-```typescript
-Actions: ['lambda:InvokeFunction']
-Resources: [
-  `arn:aws:lambda:${region}:${account}:function:lfmt-*`
-]
-```
-
-**Justification:**
-- Required for recursive chunk translation (Step Functions Map state invokes translateChunk)
-- Scoped to `lfmt-*` function name pattern (not `*` wildcard)
-- Only allows invoking functions in same account/region
-- Cannot invoke arbitrary Lambda functions
-
-**Why Not Specific Function ARNs?**
-- Step Functions needs to invoke multiple translation functions dynamically
-- Function names follow strict naming convention (`lfmt-translate-chunk-{env}`)
-- Pattern-based scoping still prevents cross-project function invocation
+- Each environment (dev, staging, prod) has its own secret
+- No wildcard - only the exact secret for this environment can be accessed
 
 ---
 
@@ -328,18 +308,15 @@ Resources: [
 ```typescript
 Actions: ['lambda:InvokeFunction']
 Resources: [
-  `arn:aws:lambda:${region}:${account}:function:lfmt-*`
+  `arn:aws:lambda:${region}:${account}:function:lfmt-translate-chunk-${stackName}`
 ]
 ```
 
 **Justification:**
 - Step Functions Map state invokes `lfmt-translate-chunk-{env}` up to 10 times concurrently
-- Same pattern-based scoping as Translation Lambda Role
+- Scoped to SPECIFIC function (only translate-chunk is invoked by Step Functions)
 - Required for parallel translation workflow
-
-**Why Step Functions Needs This:**
-- Cannot use specific function ARN (circular dependency: State Machine → Lambda → State Machine)
-- Pattern `lfmt-*` still prevents cross-project invocations
+- No circular dependency - state machine ARN is used via CDK reference, not hardcoded
 
 ---
 
@@ -347,38 +324,16 @@ Resources: [
 
 ### ✅ Compliance Checklist
 
-- [x] **No wildcard resources** — All permissions scoped to specific ARNs or patterns
+- [x] **No wildcard resources** — All permissions scoped to specific ARNs (no wildcards)
 - [x] **Minimal action sets** — No `s3:*`, `dynamodb:*`, `cognito-idp:*`, or `secretsmanager:*` permissions
 - [x] **Separate roles per function group** — 4 distinct roles (auth, upload, chunking, translation)
 - [x] **Resource-level scoping** — All DynamoDB tables, S3 buckets, Cognito pools explicitly scoped
 - [x] **Read-only where possible** — Secrets Manager is GetSecretValue only
 - [x] **Justification for all permissions** — Every action documented with use case
-- [x] **Pattern-based scoping** — Lambda Invoke uses `lfmt-*` pattern (not `*`)
+- [x] **No unnecessary permissions** — Scan, DeleteItem removed from all roles where not needed
 - [x] **Index permissions separate** — DynamoDB GSI permissions explicitly granted
-
-### ⚠️ Controlled Exceptions
-
-**Pattern-Based Resources (Not Wildcards):**
-1. **Secrets Manager**: `lfmt/gemini-api-key-*`
-   - Justification: Allows environment-specific keys + rotation without CDK updates
-   - Still constrained to `lfmt/` prefix
-   - Alternative (specific ARN) creates chicken-egg dependency
-
-2. **Lambda Invoke**: `lfmt-*`
-   - Justification: Step Functions needs dynamic invocation
-   - Still constrained to `lfmt-` prefix
-   - Alternative (specific ARN) creates circular dependency
-
-3. **DynamoDB Indexes**: `${tableArn}/index/*`
-   - Justification: AWS best practice (indexes not individually addressable)
-   - Still scoped to specific table
-   - Alternative: Not possible (AWS limitation)
-
-**Why Not Separate Function-Specific Roles?**
-- Current: 4 roles (auth, upload, chunking, translation)
-- Alternative: 8+ roles (one per Lambda function)
-- Trade-off: Diminishing security returns vs. increased operational complexity
-- Decision: Function groups share similar permission requirements
+- [x] **Environment-specific secrets** — Secrets Manager uses ${stackName}, not wildcard patterns
+- [x] **Specific Lambda invocation** — Step Functions invokes specific function, not wildcard pattern
 
 ---
 
