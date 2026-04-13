@@ -276,8 +276,9 @@ export class MonitoringAlarms extends Construct {
     table: dynamodb.Table,
     alarmTopic: sns.Topic
   ): cloudwatch.Alarm {
-    // Tighter alarm for auth/users table - threshold: 5, evaluationPeriods: 1
-    // Any throttling on auth table is critical and requires immediate attention
+    // Tighter alarm for auth/users table - threshold: 20, evaluationPeriods: 2
+    // Fires when 20+ throttled requests occur over 2 consecutive minutes
+    // This is tight enough for critical auth operations while avoiding alert fatigue from burst traffic
 
     const throttledReads = new cloudwatch.Metric({
       namespace: 'AWS/DynamoDB',
@@ -310,11 +311,11 @@ export class MonitoringAlarms extends Construct {
 
     const alarm = new cloudwatch.Alarm(this, `${table.node.id}TightThrottlingAlarm`, {
       alarmName: `${table.tableName}-tight-throttling`,
-      alarmDescription: `CRITICAL: DynamoDB throttled requests > 5 for auth table ${table.tableName}`,
+      alarmDescription: `CRITICAL: DynamoDB throttled requests > 20 over 2 minutes for auth table ${table.tableName}`,
       metric: totalThrottled,
-      threshold: 5,
-      evaluationPeriods: 1,
-      datapointsToAlarm: 1,
+      threshold: 20,
+      evaluationPeriods: 2,
+      datapointsToAlarm: 2,
       comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
       treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
     });
