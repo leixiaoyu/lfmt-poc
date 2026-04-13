@@ -332,7 +332,7 @@ describe('Tokenizer Utilities', () => {
       jest.doMock('gpt-tokenizer', () => ({
         encode: jest.fn(() => {
           throw new Error('Encoding failed');
-        })
+        }),
       }));
 
       // Re-import countTokens with the mock in place
@@ -411,7 +411,7 @@ describe('Tokenizer Utilities', () => {
       const counts = countTokensBatch(texts);
 
       expect(counts.length).toBe(1000);
-      counts.forEach(count => {
+      counts.forEach((count) => {
         expect(count).toBeGreaterThan(0);
       });
     });
@@ -421,7 +421,7 @@ describe('Tokenizer Utilities', () => {
       const counts = countTokensBatch(texts);
 
       expect(counts.length).toBe(5);
-      counts.forEach(count => {
+      counts.forEach((count) => {
         expect(count).toBeGreaterThan(0);
       });
     });
@@ -488,7 +488,7 @@ describe('Tokenizer Utilities', () => {
       const sentences = splitIntoSentences(text);
 
       expect(sentences.length).toBe(3);
-      sentences.forEach(s => expect(s.trim().length).toBeGreaterThan(0));
+      sentences.forEach((s) => expect(s.trim().length).toBeGreaterThan(0));
     });
 
     it('should handle sentences with quotes at the end', () => {

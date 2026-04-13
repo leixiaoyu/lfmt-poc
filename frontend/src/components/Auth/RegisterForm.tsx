@@ -38,44 +38,37 @@ import { ROUTES } from '../../config/constants';
 /**
  * Registration form validation schema
  */
-const registerSchema = z.object({
-  firstName: z
-    .string()
-    .min(1, 'First name is required')
-    .max(50, 'First name must be less than 50 characters'),
-  lastName: z
-    .string()
-    .min(1, 'Last name is required')
-    .max(50, 'Last name must be less than 50 characters'),
-  email: z
-    .string()
-    .min(1, 'Email is required')
-    .email('Invalid email address'),
-  password: z
-    .string()
-    .min(1, 'Password is required')
-    .min(8, 'Password must be at least 8 characters')
-    .regex(/[A-Z]/, 'Password must contain at least one uppercase letter')
-    .regex(/[a-z]/, 'Password must contain at least one lowercase letter')
-    .regex(/[0-9]/, 'Password must contain at least one number')
-    .regex(/[^A-Za-z0-9]/, 'Password must contain at least one special character'),
-  confirmPassword: z
-    .string()
-    .min(1, 'Please confirm your password'),
-  acceptedTerms: z
-    .boolean()
-    .refine((val) => val === true, {
+const registerSchema = z
+  .object({
+    firstName: z
+      .string()
+      .min(1, 'First name is required')
+      .max(50, 'First name must be less than 50 characters'),
+    lastName: z
+      .string()
+      .min(1, 'Last name is required')
+      .max(50, 'Last name must be less than 50 characters'),
+    email: z.string().min(1, 'Email is required').email('Invalid email address'),
+    password: z
+      .string()
+      .min(1, 'Password is required')
+      .min(8, 'Password must be at least 8 characters')
+      .regex(/[A-Z]/, 'Password must contain at least one uppercase letter')
+      .regex(/[a-z]/, 'Password must contain at least one lowercase letter')
+      .regex(/[0-9]/, 'Password must contain at least one number')
+      .regex(/[^A-Za-z0-9]/, 'Password must contain at least one special character'),
+    confirmPassword: z.string().min(1, 'Please confirm your password'),
+    acceptedTerms: z.boolean().refine((val) => val === true, {
       message: 'You must accept the Terms of Service to register',
     }),
-  acceptedPrivacy: z
-    .boolean()
-    .refine((val) => val === true, {
+    acceptedPrivacy: z.boolean().refine((val) => val === true, {
       message: 'You must accept the Privacy Policy to register',
     }),
-}).refine((data) => data.password === data.confirmPassword, {
-  message: 'Passwords do not match',
-  path: ['confirmPassword'],
-});
+  })
+  .refine((data) => data.password === data.confirmPassword, {
+    message: 'Passwords do not match',
+    path: ['confirmPassword'],
+  });
 
 /**
  * RegisterForm data (collected by the form)
@@ -134,7 +127,13 @@ export function RegisterForm({ onSubmit }: RegisterFormProps) {
       setSubmitError(null);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [watchedValues.firstName, watchedValues.lastName, watchedValues.email, watchedValues.password, watchedValues.confirmPassword]);
+  }, [
+    watchedValues.firstName,
+    watchedValues.lastName,
+    watchedValues.email,
+    watchedValues.password,
+    watchedValues.confirmPassword,
+  ]);
 
   /**
    * Handle form submission
@@ -169,13 +168,7 @@ export function RegisterForm({ onSubmit }: RegisterFormProps) {
         Sign Up
       </Typography>
 
-      <Typography
-        variant="body2"
-        color="text.secondary"
-        gutterBottom
-        align="center"
-        sx={{ mb: 3 }}
-      >
+      <Typography variant="body2" color="text.secondary" gutterBottom align="center" sx={{ mb: 3 }}>
         Create your account to get started
       </Typography>
 
@@ -192,7 +185,6 @@ export function RegisterForm({ onSubmit }: RegisterFormProps) {
             label="First Name"
             fullWidth
             autoComplete="given-name"
-            autoFocus
             error={!!errors.firstName}
             helperText={errors.firstName?.message}
             disabled={isSubmitting}
@@ -321,12 +313,7 @@ export function RegisterForm({ onSubmit }: RegisterFormProps) {
       <Box sx={{ textAlign: 'center', mt: 2 }}>
         <Typography variant="body2" color="text.secondary">
           Already have an account?{' '}
-          <Link
-            component={RouterLink}
-            to={ROUTES.LOGIN}
-            variant="body2"
-            underline="hover"
-          >
+          <Link component={RouterLink} to={ROUTES.LOGIN} variant="body2" underline="hover">
             Sign in
           </Link>
         </Typography>

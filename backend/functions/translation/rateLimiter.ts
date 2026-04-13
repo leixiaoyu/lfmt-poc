@@ -186,10 +186,7 @@ export class RateLimiter {
 
     // Check tokens per minute (TPM)
     if (this.tpmBucket.tokens < estimatedTokens) {
-      const msUntilRefill = this.calculateRefillTime(
-        this.tpmBucket,
-        estimatedTokens
-      );
+      const msUntilRefill = this.calculateRefillTime(this.tpmBucket, estimatedTokens);
       logger.warn('Tokens per minute limit exceeded', {
         available: Math.floor(this.tpmBucket.tokens),
         required: estimatedTokens,
@@ -256,10 +253,7 @@ export class RateLimiter {
         limit: this.config.requestsPerMinute,
       },
       tpm: {
-        used:
-          this.config.tokensPerMinute -
-          Math.floor(this.tpmBucket.tokens) +
-          estimatedTokens,
+        used: this.config.tokensPerMinute - Math.floor(this.tpmBucket.tokens) + estimatedTokens,
         limit: this.config.tokensPerMinute,
       },
       rpd: {
@@ -349,10 +343,7 @@ export class RateLimiter {
     const tomorrowMidnight = startOfDay(addDays(zonedNow, 1));
 
     // Convert back to UTC timestamp
-    const utcMidnight = fromZonedTime(
-      tomorrowMidnight,
-      this.config.dailyResetTimezone
-    );
+    const utcMidnight = fromZonedTime(tomorrowMidnight, this.config.dailyResetTimezone);
 
     return utcMidnight.getTime();
   }

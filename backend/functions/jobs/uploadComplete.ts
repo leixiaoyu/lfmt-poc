@@ -11,7 +11,12 @@ import {
   GetItemCommand,
   GetItemCommandOutput,
 } from '@aws-sdk/client-dynamodb';
-import { S3Client, HeadObjectCommand, HeadObjectCommandOutput, CopyObjectCommand } from '@aws-sdk/client-s3';
+import {
+  S3Client,
+  HeadObjectCommand,
+  HeadObjectCommandOutput,
+  CopyObjectCommand,
+} from '@aws-sdk/client-s3';
 import { marshall, unmarshall } from '@aws-sdk/util-dynamodb';
 import Logger from '../shared/logger';
 import { getRequiredEnv } from '../shared/env';
@@ -128,9 +133,7 @@ export const handler = async (event: S3Event): Promise<void> => {
       }
 
       if (jobRecord.userId !== userId) {
-        validationErrors.push(
-          `userId mismatch: expected ${jobRecord.userId}, got ${userId}`
-        );
+        validationErrors.push(`userId mismatch: expected ${jobRecord.userId}, got ${userId}`);
       }
 
       if (headResponse.ContentLength !== jobRecord.fileSize) {

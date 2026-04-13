@@ -92,8 +92,7 @@ export const TranslationHistory: React.FC = () => {
       const query = searchQuery.toLowerCase();
       filtered = filtered.filter(
         (job) =>
-          job.fileName.toLowerCase().includes(query) ||
-          job.jobId.toLowerCase().includes(query)
+          job.fileName.toLowerCase().includes(query) || job.jobId.toLowerCase().includes(query)
       );
     }
 
@@ -260,11 +259,7 @@ export const TranslationHistory: React.FC = () => {
                     )}
                   </TableCell>
                   <TableCell>
-                    <Chip
-                      label={job.status}
-                      color={STATUS_COLORS[job.status]}
-                      size="small"
-                    />
+                    <Chip label={job.status} color={STATUS_COLORS[job.status]} size="small" />
                   </TableCell>
                   <TableCell>{formatDate(job.createdAt)}</TableCell>
                   <TableCell align="right">

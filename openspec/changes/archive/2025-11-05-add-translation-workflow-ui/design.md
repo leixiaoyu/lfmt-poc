@@ -5,12 +5,14 @@
 The frontend currently has authentication infrastructure but no translation capabilities. The backend API has been validated through comprehensive integration tests that confirm the complete workflow: upload → chunk → translate → complete. The frontend needs to provide a user interface for this workflow while maintaining high code quality, accessibility, and test coverage.
 
 ### Stakeholders
+
 - **End Users**: Need intuitive UI for document translation with real-time progress
 - **Developers**: Need maintainable, well-tested codebase
 - **Product**: Need compliance with legal requirements (attestation)
 - **Operations**: Need CI/CD confidence through automated E2E tests
 
 ### Constraints
+
 - Must integrate with existing backend API (no API changes)
 - Must maintain 90%+ test coverage
 - Must achieve WCAG 2.1 AA accessibility
@@ -20,6 +22,7 @@ The frontend currently has authentication infrastructure but no translation capa
 ## Goals / Non-Goals
 
 ### Goals
+
 1. Enable users to translate documents through intuitive multi-step workflow
 2. Provide real-time translation progress with polling
 3. Ensure legal compliance through mandatory attestation
@@ -28,6 +31,7 @@ The frontend currently has authentication infrastructure but no translation capa
 6. Support all backend translation options (5 languages, 3 tones)
 
 ### Non-Goals
+
 1. ❌ Real-time WebSocket updates (using polling instead - simpler, matches backend architecture)
 2. ❌ Offline translation capabilities (requires backend connectivity)
 3. ❌ Batch upload of multiple documents (single document per job for POC)
@@ -42,12 +46,14 @@ The frontend currently has authentication infrastructure but no translation capa
 **Choice**: Adaptive polling with increasing intervals (15s → 30s → 60s)
 
 **Rationale**:
+
 - **Simpler than WebSockets**: No persistent connection management, no connection drops
 - **Backend Compatibility**: Backend designed for polling (integration tests use polling)
 - **Cost Effective**: Reduces Lambda invocations compared to fixed-interval polling
 - **User Experience**: 15s initial interval feels responsive, 60s max avoids excessive updates
 
 **Implementation**:
+
 ```typescript
 const useTranslationPolling = (jobId: string) => {
   const [interval, setInterval] = useState(15000); // Start at 15s
@@ -56,7 +62,7 @@ const useTranslationPolling = (jobId: string) => {
   useEffect(() => {
     const timer = setInterval(async () => {
       const status = await getTranslationStatus(jobId);
-      setElapsedTime(prev => prev + interval);
+      setElapsedTime((prev) => prev + interval);
 
       // Adaptive interval: 15s → 30s after 2min, → 60s after 5min
       if (elapsedTime > 300000 && interval < 60000) {
@@ -65,8 +71,10 @@ const useTranslationPolling = (jobId: string) => {
         setInterval(30000);
       }
 
-      if (status.translationStatus === 'COMPLETED' ||
-          status.translationStatus === 'TRANSLATION_FAILED') {
+      if (
+        status.translationStatus === 'COMPLETED' ||
+        status.translationStatus === 'TRANSLATION_FAILED'
+      ) {
         clearInterval(timer);
       }
     }, interval);
@@ -77,6 +85,7 @@ const useTranslationPolling = (jobId: string) => {
 ```
 
 **Alternatives Considered**:
+
 1. **WebSocket Updates**: More complex, requires separate backend infrastructure
 2. **Server-Sent Events (SSE)**: Better than polling but not supported by API Gateway REST
 3. **Fixed Interval Polling**: Simpler but wastes backend resources
@@ -86,18 +95,21 @@ const useTranslationPolling = (jobId: string) => {
 **Choice**: Multi-step form with Material-UI Stepper component
 
 **Rationale**:
+
 - **Legal Compliance**: Attestation must be explicit and separate from file selection
 - **User Guidance**: Clear progression through workflow reduces errors
 - **Validation**: Each step validates before proceeding
 - **Accessibility**: Stepper provides clear navigation landmarks
 
 **Steps**:
+
 1. **Legal Attestation**: Copyright, translation rights, liability (all required)
 2. **Translation Configuration**: Language selection, tone selection
 3. **File Upload**: Drag-and-drop or file picker
 4. **Review**: Confirm all selections before submission
 
 **Implementation**:
+
 ```typescript
 const [activeStep, setActiveStep] = useState(0);
 const [formData, setFormData] = useState({
@@ -106,21 +118,17 @@ const [formData, setFormData] = useState({
   file: null,
 });
 
-const steps = [
-  'Legal Attestation',
-  'Translation Settings',
-  'Upload Document',
-  'Review & Submit',
-];
+const steps = ['Legal Attestation', 'Translation Settings', 'Upload Document', 'Review & Submit'];
 
 const handleNext = () => {
   if (validateStep(activeStep)) {
-    setActiveStep(prev => prev + 1);
+    setActiveStep((prev) => prev + 1);
   }
 };
 ```
 
 **Alternatives Considered**:
+
 1. **Single Page Form**: Cluttered, harder to validate, poor UX for legal attestation
 2. **Modal Dialogs**: Interrupts flow, doesn't show progress
 
@@ -129,12 +137,14 @@ const handleNext = () => {
 **Choice**: Dedicated `TranslationContext` with `useReducer` for complex state
 
 **Rationale**:
+
 - **Centralized State**: Translation jobs, current job, polling state
 - **Predictable Updates**: useReducer provides predictable state transitions
 - **Performance**: Context prevents prop drilling, selective re-renders
 - **Testability**: Reducers are pure functions, easy to test
 
 **State Shape**:
+
 ```typescript
 interface TranslationState {
   currentJob: Job | null;
@@ -152,6 +162,7 @@ type TranslationAction =
 ```
 
 **Alternatives Considered**:
+
 1. **useState Only**: Too many state variables, harder to coordinate
 2. **Redux**: Overkill for this scope, adds complexity
 3. **Component-Level State**: Prop drilling, difficult to share across pages
@@ -161,6 +172,7 @@ type TranslationAction =
 **Choice**: Playwright with Page Object Model pattern
 
 **Rationale**:
+
 - **Multi-Browser**: Tests on Chromium, Firefox, WebKit
 - **Auto-Wait**: Built-in waits reduce flakiness
 - **Developer Experience**: Excellent debugging tools (UI mode, trace viewer)
@@ -168,6 +180,7 @@ type TranslationAction =
 - **Page Objects**: Reduce duplication, centralize selectors
 
 **Test Structure**:
+
 ```
 e2e/
 ├── pages/           # Page Object Models
@@ -183,6 +196,7 @@ e2e/
 ```
 
 **Example Page Object**:
+
 ```typescript
 export class NewTranslationPage {
   constructor(private page: Page) {}
@@ -205,6 +219,7 @@ export class NewTranslationPage {
 ```
 
 **Alternatives Considered**:
+
 1. **Cypress**: Good but slower, less multi-browser support
 2. **TestCafe**: Older, less active development
 3. **Selenium**: More complex setup, slower execution
@@ -214,12 +229,14 @@ export class NewTranslationPage {
 **Choice**: Dedicated service classes for API calls, no direct axios in components
 
 **Rationale**:
+
 - **Separation of Concerns**: Components focus on UI, services handle API
 - **Testability**: Mock services instead of axios everywhere
 - **Error Handling**: Centralized error transformation
 - **Type Safety**: Enforced request/response types
 
 **Implementation**:
+
 ```typescript
 // src/services/translationService.ts
 export class TranslationService {
@@ -244,19 +261,19 @@ export const translationService = new TranslationService();
 ```
 
 **Usage in Components**:
+
 ```typescript
 const TranslationDetailPage = () => {
   const [status, setStatus] = useState<JobStatus | null>(null);
 
   useEffect(() => {
-    translationService.getJobStatus(jobId)
-      .then(setStatus)
-      .catch(handleError);
+    translationService.getJobStatus(jobId).then(setStatus).catch(handleError);
   }, [jobId]);
 };
 ```
 
 **Alternatives Considered**:
+
 1. **Direct Axios Calls**: Harder to test, duplicated error handling
 2. **React Query/SWR**: Adds dependency, overkill for simple CRUD
 
@@ -265,11 +282,13 @@ const TranslationDetailPage = () => {
 **Choice**: Frontend E2E test fixtures match backend integration test fixtures
 
 **Rationale**:
+
 - **Consistency**: Same test documents across frontend and backend
 - **Predictability**: Known word counts, chunk counts, translation times
 - **Debugging**: Easier to correlate frontend failures with backend behavior
 
 **Shared Fixture Structure**:
+
 ```typescript
 // Match backend/functions/__tests__/integration/fixtures/test-documents.ts
 export const TEST_DOCUMENTS = {
@@ -290,6 +309,7 @@ export const TEST_DOCUMENTS = {
 ```
 
 **Benefits**:
+
 - E2E tests use MINIMAL for speed (30-60s)
 - Can use SMALL for thorough testing (1-2min)
 - MEDIUM/LARGE for stress testing in dedicated test runs
@@ -297,9 +317,11 @@ export const TEST_DOCUMENTS = {
 ## Risks / Trade-offs
 
 ### Risk 1: Polling Performance Impact
+
 **Risk**: Excessive polling could strain backend Lambda cold starts
 
 **Mitigation**:
+
 - Adaptive intervals reduce frequency over time
 - Stop polling immediately when job completes
 - Maximum interval capped at 60 seconds
@@ -308,9 +330,11 @@ export const TEST_DOCUMENTS = {
 **Trade-off**: Slightly less responsive than WebSocket but much simpler
 
 ### Risk 2: E2E Test Flakiness
+
 **Risk**: Network issues or backend delays could cause intermittent test failures
 
 **Mitigation**:
+
 - Playwright's auto-wait reduces timing issues
 - Retry logic for flaky tests (max 2 retries in CI)
 - Generous timeouts for translation operations (3-5 minutes)
@@ -320,9 +344,11 @@ export const TEST_DOCUMENTS = {
 **Trade-off**: Tests run slower but are more reliable
 
 ### Risk 3: Legal Attestation UX Friction
+
 **Risk**: Users might abandon flow due to legal step complexity
 
 **Mitigation**:
+
 - Clear, plain-language explanations
 - Show stepper progress (users see they're 25% done)
 - Allow "back" navigation to review choices
@@ -331,9 +357,11 @@ export const TEST_DOCUMENTS = {
 **Trade-off**: More steps in flow, but legally compliant
 
 ### Risk 4: Mobile Viewport Challenges
+
 **Risk**: Complex forms may not work well on small screens
 
 **Mitigation**:
+
 - Mobile-first design approach
 - Responsive stepper (vertical on mobile, horizontal on desktop)
 - Touch-friendly file upload
@@ -346,6 +374,7 @@ export const TEST_DOCUMENTS = {
 N/A - This is new functionality with no existing users to migrate.
 
 ### Deployment Steps
+
 1. Deploy frontend changes to staging environment
 2. Run full E2E test suite against staging
 3. Manual QA on staging (desktop and mobile)
@@ -354,7 +383,9 @@ N/A - This is new functionality with no existing users to migrate.
 6. Gradual rollout (if using feature flag)
 
 ### Rollback Plan
+
 If critical issues discovered in production:
+
 1. Revert deployment to previous version
 2. Disable `/translation/*` routes via configuration
 3. Show maintenance message to users
@@ -381,18 +412,21 @@ If critical issues discovered in production:
 ## Performance Considerations
 
 ### Bundle Size
+
 - Target: <250KB initial bundle (gzipped)
 - Lazy load translation pages (not needed for auth flow)
 - Code split by route
 - Tree shake unused Material-UI components
 
 ### Rendering Performance
+
 - Memoize expensive computations (progress calculations)
 - Use React.memo for pure components
 - Avoid unnecessary re-renders (proper dependency arrays)
 - Virtual scrolling for long job lists (if >100 items)
 
 ### API Performance
+
 - Debounce search in history page (300ms)
 - Cache job list (5 minute TTL)
 - Batch status updates (if checking multiple jobs)
@@ -425,6 +459,7 @@ If critical issues discovered in production:
 ## Monitoring & Observability
 
 **Frontend Metrics to Track**:
+
 - Upload success/failure rates
 - Translation completion rates
 - Average time to completion
@@ -432,12 +467,14 @@ If critical issues discovered in production:
 - Page load times (Lighthouse CI)
 
 **User Actions to Log** (anonymized):
+
 - Upload initiated
 - Translation started
 - Download completed
 - Errors encountered
 
 **Performance Metrics**:
+
 - Time to first byte (TTFB)
 - First contentful paint (FCP)
 - Largest contentful paint (LCP)

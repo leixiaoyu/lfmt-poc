@@ -85,7 +85,7 @@ test.describe('Error Scenarios and Error Handling', () => {
     await uploadPage.clickNext();
 
     // Intercept upload request and simulate network error
-    await page.route('**/v1/upload/**', route => {
+    await page.route('**/v1/upload/**', (route) => {
       route.abort('failed');
     });
 
@@ -101,7 +101,7 @@ test.describe('Error Scenarios and Error Handling', () => {
     await uploadPage.goto();
 
     // Intercept job creation request and return 500 error
-    await page.route('**/v1/translation/jobs', route => {
+    await page.route('**/v1/translation/jobs', (route) => {
       route.fulfill({
         status: 500,
         body: JSON.stringify({ error: 'Internal server error' }),
@@ -154,7 +154,7 @@ test.describe('Error Scenarios and Error Handling', () => {
       await expect(nextButton).toBeDisabled({ timeout: 2000 });
     } catch (e) {
       // File picker might reject the file entirely
-      console.log('File picker rejected invalid file type');
+      // console.log('File picker rejected invalid file type');
     } finally {
       // Cleanup
       if (fs.existsSync(invalidFilePath)) {
@@ -184,7 +184,7 @@ test.describe('Error Scenarios and Error Handling', () => {
       // Expect error message about file size
       await expect(page.locator('text=/too large/i')).toBeVisible({ timeout: 5000 });
     } catch (e) {
-      console.log('Large file upload handled');
+      // console.log('Large file upload handled');
     } finally {
       // Cleanup
       if (fs.existsSync(largeFilePath)) {
@@ -205,7 +205,7 @@ test.describe('Error Scenarios and Error Handling', () => {
     const jobId = jobIdMatch![1];
 
     // Simulate translation failure by mocking API
-    await page.route(`**/v1/translation/jobs/${jobId}/start`, route => {
+    await page.route(`**/v1/translation/jobs/${jobId}/start`, (route) => {
       route.fulfill({
         status: 500,
         body: JSON.stringify({ error: 'Translation service unavailable' }),
@@ -242,7 +242,7 @@ test.describe('Error Scenarios and Error Handling', () => {
     const jobId = jobIdMatch![1];
 
     // Intercept API and return 403
-    await page.route(`**/v1/translation/jobs/${jobId}`, route => {
+    await page.route(`**/v1/translation/jobs/${jobId}`, (route) => {
       route.fulfill({
         status: 403,
         body: JSON.stringify({ error: 'Forbidden' }),
@@ -262,7 +262,7 @@ test.describe('Error Scenarios and Error Handling', () => {
     await uploadPage.goto();
 
     // Intercept upload and fail first 2 attempts
-    await page.route('**/v1/upload/**', route => {
+    await page.route('**/v1/upload/**', (route) => {
       requestCount++;
       if (requestCount <= 2) {
         route.abort('failed');
@@ -291,7 +291,7 @@ test.describe('Error Scenarios and Error Handling', () => {
     await uploadPage.goto();
 
     // Trigger an error
-    await page.route('**/v1/upload/**', route => {
+    await page.route('**/v1/upload/**', (route) => {
       route.fulfill({
         status: 400,
         body: JSON.stringify({ error: 'Invalid file format' }),
@@ -323,7 +323,7 @@ test.describe('Error Scenarios and Error Handling', () => {
     await uploadPage.goto();
 
     // Fail first attempt, succeed on retry
-    await page.route('**/v1/upload/**', route => {
+    await page.route('**/v1/upload/**', (route) => {
       if (shouldFail) {
         shouldFail = false;
         route.abort('failed');
@@ -360,7 +360,7 @@ test.describe('Error Scenarios and Error Handling', () => {
 
     // Simulate multiple concurrent failures
     let failureCount = 0;
-    await page.route('**/v1/**', route => {
+    await page.route('**/v1/**', (route) => {
       failureCount++;
       if (failureCount % 2 === 0) {
         route.abort('connectionrefused');

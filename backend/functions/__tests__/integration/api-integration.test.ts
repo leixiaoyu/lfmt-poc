@@ -34,7 +34,7 @@ describe('Real API Integration Tests', () => {
       expect(corsHeaders).toBeTruthy();
 
       // Validate response body format
-      const body = await response.json() as any;
+      const body = (await response.json()) as any;
       expect(body).toHaveProperty('message');
       expect(typeof body.message).toBe('string');
 
@@ -51,14 +51,14 @@ describe('Real API Integration Tests', () => {
       const response = await fetch(`${API_BASE_URL}/auth/me`, {
         method: 'GET',
         headers: {
-          'Authorization': 'InvalidFormat',
+          Authorization: 'InvalidFormat',
           'Content-Type': 'application/json',
         },
       });
 
       expect(response.status).toBe(401);
 
-      const body = await response.json() as any;
+      const body = (await response.json()) as any;
       expect(body.message).toContain('Authorization');
     });
 
@@ -72,7 +72,7 @@ describe('Real API Integration Tests', () => {
 
       expect(response.status).toBe(401);
 
-      const body = await response.json() as any;
+      const body = (await response.json()) as any;
       expect(body).toHaveProperty('message');
       expect(body.message).toBeTruthy();
     });
@@ -97,7 +97,7 @@ describe('Real API Integration Tests', () => {
       expect(response.status).toBe(400);
 
       // Validate response format
-      const body = await response.json() as any;
+      const body = (await response.json()) as any;
       expect(body).toHaveProperty('message');
       expect(body).toHaveProperty('requestId');
       expect(body.message).toContain('Validation');
@@ -129,7 +129,7 @@ describe('Real API Integration Tests', () => {
       expect([201, 400, 409]).toContain(response.status);
 
       // Validate response format
-      const body = await response.json() as any;
+      const body = (await response.json()) as any;
       expect(body).toHaveProperty('message');
       expect(body).toHaveProperty('requestId');
       expect(typeof body.message).toBe('string');
@@ -158,7 +158,7 @@ describe('Real API Integration Tests', () => {
       expect(response.status).toBe(401);
 
       // Validate response format
-      const body = await response.json() as any;
+      const body = (await response.json()) as any;
       expect(body).toHaveProperty('message');
       expect(body).toHaveProperty('requestId');
       expect(typeof body.message).toBe('string');
@@ -184,7 +184,7 @@ describe('Real API Integration Tests', () => {
       // Should return 400 for validation errors
       expect(response.status).toBe(400);
 
-      const body = await response.json() as any;
+      const body = (await response.json()) as any;
       expect(body).toHaveProperty('message');
       expect(body.message).toContain('Validation');
     });
@@ -192,11 +192,7 @@ describe('Real API Integration Tests', () => {
 
   describe('CORS Headers Validation', () => {
     it('should include CORS headers in all responses', async () => {
-      const endpoints = [
-        '/auth/me',
-        '/auth/login',
-        '/auth/register',
-      ];
+      const endpoints = ['/auth/me', '/auth/login', '/auth/register'];
 
       for (const endpoint of endpoints) {
         const response = await fetch(`${API_BASE_URL}${endpoint}`, {
@@ -253,7 +249,7 @@ describe('Real API Integration Tests', () => {
 
         expect(response.status).toBe(testCase.expectedStatus);
 
-        const body = await response.json() as any;
+        const body = (await response.json()) as any;
 
         // All error responses must have message field
         expect(body).toHaveProperty('message');
@@ -291,7 +287,7 @@ describe('Real API Integration Tests', () => {
       });
 
       expect(response.status).toBe(401);
-      const body = await response.json() as any;
+      const body = (await response.json()) as any;
       expect(body).toHaveProperty('message');
       // API Gateway's default 401 doesn't include requestId - this is expected
       // Only Lambda-generated errors include requestId
@@ -311,7 +307,7 @@ describe('Real API Integration Tests', () => {
       });
 
       expect(response.status).toBe(401); // Will be 401 because no auth, but structure is tested
-      const body = await response.json() as any;
+      const body = (await response.json()) as any;
       expect(body).toHaveProperty('message');
     });
 

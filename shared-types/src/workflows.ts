@@ -43,12 +43,7 @@ export interface WorkflowExecutionResponse {
   stateHistory: StateHistoryEntry[];
 }
 
-export type ExecutionStatus = 
-  | 'RUNNING' 
-  | 'SUCCEEDED' 
-  | 'FAILED' 
-  | 'TIMED_OUT' 
-  | 'ABORTED';
+export type ExecutionStatus = 'RUNNING' | 'SUCCEEDED' | 'FAILED' | 'TIMED_OUT' | 'ABORTED';
 
 // Workflow Input/Output
 export interface WorkflowInput {
@@ -173,12 +168,25 @@ export interface TranslationState {
   next: 'AssembleDocument';
 }
 
+export interface TranslatedChunkResult {
+  chunkIndex: number;
+  translatedKey: string;
+  tokensUsed: number;
+  estimatedCost: number;
+}
+
+export interface WorkflowJobCosts {
+  totalTokens: number;
+  totalCost: number;
+  chunkCount: number;
+}
+
 export interface AssemblyState {
   type: 'Task';
   resource: string;
   parameters: {
     jobId: string;
-    translatedChunks: any[];
+    translatedChunks: TranslatedChunkResult[];
   };
   retry: RetryConfig;
   catch: CatchConfig[];
@@ -191,7 +199,7 @@ export interface FinalizationState {
   parameters: {
     jobId: string;
     finalDocumentUrl: string;
-    costs: any;
+    costs: WorkflowJobCosts;
   };
   end: boolean;
 }
@@ -248,12 +256,12 @@ export const startWorkflowRequestSchema = z.object({
     filename: z.string().min(1),
     wordCount: z.number().min(65000).max(400000),
     fileSize: z.number().min(1000),
-    contentHash: z.string().min(1)
+    contentHash: z.string().min(1),
   }),
   translationOptions: z.object({
     preserveFormatting: z.boolean(),
     qualityLevel: z.enum(['STANDARD', 'PREMIUM']),
-    customGlossary: z.string().optional()
+    customGlossary: z.string().optional(),
   }),
-  priority: z.enum(['LOW', 'NORMAL', 'HIGH'])
+  priority: z.enum(['LOW', 'NORMAL', 'HIGH']),
 });

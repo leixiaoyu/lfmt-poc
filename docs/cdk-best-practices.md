@@ -3,6 +3,7 @@
 This document outlines best practices for working with AWS CDK in the LFMT project, with lessons learned from production incidents.
 
 ## Table of Contents
+
 - [CDK Tokens vs CloudFormation Intrinsic Functions](#cdk-tokens-vs-cloudformation-intrinsic-functions)
 - [IAM Policy Management](#iam-policy-management)
 - [Resource Naming](#resource-naming)
@@ -17,6 +18,7 @@ This document outlines best practices for working with AWS CDK in the LFMT proje
 **Incident**: PR #46 - Step Functions ARN used CloudFormation intrinsic functions in a managed policy, causing deployment failure.
 
 **What Happened**:
+
 ```typescript
 // ❌ WRONG - CloudFormation intrinsics in CDK code
 const arnPattern = `arn:aws:states:\${AWS::Region}:\${AWS::AccountId}:stateMachine:my-machine`;
@@ -32,11 +34,13 @@ new iam.ManagedPolicy(this, 'MyPolicy', {
 ```
 
 **Error**:
+
 ```
 The policy failed legacy parsing (Service: Iam, Status Code: 400)
 ```
 
 **Why It Failed**:
+
 - CloudFormation intrinsic functions (`${AWS::Region}`, `${AWS::AccountId}`) are **CloudFormation template syntax**
 - When embedded in CDK code strings, they're treated as **literal strings**
 - IAM policy validator sees `arn:aws:states:${AWS::Region}:...` and rejects it as invalid ARN format
@@ -63,6 +67,7 @@ new iam.ManagedPolicy(this, 'MyPolicy', {
 ```
 
 **Result in CloudFormation Template**:
+
 ```json
 {
   "Resource": "arn:aws:states:us-east-1:123456789012:stateMachine:my-machine"
@@ -71,14 +76,14 @@ new iam.ManagedPolicy(this, 'MyPolicy', {
 
 ### Decision Matrix: Which to Use?
 
-| Scenario | Use This | Example |
-|----------|----------|---------|
-| **IAM policies, managed policies** | ✅ CDK tokens | `Stack.of(this).region` |
-| **Resource ARNs in CDK constructs** | ✅ CDK tokens | `Stack.of(this).account` |
-| **CloudFormation template outputs** | ✅ Either | Both work |
-| **Cross-stack references** | ✅ CDK tokens | `otherStack.exportValue()` |
-| **Custom resources, Lambda env vars** | ⚠️ Depends | Usually CDK tokens |
-| **Fn::Sub in template strings** | ✅ Intrinsics | `Fn.sub('arn:...')` |
+| Scenario                              | Use This      | Example                    |
+| ------------------------------------- | ------------- | -------------------------- |
+| **IAM policies, managed policies**    | ✅ CDK tokens | `Stack.of(this).region`    |
+| **Resource ARNs in CDK constructs**   | ✅ CDK tokens | `Stack.of(this).account`   |
+| **CloudFormation template outputs**   | ✅ Either     | Both work                  |
+| **Cross-stack references**            | ✅ CDK tokens | `otherStack.exportValue()` |
+| **Custom resources, Lambda env vars** | ⚠️ Depends    | Usually CDK tokens         |
+| **Fn::Sub in template strings**       | ✅ Intrinsics | `Fn.sub('arn:...')`        |
 
 ### Common CDK Token Patterns
 
@@ -134,10 +139,12 @@ const isProd = new CfnCondition(this, 'IsProd', {
 ### Key Takeaway
 
 **Rule of Thumb**: If you're writing TypeScript/JavaScript code in CDK constructs:
+
 - ✅ Use **CDK tokens**: `Stack.of(this).region`
 - ❌ Avoid **literal CloudFormation syntax**: `${AWS::Region}`
 
 CloudFormation intrinsics should only appear in:
+
 - `Fn.*` function calls
 - `CfnOutput` values
 - Low-level `Cfn*` constructs
@@ -151,6 +158,7 @@ CloudFormation intrinsics should only appear in:
 **Incident**: PR #45 - Too many inline policies exceeded AWS IAM size limit.
 
 AWS IAM has strict size limits:
+
 - **Inline policy**: 2,048 characters per policy, 10 policies per role
 - **Managed policy**: 6,144 characters per policy document
 - **Role**: All policies combined must stay reasonable (no hard limit, but fails deployment)
@@ -162,9 +170,15 @@ AWS IAM has strict size limits:
 new iam.Role(this, 'Role', {
   assumedBy: new iam.ServicePrincipal('lambda.amazonaws.com'),
   inlinePolicies: {
-    Policy1: new iam.PolicyDocument({ /* ... */ }),
-    Policy2: new iam.PolicyDocument({ /* ... */ }),
-    Policy3: new iam.PolicyDocument({ /* ... */ }),
+    Policy1: new iam.PolicyDocument({
+      /* ... */
+    }),
+    Policy2: new iam.PolicyDocument({
+      /* ... */
+    }),
+    Policy3: new iam.PolicyDocument({
+      /* ... */
+    }),
     // Can quickly exceed size limits!
   },
 });
@@ -176,12 +190,16 @@ const role = new iam.Role(this, 'Role', {
 
 new iam.ManagedPolicy(this, 'DynamoDBPolicy', {
   roles: [role],
-  statements: [/* DynamoDB permissions */],
+  statements: [
+    /* DynamoDB permissions */
+  ],
 });
 
 new iam.ManagedPolicy(this, 'S3Policy', {
   roles: [role],
-  statements: [/* S3 permissions */],
+  statements: [
+    /* S3 permissions */
+  ],
 });
 ```
 
@@ -198,6 +216,7 @@ new iam.ManagedPolicy(this, 'S3Policy', {
 ```
 
 This flag automatically:
+
 - Merges duplicate policy statements
 - Combines similar actions
 - Reduces overall policy size
@@ -205,27 +224,34 @@ This flag automatically:
 ### Policy Organization Guidelines
 
 1. **Group by Service**: One managed policy per AWS service
+
    ```typescript
-   new iam.ManagedPolicy(this, 'LambdaDynamoDBPolicy', { /* ... */ });
-   new iam.ManagedPolicy(this, 'LambdaS3Policy', { /* ... */ });
+   new iam.ManagedPolicy(this, 'LambdaDynamoDBPolicy', {
+     /* ... */
+   });
+   new iam.ManagedPolicy(this, 'LambdaS3Policy', {
+     /* ... */
+   });
    ```
 
 2. **Limit Wildcards**: Be specific where possible
+
    ```typescript
    // ❌ Too broad
-   actions: ['s3:*']
+   actions: ['s3:*'];
 
    // ✅ Specific
-   actions: ['s3:GetObject', 's3:PutObject']
+   actions: ['s3:GetObject', 's3:PutObject'];
    ```
 
 3. **Scope Resources**: Use ARN patterns
+
    ```typescript
    // ❌ Too broad
-   resources: ['*']
+   resources: ['*'];
 
    // ✅ Scoped
-   resources: [`arn:aws:s3:::${bucketName}/*`]
+   resources: [`arn:aws:s3:::${bucketName}/*`];
    ```
 
 ---
@@ -265,17 +291,20 @@ const table = new dynamodb.Table(this, 'JobsTable', {
 Before every CDK deployment:
 
 1. **Synthesize locally**:
+
    ```bash
    npx cdk synth --context environment=dev
    ```
 
 2. **Review CloudFormation template**:
+
    ```bash
    npx cdk synth --context environment=dev > template.yaml
    # Review IAM policies, resource changes
    ```
 
 3. **Run infrastructure tests**:
+
    ```bash
    npm test
    ```

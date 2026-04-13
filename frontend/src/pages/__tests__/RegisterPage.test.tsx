@@ -154,9 +154,12 @@ describe('RegisterPage - Integration Tests', () => {
       await user.click(submitButton);
 
       // Should redirect to dashboard
-      await waitFor(() => {
-        expect(screen.getByRole('heading', { name: /dashboard/i })).toBeInTheDocument();
-      }, { timeout: 3000 });
+      await waitFor(
+        () => {
+          expect(screen.getByRole('heading', { name: /dashboard/i })).toBeInTheDocument();
+        },
+        { timeout: 3000 }
+      );
     });
 
     it.skip('should store auth tokens after registration', async () => {
@@ -173,9 +176,12 @@ describe('RegisterPage - Integration Tests', () => {
       await user.click(screen.getByRole('button', { name: /sign up/i }));
 
       // Wait for redirect
-      await waitFor(() => {
-        expect(screen.getByRole('heading', { name: /dashboard/i })).toBeInTheDocument();
-      }, { timeout: 3000 });
+      await waitFor(
+        () => {
+          expect(screen.getByRole('heading', { name: /dashboard/i })).toBeInTheDocument();
+        },
+        { timeout: 3000 }
+      );
 
       // Note: localStorage storage is tested in authService.test.ts
       // This integration test focuses on the navigation flow
@@ -272,14 +278,15 @@ describe('RegisterPage - Integration Tests', () => {
       await user.click(screen.getByRole('button', { name: /sign up/i }));
 
       // Wait for completion
-      await waitFor(() => {
-        expect(screen.getByRole('heading', { name: /dashboard/i })).toBeInTheDocument();
-      }, { timeout: 3000 });
+      await waitFor(
+        () => {
+          expect(screen.getByRole('heading', { name: /dashboard/i })).toBeInTheDocument();
+        },
+        { timeout: 3000 }
+      );
 
       // Should not have any console errors
-      expect(consoleError).not.toHaveBeenCalledWith(
-        expect.stringContaining('is not valid JSON')
-      );
+      expect(consoleError).not.toHaveBeenCalledWith(expect.stringContaining('is not valid JSON'));
 
       consoleError.mockRestore();
     });
@@ -298,9 +305,12 @@ describe('RegisterPage - Integration Tests', () => {
       await user.click(screen.getByRole('button', { name: /sign up/i }));
 
       // Should successfully register and navigate with special characters
-      await waitFor(() => {
-        expect(screen.getByRole('heading', { name: /dashboard/i })).toBeInTheDocument();
-      }, { timeout: 3000 });
+      await waitFor(
+        () => {
+          expect(screen.getByRole('heading', { name: /dashboard/i })).toBeInTheDocument();
+        },
+        { timeout: 3000 }
+      );
 
       // Note: Data storage with special characters is tested in mockApi.test.ts
       // This test verifies the full registration flow works with special chars

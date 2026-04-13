@@ -151,7 +151,7 @@ test.describe('Translation Download Workflow', () => {
       // Cleanup
       fs.unlinkSync(downloadPath);
     } catch (e) {
-      console.log('Translation not completed within timeout, skipping download test');
+      // console.log('Translation not completed within timeout, skipping download test');
       // This is acceptable in CI/CD where we don't want to wait for actual translation
     }
   });
@@ -191,7 +191,7 @@ test.describe('Translation Download Workflow', () => {
 
       // Check for loading indicator (button should be disabled or show loading)
       // Note: This might be too fast to observe in practice
-      const isDisabled = await downloadButton.isDisabled({ timeout: 100 }).catch(() => false);
+      // const isDisabled = await downloadButton.isDisabled({ timeout: 100 }).catch(() => false);
 
       // Wait for download to complete
       await downloadPromise;
@@ -199,7 +199,7 @@ test.describe('Translation Download Workflow', () => {
       // Button should be enabled again
       await expect(downloadButton).toBeEnabled();
     } catch (e) {
-      console.log('Translation not completed, skipping loading state test');
+      // console.log('Translation not completed, skipping loading state test');
     }
   });
 
@@ -232,7 +232,7 @@ test.describe('Translation Download Workflow', () => {
     const jobId = jobIdMatch![1];
 
     // Intercept download request and force it to fail
-    await page.route(`**/v1/translation/jobs/${jobId}/download`, route => {
+    await page.route(`**/v1/translation/jobs/${jobId}/download`, (route) => {
       route.fulfill({
         status: 500,
         body: JSON.stringify({ error: 'Download failed' }),
@@ -251,7 +251,7 @@ test.describe('Translation Download Workflow', () => {
       // Wait for error message
       await expect(page.locator('text=/failed to download/i')).toBeVisible({ timeout: 5000 });
     } catch (e) {
-      console.log('Could not test download error - job not completed');
+      // console.log('Could not test download error - job not completed');
     }
   });
 
@@ -299,7 +299,7 @@ test.describe('Translation Download Workflow', () => {
       // Both downloads should have the same filename
       expect(download1.suggestedFilename()).toBe(download2.suggestedFilename());
     } catch (e) {
-      console.log('Translation not completed, skipping multiple download test');
+      // console.log('Translation not completed, skipping multiple download test');
     }
   });
 
@@ -338,7 +338,7 @@ test.describe('Translation Download Workflow', () => {
       expect(filename).toMatch(/^translated_/);
       expect(filename).toContain('download-test.txt');
     } catch (e) {
-      console.log('Translation not completed, skipping filename test');
+      // console.log('Translation not completed, skipping filename test');
     }
   });
 

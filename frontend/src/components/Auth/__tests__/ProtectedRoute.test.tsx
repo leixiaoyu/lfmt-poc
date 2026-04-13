@@ -230,7 +230,11 @@ describe('ProtectedRoute - Security Tests', () => {
   describe('Logout Scenario', () => {
     it('should redirect to login after user becomes null', () => {
       // Start authenticated
-      const { rerender } = renderProtectedRoute({ user: mockUser, isAuthenticated: true, isLoading: false });
+      const { rerender } = renderProtectedRoute({
+        user: mockUser,
+        isAuthenticated: true,
+        isLoading: false,
+      });
 
       // Initially should show protected content
       expect(screen.getByTestId('protected-content')).toBeInTheDocument();

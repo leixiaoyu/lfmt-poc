@@ -18,7 +18,10 @@ export const languageSchema = z.enum(supportedLanguages);
 export const wordCountSchema = z.number().min(65000).max(400000);
 
 // File size validation (1KB to 100MB)
-export const fileSizeSchema = z.number().min(1000).max(100 * 1024 * 1024);
+export const fileSizeSchema = z
+  .number()
+  .min(1000)
+  .max(100 * 1024 * 1024);
 
 // Token count validation for chunks
 export const tokenCountSchema = z.number().min(3000).max(4000);
@@ -38,14 +41,14 @@ export const qualityLevelSchema = z.enum(['STANDARD', 'PREMIUM']);
 // Status enums
 export const jobStatusSchema = z.enum([
   'QUEUED',
-  'PROCESSING', 
+  'PROCESSING',
   'RETRYING',
   'RATE_LIMITED',
   'RECOVERING',
   'COMPLETED',
   'FAILED',
   'CANCELLED',
-  'RESUMED'
+  'RESUMED',
 ]);
 
 // Error severity levels
@@ -82,30 +85,30 @@ export class ValidationUtils {
     errors: string[];
   } {
     const errors: string[] = [];
-    
+
     if (password.length < 8) {
       errors.push('Password must be at least 8 characters long');
     }
-    
+
     if (!/[A-Z]/.test(password)) {
       errors.push('Password must contain at least one uppercase letter');
     }
-    
+
     if (!/[a-z]/.test(password)) {
       errors.push('Password must contain at least one lowercase letter');
     }
-    
+
     if (!/[0-9]/.test(password)) {
       errors.push('Password must contain at least one number');
     }
-    
+
     if (!/[!@#$%^&*(),.?":{}|<>]/.test(password)) {
       errors.push('Password must contain at least one special character');
     }
-    
+
     return {
       isValid: errors.length === 0,
-      errors
+      errors,
     };
   }
 }
@@ -121,7 +124,7 @@ export interface ValidationResult<T = any> {
 // Validation error class
 export class ValidationError extends Error {
   public errors: string[];
-  
+
   constructor(message: string, errors: string[] = []) {
     super(message);
     this.name = 'ValidationError';

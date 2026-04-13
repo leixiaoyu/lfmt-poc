@@ -82,42 +82,46 @@ export interface ResetPasswordRequest {
 }
 
 // Validation Schemas
-export const registerRequestSchema = z.object({
-  email: z.string().email(),
-  password: z.string().min(8),
-  confirmPassword: z.string(),
-  firstName: z.string().min(1),
-  lastName: z.string().min(1),
-  organization: z.string().optional(),
-  acceptedTerms: z.boolean().refine(val => val === true),
-  acceptedPrivacy: z.boolean().refine(val => val === true),
-  marketingConsent: z.boolean().optional()
-}).refine(data => data.password === data.confirmPassword, {
-  message: "Passwords don't match",
-  path: ["confirmPassword"]
-});
+export const registerRequestSchema = z
+  .object({
+    email: z.string().email(),
+    password: z.string().min(8),
+    confirmPassword: z.string(),
+    firstName: z.string().min(1),
+    lastName: z.string().min(1),
+    organization: z.string().optional(),
+    acceptedTerms: z.boolean().refine((val) => val === true),
+    acceptedPrivacy: z.boolean().refine((val) => val === true),
+    marketingConsent: z.boolean().optional(),
+  })
+  .refine((data) => data.password === data.confirmPassword, {
+    message: "Passwords don't match",
+    path: ['confirmPassword'],
+  });
 
 export const loginRequestSchema = z.object({
   email: z.string().email(),
   password: z.string().min(1),
   rememberMe: z.boolean().optional(),
-  mfaCode: z.string().optional()
+  mfaCode: z.string().optional(),
 });
 
 export const refreshTokenRequestSchema = z.object({
-  refreshToken: z.string().min(1)
+  refreshToken: z.string().min(1),
 });
 
 export const forgotPasswordRequestSchema = z.object({
-  email: z.string().email()
+  email: z.string().email(),
 });
 
-export const resetPasswordRequestSchema = z.object({
-  token: z.string().min(1),
-  email: z.string().email(),
-  newPassword: z.string().min(8),
-  confirmPassword: z.string()
-}).refine(data => data.newPassword === data.confirmPassword, {
-  message: "Passwords don't match",
-  path: ["confirmPassword"]
-});
+export const resetPasswordRequestSchema = z
+  .object({
+    token: z.string().min(1),
+    email: z.string().email(),
+    newPassword: z.string().min(8),
+    confirmPassword: z.string(),
+  })
+  .refine((data) => data.newPassword === data.confirmPassword, {
+    message: "Passwords don't match",
+    path: ['confirmPassword'],
+  });

@@ -17,7 +17,6 @@
 import {
   DynamoDBClient,
   GetItemCommand,
-  GetItemCommandOutput,
   PutItemCommand,
   UpdateItemCommand,
   ConditionalCheckFailedException,
@@ -28,7 +27,6 @@ import {
   RateLimitConfig,
   RateLimitType,
   TokenAcquisitionResult,
-  GEMINI_RATE_LIMITS,
 } from './types/rateLimiting';
 
 /**
@@ -95,7 +93,11 @@ export class DistributedRateLimiter {
 
         // Calculate refilled tokens
         const now = Date.now();
-        const tokensToAdd = this.calculateTokenRefill(now, bucket.lastRefillTimestamp, bucket.refillRate);
+        const tokensToAdd = this.calculateTokenRefill(
+          now,
+          bucket.lastRefillTimestamp,
+          bucket.refillRate
+        );
 
         // Calculate available tokens considering window reset
         const windowDuration = this.getWindowDuration(limitType);
@@ -225,12 +227,12 @@ export class DistributedRateLimiter {
     limitType: RateLimitType
   ): Promise<RateLimitBucketItem> {
     try {
-      const result = (await this.dynamoClient.send(
+      const result = await this.dynamoClient.send(
         new GetItemCommand({
           TableName: this.config.tableName,
           Key: marshall({ bucketKey }),
         })
-      )) as GetItemCommandOutput;
+      );
 
       if (result.Item) {
         return unmarshall(result.Item) as RateLimitBucketItem;
@@ -278,12 +280,12 @@ export class DistributedRateLimiter {
     } catch (error) {
       // Bucket was created by another instance, fetch it
       if (error instanceof ConditionalCheckFailedException) {
-        const result = (await this.dynamoClient.send(
+        const result = await this.dynamoClient.send(
           new GetItemCommand({
             TableName: this.config.tableName,
             Key: marshall({ bucketKey }),
           })
-        )) as GetItemCommandOutput;
+        );
         if (result.Item) {
           return unmarshall(result.Item) as RateLimitBucketItem;
         }

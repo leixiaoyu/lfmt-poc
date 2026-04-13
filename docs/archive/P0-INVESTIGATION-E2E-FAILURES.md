@@ -21,6 +21,7 @@ The E2E tests fail NOT because CloudFront is slow, but because **the React app i
 ### Step 1: E2E Test Timeout Analysis ✅
 
 **Observation from CI logs:**
+
 ```
 2025-11-09T02:20:30.5723572Z Waiting for frontend to be ready...
 2025-11-09T02:20:30.9283396Z Frontend is ready!  <-- 0.4 seconds
@@ -30,6 +31,7 @@ The E2E tests fail NOT because CloudFront is slow, but because **the React app i
 ```
 
 **Key Finding:**
+
 - CloudFront responds 200 OK in **<1 second** ✅
 - React app **never renders** the login page 🔴
 - Tests timeout after 60 seconds waiting for UI elements
@@ -39,6 +41,7 @@ The E2E tests fail NOT because CloudFront is slow, but because **the React app i
 ### Step 2: React App Code Review ✅
 
 **App.tsx Analysis (lines 19-28):**
+
 ```typescript
 import { lazy, Suspense } from 'react';
 
@@ -50,11 +53,12 @@ const RegisterPage = lazy(() => import('./pages/RegisterPage'));
 **Finding:** Lazy loading is properly implemented ✅
 
 **Constants.ts Analysis (line 17):**
+
 ```typescript
 export const API_CONFIG = {
   BASE_URL: import.meta.env.VITE_API_URL || '/api',
   // ...
-}
+};
 ```
 
 **Finding:** Falls back to `/api` if `VITE_API_URL` is undefined 🔴
@@ -66,6 +70,7 @@ export const API_CONFIG = {
 **Critical Bug Found in `.github/workflows/deploy.yml`:**
 
 #### Build Frontend Job (lines 92-94)
+
 ```yaml
 - name: Build frontend (production)
   working-directory: frontend
@@ -76,10 +81,12 @@ export const API_CONFIG = {
 ```
 
 **Vite embeds environment variables at BUILD TIME:**
+
 - `import.meta.env.VITE_API_URL` is replaced with its value during `npm run build`
 - If undefined during build, the app is compiled with `BASE_URL: '/api'`
 
 #### Deploy to Development Job (lines 190-194)
+
 ```yaml
 - name: Create frontend .env.production
   working-directory: frontend
@@ -103,6 +110,7 @@ export const API_CONFIG = {
 5. **Deploy to S3** (line 196): Deploys the misconfigured app
 
 **Result:**
+
 - Deployed app has `API_CONFIG.BASE_URL = '/api'`
 - All API calls fail because `/api` proxy doesn't exist in production
 - React app loads the shell but fails to fetch data
@@ -113,12 +121,14 @@ export const API_CONFIG = {
 ## Impact Analysis
 
 ### Affected Components
+
 1. ✅ **CloudFront**: Healthy, propagates in <1 second
 2. 🔴 **Frontend App**: Deployed with incorrect API URL
 3. 🔴 **E2E Tests**: Fail because UI never loads
 4. 🔴 **User Experience**: App completely broken (would show errors in browser console)
 
 ### Why This Wasn't Caught Earlier
+
 - **Backend integration tests**: Pass (they call API directly)
 - **Frontend unit tests**: Pass (they mock API calls)
 - **E2E tests**: First time running against deployed environment (catch the bug!)
@@ -134,7 +144,7 @@ Modify the workflow to pass `VITE_API_URL` during the build step:
 ```yaml
 build-frontend:
   name: Build Frontend
-  needs: [test, deploy-dev]  # Wait for deploy-dev to get API URL
+  needs: [test, deploy-dev] # Wait for deploy-dev to get API URL
   steps:
     # ... checkout, setup ...
 
@@ -147,11 +157,13 @@ build-frontend:
 ```
 
 **Pros:**
+
 - Clean separation of concerns
 - Env vars embedded at build time (Vite's intended behavior)
 - No runtime configuration needed
 
 **Cons:**
+
 - Job dependency reversal (frontend build depends on backend deploy)
 - Longer pipeline (sequential instead of parallel)
 
@@ -163,19 +175,21 @@ Replace `import.meta.env` with runtime configuration:
 // src/config/runtime.ts
 export const API_CONFIG = {
   BASE_URL: (window as any).__RUNTIME_CONFIG__?.API_URL || '/api',
-}
+};
 ```
 
 Inject config in `index.html`:
+
 ```html
 <script>
   window.__RUNTIME_CONFIG__ = {
-    API_URL: '%%VITE_API_URL%%'
+    API_URL: '%%VITE_API_URL%%',
   };
 </script>
 ```
 
 Replace placeholder during deployment:
+
 ```yaml
 - name: Configure runtime API URL
   run: |
@@ -183,10 +197,12 @@ Replace placeholder during deployment:
 ```
 
 **Pros:**
+
 - Maintains parallel build/deploy jobs
 - Faster pipeline
 
 **Cons:**
+
 - Requires code changes
 - Less secure (config exposed in HTML)
 - Not Vite's intended pattern
@@ -212,10 +228,12 @@ deploy-dev:
 ```
 
 **Pros:**
+
 - Minimal workflow changes
 - Preserves Vite's build-time configuration
 
 **Cons:**
+
 - Rebuilds frontend twice (waste of CI time)
 - Doesn't use build-frontend job artifacts
 
@@ -277,11 +295,13 @@ deploy-dev:
 **Status:** Still valid, but lower priority
 
 The CloudFront propagation improvements (PR #51) are still useful for:
+
 - Ensuring cache invalidation completes before tests
 - Handling edge cases where propagation takes longer
 - Better logging and error messages
 
 **Recommendation:** Keep both fixes:
+
 1. **P0**: Fix API URL build configuration (this document)
 2. **P1**: Merge PR #51 for CloudFront robustness
 
@@ -290,6 +310,7 @@ The CloudFront propagation improvements (PR #51) are still useful for:
 ## Action Items
 
 ### Immediate (P0)
+
 - [x] Root cause identified
 - [ ] Implement Option 3 (rebuild frontend with API URL in deploy job)
 - [ ] Test locally with environment variable
@@ -298,11 +319,13 @@ The CloudFront propagation improvements (PR #51) are still useful for:
 - [ ] Create PR with fix
 
 ### Short-term (P1)
+
 - [ ] Merge PR #51 (CloudFront wait improvements)
 - [ ] Add CI check to verify VITE_API_URL is embedded in build
 - [ ] Document build-time vs runtime env vars in CLAUDE.md
 
 ### Long-term (P2)
+
 - [ ] Consider Option 1 (job dependency reversal) for cleaner architecture
 - [ ] Add smoke test that verifies API URL configuration
 - [ ] Monitor E2E test reliability after fixes

@@ -410,9 +410,7 @@ can become more effective communicators and build a more connected world.`,
 /**
  * Get document by size category
  */
-export const getTestDocument = (
-  size: 'MINIMAL' | 'SMALL' | 'MEDIUM' | 'LARGE'
-): string => {
+export const getTestDocument = (size: 'MINIMAL' | 'SMALL' | 'MEDIUM' | 'LARGE'): string => {
   return TEST_DOCUMENTS[size];
 };
 

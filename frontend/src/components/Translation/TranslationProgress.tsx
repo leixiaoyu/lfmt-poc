@@ -6,14 +6,7 @@
  */
 
 import React, { useEffect, useState, useCallback } from 'react';
-import {
-  Box,
-  Typography,
-  LinearProgress,
-  Paper,
-  Chip,
-  Alert,
-} from '@mui/material';
+import { Box, Typography, LinearProgress, Paper, Chip, Alert } from '@mui/material';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import ErrorIcon from '@mui/icons-material/Error';
 import HourglassEmptyIcon from '@mui/icons-material/HourglassEmpty';
@@ -59,14 +52,22 @@ export const TranslationProgress: React.FC<TranslationProgressProps> = ({
   const [elapsedTime, setElapsedTime] = useState(0);
 
   const isTerminalState = (status: string) => {
-    return status === 'COMPLETED' || status === 'FAILED' ||
-           status === 'CHUNKING_FAILED' || status === 'TRANSLATION_FAILED';
+    return (
+      status === 'COMPLETED' ||
+      status === 'FAILED' ||
+      status === 'CHUNKING_FAILED' ||
+      status === 'TRANSLATION_FAILED'
+    );
   };
 
   const calculateProgress = (job: TranslationJob): number => {
     if (job.status === 'COMPLETED') return 100;
-    if (job.status === 'FAILED' || job.status === 'CHUNKING_FAILED' ||
-        job.status === 'TRANSLATION_FAILED') return 0;
+    if (
+      job.status === 'FAILED' ||
+      job.status === 'CHUNKING_FAILED' ||
+      job.status === 'TRANSLATION_FAILED'
+    )
+      return 0;
     if (job.status === 'PENDING') return 5;
     if (job.status === 'CHUNKING') return 10;
     if (job.status === 'CHUNKED') return 15;
@@ -95,6 +96,7 @@ export const TranslationProgress: React.FC<TranslationProgressProps> = ({
           onError(updatedJob.errorMessage || 'Translation failed');
         }
       }
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (err: any) {
       setError(err.message || 'Failed to fetch job status');
       setLoading(false);
@@ -173,15 +175,7 @@ export const TranslationProgress: React.FC<TranslationProgressProps> = ({
         <Chip
           label={STATUS_LABELS[job.status]}
           color={STATUS_COLORS[job.status]}
-          icon={
-            isComplete ? (
-              <CheckCircleIcon />
-            ) : isError ? (
-              <ErrorIcon />
-            ) : (
-              <HourglassEmptyIcon />
-            )
-          }
+          icon={isComplete ? <CheckCircleIcon /> : isError ? <ErrorIcon /> : <HourglassEmptyIcon />}
         />
       </Box>
 

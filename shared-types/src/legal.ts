@@ -139,12 +139,12 @@ export const attestationRequestSchema = z.object({
   documentId: z.string().uuid(),
   userId: z.string().uuid(),
   legalStatements: z.object({
-    copyrightOwnership: z.boolean().refine(val => val === true),
-    translationRights: z.boolean().refine(val => val === true),
-    liabilityAcceptance: z.boolean().refine(val => val === true),
-    publicDomainAcknowledgment: z.boolean().refine(val => val === true),
-    dataProcessingConsent: z.boolean().refine(val => val === true),
-    termsOfServiceAcceptance: z.boolean().refine(val => val === true)
+    copyrightOwnership: z.boolean().refine((val) => val === true),
+    translationRights: z.boolean().refine((val) => val === true),
+    liabilityAcceptance: z.boolean().refine((val) => val === true),
+    publicDomainAcknowledgment: z.boolean().refine((val) => val === true),
+    dataProcessingConsent: z.boolean().refine((val) => val === true),
+    termsOfServiceAcceptance: z.boolean().refine((val) => val === true),
   }),
   interactionMetrics: z.object({
     pageViewDuration: z.number().min(30000), // Minimum 30 seconds
@@ -152,13 +152,15 @@ export const attestationRequestSchema = z.object({
     mouseMovements: z.number().min(5),
     keystrokes: z.number().min(0),
     attestationMethod: z.enum(['checkbox', 'digital_signature', 'voice_verification']),
-    readingPattern: z.array(z.object({
-      timestamp: z.number(),
-      action: z.enum(['scroll', 'click', 'focus', 'blur']),
-      elementId: z.string().optional(),
-      scrollPosition: z.number().optional(),
-      duration: z.number().optional()
-    }))
+    readingPattern: z.array(
+      z.object({
+        timestamp: z.number(),
+        action: z.enum(['scroll', 'click', 'focus', 'blur']),
+        elementId: z.string().optional(),
+        scrollPosition: z.number().optional(),
+        duration: z.number().optional(),
+      })
+    ),
   }),
   browserFingerprint: z.object({
     userAgent: z.string(),
@@ -167,17 +169,17 @@ export const attestationRequestSchema = z.object({
     screen: z.object({
       width: z.number(),
       height: z.number(),
-      colorDepth: z.number()
+      colorDepth: z.number(),
     }),
     canvas: z.string(),
     webgl: z.string(),
-    timestamp: z.number()
+    timestamp: z.number(),
   }),
   documentMetadata: z.object({
     filename: z.string(),
     fileSize: z.number(),
     wordCount: z.number(),
     documentHash: z.string(),
-    uploadTimestamp: z.string()
-  })
+    uploadTimestamp: z.string(),
+  }),
 });

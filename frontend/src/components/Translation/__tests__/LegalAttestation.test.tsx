@@ -46,8 +46,12 @@ describe('LegalAttestation Component', () => {
 
       // Verify specific checkboxes by their labels
       expect(screen.getByLabelText(/I confirm that I own the copyright/i)).toBeInTheDocument();
-      expect(screen.getByLabelText(/I confirm that I have the right to create derivative works/i)).toBeInTheDocument();
-      expect(screen.getByLabelText(/I understand that I am solely responsible/i)).toBeInTheDocument();
+      expect(
+        screen.getByLabelText(/I confirm that I have the right to create derivative works/i)
+      ).toBeInTheDocument();
+      expect(
+        screen.getByLabelText(/I understand that I am solely responsible/i)
+      ).toBeInTheDocument();
     });
 
     it('should render info alert message', () => {
@@ -137,7 +141,9 @@ describe('LegalAttestation Component', () => {
       const mockOnChange = vi.fn();
       render(<LegalAttestation {...createProps({ onChange: mockOnChange })} />);
 
-      const checkbox = screen.getByLabelText(/I confirm that I have the right to create derivative works/i);
+      const checkbox = screen.getByLabelText(
+        /I confirm that I have the right to create derivative works/i
+      );
 
       // Act
       await user.click(checkbox);
@@ -181,7 +187,9 @@ describe('LegalAttestation Component', () => {
         acceptLiabilityTerms: false,
       };
 
-      render(<LegalAttestation {...createProps({ value: checkedValue, onChange: mockOnChange })} />);
+      render(
+        <LegalAttestation {...createProps({ value: checkedValue, onChange: mockOnChange })} />
+      );
 
       const checkbox = screen.getByLabelText(/I confirm that I own the copyright/i);
 
@@ -210,9 +218,7 @@ describe('LegalAttestation Component', () => {
       await user.click(copyrightInfoButton);
 
       // Assert
-      expect(
-        screen.getByText(/You must either be the original author/i)
-      ).toBeInTheDocument();
+      expect(screen.getByText(/You must either be the original author/i)).toBeInTheDocument();
     });
 
     it('should open translation rights tooltip when info button is clicked', async () => {
@@ -227,9 +233,7 @@ describe('LegalAttestation Component', () => {
       await user.click(translationInfoButton);
 
       // Assert
-      expect(
-        screen.getByText(/Translation is considered a derivative work/i)
-      ).toBeInTheDocument();
+      expect(screen.getByText(/Translation is considered a derivative work/i)).toBeInTheDocument();
     });
 
     it('should open liability tooltip when info button is clicked', async () => {
@@ -244,9 +248,7 @@ describe('LegalAttestation Component', () => {
       await user.click(liabilityInfoButton);
 
       // Assert
-      expect(
-        screen.getByText(/you agree to take full legal responsibility/i)
-      ).toBeInTheDocument();
+      expect(screen.getByText(/you agree to take full legal responsibility/i)).toBeInTheDocument();
     });
 
     it('should close tooltip when clicking the same info button again', async () => {
@@ -295,9 +297,7 @@ describe('LegalAttestation Component', () => {
         ).not.toBeInTheDocument();
       });
 
-      expect(
-        screen.getByText(/Translation is considered a derivative work/i)
-      ).toBeInTheDocument();
+      expect(screen.getByText(/Translation is considered a derivative work/i)).toBeInTheDocument();
     });
   });
 
@@ -312,9 +312,7 @@ describe('LegalAttestation Component', () => {
       render(<LegalAttestation {...createProps({ errors })} />);
 
       // Assert
-      expect(
-        screen.getByText('You must confirm copyright ownership')
-      ).toBeInTheDocument();
+      expect(screen.getByText('You must confirm copyright ownership')).toBeInTheDocument();
       expect(screen.getByText('You must confirm copyright ownership')).toHaveAttribute(
         'role',
         'alert'
@@ -331,9 +329,7 @@ describe('LegalAttestation Component', () => {
       render(<LegalAttestation {...createProps({ errors })} />);
 
       // Assert
-      expect(
-        screen.getByText('You must confirm translation rights')
-      ).toBeInTheDocument();
+      expect(screen.getByText('You must confirm translation rights')).toBeInTheDocument();
     });
 
     it('should display liability terms error message', () => {
@@ -419,7 +415,9 @@ describe('LegalAttestation Component', () => {
       render(<LegalAttestation {...createProps()} />);
 
       // Assert
-      const checkbox = screen.getByLabelText(/I confirm that I have the right to create derivative works/i);
+      const checkbox = screen.getByLabelText(
+        /I confirm that I have the right to create derivative works/i
+      );
       expect(checkbox).toHaveAttribute('name', 'acceptTranslationRights');
     });
 
@@ -442,7 +440,9 @@ describe('LegalAttestation Component', () => {
 
       // Act - Check all boxes
       await user.click(screen.getByLabelText(/I confirm that I own the copyright/i));
-      await user.click(screen.getByLabelText(/I confirm that I have the right to create derivative works/i));
+      await user.click(
+        screen.getByLabelText(/I confirm that I have the right to create derivative works/i)
+      );
       await user.click(screen.getByLabelText(/I understand that I am solely responsible/i));
 
       // Assert
@@ -452,8 +452,8 @@ describe('LegalAttestation Component', () => {
       const finalCall = mockOnChange.mock.calls[2][0];
       expect(finalCall).toEqual({
         acceptCopyrightOwnership: false, // Carries forward from value prop
-        acceptTranslationRights: false,  // Carries forward from value prop
-        acceptLiabilityTerms: true,      // Just checked
+        acceptTranslationRights: false, // Carries forward from value prop
+        acceptLiabilityTerms: true, // Just checked
       });
     });
 
@@ -467,7 +467,9 @@ describe('LegalAttestation Component', () => {
         acceptLiabilityTerms: false,
       };
 
-      render(<LegalAttestation {...createProps({ value: checkedValue, onChange: mockOnChange })} />);
+      render(
+        <LegalAttestation {...createProps({ value: checkedValue, onChange: mockOnChange })} />
+      );
 
       // Act - Open and close tooltip
       const infoButtons = screen.getAllByRole('button', { name: /Learn more/i });
@@ -478,7 +480,9 @@ describe('LegalAttestation Component', () => {
       expect(mockOnChange).not.toHaveBeenCalled();
 
       // Assert - Checkbox state should remain
-      const checkbox = screen.getByLabelText(/I confirm that I own the copyright/i) as HTMLInputElement;
+      const checkbox = screen.getByLabelText(
+        /I confirm that I own the copyright/i
+      ) as HTMLInputElement;
       expect(checkbox.checked).toBe(true);
     });
   });

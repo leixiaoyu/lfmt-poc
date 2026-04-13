@@ -3,6 +3,7 @@
 ## Current Performance Issues
 
 ### Test Execution Times
+
 - **Health Check Tests**: ~37 tests pass quickly
 - **API Integration Tests**: Blocked by compilation error (now fixed)
 - **Translation Flow Tests**: **751 seconds** (12.5 minutes) ⚠️
@@ -11,7 +12,9 @@
 ### Root Causes
 
 #### 1. Actual Translation Execution
+
 The translation flow tests perform **real translations** via Gemini API:
+
 - Creates real jobs
 - Uploads real documents to S3
 - Triggers actual chunking Lambda
@@ -21,6 +24,7 @@ The translation flow tests perform **real translations** via Gemini API:
 **Impact**: Single translation can take 5-10 minutes
 
 #### 2. Aggressive Polling Intervals
+
 ```typescript
 // test-helpers.ts:338-343
 waitForJobStatus: pollInterval = 2000ms (2 seconds)
@@ -31,6 +35,7 @@ maxWaitTime = 60000-180000ms (1-3 minutes)
 **Impact**: Wasteful API calls, slower feedback
 
 #### 3. Sequential Test Execution
+
 ```bash
 jest --testPathPattern=integration --runInBand
 ```
@@ -38,6 +43,7 @@ jest --testPathPattern=integration --runInBand
 **Impact**: Tests run one at a time, no parallelization
 
 #### 4. Long Max Wait Times
+
 - Translation: 180 seconds (3 minutes)
 - Chunking: 60 seconds (1 minute)
 - Job status: 60 seconds (1 minute)
@@ -45,6 +51,7 @@ jest --testPathPattern=integration --runInBand
 **Impact**: Tests hang for minutes even when operations fail early
 
 ### Total Time Breakdown (Estimated)
+
 ```
 Translation Flow Test (751s):
   - User registration: ~2s
@@ -62,12 +69,13 @@ Translation Flow Test (751s):
 ### Short-Term (Quick Wins)
 
 #### 1. Reduce Poll Intervals
+
 ```typescript
 // Before
 waitForJobStatus: pollInterval = 2000ms
 waitForTranslation: pollInterval = 5000ms
 
-// After  
+// After
 waitForJobStatus: pollInterval = 1000ms (50% faster)
 waitForTranslation: pollInterval = 2000ms (60% faster)
 ```
@@ -75,6 +83,7 @@ waitForTranslation: pollInterval = 2000ms (60% faster)
 **Expected Savings**: 20-30% reduction in wait time
 
 #### 2. Reduce Max Wait Times
+
 ```typescript
 // Before
 waitForTranslation: maxWaitTime = 180000ms (3 minutes)
@@ -88,6 +97,7 @@ waitForChunking: maxWaitTime = 30000ms (30 seconds)
 **Expected Savings**: Faster failure detection
 
 #### 3. Skip Translation for Most Tests
+
 ```typescript
 // Create separate test suites:
 // - integration-basic.test.ts (NO translation, <2 minutes)
@@ -102,6 +112,7 @@ npm run test:integration -- --testPathIgnorePatterns=translation-flow
 ### Medium-Term
 
 #### 4. Mock Translation Engine
+
 ```typescript
 // Use env variable to enable mock mode
 if (process.env.MOCK_TRANSLATION === 'true') {
@@ -113,6 +124,7 @@ if (process.env.MOCK_TRANSLATION === 'true') {
 **Expected Savings**: Translation tests complete in seconds, not minutes
 
 #### 5. Parallel Test Execution
+
 ```bash
 # Remove --runInBand for independent tests
 jest --testPathPattern=integration --maxWorkers=2
@@ -123,6 +135,7 @@ jest --testPathPattern=integration --maxWorkers=2
 ### Long-Term
 
 #### 6. Test Data Caching
+
 - Pre-create test users
 - Pre-upload test documents
 - Reuse chunked documents
@@ -130,6 +143,7 @@ jest --testPathPattern=integration --maxWorkers=2
 **Expected Savings**: 30-40% reduction in setup time
 
 #### 7. Dedicated Test Infrastructure
+
 - Separate Cognito pool for tests
 - Mock S3 events locally
 - LocalStack for DynamoDB
@@ -139,6 +153,7 @@ jest --testPathPattern=integration --maxWorkers=2
 ## Implementation Priority
 
 ### Phase 1 (Immediate - 2 hours)
+
 - ✅ Fix variable redeclaration error
 - [ ] Reduce poll intervals (1s, 2s)
 - [ ] Reduce max wait times (30s, 90s)
@@ -147,6 +162,7 @@ jest --testPathPattern=integration --maxWorkers=2
 **Target**: < 5 minutes for basic integration tests
 
 ### Phase 2 (This Sprint - 1 day)
+
 - [ ] Add MOCK_TRANSLATION environment variable
 - [ ] Create separate translation test suite
 - [ ] Update CI/CD to run basic tests on every PR
@@ -154,6 +170,7 @@ jest --testPathPattern=integration --maxWorkers=2
 **Target**: < 2 minutes for PR validation
 
 ### Phase 3 (Future - 1 week)
+
 - [ ] Implement test data caching
 - [ ] Enable parallel test execution
 - [ ] Add LocalStack for local testing
@@ -162,12 +179,12 @@ jest --testPathPattern=integration --maxWorkers=2
 
 ## Success Metrics
 
-| Metric | Current | Phase 1 | Phase 2 | Phase 3 |
-|--------|---------|---------|---------|---------|
-| Basic Integration Tests | 765s | 300s | 120s | 60s |
-| Translation Tests | 751s | 400s | 600s | 300s |
-| CI/CD Pipeline Time | 26min | 15min | 8min | 5min |
-| Developer Feedback Loop | 12min | 5min | 2min | 1min |
+| Metric                  | Current | Phase 1 | Phase 2 | Phase 3 |
+| ----------------------- | ------- | ------- | ------- | ------- |
+| Basic Integration Tests | 765s    | 300s    | 120s    | 60s     |
+| Translation Tests       | 751s    | 400s    | 600s    | 300s    |
+| CI/CD Pipeline Time     | 26min   | 15min   | 8min    | 5min    |
+| Developer Feedback Loop | 12min   | 5min    | 2min    | 1min    |
 
 ## References
 

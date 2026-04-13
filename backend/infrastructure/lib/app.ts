@@ -23,7 +23,7 @@ const stackConfig = {
     retainData: false,
   },
   staging: {
-    stackName: 'LfmtPocStaging', 
+    stackName: 'LfmtPocStaging',
     description: 'LFMT POC Staging Environment',
     enableLogging: true,
     retainData: true,
@@ -33,7 +33,7 @@ const stackConfig = {
     description: 'LFMT POC Production Environment',
     enableLogging: true,
     retainData: true,
-  }
+  },
 };
 
 const config = stackConfig[envName as keyof typeof stackConfig] || stackConfig.dev;

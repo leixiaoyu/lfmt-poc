@@ -11,7 +11,8 @@
 process.env.DOCUMENT_BUCKET = 'test-bucket';
 process.env.JOBS_TABLE = 'test-jobs-table';
 process.env.ATTESTATIONS_TABLE = 'test-attestations-table';
-process.env.ALLOWED_ORIGINS = 'http://localhost:3000,https://localhost:3000,https://d39xcun7144jgl.cloudfront.net,https://staging.lfmt.yourcompany.com';
+process.env.ALLOWED_ORIGINS =
+  'http://localhost:3000,https://localhost:3000,https://d39xcun7144jgl.cloudfront.net,https://staging.lfmt.yourcompany.com';
 
 // Mock AWS SDK clients BEFORE importing handler
 const mockS3Send = jest.fn();
@@ -49,35 +50,36 @@ describe('Upload Request - CORS Tests', () => {
     mockDynamoSend.mockResolvedValue({});
   });
 
-  const mockEvent = (origin: string, overrides = {}): APIGatewayProxyEvent => ({
-    headers: {
-      origin,
-      Authorization: 'Bearer mock-token',
-      'Content-Type': 'application/json',
-    },
-    requestContext: {
-      requestId: 'test-request-id',
-      authorizer: {
-        claims: {
-          sub: 'test-user-123',
+  const mockEvent = (origin: string, overrides = {}): APIGatewayProxyEvent =>
+    ({
+      headers: {
+        origin,
+        Authorization: 'Bearer mock-token',
+        'Content-Type': 'application/json',
+      },
+      requestContext: {
+        requestId: 'test-request-id',
+        authorizer: {
+          claims: {
+            sub: 'test-user-123',
+          },
         },
-      },
-    } as any,
-    body: JSON.stringify({
-      fileName: 'test.txt',
-      fileSize: 1024,
-      contentType: 'text/plain',
-      legalAttestation: {
-        acceptCopyrightOwnership: true,
-        acceptTranslationRights: true,
-        acceptLiabilityTerms: true,
-        userIPAddress: '192.168.1.1',
-        userAgent: 'Mozilla/5.0',
-        timestamp: new Date().toISOString(),
-      },
-    }),
-    ...overrides,
-  } as any);
+      } as any,
+      body: JSON.stringify({
+        fileName: 'test.txt',
+        fileSize: 1024,
+        contentType: 'text/plain',
+        legalAttestation: {
+          acceptCopyrightOwnership: true,
+          acceptTranslationRights: true,
+          acceptLiabilityTerms: true,
+          userIPAddress: '192.168.1.1',
+          userAgent: 'Mozilla/5.0',
+          timestamp: new Date().toISOString(),
+        },
+      }),
+      ...overrides,
+    }) as any;
 
   describe('CORS Headers in Success Responses', () => {
     it('should include CORS headers with CloudFront origin', async () => {
@@ -85,7 +87,9 @@ describe('Upload Request - CORS Tests', () => {
       const response = await handler(event);
 
       expect(response.headers).toBeDefined();
-      expect(response.headers!['Access-Control-Allow-Origin']).toBe('https://d39xcun7144jgl.cloudfront.net');
+      expect(response.headers!['Access-Control-Allow-Origin']).toBe(
+        'https://d39xcun7144jgl.cloudfront.net'
+      );
       expect(response.headers!['Access-Control-Allow-Credentials']).toBe('true');
       expect(response.headers!['Access-Control-Allow-Methods']).toBeDefined();
     });
@@ -107,7 +111,9 @@ describe('Upload Request - CORS Tests', () => {
       });
       const response = await handler(event);
 
-      expect(response.headers!['Access-Control-Allow-Origin']).toBe('https://d39xcun7144jgl.cloudfront.net');
+      expect(response.headers!['Access-Control-Allow-Origin']).toBe(
+        'https://d39xcun7144jgl.cloudfront.net'
+      );
     });
   });
 
@@ -124,7 +130,9 @@ describe('Upload Request - CORS Tests', () => {
       const response = await handler(event);
 
       expect(response.statusCode).toBe(401);
-      expect(response.headers!['Access-Control-Allow-Origin']).toBe('https://d39xcun7144jgl.cloudfront.net');
+      expect(response.headers!['Access-Control-Allow-Origin']).toBe(
+        'https://d39xcun7144jgl.cloudfront.net'
+      );
     });
 
     it('should include CORS headers in 400 Bad Request response', async () => {
@@ -138,7 +146,9 @@ describe('Upload Request - CORS Tests', () => {
       const response = await handler(event);
 
       expect(response.statusCode).toBe(400);
-      expect(response.headers!['Access-Control-Allow-Origin']).toBe('https://d39xcun7144jgl.cloudfront.net');
+      expect(response.headers!['Access-Control-Allow-Origin']).toBe(
+        'https://d39xcun7144jgl.cloudfront.net'
+      );
     });
 
     it('should include CORS headers in 500 error responses', async () => {
@@ -149,7 +159,9 @@ describe('Upload Request - CORS Tests', () => {
       const response = await handler(event);
 
       expect(response.statusCode).toBe(500);
-      expect(response.headers!['Access-Control-Allow-Origin']).toBe('https://d39xcun7144jgl.cloudfront.net');
+      expect(response.headers!['Access-Control-Allow-Origin']).toBe(
+        'https://d39xcun7144jgl.cloudfront.net'
+      );
     });
   });
 

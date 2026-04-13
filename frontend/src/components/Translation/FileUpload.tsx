@@ -6,13 +6,7 @@
  */
 
 import React, { useRef, useState } from 'react';
-import {
-  Box,
-  Typography,
-  Button,
-  Paper,
-  Alert,
-} from '@mui/material';
+import { Box, Typography, Button, Paper, Alert } from '@mui/material';
 import CloudUploadIcon from '@mui/icons-material/CloudUpload';
 import InsertDriveFileIcon from '@mui/icons-material/InsertDriveFile';
 import DeleteIcon from '@mui/icons-material/Delete';
@@ -66,7 +60,7 @@ export const FileUpload: React.FC<FileUploadProps> = ({
     const validationError = validateFile(selectedFile);
     if (validationError) {
       // Could show error in a snackbar or alert
-      console.error(validationError);
+      // console.error(validationError);
       return;
     }
     onChange(selectedFile);

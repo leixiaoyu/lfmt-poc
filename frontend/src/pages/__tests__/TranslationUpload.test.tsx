@@ -82,9 +82,7 @@ describe('TranslationUpload', () => {
       renderComponent();
 
       // Legal attestation checkboxes should be visible
-      expect(
-        screen.getByLabelText(/I confirm that I own the copyright/i)
-      ).toBeInTheDocument();
+      expect(screen.getByLabelText(/I confirm that I own the copyright/i)).toBeInTheDocument();
     });
 
     it('should show Back button disabled on first step', () => {
@@ -127,9 +125,7 @@ describe('TranslationUpload', () => {
 
       // Should still be on step 0
       await waitFor(() => {
-        expect(
-          screen.getByLabelText(/I confirm that I own the copyright/i)
-        ).toBeInTheDocument();
+        expect(screen.getByLabelText(/I confirm that I own the copyright/i)).toBeInTheDocument();
       });
     });
 
@@ -139,7 +135,9 @@ describe('TranslationUpload', () => {
 
       // Check all three checkboxes
       const copyrightCheckbox = screen.getByLabelText(/I confirm that I own the copyright/i);
-      const translationRightsCheckbox = screen.getByLabelText(/I confirm that I have the right to create derivative works/i);
+      const translationRightsCheckbox = screen.getByLabelText(
+        /I confirm that I have the right to create derivative works/i
+      );
       const liabilityCheckbox = screen.getByLabelText(/I understand that I am solely responsible/i);
 
       await user.click(copyrightCheckbox);
@@ -160,7 +158,9 @@ describe('TranslationUpload', () => {
   describe('Step 2: Translation Settings Validation', () => {
     const advanceToStep2 = async (user: ReturnType<typeof userEvent.setup>) => {
       const copyrightCheckbox = screen.getByLabelText(/I confirm that I own the copyright/i);
-      const translationRightsCheckbox = screen.getByLabelText(/I confirm that I have the right to create derivative works/i);
+      const translationRightsCheckbox = screen.getByLabelText(
+        /I confirm that I have the right to create derivative works/i
+      );
       const liabilityCheckbox = screen.getByLabelText(/I understand that I am solely responsible/i);
 
       await user.click(copyrightCheckbox);
@@ -224,9 +224,7 @@ describe('TranslationUpload', () => {
       await user.click(backButton);
 
       await waitFor(() => {
-        expect(
-          screen.getByLabelText(/I confirm that I own the copyright/i)
-        ).toBeInTheDocument();
+        expect(screen.getByLabelText(/I confirm that I own the copyright/i)).toBeInTheDocument();
       });
     });
   });
@@ -235,7 +233,9 @@ describe('TranslationUpload', () => {
     const advanceToStep3 = async (user: ReturnType<typeof userEvent.setup>) => {
       // Step 1: Legal attestation
       const copyrightCheckbox = screen.getByLabelText(/I confirm that I own the copyright/i);
-      const translationRightsCheckbox = screen.getByLabelText(/I confirm that I have the right to create derivative works/i);
+      const translationRightsCheckbox = screen.getByLabelText(
+        /I confirm that I have the right to create derivative works/i
+      );
       const liabilityCheckbox = screen.getByLabelText(/I understand that I am solely responsible/i);
 
       await user.click(copyrightCheckbox);
@@ -306,7 +306,9 @@ describe('TranslationUpload', () => {
     const advanceToStep4 = async (user: ReturnType<typeof userEvent.setup>) => {
       // Step 1: Legal attestation
       await user.click(screen.getByLabelText(/I confirm that I own the copyright/i));
-      await user.click(screen.getByLabelText(/I confirm that I have the right to create derivative works/i));
+      await user.click(
+        screen.getByLabelText(/I confirm that I have the right to create derivative works/i)
+      );
       await user.click(screen.getByLabelText(/I understand that I am solely responsible/i));
       await user.click(screen.getByRole('button', { name: /next/i }));
 
@@ -353,7 +355,9 @@ describe('TranslationUpload', () => {
       renderComponent();
       await advanceToStep4(user);
 
-      expect(screen.getByRole('button', { name: /Submit & Start Translation/i })).toBeInTheDocument();
+      expect(
+        screen.getByRole('button', { name: /Submit & Start Translation/i })
+      ).toBeInTheDocument();
       expect(screen.queryByRole('button', { name: /^Next$/i })).not.toBeInTheDocument();
     });
 
@@ -411,14 +415,21 @@ describe('TranslationUpload', () => {
 
       // Mock service calls with delay
       vi.mocked(translationService.createLegalAttestation).mockImplementation(
-        () => new Promise((resolve) => setTimeout(() => resolve({
-          acceptCopyrightOwnership: true,
-          acceptTranslationRights: true,
-          acceptLiabilityTerms: true,
-          userIPAddress: '127.0.0.1',
-          userAgent: 'test-agent',
-          timestamp: new Date().toISOString(),
-        }), 100))
+        () =>
+          new Promise((resolve) =>
+            setTimeout(
+              () =>
+                resolve({
+                  acceptCopyrightOwnership: true,
+                  acceptTranslationRights: true,
+                  acceptLiabilityTerms: true,
+                  userIPAddress: '127.0.0.1',
+                  userAgent: 'test-agent',
+                  timestamp: new Date().toISOString(),
+                }),
+              100
+            )
+          )
       );
 
       const submitButton = screen.getByRole('button', { name: /Submit & Start Translation/i });
@@ -435,7 +446,8 @@ describe('TranslationUpload', () => {
       await advanceToStep4(user);
 
       // Mock failed service call
-      const TranslationServiceError = (await import('../../services/translationService')).TranslationServiceError;
+      const TranslationServiceError = (await import('../../services/translationService'))
+        .TranslationServiceError;
       vi.mocked(translationService.createLegalAttestation).mockRejectedValue(
         new TranslationServiceError('Upload failed: Network error')
       );
@@ -476,7 +488,8 @@ describe('TranslationUpload', () => {
       await advanceToStep4(user);
 
       // Trigger error
-      const TranslationServiceError = (await import('../../services/translationService')).TranslationServiceError;
+      const TranslationServiceError = (await import('../../services/translationService'))
+        .TranslationServiceError;
       vi.mocked(translationService.createLegalAttestation).mockRejectedValue(
         new TranslationServiceError('Upload failed')
       );
@@ -505,7 +518,9 @@ describe('TranslationUpload', () => {
 
       // Step 1: Check legal attestation
       await user.click(screen.getByLabelText(/I confirm that I own the copyright/i));
-      await user.click(screen.getByLabelText(/I confirm that I have the right to create derivative works/i));
+      await user.click(
+        screen.getByLabelText(/I confirm that I have the right to create derivative works/i)
+      );
       await user.click(screen.getByLabelText(/I understand that I am solely responsible/i));
       await user.click(screen.getByRole('button', { name: /next/i }));
 
@@ -517,7 +532,9 @@ describe('TranslationUpload', () => {
       await user.click(screen.getByRole('button', { name: /back/i }));
 
       await waitFor(() => {
-        const copyrightCheckbox = screen.getByLabelText(/I confirm that I own the copyright/i) as HTMLInputElement;
+        const copyrightCheckbox = screen.getByLabelText(
+          /I confirm that I own the copyright/i
+        ) as HTMLInputElement;
         expect(copyrightCheckbox.checked).toBe(true);
       });
     });
@@ -528,7 +545,9 @@ describe('TranslationUpload', () => {
 
       // Navigate to step 2
       await user.click(screen.getByLabelText(/I confirm that I own the copyright/i));
-      await user.click(screen.getByLabelText(/I confirm that I have the right to create derivative works/i));
+      await user.click(
+        screen.getByLabelText(/I confirm that I have the right to create derivative works/i)
+      );
       await user.click(screen.getByLabelText(/I understand that I am solely responsible/i));
       await user.click(screen.getByRole('button', { name: /next/i }));
 
@@ -564,8 +583,12 @@ describe('TranslationUpload', () => {
 
       // LegalAttestation checkboxes should be rendered
       expect(screen.getByLabelText(/I confirm that I own the copyright/i)).toBeInTheDocument();
-      expect(screen.getByLabelText(/I confirm that I have the right to create derivative works/i)).toBeInTheDocument();
-      expect(screen.getByLabelText(/I understand that I am solely responsible/i)).toBeInTheDocument();
+      expect(
+        screen.getByLabelText(/I confirm that I have the right to create derivative works/i)
+      ).toBeInTheDocument();
+      expect(
+        screen.getByLabelText(/I understand that I am solely responsible/i)
+      ).toBeInTheDocument();
     });
 
     it('should pass correct props to TranslationConfig component', async () => {
@@ -574,7 +597,9 @@ describe('TranslationUpload', () => {
 
       // Navigate to step 2
       await user.click(screen.getByLabelText(/I confirm that I own the copyright/i));
-      await user.click(screen.getByLabelText(/I confirm that I have the right to create derivative works/i));
+      await user.click(
+        screen.getByLabelText(/I confirm that I have the right to create derivative works/i)
+      );
       await user.click(screen.getByLabelText(/I understand that I am solely responsible/i));
       await user.click(screen.getByRole('button', { name: /next/i }));
 
@@ -590,7 +615,9 @@ describe('TranslationUpload', () => {
 
       // Navigate to step 3
       await user.click(screen.getByLabelText(/I confirm that I own the copyright/i));
-      await user.click(screen.getByLabelText(/I confirm that I have the right to create derivative works/i));
+      await user.click(
+        screen.getByLabelText(/I confirm that I have the right to create derivative works/i)
+      );
       await user.click(screen.getByLabelText(/I understand that I am solely responsible/i));
       await user.click(screen.getByRole('button', { name: /next/i }));
 

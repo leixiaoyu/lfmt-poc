@@ -10,7 +10,7 @@ This guide covers the complete setup of AWS infrastructure for the Long-Form Tra
 
 1. **DynamoDB Tables** (Document 7: Job State Management)
    - `lfmt-jobs-{env}`: Translation job tracking with progress state
-   - `lfmt-users-{env}`: User profile and preference management  
+   - `lfmt-users-{env}`: User profile and preference management
    - `lfmt-attestations-{env}`: Legal attestation records (7-year retention)
 
 2. **S3 Buckets** (Documents 3, 6)
@@ -38,12 +38,14 @@ This guide covers the complete setup of AWS infrastructure for the Long-Form Tra
 ## Prerequisites
 
 ### Required Software
+
 - AWS CLI v2 (`aws --version`)
 - Node.js 18+ (`node --version`)
 - AWS CDK v2 (`cdk --version`)
 - Git (`git --version`)
 
 ### AWS Account Setup
+
 1. **AWS Account** with appropriate permissions
 2. **AWS CLI configured** with credentials
    ```bash
@@ -61,7 +63,7 @@ This guide covers the complete setup of AWS infrastructure for the Long-Form Tra
 # Development environment
 ./scripts/deploy-infrastructure.sh dev us-east-1 default
 
-# Staging environment  
+# Staging environment
 ./scripts/deploy-infrastructure.sh staging us-east-1 default
 
 # Production environment
@@ -93,11 +95,11 @@ cdk deploy --context environment=dev
 
 ### Environment-Specific Settings
 
-| Environment | Stack Name | Retain Data | Logging | Description |
-|------------|------------|-------------|---------|-------------|
-| `dev` | LfmtPocDev | No | Yes | Development environment |
-| `staging` | LfmtPocStaging | Yes | Yes | Staging environment |  
-| `prod` | LfmtPocProd | Yes | Yes | Production environment |
+| Environment | Stack Name     | Retain Data | Logging | Description             |
+| ----------- | -------------- | ----------- | ------- | ----------------------- |
+| `dev`       | LfmtPocDev     | No          | Yes     | Development environment |
+| `staging`   | LfmtPocStaging | Yes         | Yes     | Staging environment     |
+| `prod`      | LfmtPocProd    | Yes         | Yes     | Production environment  |
 
 ### Cost Optimization Features
 
@@ -111,16 +113,19 @@ cdk deploy --context environment=dev
 ## Security Features
 
 ### Data Protection
+
 - **Encryption at Rest**: All DynamoDB tables and S3 buckets
 - **Encryption in Transit**: TLS 1.3 for all API communication
 - **Access Control**: IAM roles with least-privilege principles
 
 ### S3 Security
+
 - **Public Access Blocked**: All buckets deny public access
 - **Versioning**: Enabled on document bucket for data protection
 - **CORS**: Configured for secure frontend integration
 
 ### API Security
+
 - **Cognito Integration**: JWT-based authentication
 - **Rate Limiting**: 100 requests/second with burst capacity
 - **Request Validation**: Schema validation enabled
@@ -128,12 +133,14 @@ cdk deploy --context environment=dev
 ## Monitoring and Observability
 
 ### CloudWatch Metrics
+
 - **DynamoDB**: Read/write capacity utilization
 - **S3**: Object count, storage utilization
 - **API Gateway**: Request count, latency, error rates
 - **Cognito**: Sign-up and sign-in metrics
 
 ### Log Groups
+
 - `/aws/apigateway/lfmt-api-{env}`: API Gateway access logs
 - `/aws/lambda/lfmt-{env}`: Lambda function logs
 - `/aws/stepfunctions/lfmt-{env}`: Step Functions execution logs
@@ -141,11 +148,13 @@ cdk deploy --context environment=dev
 ## Post-Deployment Validation
 
 ### 1. Verify Stack Deployment
+
 ```bash
 aws cloudformation describe-stacks --stack-name LfmtPocDev
 ```
 
 ### 2. Test DynamoDB Tables
+
 ```bash
 aws dynamodb describe-table --table-name lfmt-jobs-dev
 aws dynamodb describe-table --table-name lfmt-users-dev
@@ -153,12 +162,14 @@ aws dynamodb describe-table --table-name lfmt-attestations-dev
 ```
 
 ### 3. Test S3 Buckets
+
 ```bash
 aws s3 ls s3://lfmt-documents-dev/
 aws s3 ls s3://lfmt-results-dev/
 ```
 
 ### 4. Test API Gateway
+
 ```bash
 # Get API URL from stack outputs
 API_URL=$(aws cloudformation describe-stacks \
@@ -171,6 +182,7 @@ curl -X GET "$API_URL/health"
 ```
 
 ### 5. Test Cognito User Pool
+
 ```bash
 # Get User Pool ID
 USER_POOL_ID=$(aws cloudformation describe-stacks \
@@ -186,17 +198,17 @@ aws cognito-idp describe-user-pool --user-pool-id $USER_POOL_ID
 
 The infrastructure deployment provides these outputs for use by other components:
 
-| Output Key | Description | Used By |
-|------------|-------------|---------|
-| `JobsTableName` | DynamoDB jobs table | Lambda functions |
-| `UsersTableName` | DynamoDB users table | Authentication Lambda |
-| `AttestationsTableName` | DynamoDB attestations table | Legal compliance Lambda |
-| `DocumentBucketName` | S3 document upload bucket | File upload Lambda |
-| `ResultsBucketName` | S3 results bucket | Translation output Lambda |
-| `UserPoolId` | Cognito User Pool ID | Frontend authentication |
-| `UserPoolClientId` | Cognito Client ID | Frontend authentication |
-| `ApiUrl` | API Gateway base URL | Frontend API calls |
-| `ApiId` | API Gateway ID | Lambda function integration |
+| Output Key              | Description                 | Used By                     |
+| ----------------------- | --------------------------- | --------------------------- |
+| `JobsTableName`         | DynamoDB jobs table         | Lambda functions            |
+| `UsersTableName`        | DynamoDB users table        | Authentication Lambda       |
+| `AttestationsTableName` | DynamoDB attestations table | Legal compliance Lambda     |
+| `DocumentBucketName`    | S3 document upload bucket   | File upload Lambda          |
+| `ResultsBucketName`     | S3 results bucket           | Translation output Lambda   |
+| `UserPoolId`            | Cognito User Pool ID        | Frontend authentication     |
+| `UserPoolClientId`      | Cognito Client ID           | Frontend authentication     |
+| `ApiUrl`                | API Gateway base URL        | Frontend API calls          |
+| `ApiId`                 | API Gateway ID              | Lambda function integration |
 
 ## Environment Variables
 
@@ -223,6 +235,7 @@ export LOG_LEVEL="info"
 ### Common Issues
 
 1. **CDK Bootstrap Required**
+
    ```bash
    cdk bootstrap aws://ACCOUNT-ID/REGION
    ```
@@ -231,10 +244,11 @@ export LOG_LEVEL="info"
    - Ensure AWS credentials have CloudFormation, DynamoDB, S3, API Gateway, Cognito, and IAM permissions
 
 3. **Stack Already Exists**
+
    ```bash
    # Show differences
    cdk diff --context environment=dev
-   
+
    # Force update
    cdk deploy --context environment=dev --force
    ```
@@ -254,6 +268,7 @@ aws cloudformation delete-stack --stack-name LfmtPocDev
 ```
 
 ### Stack Events
+
 ```bash
 # Monitor deployment progress
 aws cloudformation describe-stack-events --stack-name LfmtPocDev
@@ -262,8 +277,9 @@ aws cloudformation describe-stack-events --stack-name LfmtPocDev
 ## Cost Estimation
 
 ### Development Environment (Monthly)
+
 - **DynamoDB**: ~$2-5 (pay-per-request)
-- **S3**: ~$1-3 (with lifecycle policies)  
+- **S3**: ~$1-3 (with lifecycle policies)
 - **API Gateway**: ~$3-10 (based on requests)
 - **CloudWatch**: ~$1-2 (logs and metrics)
 - **Cognito**: Free tier (up to 50,000 MAUs)
@@ -271,6 +287,7 @@ aws cloudformation describe-stack-events --stack-name LfmtPocDev
 **Total: ~$7-20/month for development**
 
 ### Production Scaling Considerations
+
 - Enable DynamoDB Auto Scaling for consistent performance
 - Consider API Gateway caching for high-traffic endpoints
 - Implement CloudFront for global content delivery
@@ -287,6 +304,7 @@ aws cloudformation describe-stack-events --stack-name LfmtPocDev
 ## Support
 
 For infrastructure issues:
+
 1. Check CloudFormation events for deployment errors
 2. Verify AWS service limits haven't been exceeded
 3. Review IAM permissions for the deployment role
@@ -295,6 +313,7 @@ For infrastructure issues:
 ## Security Considerations
 
 ### Production Hardening
+
 - [ ] Restrict API Gateway CORS to specific origins
 - [ ] Enable AWS Config for compliance monitoring
 - [ ] Set up AWS GuardDuty for threat detection
@@ -303,6 +322,7 @@ For infrastructure issues:
 - [ ] Implement AWS WAF for API protection
 
 ### Data Protection
+
 - [ ] Enable S3 MFA delete for production buckets
 - [ ] Configure S3 cross-region replication for disaster recovery
 - [ ] Set up DynamoDB point-in-time recovery

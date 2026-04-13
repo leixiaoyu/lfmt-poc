@@ -12,12 +12,14 @@
 Two critical security vulnerabilities create unacceptable risk:
 
 ### Issue #11: High-Risk CORS Vulnerability in API Handlers
+
 - **Severity**: CRITICAL
 - **Impact**: Wildcard CORS allows any origin to access API
 - **Risk**: Cross-site scripting attacks, data exfiltration
 - **Attack Vector**: Malicious sites can make authenticated requests
 
 ### Issue #14: Overly Permissive IAM Role Increases Blast Radius
+
 - **Severity**: HIGH
 - **Impact**: Lambda execution role has excessive permissions
 - **Risk**: Compromised Lambda can access unrelated resources
@@ -28,6 +30,7 @@ Two critical security vulnerabilities create unacceptable risk:
 ### 1. Fix CORS Configuration (#11)
 
 **Current (Insecure)**:
+
 ```typescript
 headers: {
   'Access-Control-Allow-Origin': '*',  // ❌ WILDCARD
@@ -36,6 +39,7 @@ headers: {
 ```
 
 **Proposed (Secure)**:
+
 ```typescript
 const allowedOrigins = [
   'https://prod.lfmt.example.com',
@@ -56,64 +60,56 @@ headers: {
 ### 2. Scope Down IAM Permissions (#14)
 
 **Current (Over-Permissive)**:
+
 ```typescript
 new PolicyStatement({
-  actions: ['dynamodb:*', 's3:*', 'cognito-idp:*'],  // ❌ TOO BROAD
-  resources: ['*']  // ❌ WILDCARD
-})
+  actions: ['dynamodb:*', 's3:*', 'cognito-idp:*'], // ❌ TOO BROAD
+  resources: ['*'], // ❌ WILDCARD
+});
 ```
 
 **Proposed (Least Privilege)**:
+
 ```typescript
 // DynamoDB: Only jobs and chunks tables
 new PolicyStatement({
-  actions: [
-    'dynamodb:GetItem',
-    'dynamodb:PutItem',
-    'dynamodb:UpdateItem',
-    'dynamodb:Query'
-  ],
+  actions: ['dynamodb:GetItem', 'dynamodb:PutItem', 'dynamodb:UpdateItem', 'dynamodb:Query'],
   resources: [
     jobsTable.tableArn,
     chunksTable.tableArn,
     `${jobsTable.tableArn}/index/*`,
-    rateLimitTable.tableArn
-  ]
-})
+    rateLimitTable.tableArn,
+  ],
+});
 
 // S3: Only specific buckets with required operations
 new PolicyStatement({
-  actions: [
-    's3:GetObject',
-    's3:PutObject',
-    's3:DeleteObject'
-  ],
+  actions: ['s3:GetObject', 's3:PutObject', 's3:DeleteObject'],
   resources: [
     `${uploadsBucket.bucketArn}/*`,
     `${chunksBucket.bucketArn}/*`,
-    `${resultsBucket.bucketArn}/*`
-  ]
-})
+    `${resultsBucket.bucketArn}/*`,
+  ],
+});
 
 // Cognito: Only user lookup operations
 new PolicyStatement({
-  actions: [
-    'cognito-idp:GetUser',
-    'cognito-idp:AdminGetUser'
-  ],
-  resources: [userPool.userPoolArn]
-})
+  actions: ['cognito-idp:GetUser', 'cognito-idp:AdminGetUser'],
+  resources: [userPool.userPoolArn],
+});
 ```
 
 ## Implementation Plan
 
 ### Task 1: Fix CORS (#11) - 3 hours
+
 1. Define allowed origins in environment variables
 2. Update all Lambda handlers with origin validation
 3. Add CORS validation tests
 4. Deploy and verify with security scan
 
 ### Task 2: Scope IAM Permissions (#14) - 4 hours
+
 1. Audit current IAM policies
 2. Identify minimum required permissions per Lambda
 3. Update CDK IAM role definitions

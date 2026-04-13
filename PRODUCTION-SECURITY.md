@@ -20,7 +20,7 @@ The security stack (`backend/infrastructure/lib/security-stack.ts`) implements:
 
 ## Deployment Options
 
-###  Option 1: Standalone Security Stack (Recommended for Production)
+### Option 1: Standalone Security Stack (Recommended for Production)
 
 Deploy security features as a separate stack that can be managed independently:
 
@@ -62,12 +62,14 @@ npx cdk deploy --all --context environment=prod
 ### 1. AWS CloudTrail
 
 **What it does:**
+
 - Logs all API calls and management events
 - Captures S3 data events for your buckets
 - Provides immutable audit trail
 - Enables forensic investigation
 
 **Configuration:**
+
 - **Log Retention**: 90 days in S3 (30 days hot, then Glacier)
 - **Multi-Region**: Enabled (captures events from all regions)
 - **Log Validation**: Enabled (detects tampering)
@@ -78,12 +80,14 @@ npx cdk deploy --all --context environment=prod
 ### 2. AWS Config
 
 **What it does:**
+
 - Continuously monitors resource configurations
 - Ensures compliance with security policies
 - Alerts on non-compliant resources
 - Provides configuration history
 
 **Managed Rules Included:**
+
 - S3 bucket encryption enforcement
 - S3 public access blocking
 - IAM password policy compliance
@@ -91,6 +95,7 @@ npx cdk deploy --all --context environment=prod
 - CloudTrail enablement check
 
 **Configuration:**
+
 - **Snapshot Frequency**: Daily
 - **Retention**: 365 days
 - **Scope**: All supported resources
@@ -100,12 +105,14 @@ npx cdk deploy --all --context environment=prod
 ### 3. AWS GuardDuty
 
 **What it does:**
+
 - Intelligent threat detection using ML
 - Monitors CloudTrail logs, VPC Flow Logs, DNS logs
 - Detects compromised instances, reconnaissance, unauthorized access
 - Provides severity-rated findings
 
 **Configuration:**
+
 - **S3 Protection**: Enabled (monitors bucket access patterns)
 - **Finding Frequency**: Every 15 minutes
 - **Notifications**: Via AWS Console (can be integrated with SNS)
@@ -115,18 +122,21 @@ npx cdk deploy --all --context environment=prod
 ### 4. AWS WAF (Web Application Firewall)
 
 **What it does:**
+
 - Protects API Gateway from common web exploits
 - Rate limiting to prevent DDoS
 - SQL injection and XSS protection
 - Geo-blocking capabilities
 
 **Rules Configured:**
+
 1. **Rate Limiting**: 2,000 requests per 5 minutes per IP
 2. **AWS Managed Core Rule Set**: OWASP Top 10 protection
 3. **Known Bad Inputs**: Blocks known attack signatures
 4. **SQL Injection Protection**: Detects and blocks SQLi attempts
 
 **Configuration:**
+
 - **Scope**: Regional (for API Gateway)
 - **Logging**: Enabled with CloudWatch metrics
 - **Sampling**: 100% of blocked requests logged
@@ -135,13 +145,13 @@ npx cdk deploy --all --context environment=prod
 
 ## Total Monthly Cost Estimate
 
-| Service | Estimated Cost |
-|---------|---------------|
-| CloudTrail | $2-5 |
-| Config | $2-3 |
-| GuardDuty | $5-10 |
-| WAF | $6-8 |
-| **Total** | **$15-26/month** |
+| Service    | Estimated Cost   |
+| ---------- | ---------------- |
+| CloudTrail | $2-5             |
+| Config     | $2-3             |
+| GuardDuty  | $5-10            |
+| WAF        | $6-8             |
+| **Total**  | **$15-26/month** |
 
 ## Post-Deployment Verification
 
@@ -233,11 +243,13 @@ aws events put-targets \
 After deploying the security stack, attach the WAF to your API Gateway:
 
 ### Via AWS Console:
+
 1. Navigate to API Gateway → Your API → Stages → prod
 2. Under "Web ACL", select the WAF ACL created by the security stack
 3. Click "Save Changes"
 
 ### Via AWS CLI:
+
 ```bash
 # Get the WAF ARN from security stack outputs
 WAF_ARN=$(aws cloudformation describe-stacks \
@@ -332,6 +344,7 @@ aws s3 sync s3://lfmt-cloudtrail-prod-<account-id>/ \
 ## Support
 
 For issues or questions:
+
 - Security Contact: `leixiaoyu@users.noreply.github.com`
 - AWS Support: Enterprise Support Plan (if applicable)
 - Documentation: https://docs.aws.amazon.com/security/

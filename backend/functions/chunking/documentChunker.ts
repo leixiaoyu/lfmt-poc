@@ -6,11 +6,7 @@
  * Based on Technical Architecture Design v2.0
  */
 
-import {
-  countTokens,
-  splitIntoSentences,
-  isValidTokenCount,
-} from '../shared/tokenizer';
+import { countTokens, splitIntoSentences } from '../shared/tokenizer';
 
 export interface ChunkContext {
   primaryContent: string; // 3,500 tokens max
@@ -139,10 +135,7 @@ export class DocumentChunker {
         }
 
         // Split the oversized sentence by words
-        const splitSentence = this.splitOversizedSentence(
-          sentence,
-          this.PRIMARY_CHUNK_SIZE
-        );
+        const splitSentence = this.splitOversizedSentence(sentence, this.PRIMARY_CHUNK_SIZE);
         chunks.push(...splitSentence);
         continue;
       }

@@ -12,11 +12,7 @@
 
 import { S3Event, S3EventRecord } from 'aws-lambda';
 import { mockClient } from 'aws-sdk-client-mock';
-import {
-  DynamoDBClient,
-  GetItemCommand,
-  UpdateItemCommand,
-} from '@aws-sdk/client-dynamodb';
+import { DynamoDBClient, GetItemCommand, UpdateItemCommand } from '@aws-sdk/client-dynamodb';
 import { S3Client, HeadObjectCommand, CopyObjectCommand } from '@aws-sdk/client-s3';
 import { marshall } from '@aws-sdk/util-dynamodb';
 
@@ -210,10 +206,9 @@ describe('uploadComplete Lambda Function - Comprehensive Coverage', () => {
       });
 
       // Verify logging
-      expect(mockLoggerInfo).toHaveBeenCalledWith(
-        'Processing S3 upload completion event',
-        { recordCount: 1 }
-      );
+      expect(mockLoggerInfo).toHaveBeenCalledWith('Processing S3 upload completion event', {
+        recordCount: 1,
+      });
       expect(mockLoggerInfo).toHaveBeenCalledWith('Job status updated to UPLOADED', {
         jobId,
         fileId,
@@ -399,9 +394,7 @@ describe('uploadComplete Lambda Function - Comprehensive Coverage', () => {
       expect(mockLoggerError).toHaveBeenCalledWith(
         'File validation failed',
         expect.objectContaining({
-          validationErrors: expect.arrayContaining([
-            expect.stringContaining('userId mismatch'),
-          ]),
+          validationErrors: expect.arrayContaining([expect.stringContaining('userId mismatch')]),
         })
       );
     });
@@ -441,9 +434,7 @@ describe('uploadComplete Lambda Function - Comprehensive Coverage', () => {
       expect(mockLoggerError).toHaveBeenCalledWith(
         'File validation failed',
         expect.objectContaining({
-          validationErrors: expect.arrayContaining([
-            expect.stringContaining('fileSize mismatch'),
-          ]),
+          validationErrors: expect.arrayContaining([expect.stringContaining('fileSize mismatch')]),
         })
       );
     });
@@ -511,11 +502,7 @@ describe('uploadComplete Lambda Function - Comprehensive Coverage', () => {
     });
 
     it('should skip processing for S3 key not starting with "uploads/"', async () => {
-      const event = createS3Event(
-        'test-bucket',
-        'downloads/user-123/file-456/test.txt',
-        50000
-      );
+      const event = createS3Event('test-bucket', 'downloads/user-123/file-456/test.txt', 50000);
 
       await handler(event);
 
@@ -789,10 +776,9 @@ describe('uploadComplete Lambda Function - Comprehensive Coverage', () => {
       expect(dynamoMock.commandCalls(UpdateItemCommand)).toHaveLength(2);
 
       // Verify logging shows 2 records processed
-      expect(mockLoggerInfo).toHaveBeenCalledWith(
-        'Processing S3 upload completion event',
-        { recordCount: 2 }
-      );
+      expect(mockLoggerInfo).toHaveBeenCalledWith('Processing S3 upload completion event', {
+        recordCount: 2,
+      });
     });
 
     it('should continue processing other events when one event fails', async () => {
@@ -868,10 +854,9 @@ describe('uploadComplete Lambda Function - Comprehensive Coverage', () => {
       await handler(event);
 
       // Verify initial logging
-      expect(mockLoggerInfo).toHaveBeenCalledWith(
-        'Processing S3 upload completion event',
-        { recordCount: 1 }
-      );
+      expect(mockLoggerInfo).toHaveBeenCalledWith('Processing S3 upload completion event', {
+        recordCount: 1,
+      });
 
       // Verify file processing logging
       expect(mockLoggerInfo).toHaveBeenCalledWith(
@@ -901,10 +886,9 @@ describe('uploadComplete Lambda Function - Comprehensive Coverage', () => {
         size: fileSize,
       });
 
-      expect(mockLoggerInfo).toHaveBeenCalledWith(
-        'Completed processing S3 upload events',
-        { recordCount: 1 }
-      );
+      expect(mockLoggerInfo).toHaveBeenCalledWith('Completed processing S3 upload events', {
+        recordCount: 1,
+      });
     });
 
     it('should log errors with stack traces for exceptions', async () => {
@@ -940,7 +924,6 @@ describe('uploadComplete Lambda Function - Comprehensive Coverage', () => {
     it('should handle S3 metadata with empty values', async () => {
       const userId = 'user-123';
       const fileId = 'file-456';
-      const jobId = 'job-789';
       const filename = 'test-document.txt';
       const fileSize = 50000;
 
@@ -1265,7 +1248,9 @@ describe('uploadComplete Lambda Function - Comprehensive Coverage', () => {
       const copyInput = copyCalls[0].args[0].input;
 
       expect(copyInput.Bucket).toBe('production-bucket');
-      expect(copyInput.CopySource).toBe(`production-bucket/uploads/${userId}/${fileId}/${filename}`);
+      expect(copyInput.CopySource).toBe(
+        `production-bucket/uploads/${userId}/${fileId}/${filename}`
+      );
       expect(copyInput.Key).toBe(`documents/${userId}/${fileId}/${filename}`);
     });
   });

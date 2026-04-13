@@ -11,6 +11,7 @@
 The Translation UI has been substantially implemented (components, pages, services, routing) but requires completion of **unit test coverage** and **E2E test suite** to meet production-ready standards. Current implementation is ~70% complete with core functionality working but gaps in testing infrastructure.
 
 ### Current State
+
 - ✅ **Components**: All 5 components exist and functional
 - ✅ **Pages**: All 3 pages exist and routed
 - ✅ **Service Layer**: Complete API integration
@@ -19,6 +20,7 @@ The Translation UI has been substantially implemented (components, pages, servic
 - ❌ **CI/CD Integration**: E2E not in GitHub Actions
 
 ### Target State
+
 - ✅ **Unit Test Coverage**: 95%+
 - ✅ **E2E Test Coverage**: 100% of critical user journeys
 - ✅ **CI/CD Integration**: Automated E2E in GitHub Actions
@@ -29,30 +31,33 @@ The Translation UI has been substantially implemented (components, pages, servic
 ## ✅ ALREADY IMPLEMENTED
 
 ### Components (src/components/Translation/)
+
 All components exist and functional:
 
-| Component | Size | Test File | Status |
-|-----------|------|-----------|--------|
-| FileUpload.tsx | 5,737 bytes | ✅ FileUpload.test.tsx | Complete |
-| FileUploadForm.tsx | 9,429 bytes | ✅ FileUploadForm.test.tsx | Complete |
-| LegalAttestation.tsx | 8,258 bytes | ✅ LegalAttestation.test.tsx | Complete |
-| TranslationConfig.tsx | 4,510 bytes | ❌ **MISSING** | Needs tests |
-| TranslationProgress.tsx | 7,996 bytes | ✅ TranslationProgress.test.tsx | Complete |
+| Component               | Size        | Test File                       | Status      |
+| ----------------------- | ----------- | ------------------------------- | ----------- |
+| FileUpload.tsx          | 5,737 bytes | ✅ FileUpload.test.tsx          | Complete    |
+| FileUploadForm.tsx      | 9,429 bytes | ✅ FileUploadForm.test.tsx      | Complete    |
+| LegalAttestation.tsx    | 8,258 bytes | ✅ LegalAttestation.test.tsx    | Complete    |
+| TranslationConfig.tsx   | 4,510 bytes | ❌ **MISSING**                  | Needs tests |
+| TranslationProgress.tsx | 7,996 bytes | ✅ TranslationProgress.test.tsx | Complete    |
 
 **Test Coverage**: ~2,586 lines of existing tests
 
 ### Pages (src/pages/)
 
-| Page | Size | Test File | Routing | Status |
-|------|------|-----------|---------|--------|
-| TranslationUpload.tsx | 8,721 bytes | ❌ **MISSING** | /translation/upload | Needs tests |
+| Page                   | Size        | Test File      | Routing              | Status      |
+| ---------------------- | ----------- | -------------- | -------------------- | ----------- |
+| TranslationUpload.tsx  | 8,721 bytes | ❌ **MISSING** | /translation/upload  | Needs tests |
 | TranslationHistory.tsx | 9,602 bytes | ❌ **MISSING** | /translation/history | Needs tests |
-| TranslationDetail.tsx | 9,490 bytes | ❌ **MISSING** | /translation/:jobId | Needs tests |
+| TranslationDetail.tsx  | 9,490 bytes | ❌ **MISSING** | /translation/:jobId  | Needs tests |
 
 ### Service Layer (src/services/translationService.ts)
+
 **Size**: 6,057 bytes | **Test File**: ✅ translationService.test.ts
 
 **API Methods**:
+
 - ✅ `uploadDocument()` - File upload with legal attestation
 - ✅ `startTranslation()` - Initiate translation job
 - ✅ `getJobStatus()` - Poll job status
@@ -62,6 +67,7 @@ All components exist and functional:
 - ✅ `TranslationServiceError` - Custom error handling
 
 ### Routing (src/App.tsx)
+
 All routes configured with lazy loading and protected routes:
 
 ```typescript
@@ -72,16 +78,16 @@ All routes configured with lazy loading and protected routes:
 
 ### E2E Tests (e2e/tests/)
 
-| Test File | Coverage | Status |
-|-----------|----------|--------|
-| translation/upload-workflow.spec.ts | Basic upload flow | ✅ Exists (8,293 bytes) |
-| auth/*.spec.ts | Login/Register | ✅ Exists |
-| translation-progress.spec.ts | Progress tracking | ❌ **MISSING** |
-| legal-attestation.spec.ts | Attestation enforcement | ❌ **MISSING** |
-| download-translation.spec.ts | Download flow | ❌ **MISSING** |
-| complete-workflow.spec.ts | Full E2E | ❌ **MISSING** |
-| multi-language.spec.ts | All languages | ❌ **MISSING** |
-| error-scenarios.spec.ts | Error handling | ❌ **MISSING** |
+| Test File                           | Coverage                | Status                  |
+| ----------------------------------- | ----------------------- | ----------------------- |
+| translation/upload-workflow.spec.ts | Basic upload flow       | ✅ Exists (8,293 bytes) |
+| auth/\*.spec.ts                     | Login/Register          | ✅ Exists               |
+| translation-progress.spec.ts        | Progress tracking       | ❌ **MISSING**          |
+| legal-attestation.spec.ts           | Attestation enforcement | ❌ **MISSING**          |
+| download-translation.spec.ts        | Download flow           | ❌ **MISSING**          |
+| complete-workflow.spec.ts           | Full E2E                | ❌ **MISSING**          |
+| multi-language.spec.ts              | All languages           | ❌ **MISSING**          |
+| error-scenarios.spec.ts             | Error handling          | ❌ **MISSING**          |
 
 **E2E Coverage**: ~15% (1/7 critical workflows)
 
@@ -92,6 +98,7 @@ All routes configured with lazy loading and protected routes:
 ### 1. Missing Unit Test Coverage (Priority: P0)
 
 **Critical Gaps**:
+
 - ❌ **TranslationConfig.test.tsx** - No tests for language/tone selection
 - ❌ **TranslationUpload.test.tsx** - No page-level unit tests
 - ❌ **TranslationHistory.test.tsx** - No job list tests
@@ -102,6 +109,7 @@ All routes configured with lazy loading and protected routes:
 ### 2. Missing E2E Test Coverage (Priority: P1)
 
 **Critical User Journeys Not Tested**:
+
 - ❌ Translation progress polling and status updates
 - ❌ Legal attestation enforcement (can't bypass)
 - ❌ Download completed translation
@@ -114,6 +122,7 @@ All routes configured with lazy loading and protected routes:
 ### 3. Missing CI/CD Integration (Priority: P1)
 
 **Current State**:
+
 - ✅ Unit tests run in GitHub Actions
 - ❌ E2E tests NOT in CI/CD pipeline
 - ❌ No automated browser testing
@@ -124,6 +133,7 @@ All routes configured with lazy loading and protected routes:
 ### 4. Missing Documentation (Priority: P2)
 
 **Gaps**:
+
 - ❌ **frontend/TESTING_STRATEGY.md** - Test pyramid documentation
 - ⚠️ **frontend/e2e/README.md** - Exists but may need updates
 - ⚠️ **frontend/README.md** - Missing Translation UI features section
@@ -131,6 +141,7 @@ All routes configured with lazy loading and protected routes:
 ### 5. Missing Polish & QA (Priority: P2)
 
 **Not Yet Done**:
+
 - ❌ Lighthouse audit (target: 90+ score)
 - ❌ Multi-browser testing (Firefox, Safari)
 - ❌ Mobile viewport testing
@@ -141,16 +152,19 @@ All routes configured with lazy loading and protected routes:
 ## 🎯 IMPLEMENTATION PLAN
 
 ### Phase 1: Complete Unit Test Coverage (P0) ⏳ IN PROGRESS
+
 **Goal**: Achieve 95%+ test coverage on all Translation components
 
 **Status**: Phase 1 - Starting with TranslationConfig.test.tsx
 **Estimated Effort**: 12-16 hours (~2 days)
 
 #### Task 1.1: TranslationConfig.test.tsx (~2-3 hours)
+
 **File**: `src/components/Translation/__tests__/TranslationConfig.test.tsx`
 **Estimated Lines**: 150-200
 
 **Test Scenarios**:
+
 - ✅ Component renders with all language options
 - ✅ Language dropdown shows all 5 options (es, fr, de, it, zh)
 - ✅ Tone radio buttons show all 3 options (formal, informal, neutral)
@@ -163,6 +177,7 @@ All routes configured with lazy loading and protected routes:
 - ✅ Form submission blocked with invalid data
 
 **Acceptance Criteria**:
+
 - All test scenarios passing
 - TranslationConfig.tsx coverage ≥95%
 - No TypeScript errors
@@ -170,10 +185,12 @@ All routes configured with lazy loading and protected routes:
 ---
 
 #### Task 1.2: TranslationUpload.test.tsx (~3-4 hours)
+
 **File**: `src/pages/__tests__/TranslationUpload.test.tsx`
 **Estimated Lines**: 250-300
 
 **Test Scenarios**:
+
 - Page renders correctly
 - Multi-step flow: Attestation → Config → Upload
 - Legal attestation validation enforced
@@ -187,6 +204,7 @@ All routes configured with lazy loading and protected routes:
 - Form state persistence
 
 **Acceptance Criteria**:
+
 - All test scenarios passing
 - TranslationUpload.tsx coverage ≥95%
 - Integration with child components verified
@@ -194,10 +212,12 @@ All routes configured with lazy loading and protected routes:
 ---
 
 #### Task 1.3: TranslationHistory.test.tsx (~4-5 hours)
+
 **File**: `src/pages/__tests__/TranslationHistory.test.tsx`
 **Estimated Lines**: 300-400
 
 **Test Scenarios**:
+
 - Page renders with job list
 - Empty state (no jobs yet)
 - Loading state (fetching jobs)
@@ -213,6 +233,7 @@ All routes configured with lazy loading and protected routes:
 - Accessibility (table headers, keyboard navigation)
 
 **Acceptance Criteria**:
+
 - All test scenarios passing
 - TranslationHistory.tsx coverage ≥95%
 - Mock API responses validated
@@ -220,10 +241,12 @@ All routes configured with lazy loading and protected routes:
 ---
 
 #### Task 1.4: TranslationDetail.test.tsx (~3-4 hours)
+
 **File**: `src/pages/__tests__/TranslationDetail.test.tsx`
 **Estimated Lines**: 250-300
 
 **Test Scenarios**:
+
 - Page renders with job metadata
 - Route parameter parsing (jobId)
 - Job details display (filename, size, language, tone, dates)
@@ -239,6 +262,7 @@ All routes configured with lazy loading and protected routes:
 - Auto-refresh on status changes
 
 **Acceptance Criteria**:
+
 - All test scenarios passing
 - TranslationDetail.tsx coverage ≥95%
 - Polling logic validated
@@ -246,12 +270,15 @@ All routes configured with lazy loading and protected routes:
 ---
 
 ### Phase 2: Complete E2E Test Coverage (P1) ⏳ PENDING
+
 **Goal**: Comprehensive end-to-end validation of translation workflows
 
 **Estimated Effort**: 16-20 hours (~3 days)
 
 #### Task 2.1: Page Object Models (~3 hours)
+
 **Files**:
+
 - `e2e/pages/TranslationUploadPage.ts`
 - `e2e/pages/TranslationHistoryPage.ts`
 - `e2e/pages/TranslationDetailPage.ts`
@@ -261,7 +288,9 @@ All routes configured with lazy loading and protected routes:
 ---
 
 #### Task 2.2: translation-progress.spec.ts (~2 hours)
+
 **Test Scenarios**:
+
 - Start translation and poll progress
 - Verify status transitions (PENDING → CHUNKING → CHUNKED → IN_PROGRESS → COMPLETED)
 - Verify progress percentage updates
@@ -272,7 +301,9 @@ All routes configured with lazy loading and protected routes:
 ---
 
 #### Task 2.3: legal-attestation.spec.ts (~2 hours)
+
 **Test Scenarios**:
+
 - Cannot bypass legal attestation
 - All checkboxes required
 - IP address captured
@@ -283,7 +314,9 @@ All routes configured with lazy loading and protected routes:
 ---
 
 #### Task 2.4: download-translation.spec.ts (~3 hours)
+
 **Test Scenarios**:
+
 - Upload document
 - Start translation
 - Wait for completion
@@ -294,7 +327,9 @@ All routes configured with lazy loading and protected routes:
 ---
 
 #### Task 2.5: complete-workflow.spec.ts (~4 hours)
+
 **Test Scenarios**:
+
 - Full E2E: Login → Upload → Attestation → Config → Translate → Progress → Download
 - Verify all intermediate states
 - Verify navigation flow
@@ -303,7 +338,9 @@ All routes configured with lazy loading and protected routes:
 ---
 
 #### Task 2.6: multi-language.spec.ts (~3 hours)
+
 **Test Scenarios**:
+
 - Test all 5 languages × 3 tones = 15 combinations
 - Verify language selection works
 - Verify tone selection works
@@ -312,7 +349,9 @@ All routes configured with lazy loading and protected routes:
 ---
 
 #### Task 2.7: error-scenarios.spec.ts (~3 hours)
+
 **Test Scenarios**:
+
 - Network errors during upload
 - API errors during translation
 - File validation errors
@@ -324,11 +363,13 @@ All routes configured with lazy loading and protected routes:
 ---
 
 ### Phase 3: CI/CD Integration (P1) ✅ COMPLETE
+
 **Goal**: Automate E2E testing in GitHub Actions
 
 **Estimated Effort**: 4-6 hours (~1 day)
 
 **Tasks**:
+
 1. ✅ Updated `.github/workflows/ci.yml` to include E2E tests on PRs
 2. ✅ Added Playwright browser installation step (`npx playwright install --with-deps chromium`)
 3. ✅ Configured test environment variables (`CI=true`, optional `PLAYWRIGHT_BASE_URL`, `API_BASE_URL`)
@@ -338,6 +379,7 @@ All routes configured with lazy loading and protected routes:
 7. ✅ Updated Playwright config to support both local and deployed testing
 
 **Acceptance Criteria**:
+
 - ✅ E2E tests run on every PR (local dev server via `npm run dev`)
 - ✅ E2E tests run after deployment (against deployed CloudFront URL)
 - ✅ PR merges blocked if E2E tests fail
@@ -345,6 +387,7 @@ All routes configured with lazy loading and protected routes:
 - ✅ Screenshots and videos available for failed tests
 
 **Implementation Details**:
+
 - **CI Workflow** (`.github/workflows/ci.yml:200-252`): E2E tests run on PRs with local dev server
 - **Deploy Workflow** (`.github/workflows/deploy.yml:347-418`): E2E tests run post-deployment
 - **Playwright Config** (`playwright.config.ts:84-89`): Auto-detects environment (local vs deployed)
@@ -355,11 +398,13 @@ All routes configured with lazy loading and protected routes:
 ---
 
 ### Phase 4: Documentation & Polish (P2) ⏳ PENDING
+
 **Goal**: Complete professional documentation and QA
 
 **Estimated Effort**: 6-8 hours (~1 day)
 
 **Tasks**:
+
 1. Update `frontend/README.md` with Translation UI features
 2. Update `frontend/e2e/README.md` with Playwright guide
 3. Create `frontend/TESTING_STRATEGY.md`
@@ -370,6 +415,7 @@ All routes configured with lazy loading and protected routes:
 8. Add JSDoc comments to public APIs
 
 **Acceptance Criteria**:
+
 - ✅ Documentation complete
 - ✅ Lighthouse score ≥90
 - ✅ Multi-browser validated
@@ -381,18 +427,22 @@ All routes configured with lazy loading and protected routes:
 ## 📅 TIMELINE
 
 ### Phase 1: Unit Tests (P0) - 2 Days
+
 - Day 1: TranslationConfig + TranslationUpload tests
 - Day 2: TranslationHistory + TranslationDetail tests
 
 ### Phase 2: E2E Tests (P1) - 3 Days
+
 - Day 1: Page Objects + translation-progress + legal-attestation
 - Day 2: download-translation + complete-workflow
 - Day 3: multi-language + error-scenarios
 
 ### Phase 3: CI/CD Integration (P1) - 1 Day
+
 - Day 1: GitHub Actions setup + validation
 
 ### Phase 4: Documentation & Polish (P2) - 1 Day
+
 - Day 1: Docs + Lighthouse + Multi-browser + Accessibility
 
 **Total Estimated Time**: 7 days
@@ -402,6 +452,7 @@ All routes configured with lazy loading and protected routes:
 ## 🎯 SUCCESS CRITERIA
 
 ### Phase 1 Success
+
 - ✅ All Translation components have unit tests
 - ✅ Frontend test coverage ≥95%
 - ✅ All unit tests passing locally
@@ -409,18 +460,21 @@ All routes configured with lazy loading and protected routes:
 - ✅ No ESLint warnings
 
 ### Phase 2 Success
+
 - ✅ All critical user journeys have E2E tests
 - ✅ E2E tests pass locally with `npm run test:e2e`
 - ✅ Page Object Models reduce duplication
 - ✅ Error scenarios properly tested
 
 ### Phase 3 Success
+
 - ✅ E2E tests run automatically on every PR
 - ✅ Deployment blocked if E2E tests fail
 - ✅ Test reports available in GitHub Actions
 - ✅ Full CI/CD pipeline validated
 
 ### Phase 4 Success
+
 - ✅ Documentation complete and accurate
 - ✅ Lighthouse score ≥90 for all metrics
 - ✅ Works on Chrome, Firefox, Safari
@@ -432,12 +486,14 @@ All routes configured with lazy loading and protected routes:
 ## 📊 PROGRESS TRACKING
 
 ### Phase 1: Unit Test Coverage ✅ COMPLETE
+
 - [x] Task 1.1: TranslationConfig.test.tsx (100% coverage, 31 tests passing)
 - [x] Task 1.2: TranslationUpload.test.tsx (98% coverage, 25 tests passing)
 - [x] Task 1.3: TranslationHistory.test.tsx (99% coverage, 27 tests passing)
 - [x] Task 1.4: TranslationDetail.test.tsx (98.76% coverage, 34 tests passing)
 
 ### Phase 2: E2E Test Coverage ✅ COMPLETE
+
 - [x] Task 2.1: Page Object Models (Enhanced TranslationDetailPage with progress tracking methods)
 - [x] Task 2.2: translation-progress.spec.ts (8 tests - status transitions, progress tracking, polling)
 - [x] Task 2.3: legal-attestation.spec.ts (12 tests - checkbox enforcement, IP/timestamp capture, bypass prevention)
@@ -447,6 +503,7 @@ All routes configured with lazy loading and protected routes:
 - [x] Task 2.7: error-scenarios.spec.ts (13 tests - network errors, API errors, validation, retry logic)
 
 ### Phase 3: CI/CD Integration ✅ COMPLETE
+
 - [x] Update GitHub Actions workflow (added E2E tests to ci.yml)
 - [x] Add Playwright browser installation (`npx playwright install --with-deps chromium`)
 - [x] Configure environment variables (`CI=true`, `PLAYWRIGHT_BASE_URL`, `API_BASE_URL`)
@@ -454,6 +511,7 @@ All routes configured with lazy loading and protected routes:
 - [x] Update Playwright config for local and deployed testing
 
 ### Phase 4: Documentation & Polish
+
 - [ ] Update frontend/README.md
 - [ ] Update e2e/README.md
 - [ ] Create TESTING_STRATEGY.md
@@ -477,17 +535,20 @@ All routes configured with lazy loading and protected routes:
 ## 📝 NOTES
 
 ### Implementation Approach
+
 - **TDD Mindset**: Write tests first when possible, even for existing code
 - **Test Coverage Goal**: 95%+ for all Translation code
 - **Playwright Best Practices**: Page Object Models, proper waits, retry logic
 - **CI/CD Best Practices**: Fast feedback, artifact preservation, clear reporting
 
 ### Known Limitations
+
 - **No TranslationContext**: Intentionally skipped, using React Query instead
 - **E2E Not Yet in CI**: Deferred to Phase 3
 - **Some Documentation Incomplete**: Deferred to Phase 4
 
 ### Future Enhancements (Post-MVP)
+
 - Post-Translation Editor (DEVELOPMENT-ROADMAP.md Issue #29)
 - Side-by-Side Viewer (Issue #27)
 - ePub/PDF Support (Issue #28)

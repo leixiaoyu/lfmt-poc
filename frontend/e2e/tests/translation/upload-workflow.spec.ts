@@ -58,7 +58,9 @@ test.describe('Translation Upload Workflow - Happy Path', () => {
     detailPage = new TranslationDetailPage(page);
   });
 
-  test('should complete full translation upload workflow from login to job creation', async ({ page }) => {
+  test('should complete full translation upload workflow from login to job creation', async ({
+    page,
+  }) => {
     // ===== STEP 1: Register and Login =====
     const user = generateTestUser();
 
@@ -129,7 +131,7 @@ test.describe('Translation Upload Workflow - Happy Path', () => {
       `${process.env.API_BASE_URL || 'http://localhost:3000'}/v1/translation/jobs/${jobId}`,
       {
         headers: {
-          'Authorization': `Bearer ${authToken}`,
+          Authorization: `Bearer ${authToken}`,
         },
       }
     );

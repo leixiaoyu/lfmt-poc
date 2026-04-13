@@ -2,7 +2,7 @@
 import { z } from 'zod';
 
 // Job Status Types
-export type JobStatus = 
+export type JobStatus =
   | 'QUEUED'
   | 'PROCESSING'
   | 'RETRYING'
@@ -102,6 +102,59 @@ export interface TranslationJob {
   metadata: JobMetadata;
 }
 
+/**
+ * DynamoDB Job Record
+ * Represents the actual structure of job records stored in DynamoDB.
+ * This type includes all runtime fields used by Lambda functions.
+ */
+export interface DynamoDBJob {
+  // Primary Keys
+  jobId: string;
+  userId: string;
+
+  // Basic Job Info
+  documentId?: string;
+  filename?: string;
+  status: string; // More permissive than JobStatus to handle unknown statuses
+  createdAt: string;
+  updatedAt?: string;
+
+  // Chunking Metadata
+  totalChunks?: number;
+  chunkingMetadata?: {
+    chunkKeys?: string[];
+    chunkCount?: number;
+    averageChunkSize?: number;
+  };
+
+  // Translation Metadata
+  translationStatus?: 'NOT_STARTED' | 'IN_PROGRESS' | 'COMPLETED' | 'TRANSLATION_FAILED';
+  targetLanguage?: string;
+  translationTone?: 'formal' | 'informal' | 'neutral';
+  tone?: 'formal' | 'informal' | 'neutral'; // Alias for translationTone
+  translatedChunks?: number;
+  tokensUsed?: number;
+  estimatedCost?: number;
+  translationStartedAt?: string;
+  translationCompletedAt?: string;
+  translationError?: string;
+
+  // Step Functions
+  executionArn?: string;
+  executionStatus?: string;
+
+  // Legal Attestation
+  legalAttestation?: {
+    accepted: boolean;
+    timestamp: string;
+    ipAddress?: string;
+    userAgent?: string;
+  };
+
+  // Additional Fields (for extensibility)
+  [key: string]: unknown;
+}
+
 export interface JobTimestamps {
   createdAt: string;
   startedAt?: string;
@@ -167,13 +220,18 @@ export const createJobRequestSchema = z.object({
   targetLanguage: z.enum(['spanish', 'french', 'italian', 'german', 'chinese']),
   documentMetadata: z.object({
     wordCount: z.number().min(65000).max(400000),
-    fileSize: z.number().min(1).max(100 * 1024 * 1024), // 100MB
-    contentHash: z.string().min(1)
+    fileSize: z
+      .number()
+      .min(1)
+      .max(100 * 1024 * 1024), // 100MB
+    contentHash: z.string().min(1),
   }),
-  translationOptions: z.object({
-    preserveFormatting: z.boolean(),
-    customGlossary: z.string().optional(),
-    qualityLevel: z.enum(['STANDARD', 'PREMIUM'])
-  }).optional(),
-  priority: z.enum(['LOW', 'NORMAL', 'HIGH'])
+  translationOptions: z
+    .object({
+      preserveFormatting: z.boolean(),
+      customGlossary: z.string().optional(),
+      qualityLevel: z.enum(['STANDARD', 'PREMIUM']),
+    })
+    .optional(),
+  priority: z.enum(['LOW', 'NORMAL', 'HIGH']),
 });

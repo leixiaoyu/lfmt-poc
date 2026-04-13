@@ -12,7 +12,6 @@ import { LoginPage } from '../../pages/LoginPage';
 import { DashboardPage } from '../../pages/DashboardPage';
 import { TranslationUploadPage } from '../../pages/TranslationUploadPage';
 import { TranslationDetailPage } from '../../pages/TranslationDetailPage';
-import { TranslationHistoryPage } from '../../pages/TranslationHistoryPage';
 import { generateTestUser } from '../../fixtures/auth';
 import { TEST_DOCUMENTS } from '../../fixtures/test-documents';
 import * as fs from 'fs';
@@ -29,7 +28,6 @@ test.describe('Complete Translation Workflow - Full E2E', () => {
   let dashboardPage: DashboardPage;
   let uploadPage: TranslationUploadPage;
   let detailPage: TranslationDetailPage;
-  let historyPage: TranslationHistoryPage;
 
   const testFilePath = path.join(__dirname, '../../fixtures/workflow-test.txt');
 
@@ -55,10 +53,11 @@ test.describe('Complete Translation Workflow - Full E2E', () => {
     dashboardPage = new DashboardPage(page);
     uploadPage = new TranslationUploadPage(page);
     detailPage = new TranslationDetailPage(page);
-    historyPage = new TranslationHistoryPage(page);
   });
 
-  test('should complete full workflow: register → login → upload → translate → monitor → download', async ({ page }) => {
+  test('should complete full workflow: register → login → upload → translate → monitor → download', async ({
+    page,
+  }) => {
     // ===== STEP 1: User Registration =====
     const user = generateTestUser();
     const registerResponse = await page.request.post(
@@ -160,7 +159,7 @@ test.describe('Complete Translation Workflow - Full E2E', () => {
       `${process.env.API_BASE_URL || 'http://localhost:3000'}/v1/translation/jobs/${jobId}`,
       {
         headers: {
-          'Authorization': `Bearer ${authToken}`,
+          Authorization: `Bearer ${authToken}`,
         },
       }
     );
@@ -209,7 +208,7 @@ test.describe('Complete Translation Workflow - Full E2E', () => {
       const download = await downloadPromise;
       expect(download).toBeTruthy();
     } catch (e) {
-      console.log('Translation not completed yet, skipping download verification');
+      // console.log('Translation not completed yet, skipping download verification');
       // This is acceptable - the job is processing correctly
     }
   });
@@ -239,7 +238,6 @@ test.describe('Complete Translation Workflow - Full E2E', () => {
 
     // Get job details before refresh
     const jobInfoBefore = await detailPage.getJobInfo();
-    const statusBefore = await detailPage.getJobStatus();
 
     // Refresh page
     await page.reload();
@@ -253,7 +251,9 @@ test.describe('Complete Translation Workflow - Full E2E', () => {
     expect(jobInfoAfter.targetLanguage).toBe(jobInfoBefore.targetLanguage);
 
     // Status might have changed, but should still be valid
-    expect(['PENDING', 'CHUNKING', 'CHUNKED', 'IN_PROGRESS', 'COMPLETED', 'FAILED']).toContain(statusAfter);
+    expect(['PENDING', 'CHUNKING', 'CHUNKED', 'IN_PROGRESS', 'COMPLETED', 'FAILED']).toContain(
+      statusAfter
+    );
   });
 
   test('should maintain authentication across workflow', async ({ page }) => {

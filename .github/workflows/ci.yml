@@ -8,7 +8,7 @@ on:
       - develop
   push:
     branches-ignore:
-      - main  # Main branch uses deploy.yml workflow
+      - main # Main branch uses deploy.yml workflow
 
 env:
   AWS_REGION: us-east-1

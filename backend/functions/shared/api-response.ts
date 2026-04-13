@@ -15,11 +15,11 @@ export interface ApiErrorResponse {
   errors?: Record<string, string[]>;
 }
 
-export interface ApiSuccessResponse<T = any> {
+export interface ApiSuccessResponse<T = unknown> {
   message?: string;
   data?: T;
   requestId?: string;
-  [key: string]: any; // Allow additional properties
+  [key: string]: unknown; // Allow additional properties
 }
 
 /**
@@ -50,7 +50,7 @@ export function getCorsHeaders(requestOrigin?: string): Record<string, string> {
 /**
  * Create a successful API response
  */
-export function createSuccessResponse<T = any>(
+export function createSuccessResponse<T = unknown>(
   statusCode: number,
   data: ApiSuccessResponse<T>,
   requestId?: string,

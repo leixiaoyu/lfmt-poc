@@ -3,19 +3,19 @@
 
 # Project Information
 project:
-  name: "LFMT POC - Long-Form Translation Service"
-  description: "Proof-of-concept translation service for 65K-400K word documents"
+  name: 'LFMT POC - Long-Form Translation Service'
+  description: 'Proof-of-concept translation service for 65K-400K word documents'
 
 # Directory Paths
 paths:
-  specs: "./openspec"
-  changes: "./openspec/changes"
-  archive: "./openspec/changes/archive"
+  specs: './openspec'
+  changes: './openspec/changes'
+  archive: './openspec/changes/archive'
 
 # AI Agent Configuration
 agents:
   enabled: true
-  instructions_file: "./openspec/AGENTS.md"
+  instructions_file: './openspec/AGENTS.md'
 
 # Change Management
 changes:
@@ -26,7 +26,7 @@ changes:
 # Git Integration
 git:
   auto_commit: false
-  commit_prefix: "feat"
+  commit_prefix: 'feat'
 
 # Validation
 validation:

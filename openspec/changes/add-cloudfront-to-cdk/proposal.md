@@ -23,6 +23,7 @@ The CloudFront distribution for frontend hosting is currently managed manually o
 ### Recent Evidence
 
 The CloudFront 403 error fix (PR #54) required manual AWS CLI commands to update the distribution. This highlighted the critical need for Infrastructure as Code management:
+
 - Manual update: `aws cloudfront update-distribution --id EY0NDD10UXFN4`
 - No git history of infrastructure changes
 - Cannot replicate fix across environments
@@ -31,6 +32,7 @@ The CloudFront 403 error fix (PR #54) required manual AWS CLI commands to update
 ### Team Lead Guidance
 
 From PR #54 review (xlei-raymond):
+
 > "The next logical and highest-priority step for our infrastructure team is to bring the CloudFront distribution into our CDK stack as Infrastructure as Code to prevent any future configuration drift."
 
 ## What Changes
@@ -68,9 +70,11 @@ This change will migrate the manually-created CloudFront distribution to AWS CDK
 ## Impact
 
 ### Affected Specs
+
 - **frontend-hosting** (NEW): CloudFront distribution management, SPA routing configuration, security headers
 
 ### Affected Code
+
 - **CDK Infrastructure** (`backend/infrastructure/lib/lfmt-infrastructure-stack.ts`):
   - Add `createFrontendHosting()` method (~150 lines)
   - Add `frontendBucket` and `frontendDistribution` properties
@@ -88,17 +92,20 @@ This change will migrate the manually-created CloudFront distribution to AWS CDK
   - Read CloudFront URL from environment variable instead of hardcoded value
 
 ### Breaking Changes
+
 - **BREAKING**: Existing manual CloudFront distribution will be replaced with CDK-managed distribution
 - **BREAKING**: CloudFront distribution ID will change (requires DNS update if using custom domain)
 - **Migration Required**: Gradual rollover deployment to avoid downtime
 
 ### Risk Mitigation
+
 - Create new CloudFront distribution before deleting old one
 - Use blue-green deployment strategy
 - Test thoroughly in dev environment before production rollout
 - Keep manual distribution as backup for 30 days
 
 ### Benefits
+
 1. **Version Control**: All infrastructure changes tracked in git
 2. **Reproducibility**: Can recreate entire infrastructure from code
 3. **Environment Parity**: Consistent configuration across dev/staging/prod
@@ -107,6 +114,7 @@ This change will migrate the manually-created CloudFront distribution to AWS CDK
 6. **Cost Visibility**: CloudFront resources tagged and tracked in CDK
 
 ### Estimated Effort
+
 - **Design & Proposal**: 2 hours ✅ DONE (PR #58)
 - **Phase 1 - CDK Infrastructure**: 4-6 hours ✅ DONE (PR #59)
 - **Phase 2 - Deployment Workflow**: 1-2 hours (PENDING)
@@ -117,10 +125,12 @@ This change will migrate the manually-created CloudFront distribution to AWS CDK
 ## Progress
 
 ### ✅ Phase 1: CDK Infrastructure (Complete - PR #59)
+
 **Completed**: 2025-11-10
 **PR**: https://github.com/leixiaoyu/lfmt-poc/pull/59
 
 **Implemented**:
+
 - ✅ CloudFront distribution with Origin Access Control (OAC)
 - ✅ Custom error responses for SPA routing (403/404 → `/index.html`)
 - ✅ Security headers policy (HSTS, CSP, X-Frame-Options, etc.)
@@ -131,6 +141,7 @@ This change will migrate the manually-created CloudFront distribution to AWS CDK
 - ✅ Infrastructure tests (33 tests passing, including 7 CloudFront/CORS tests)
 
 **Deliverables**:
+
 - `backend/infrastructure/lib/lfmt-infrastructure-stack.ts`:
   - Added `createFrontendHosting()` method (135 lines)
   - Added `frontendBucket` and `frontendDistribution` properties
@@ -141,10 +152,12 @@ This change will migrate the manually-created CloudFront distribution to AWS CDK
   - Updated resource count validation
 
 ### ✅ Phase 2: Deployment Workflow (Complete - PR #61)
+
 **Completed**: 2025-11-10
 **PR**: https://github.com/leixiaoyu/lfmt-poc/pull/61
 
 **Implemented**:
+
 - ✅ Updated environment URL to use CDK stack output
 - ✅ Added step to retrieve FrontendBucketName from CDK outputs
 - ✅ Updated S3 sync commands to use dynamic bucket name
@@ -154,6 +167,7 @@ This change will migrate the manually-created CloudFront distribution to AWS CDK
 - ✅ E2E test configuration already using CDK outputs via job outputs
 
 **Deliverables**:
+
 - `.github/workflows/deploy.yml`:
   - Removed hardcoded CloudFront URL (`d1yysvwo9eg20b.cloudfront.net`)
   - Removed hardcoded S3 bucket name (`lfmt-poc-frontend`)
@@ -161,10 +175,12 @@ This change will migrate the manually-created CloudFront distribution to AWS CDK
   - CloudFront invalidation already configured (no changes needed)
 
 ### ✅ Phase 3: Documentation (Complete - PR #67)
+
 **Completed**: 2025-11-10
 **PR**: https://github.com/leixiaoyu/lfmt-poc/pull/67
 
 **Implemented**:
+
 - ✅ Updated `CLAUDE.md` with comprehensive CloudFront documentation:
   - CloudFront configuration details (S3 bucket, distribution, OAC)
   - SPA routing deep dive (403 vs 404, custom error responses)
@@ -181,15 +197,18 @@ This change will migrate the manually-created CloudFront distribution to AWS CDK
 - ✅ Integrated migration guide into CLAUDE.md (no separate file needed)
 
 **Deliverables**:
+
 - `CLAUDE.md`: ~460 lines of comprehensive CloudFront documentation
 - `openspec/project.md`: Updated tech stack and dependencies sections
 - Migration guidance integrated into main documentation
 
 ### ✅ Phase 4: Testing & Validation (Complete)
+
 **Completed**: 2025-11-10
 **PR**: Comprehensive validation of CloudFront CDK infrastructure
 
 **Implemented**:
+
 - ✅ CDK stack synthesis validated (CloudFormation template correct)
 - ✅ Dev environment deployment verified (status: UPDATE_COMPLETE)
 - ✅ CloudFront distribution accessible (E3EV4PBKYTNTRE)
@@ -200,6 +219,7 @@ This change will migrate the manually-created CloudFront distribution to AWS CDK
 - ✅ Infrastructure tests passing (33 tests, including 7 CloudFront/CORS tests)
 
 **Validation Results**:
+
 - Stack Status: UPDATE_COMPLETE
 - CloudFront Distribution ID: E3EV4PBKYTNTRE
 - Frontend URL: https://d39xcun7144jgl.cloudfront.net
@@ -209,16 +229,19 @@ This change will migrate the manually-created CloudFront distribution to AWS CDK
 - CloudFront Invalidation: Automated in deployment workflow
 
 **Deliverables**:
+
 - Comprehensive validation summary in `tasks.md`
 - CloudFront distribution serving production traffic
 - All infrastructure tests passing
 - Documentation updated with CloudFront configuration details
 
 ### ✅ Phase 5: Blue-Green Deployment Analysis (Complete)
+
 **Completed**: 2025-11-10
 **Time Spent**: ~0.5 hours (Documentation and Analysis)
 
 **Analysis Results**:
+
 - ✅ Manual distribution (BLUE) documented: `d1yysvwo9eg20b.cloudfront.net` (ID: `EY0NDD10UXFN4`)
 - ✅ CDK distribution (GREEN) verified functional: `d39xcun7144jgl.cloudfront.net` (ID: `E3EV4PBKYTNTRE`)
 - ✅ GREEN distribution serving traffic (validated in Phase 4)
@@ -226,26 +249,31 @@ This change will migrate the manually-created CloudFront distribution to AWS CDK
 - ✅ No custom domain configured (POC uses CloudFront domains directly)
 
 **Key Findings**:
+
 - Blue-green deployment effectively complete for dev environment
 - GREEN distribution fully functional and stable
 - BLUE distribution deprecated, scheduled for deletion after 30-day grace period
 - Rollback plan available but unnecessary (GREEN distribution stable)
 
 **Deliverables**:
+
 - Comprehensive distribution comparison (BLUE vs GREEN)
 - Rollback procedure documentation
 - Deletion timeline for manual distribution (2025-12-10)
 
 ### Phase 6: Cleanup (Deferred - Team Lead Decision Required)
+
 **Scheduled**: 2025-12-10 (After 30-day grace period)
 **Status**: Pending team lead approval
 
 **Pending Tasks**:
+
 - Delete manual CloudFront distribution (`EY0NDD10UXFN4`)
 - Delete old S3 bucket (`lfmt-poc-frontend`)
 - Remove BLUE distribution references from documentation
 
 **Code Cleanup** (Already Complete):
+
 - ✅ All hardcoded CloudFront URLs removed (Phase 1)
 - ✅ CDK stack outputs used throughout codebase
 - ✅ No backup code exists (CDK manages infrastructure)
@@ -257,22 +285,23 @@ This change will migrate the manually-created CloudFront distribution to AWS CDK
 **Status**: ✅ **CloudFront CDK Migration Complete**
 
 ### Implementation Progress
+
 - **Phases 1-5**: Complete (100% implementation)
 - **Phase 6**: Deferred to 2025-12-10 (30-day grace period)
 - **Total Time**: ~9 hours (implementation), ~1 hour (cleanup pending)
 
 ### Infrastructure Comparison
 
-| Aspect | BLUE (Manual) | GREEN (CDK) |
-|--------|--------------|-------------|
-| **Distribution ID** | `EY0NDD10UXFN4` | `E3EV4PBKYTNTRE` |
-| **Domain** | `d1yysvwo9eg20b.cloudfront.net` | `d39xcun7144jgl.cloudfront.net` |
-| **S3 Origin** | `lfmt-poc-frontend.s3.amazonaws.com` | `lfmt-frontend-lfmtpocdev.s3.us-east-1.amazonaws.com` |
-| **Management** | Manual (AWS Console) | CDK Infrastructure as Code |
-| **SPA Routing** | Manual 403 fix (PR #54) | Automated (custom error responses) |
-| **Security Headers** | Manual configuration | CDK-managed (6 headers) |
-| **Status** | Deprecated | Active |
-| **Deletion Date** | 2025-12-10 | N/A |
+| Aspect               | BLUE (Manual)                        | GREEN (CDK)                                           |
+| -------------------- | ------------------------------------ | ----------------------------------------------------- |
+| **Distribution ID**  | `EY0NDD10UXFN4`                      | `E3EV4PBKYTNTRE`                                      |
+| **Domain**           | `d1yysvwo9eg20b.cloudfront.net`      | `d39xcun7144jgl.cloudfront.net`                       |
+| **S3 Origin**        | `lfmt-poc-frontend.s3.amazonaws.com` | `lfmt-frontend-lfmtpocdev.s3.us-east-1.amazonaws.com` |
+| **Management**       | Manual (AWS Console)                 | CDK Infrastructure as Code                            |
+| **SPA Routing**      | Manual 403 fix (PR #54)              | Automated (custom error responses)                    |
+| **Security Headers** | Manual configuration                 | CDK-managed (6 headers)                               |
+| **Status**           | Deprecated                           | Active                                                |
+| **Deletion Date**    | 2025-12-10                           | N/A                                                   |
 
 ### Benefits Achieved
 
@@ -284,8 +313,10 @@ This change will migrate the manually-created CloudFront distribution to AWS CDK
 6. ✅ **Cost Visibility**: Resources tagged and tracked in CDK
 
 ### Next Action
+
 Monitor GREEN distribution for 30 days, then delete BLUE distribution (Team lead approval required)
 
 ---
+
 **Validation**: `openspec validate add-cloudfront-to-cdk --strict`
 **Final Status**: Migration Complete - Cleanup Scheduled

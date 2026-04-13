@@ -3,6 +3,7 @@
 This document outlines how to deploy the LFMT frontend to create a complete dev environment with frontend + backend working together.
 
 ## Current Backend API
+
 - **Base URL**: `https://8brwlwf68h.execute-api.us-east-1.amazonaws.com/v1`
 - **Status**: Deployed and working
 
@@ -15,23 +16,28 @@ AWS Amplify provides automatic CI/CD and integrates seamlessly with your AWS bac
 #### Steps:
 
 1. **Install AWS Amplify CLI** (if not already installed):
+
    ```bash
    npm install -g @aws-amplify/cli
    ```
 
 2. **Configure Amplify** (one-time setup):
+
    ```bash
    amplify configure
    ```
+
    - Sign in to AWS Console
    - Create IAM user with Amplify permissions
    - Save access key
 
 3. **Initialize Amplify in your project**:
+
    ```bash
    cd /Users/raymondl/Documents/LFMT\ POC/LFMT/lfmt-poc/frontend
    amplify init
    ```
+
    - Project name: `lfmt-frontend`
    - Environment: `dev`
    - Default editor: (your choice)
@@ -43,13 +49,16 @@ AWS Amplify provides automatic CI/CD and integrates seamlessly with your AWS bac
    - Start command: `npm run dev`
 
 4. **Add hosting**:
+
    ```bash
    amplify add hosting
    ```
+
    - Select: `Hosting with Amplify Console (Managed hosting with custom domains, Continuous deployment)`
    - Choose: `Continuous deployment (Git-based deployments)`
 
 5. **Publish**:
+
    ```bash
    amplify publish
    ```
@@ -66,17 +75,20 @@ This matches your architecture document's design.
 #### Steps:
 
 1. **Build the frontend**:
+
    ```bash
    cd /Users/raymondl/Documents/LFMT\ POC/LFMT/lfmt-poc/frontend
    npm run build
    ```
 
 2. **Create S3 bucket for frontend**:
+
    ```bash
    aws s3 mb s3://lfmt-frontend-dev --region us-east-1
    ```
 
 3. **Enable static website hosting**:
+
    ```bash
    aws s3 website s3://lfmt-frontend-dev \
      --index-document index.html \
@@ -84,11 +96,13 @@ This matches your architecture document's design.
    ```
 
 4. **Upload build files**:
+
    ```bash
    aws s3 sync dist/ s3://lfmt-frontend-dev --delete
    ```
 
 5. **Set bucket policy for public read**:
+
    ```bash
    aws s3api put-bucket-policy --bucket lfmt-frontend-dev --policy '{
      "Version": "2012-10-17",
@@ -103,6 +117,7 @@ This matches your architecture document's design.
    ```
 
 6. **Create CloudFront distribution** (optional, for HTTPS and caching):
+
    ```bash
    # Use AWS Console or CLI to create CloudFront distribution
    # pointing to S3 bucket
@@ -121,19 +136,23 @@ Perfect for quick testing and prototyping.
 #### Steps:
 
 1. **Install Vercel CLI**:
+
    ```bash
    npm install -g vercel
    ```
 
 2. **Deploy**:
+
    ```bash
    cd /Users/raymondl/Documents/LFMT\ POC/LFMT/lfmt-poc/frontend
    vercel
    ```
+
    - Follow prompts
    - Set environment variable: `VITE_API_BASE_URL=https://8brwlwf68h.execute-api.us-east-1.amazonaws.com/v1`
 
 3. **Production deployment**:
+
    ```bash
    vercel --prod
    ```
@@ -148,6 +167,7 @@ Perfect for quick testing and prototyping.
 The frontend uses these environment variables:
 
 - **Development** (`.env.development`):
+
   ```env
   VITE_API_BASE_URL=http://localhost:3000/api
   VITE_APP_NAME=LFMT Translation Service
@@ -186,6 +206,7 @@ The frontend uses these environment variables:
 For automatic deployments on push to main:
 
 1. **Create `.github/workflows/deploy-frontend.yml`**:
+
    ```yaml
    name: Deploy Frontend
 
@@ -267,15 +288,18 @@ After deployment, test these endpoints:
 ## Troubleshooting
 
 ### CORS Errors
+
 - Update API Gateway CORS settings
 - Add your frontend domain to allowed origins
 - Redeploy API Gateway
 
 ### 404 Errors on Refresh
+
 - Ensure `index.html` is set as error document (for S3)
 - Configure redirects in CloudFront/Amplify
 
 ### Environment Variables Not Working
+
 - Ensure variables start with `VITE_`
 - Rebuild after changing env vars
 - Check build logs for variable values
@@ -285,6 +309,7 @@ After deployment, test these endpoints:
 ## Next Steps
 
 After deployment:
+
 1. Update Cognito User Pool with frontend callback URL
 2. Configure custom domain (optional)
 3. Set up SSL/TLS certificate

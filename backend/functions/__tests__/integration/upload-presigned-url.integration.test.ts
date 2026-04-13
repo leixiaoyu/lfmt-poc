@@ -7,7 +7,7 @@
  * - Tests authentication and authorization
  */
 
-import { S3Client, GetObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s3';
+import { S3Client, HeadObjectCommand } from '@aws-sdk/client-s3';
 import { DynamoDBClient, GetItemCommand } from '@aws-sdk/client-dynamodb';
 
 // Type definitions for API responses
@@ -25,7 +25,8 @@ interface ErrorResponse {
 }
 
 describe('Upload Presigned URL - Integration Tests', () => {
-  const API_BASE_URL = process.env.API_BASE_URL || 'https://8brwlwf68h.execute-api.us-east-1.amazonaws.com/v1';
+  const API_BASE_URL =
+    process.env.API_BASE_URL || 'https://8brwlwf68h.execute-api.us-east-1.amazonaws.com/v1';
   const TEST_USER_TOKEN = process.env.TEST_USER_TOKEN; // Set in CI/CD
   const DOCUMENT_BUCKET = process.env.DOCUMENT_BUCKET || 'lfmt-documents-lfmtpocdev';
   const JOBS_TABLE = process.env.JOBS_TABLE || 'lfmt-jobs-LfmtPocDev';
@@ -42,32 +43,29 @@ describe('Upload Presigned URL - Integration Tests', () => {
       const fileName = `integration-test-${Date.now()}.txt`;
 
       // Step 1: Request presigned URL
-      const presignedResponse = await fetch(
-        `${API_BASE_URL}/jobs/upload`,
-        {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${TEST_USER_TOKEN}`,
-            'Content-Type': 'application/json',
+      const presignedResponse = await fetch(`${API_BASE_URL}/jobs/upload`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${TEST_USER_TOKEN}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          fileName,
+          fileSize: testFile.length,
+          contentType: 'text/plain',
+          legalAttestation: {
+            acceptCopyrightOwnership: true,
+            acceptTranslationRights: true,
+            acceptLiabilityTerms: true,
+            userIPAddress: '127.0.0.1',
+            userAgent: 'Integration Test',
+            timestamp: new Date().toISOString(),
           },
-          body: JSON.stringify({
-            fileName,
-            fileSize: testFile.length,
-            contentType: 'text/plain',
-            legalAttestation: {
-              acceptCopyrightOwnership: true,
-              acceptTranslationRights: true,
-              acceptLiabilityTerms: true,
-              userIPAddress: '127.0.0.1',
-              userAgent: 'Integration Test',
-              timestamp: new Date().toISOString(),
-            },
-          }),
-        }
-      );
+        }),
+      });
 
       expect(presignedResponse.status).toBe(200);
-      const presignedData = await presignedResponse.json() as PresignedUrlResponse;
+      const presignedData = (await presignedResponse.json()) as PresignedUrlResponse;
       expect(presignedData.data).toHaveProperty('uploadUrl');
       expect(presignedData.data).toHaveProperty('fileId');
       expect(presignedData.data).toHaveProperty('expiresIn');
@@ -113,30 +111,27 @@ describe('Upload Presigned URL - Integration Tests', () => {
     }, 30000); // 30 second timeout
 
     it('should include correct CORS headers in presigned URL response', async () => {
-      const response = await fetch(
-        `${API_BASE_URL}/jobs/upload`,
-        {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${TEST_USER_TOKEN}`,
-            Origin: 'https://d39xcun7144jgl.cloudfront.net',
-            'Content-Type': 'application/json',
+      const response = await fetch(`${API_BASE_URL}/jobs/upload`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${TEST_USER_TOKEN}`,
+          Origin: 'https://d39xcun7144jgl.cloudfront.net',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          fileName: 'test.txt',
+          fileSize: 1024,
+          contentType: 'text/plain',
+          legalAttestation: {
+            acceptCopyrightOwnership: true,
+            acceptTranslationRights: true,
+            acceptLiabilityTerms: true,
+            userIPAddress: '127.0.0.1',
+            userAgent: 'Integration Test',
+            timestamp: new Date().toISOString(),
           },
-          body: JSON.stringify({
-            fileName: 'test.txt',
-            fileSize: 1024,
-            contentType: 'text/plain',
-            legalAttestation: {
-              acceptCopyrightOwnership: true,
-              acceptTranslationRights: true,
-              acceptLiabilityTerms: true,
-              userIPAddress: '127.0.0.1',
-              userAgent: 'Integration Test',
-              timestamp: new Date().toISOString(),
-            },
-          }),
-        }
-      );
+        }),
+      });
 
       // Verify CORS headers
       expect(response.headers.get('access-control-allow-origin')).toBeDefined();
@@ -144,20 +139,17 @@ describe('Upload Presigned URL - Integration Tests', () => {
     });
 
     it('should reject request without authentication token', async () => {
-      const response = await fetch(
-        `${API_BASE_URL}/jobs/upload`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            fileName: 'test.txt',
-            fileSize: 1024,
-            contentType: 'text/plain',
-          }),
-        }
-      );
+      const response = await fetch(`${API_BASE_URL}/jobs/upload`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          fileName: 'test.txt',
+          fileSize: 1024,
+          contentType: 'text/plain',
+        }),
+      });
 
       expect(response.status).toBe(401);
       // Verify CORS headers are present even in error response
@@ -165,117 +157,105 @@ describe('Upload Presigned URL - Integration Tests', () => {
     });
 
     it('should reject invalid file validation', async () => {
-      const response = await fetch(
-        `${API_BASE_URL}/jobs/upload`,
-        {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${TEST_USER_TOKEN}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            fileName: '', // Invalid: empty filename
-            fileSize: 1024,
-            contentType: 'text/plain',
-          }),
-        }
-      );
+      const response = await fetch(`${API_BASE_URL}/jobs/upload`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${TEST_USER_TOKEN}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          fileName: '', // Invalid: empty filename
+          fileSize: 1024,
+          contentType: 'text/plain',
+        }),
+      });
 
       expect(response.status).toBe(400);
-      const data = await response.json() as ErrorResponse;
+      const data = (await response.json()) as ErrorResponse;
       expect(data.message).toContain('validation');
     });
 
     it('should reject oversized files', async () => {
       const MAX_FILE_SIZE = 100 * 1024 * 1024; // 100MB
 
-      const response = await fetch(
-        `${API_BASE_URL}/jobs/upload`,
-        {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${TEST_USER_TOKEN}`,
-            'Content-Type': 'application/json',
+      const response = await fetch(`${API_BASE_URL}/jobs/upload`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${TEST_USER_TOKEN}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          fileName: 'huge-file.txt',
+          fileSize: MAX_FILE_SIZE + 1, // Exceed limit
+          contentType: 'text/plain',
+          legalAttestation: {
+            acceptCopyrightOwnership: true,
+            acceptTranslationRights: true,
+            acceptLiabilityTerms: true,
+            userIPAddress: '127.0.0.1',
+            userAgent: 'Integration Test',
+            timestamp: new Date().toISOString(),
           },
-          body: JSON.stringify({
-            fileName: 'huge-file.txt',
-            fileSize: MAX_FILE_SIZE + 1, // Exceed limit
-            contentType: 'text/plain',
-            legalAttestation: {
-              acceptCopyrightOwnership: true,
-              acceptTranslationRights: true,
-              acceptLiabilityTerms: true,
-              userIPAddress: '127.0.0.1',
-              userAgent: 'Integration Test',
-              timestamp: new Date().toISOString(),
-            },
-          }),
-        }
-      );
+        }),
+      });
 
       expect(response.status).toBe(400);
-      const data = await response.json() as ErrorResponse;
+      const data = (await response.json()) as ErrorResponse;
       expect(data.message).toContain('exceeds maximum');
     });
 
     it('should reject wrong content type', async () => {
-      const response = await fetch(
-        `${API_BASE_URL}/jobs/upload`,
-        {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${TEST_USER_TOKEN}`,
-            'Content-Type': 'application/json',
+      const response = await fetch(`${API_BASE_URL}/jobs/upload`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${TEST_USER_TOKEN}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          fileName: 'test.pdf',
+          fileSize: 1024,
+          contentType: 'application/pdf', // Not allowed (only text/plain)
+          legalAttestation: {
+            acceptCopyrightOwnership: true,
+            acceptTranslationRights: true,
+            acceptLiabilityTerms: true,
+            userIPAddress: '127.0.0.1',
+            userAgent: 'Integration Test',
+            timestamp: new Date().toISOString(),
           },
-          body: JSON.stringify({
-            fileName: 'test.pdf',
-            fileSize: 1024,
-            contentType: 'application/pdf', // Not allowed (only text/plain)
-            legalAttestation: {
-              acceptCopyrightOwnership: true,
-              acceptTranslationRights: true,
-              acceptLiabilityTerms: true,
-              userIPAddress: '127.0.0.1',
-              userAgent: 'Integration Test',
-              timestamp: new Date().toISOString(),
-            },
-          }),
-        }
-      );
+        }),
+      });
 
       expect(response.status).toBe(400);
-      const data = await response.json() as ErrorResponse;
+      const data = (await response.json()) as ErrorResponse;
       expect(data.message).toContain('content type');
     });
   });
 
   describeOrSkip('Presigned URL Security', () => {
     it('should expire presigned URL after 15 minutes', async () => {
-      const response = await fetch(
-        `${API_BASE_URL}/jobs/upload`,
-        {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${TEST_USER_TOKEN}`,
-            'Content-Type': 'application/json',
+      const response = await fetch(`${API_BASE_URL}/jobs/upload`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${TEST_USER_TOKEN}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          fileName: 'test.txt',
+          fileSize: 1024,
+          contentType: 'text/plain',
+          legalAttestation: {
+            acceptCopyrightOwnership: true,
+            acceptTranslationRights: true,
+            acceptLiabilityTerms: true,
+            userIPAddress: '127.0.0.1',
+            userAgent: 'Integration Test',
+            timestamp: new Date().toISOString(),
           },
-          body: JSON.stringify({
-            fileName: 'test.txt',
-            fileSize: 1024,
-            contentType: 'text/plain',
-            legalAttestation: {
-              acceptCopyrightOwnership: true,
-              acceptTranslationRights: true,
-              acceptLiabilityTerms: true,
-              userIPAddress: '127.0.0.1',
-              userAgent: 'Integration Test',
-              timestamp: new Date().toISOString(),
-            },
-          }),
-        }
-      );
+        }),
+      });
 
-      const data = await response.json() as PresignedUrlResponse;
+      const data = (await response.json()) as PresignedUrlResponse;
       const { uploadUrl, expiresIn } = data.data;
 
       // Verify expiration time
@@ -290,31 +270,28 @@ describe('Upload Presigned URL - Integration Tests', () => {
       const fileName = `metadata-test-${Date.now()}.txt`;
 
       // Request presigned URL
-      const presignedResponse = await fetch(
-        `${API_BASE_URL}/jobs/upload`,
-        {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${TEST_USER_TOKEN}`,
-            'Content-Type': 'application/json',
+      const presignedResponse = await fetch(`${API_BASE_URL}/jobs/upload`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${TEST_USER_TOKEN}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          fileName,
+          fileSize: testFile.length,
+          contentType: 'text/plain',
+          legalAttestation: {
+            acceptCopyrightOwnership: true,
+            acceptTranslationRights: true,
+            acceptLiabilityTerms: true,
+            userIPAddress: '127.0.0.1',
+            userAgent: 'Integration Test',
+            timestamp: new Date().toISOString(),
           },
-          body: JSON.stringify({
-            fileName,
-            fileSize: testFile.length,
-            contentType: 'text/plain',
-            legalAttestation: {
-              acceptCopyrightOwnership: true,
-              acceptTranslationRights: true,
-              acceptLiabilityTerms: true,
-              userIPAddress: '127.0.0.1',
-              userAgent: 'Integration Test',
-              timestamp: new Date().toISOString(),
-            },
-          }),
-        }
-      );
+        }),
+      });
 
-      const presignedData = await presignedResponse.json() as PresignedUrlResponse;
+      const presignedData = (await presignedResponse.json()) as PresignedUrlResponse;
       const { uploadUrl, fileId } = presignedData.data;
 
       // Upload to S3

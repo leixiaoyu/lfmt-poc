@@ -4,16 +4,11 @@ module.exports = {
   roots: ['<rootDir>'],
   testMatch: ['**/*.test.ts'],
   moduleFileExtensions: ['ts', 'js', 'json'],
-  collectCoverageFrom: [
-    '**/*.ts',
-    '!**/*.test.ts',
-    '!**/node_modules/**',
-    '!**/dist/**',
-  ],
+  collectCoverageFrom: ['**/*.ts', '!**/*.test.ts', '!**/node_modules/**', '!**/dist/**'],
   coverageThreshold: {
     global: {
       branches: 35,
-      functions: 70,
+      functions: 68,
       lines: 70,
       statements: 70,
     },

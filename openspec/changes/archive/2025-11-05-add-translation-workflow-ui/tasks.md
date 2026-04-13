@@ -1,6 +1,7 @@
 # Translation Workflow UI - Implementation Tasks
 
 ## 1. Playwright E2E Test Infrastructure Setup
+
 - [ ] 1.1 Install Playwright dependencies (`@playwright/test`, browsers)
 - [ ] 1.2 Create `frontend/playwright.config.ts` with multi-browser configuration
 - [ ] 1.3 Create E2E directory structure (`e2e/fixtures`, `e2e/pages`, `e2e/tests`, `e2e/utils`)
@@ -10,6 +11,7 @@
 - [ ] 1.7 Add Playwright scripts to `package.json` (`test:e2e`, `test:e2e:ui`, `test:e2e:report`)
 
 ## 2. Translation Service Layer (TDD Approach)
+
 - [ ] 2.1 Write failing unit tests for `translationService.ts` (all methods)
 - [ ] 2.2 Create `src/services/translationService.ts` with type definitions
 - [ ] 2.3 Implement `getJobStatus(jobId)` - fetch job status from `/jobs/:jobId`
@@ -21,6 +23,7 @@
 - [ ] 2.9 Update `src/services/index.ts` to export translationService
 
 ## 3. Legal Attestation Component
+
 - [ ] 3.1 Write failing E2E test for legal attestation flow
 - [ ] 3.2 Write failing unit tests for `LegalAttestationForm.tsx`
 - [ ] 3.3 Create `src/components/Translation/LegalAttestationForm.tsx`
@@ -33,6 +36,7 @@
 - [ ] 3.10 Write component tests (interactions, validation, error states)
 
 ## 4. Translation Configuration Form
+
 - [ ] 4.1 Write failing E2E test for language/tone selection
 - [ ] 4.2 Write failing unit tests for `TranslationConfigForm.tsx`
 - [ ] 4.3 Create `src/components/Translation/TranslationConfigForm.tsx`
@@ -45,6 +49,7 @@
 - [ ] 4.10 Write component tests (interactions, validation)
 
 ## 5. Enhanced File Upload Flow
+
 - [ ] 5.1 Write failing E2E test for complete upload flow with attestation
 - [ ] 5.2 Update `FileUploadForm.tsx` to integrate legal attestation
 - [ ] 5.3 Update `uploadService.ts` to include attestation in API payload
@@ -56,6 +61,7 @@
 - [ ] 5.9 Update existing unit tests to accommodate changes
 
 ## 6. Translation Progress Component
+
 - [ ] 6.1 Write failing E2E test for progress tracking
 - [ ] 6.2 Write failing unit tests for `TranslationProgress.tsx`
 - [ ] 6.3 Create `src/components/Translation/TranslationProgress.tsx`
@@ -71,6 +77,7 @@
 - [ ] 6.13 Write component tests (polling logic, state transitions)
 
 ## 7. Translation Detail Page
+
 - [ ] 7.1 Write failing E2E test for translation detail page
 - [ ] 7.2 Write failing unit tests for `TranslationDetailPage.tsx`
 - [ ] 7.3 Create `src/pages/TranslationDetailPage.tsx`
@@ -88,6 +95,7 @@
 - [ ] 7.15 Write page tests (routing, data fetching, interactions)
 
 ## 8. Translation History Page
+
 - [ ] 8.1 Write failing E2E test for history page
 - [ ] 8.2 Write failing unit tests for `TranslationHistoryPage.tsx`
 - [ ] 8.3 Create `src/pages/TranslationHistoryPage.tsx`
@@ -106,6 +114,7 @@
 - [ ] 8.16 Write page tests (filtering, sorting, pagination, navigation)
 
 ## 9. Dashboard Enhancement
+
 - [ ] 9.1 Write failing E2E test for enhanced dashboard
 - [ ] 9.2 Write failing unit tests for updated `DashboardPage.tsx`
 - [ ] 9.3 Add "New Translation" prominent CTA button
@@ -118,6 +127,7 @@
 - [ ] 9.10 Verify accessibility
 
 ## 10. Translation Context Provider
+
 - [ ] 10.1 Write failing tests for `TranslationContext.tsx`
 - [ ] 10.2 Create `src/contexts/TranslationContext.tsx`
 - [ ] 10.3 Define context interface (current job, job list, actions)
@@ -128,6 +138,7 @@
 - [ ] 10.8 Write context tests (actions, state updates, persistence)
 
 ## 11. Routing Updates
+
 - [ ] 11.1 Add route for `/translation/new` (NewTranslationPage - already exists)
 - [ ] 11.2 Add route for `/translation/history` (TranslationHistoryPage)
 - [ ] 11.3 Add route for `/translation/:jobId` (TranslationDetailPage)
@@ -137,6 +148,7 @@
 - [ ] 11.7 Test route navigation
 
 ## 12. E2E Test Suite - Translation Workflows
+
 - [ ] 12.1 Create `e2e/tests/translation/upload-workflow.spec.ts`
 - [ ] 12.2 Create `e2e/tests/translation/translation-progress.spec.ts`
 - [ ] 12.3 Create `e2e/tests/translation/legal-attestation.spec.ts`
@@ -149,6 +161,7 @@
 - [ ] 12.10 Run E2E tests in CI environment
 
 ## 13. CI/CD Integration
+
 - [ ] 13.1 Create `.github/workflows/frontend-e2e.yml`
 - [ ] 13.2 Configure Playwright in GitHub Actions
 - [ ] 13.3 Add Playwright browser installation step
@@ -159,6 +172,7 @@
 - [ ] 13.8 Test CI/CD pipeline with test PR
 
 ## 14. Documentation
+
 - [ ] 14.1 Create `frontend/e2e/README.md` (Playwright testing guide)
 - [ ] 14.2 Create `frontend/TESTING_STRATEGY.md` (test pyramid documentation)
 - [ ] 14.3 Update `frontend/README.md` (add E2E testing section, new features)
@@ -168,6 +182,7 @@
 - [ ] 14.7 Update architecture diagrams if needed
 
 ## 15. Polish & Quality Assurance
+
 - [ ] 15.1 Run full test suite (unit + integration + E2E)
 - [ ] 15.2 Verify test coverage remains above 90%
 - [ ] 15.3 Run Lighthouse audit (target 90+ score)
@@ -180,6 +195,7 @@
 - [ ] 15.10 Performance optimization (memoization, lazy loading)
 
 ## 16. Deployment Preparation
+
 - [ ] 16.1 Update environment variables documentation
 - [ ] 16.2 Verify production build succeeds
 - [ ] 16.3 Test production build locally with `npm run preview`
@@ -188,6 +204,7 @@
 - [ ] 16.6 Schedule deployment window
 
 ## 17. Final Validation
+
 - [ ] 17.1 Complete end-to-end manual testing
 - [ ] 17.2 Verify all OpenSpec requirements met
 - [ ] 17.3 Verify all success criteria achieved

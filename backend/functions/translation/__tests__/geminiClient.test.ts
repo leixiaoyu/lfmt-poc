@@ -3,17 +3,9 @@
  */
 
 import { mockClient } from 'aws-sdk-client-mock';
-import {
-  SecretsManagerClient,
-  GetSecretValueCommand,
-} from '@aws-sdk/client-secrets-manager';
+import { SecretsManagerClient, GetSecretValueCommand } from '@aws-sdk/client-secrets-manager';
 import { GeminiClient, createGeminiClient } from '../geminiClient';
-import {
-  GeminiApiError,
-  RateLimitError,
-  AuthenticationError,
-  TranslationOptions,
-} from '../types';
+import { GeminiApiError, RateLimitError, AuthenticationError, TranslationOptions } from '../types';
 
 // Mock the Google GenAI SDK
 jest.mock('@google/genai', () => {
@@ -98,6 +90,7 @@ describe('GeminiClient', () => {
         SecretString: mockApiKey,
       } as any);
 
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
       const { GoogleGenAI } = require('@google/genai');
       mockGenerateContent = jest.fn();
 
@@ -250,9 +243,9 @@ describe('GeminiClient', () => {
         targetLanguage: 'es',
       };
 
-      await expect(
-        uninitializedClient.translate('Text', options)
-      ).rejects.toThrow('Client not initialized');
+      await expect(uninitializedClient.translate('Text', options)).rejects.toThrow(
+        'Client not initialized'
+      );
     });
   });
 
@@ -265,6 +258,7 @@ describe('GeminiClient', () => {
         SecretString: mockApiKey,
       } as any);
 
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
       const { GoogleGenAI } = require('@google/genai');
       mockGenerateContent = jest.fn();
 
@@ -288,9 +282,7 @@ describe('GeminiClient', () => {
         targetLanguage: 'es',
       };
 
-      await expect(client.translate('Text', options)).rejects.toThrow(
-        AuthenticationError
-      );
+      await expect(client.translate('Text', options)).rejects.toThrow(AuthenticationError);
     });
 
     it('should throw RateLimitError on 429', async () => {
@@ -303,9 +295,7 @@ describe('GeminiClient', () => {
         targetLanguage: 'es',
       };
 
-      await expect(client.translate('Text', options)).rejects.toThrow(
-        RateLimitError
-      );
+      await expect(client.translate('Text', options)).rejects.toThrow(RateLimitError);
     });
 
     it('should throw GeminiApiError on 400', async () => {
@@ -318,9 +308,7 @@ describe('GeminiClient', () => {
         targetLanguage: 'es',
       };
 
-      await expect(client.translate('Text', options)).rejects.toThrow(
-        GeminiApiError
-      );
+      await expect(client.translate('Text', options)).rejects.toThrow(GeminiApiError);
     });
 
     it('should handle unknown error status codes (418)', async () => {
@@ -350,6 +338,7 @@ describe('GeminiClient', () => {
         SecretString: mockApiKey,
       } as any);
 
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
       const { GoogleGenAI } = require('@google/genai');
       mockGenerateContent = jest.fn();
 
@@ -377,9 +366,7 @@ describe('GeminiClient', () => {
       };
 
       // First call fails, second succeeds
-      mockGenerateContent
-        .mockRejectedValueOnce(error)
-        .mockResolvedValueOnce(successResponse);
+      mockGenerateContent.mockRejectedValueOnce(error).mockResolvedValueOnce(successResponse);
 
       const options: TranslationOptions = {
         targetLanguage: 'es',
@@ -404,9 +391,7 @@ describe('GeminiClient', () => {
         },
       };
 
-      mockGenerateContent
-        .mockRejectedValueOnce(error)
-        .mockResolvedValueOnce(successResponse);
+      mockGenerateContent.mockRejectedValueOnce(error).mockResolvedValueOnce(successResponse);
 
       const options: TranslationOptions = {
         targetLanguage: 'es',
@@ -428,9 +413,7 @@ describe('GeminiClient', () => {
         targetLanguage: 'es',
       };
 
-      await expect(client.translate('Text', options)).rejects.toThrow(
-        GeminiApiError
-      );
+      await expect(client.translate('Text', options)).rejects.toThrow(GeminiApiError);
 
       // Should have tried: initial + 3 retries = 4 times
       expect(mockGenerateContent).toHaveBeenCalledTimes(4);
@@ -446,9 +429,7 @@ describe('GeminiClient', () => {
         targetLanguage: 'es',
       };
 
-      await expect(client.translate('Text', options)).rejects.toThrow(
-        AuthenticationError
-      );
+      await expect(client.translate('Text', options)).rejects.toThrow(AuthenticationError);
 
       // Should only try once (no retries for auth errors)
       expect(mockGenerateContent).toHaveBeenCalledTimes(1);
@@ -492,6 +473,7 @@ describe('GeminiClient', () => {
         SecretString: mockApiKey,
       } as any);
 
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
       const { GoogleGenAI } = require('@google/genai');
       mockGenerateContent = jest.fn();
 

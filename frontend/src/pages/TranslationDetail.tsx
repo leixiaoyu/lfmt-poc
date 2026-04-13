@@ -67,6 +67,7 @@ export const TranslationDetail: React.FC = () => {
 
   useEffect(() => {
     fetchJobDetails();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [jobId]);
 
   const handleDownload = async () => {
@@ -101,7 +102,9 @@ export const TranslationDetail: React.FC = () => {
 
     try {
       await translationService.startTranslation(jobId, {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         targetLanguage: job.targetLanguage as any,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         tone: job.tone as any,
       });
       // Refresh job details
@@ -142,11 +145,7 @@ export const TranslationDetail: React.FC = () => {
         <Alert severity="error" sx={{ mb: 3 }}>
           {error}
         </Alert>
-        <Button
-          component={RouterLink}
-          to="/translation/history"
-          startIcon={<ArrowBackIcon />}
-        >
+        <Button component={RouterLink} to="/translation/history" startIcon={<ArrowBackIcon />}>
           Go to Translation History
         </Button>
       </Container>
@@ -158,9 +157,7 @@ export const TranslationDetail: React.FC = () => {
   }
 
   const isInProgress =
-    job.status === 'PENDING' ||
-    job.status === 'CHUNKING' ||
-    job.status === 'IN_PROGRESS';
+    job.status === 'PENDING' || job.status === 'CHUNKING' || job.status === 'IN_PROGRESS';
   const isCompleted = job.status === 'COMPLETED';
   const isChunked = job.status === 'CHUNKED';
   const isFailed =
@@ -309,7 +306,12 @@ export const TranslationDetail: React.FC = () => {
         )}
 
         {isFailed && (
-          <Button variant="contained" color="warning" startIcon={<RefreshIcon />} onClick={handleStartTranslation}>
+          <Button
+            variant="contained"
+            color="warning"
+            startIcon={<RefreshIcon />}
+            onClick={handleStartTranslation}
+          >
             Retry Translation
           </Button>
         )}
