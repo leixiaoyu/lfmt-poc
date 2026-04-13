@@ -137,6 +137,12 @@ else
 fi
 
 # 8. Perform rollback by updating alias
+#
+# IMPORTANT: This script only rolls back the function CODE via alias redirection.
+# Lambda configuration (environment variables, memory, timeout, IAM role) is NOT rolled back.
+# If the incident was caused by a configuration change, use CDK/Terraform to update the
+# configuration separately after running this script.
+#
 echo ""
 echo "Step 6: Rolling back Lambda function (updating 'live' alias)..."
 

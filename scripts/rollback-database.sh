@@ -290,22 +290,50 @@ PRIMARY_KEY=$(aws dynamodb describe-table --table-name "$SOURCE_TABLE" \
     | jq -r '.Table.KeySchema[] | select(.KeyType=="HASH") | .AttributeName')
 KEY_TYPE=$(aws dynamodb describe-table --table-name "$SOURCE_TABLE" \
     | jq -r '.Table.AttributeDefinitions[] | select(.AttributeName=="'$PRIMARY_KEY'") | .AttributeType')
-echo "Primary key attribute: $PRIMARY_KEY ($KEY_TYPE)"
+
+# Check for sort key (composite key)
+SORT_KEY=$(aws dynamodb describe-table --table-name "$SOURCE_TABLE" \
+    | jq -r '.Table.KeySchema[] | select(.KeyType=="RANGE") | .AttributeName')
+
+if [ -n "$SORT_KEY" ]; then
+    SORT_KEY_TYPE=$(aws dynamodb describe-table --table-name "$SOURCE_TABLE" \
+        | jq -r '.Table.AttributeDefinitions[] | select(.AttributeName=="'$SORT_KEY'") | .AttributeType')
+    echo "Primary key: $PRIMARY_KEY ($KEY_TYPE)"
+    echo "Sort key: $SORT_KEY ($SORT_KEY_TYPE)"
+    echo -e "${YELLOW}Note: This table uses a composite key. You must provide both partition and sort key values.${NC}"
+else
+    echo "Primary key attribute: $PRIMARY_KEY ($KEY_TYPE)"
+fi
 echo ""
 
 read -p "Enter value for $PRIMARY_KEY to spot-check (or press Enter to skip): " SPOT_CHECK_KEY
 
 if [ -n "$SPOT_CHECK_KEY" ]; then
+    # Build key JSON based on whether sort key exists
+    if [ -n "$SORT_KEY" ]; then
+        read -p "Enter value for $SORT_KEY: " SPOT_CHECK_SORT_KEY
+        if [ -z "$SPOT_CHECK_SORT_KEY" ]; then
+            echo -e "${YELLOW}Sort key value required for composite key table. Skipping spot-check.${NC}"
+            SPOT_CHECK_KEY=""
+        else
+            KEY_JSON="{\"$PRIMARY_KEY\": {\"$KEY_TYPE\": \"$SPOT_CHECK_KEY\"}, \"$SORT_KEY\": {\"$SORT_KEY_TYPE\": \"$SPOT_CHECK_SORT_KEY\"}}"
+        fi
+    else
+        KEY_JSON="{\"$PRIMARY_KEY\": {\"$KEY_TYPE\": \"$SPOT_CHECK_KEY\"}}"
+    fi
+fi
+
+if [ -n "$SPOT_CHECK_KEY" ]; then
     # Check if record exists in source
     SOURCE_RECORD=$(aws dynamodb get-item \
         --table-name "$SOURCE_TABLE" \
-        --key "{\"$PRIMARY_KEY\": {\"$KEY_TYPE\": \"$SPOT_CHECK_KEY\"}}" \
+        --key "$KEY_JSON" \
         2>/dev/null || echo "")
 
     # Check if record exists in target
     TARGET_RECORD=$(aws dynamodb get-item \
         --table-name "$TARGET_TABLE" \
-        --key "{\"$PRIMARY_KEY\": {\"$KEY_TYPE\": \"$SPOT_CHECK_KEY\"}}" \
+        --key "$KEY_JSON" \
         2>/dev/null || echo "")
 
     if [ -z "$SOURCE_RECORD" ] && [ -z "$TARGET_RECORD" ]; then
