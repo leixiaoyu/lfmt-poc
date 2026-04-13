@@ -119,7 +119,7 @@ echo ""
 echo "Step 3: Setting Lambda concurrency to 0..."
 
 LAMBDA_FUNCTIONS=$(aws lambda list-functions \
-    --query "Functions[?starts_with(FunctionName, 'lfmt-') && contains(FunctionName, '${STACK_NAME}')].FunctionName" \
+    --query "Functions[?ends_with(FunctionName, '-${STACK_NAME}')].FunctionName" \
     --output text 2>/dev/null || echo "")
 
 if [ -n "$LAMBDA_FUNCTIONS" ]; then

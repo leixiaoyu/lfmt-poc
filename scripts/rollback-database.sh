@@ -285,10 +285,12 @@ echo "To verify data integrity, please provide a known record key to spot-check.
 echo "Leave blank to skip spot-check."
 echo ""
 
-# Get primary key schema
+# Get primary key schema and type
 PRIMARY_KEY=$(aws dynamodb describe-table --table-name "$SOURCE_TABLE" \
     | jq -r '.Table.KeySchema[] | select(.KeyType=="HASH") | .AttributeName')
-echo "Primary key attribute: $PRIMARY_KEY"
+KEY_TYPE=$(aws dynamodb describe-table --table-name "$SOURCE_TABLE" \
+    | jq -r '.Table.AttributeDefinitions[] | select(.AttributeName=="'$PRIMARY_KEY'") | .AttributeType')
+echo "Primary key attribute: $PRIMARY_KEY ($KEY_TYPE)"
 echo ""
 
 read -p "Enter value for $PRIMARY_KEY to spot-check (or press Enter to skip): " SPOT_CHECK_KEY
@@ -297,13 +299,13 @@ if [ -n "$SPOT_CHECK_KEY" ]; then
     # Check if record exists in source
     SOURCE_RECORD=$(aws dynamodb get-item \
         --table-name "$SOURCE_TABLE" \
-        --key "{\"$PRIMARY_KEY\": {\"S\": \"$SPOT_CHECK_KEY\"}}" \
+        --key "{\"$PRIMARY_KEY\": {\"$KEY_TYPE\": \"$SPOT_CHECK_KEY\"}}" \
         2>/dev/null || echo "")
 
     # Check if record exists in target
     TARGET_RECORD=$(aws dynamodb get-item \
         --table-name "$TARGET_TABLE" \
-        --key "{\"$PRIMARY_KEY\": {\"S\": \"$SPOT_CHECK_KEY\"}}" \
+        --key "{\"$PRIMARY_KEY\": {\"$KEY_TYPE\": \"$SPOT_CHECK_KEY\"}}" \
         2>/dev/null || echo "")
 
     if [ -z "$SOURCE_RECORD" ] && [ -z "$TARGET_RECORD" ]; then
