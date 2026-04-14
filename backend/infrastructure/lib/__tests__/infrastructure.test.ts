@@ -380,18 +380,6 @@ describe('LFMT Infrastructure Stack', () => {
         },
       });
 
-      // Verify Lambda invoke permissions in managed policy
-      template.hasResourceProperties('AWS::IAM::ManagedPolicy', {
-        PolicyDocument: {
-          Statement: Match.arrayWith([
-            Match.objectLike({
-              Effect: 'Allow',
-              Action: 'lambda:InvokeFunction',
-            }),
-          ]),
-        },
-      });
-
       // Verify Step Functions permissions in managed policy
       template.hasResourceProperties('AWS::IAM::ManagedPolicy', {
         PolicyDocument: {
@@ -405,19 +393,29 @@ describe('LFMT Infrastructure Stack', () => {
       });
     });
 
-    test('Step Functions role has Lambda invoke permissions', () => {
-      template.hasResourceProperties('AWS::IAM::Role', {
-        AssumeRolePolicyDocument: {
-          Statement: Match.arrayWith([
-            Match.objectLike({
-              Effect: 'Allow',
-              Principal: {
-                Service: 'states.amazonaws.com',
-              },
-            }),
-          ]),
-        },
+    test('Step Functions execution role exists with Lambda invoke', () => {
+      // Find the StepFunctionsExecutionRole by checking for the assume role policy
+      const roles = template.findResources('AWS::IAM::Role');
+      const stepFunctionsRole = Object.values(roles).find((role: any) => {
+        const statements = role.Properties?.AssumeRolePolicyDocument?.Statement || [];
+        return statements.some((s: any) => s.Principal?.Service === 'states.amazonaws.com');
       });
+
+      expect(stepFunctionsRole).toBeDefined();
+      expect((stepFunctionsRole as any).Properties.Policies).toBeDefined();
+
+      // Verify the inline policy has Lambda invoke
+      const policies = (stepFunctionsRole as any).Properties.Policies;
+      const lambdaInvokePolicy = policies.find((p: any) => p.PolicyName === 'LambdaInvoke');
+      expect(lambdaInvokePolicy).toBeDefined();
+
+      const statements = lambdaInvokePolicy.PolicyDocument.Statement;
+      expect(statements).toContainEqual(
+        expect.objectContaining({
+          Effect: 'Allow',
+          Action: 'lambda:InvokeFunction',
+        })
+      );
     });
   });
 
