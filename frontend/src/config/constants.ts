@@ -6,15 +6,29 @@
  */
 
 /**
+ * Validate required environment variable
+ */
+function getRequiredEnv(key: string): string {
+  const value = import.meta.env[key];
+  if (!value) {
+    throw new Error(
+      `${key} environment variable is not defined. Please check your .env file.`
+    );
+  }
+  return value;
+}
+
+/**
  * API Configuration
  */
 export const API_CONFIG = {
   /**
    * Base URL for API requests
+   * REQUIRED: Must be set via VITE_API_URL environment variable
    * In development: proxied through Vite dev server
    * In production: direct API Gateway URL
    */
-  BASE_URL: import.meta.env.VITE_API_URL || '/api',
+  BASE_URL: getRequiredEnv('VITE_API_URL'),
 
   /**
    * Request timeout in milliseconds
