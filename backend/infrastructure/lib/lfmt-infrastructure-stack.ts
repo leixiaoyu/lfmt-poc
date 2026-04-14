@@ -1200,8 +1200,10 @@ export class LfmtInfrastructureStack extends Stack {
     // Grant the state machine permission to invoke the Lambda function
     this.translateChunkFunction.grantInvoke(this.translationStateMachine);
 
-    // Grant the state machine permission to update DynamoDB
-    this.jobsTable.grantReadWriteData(this.translationStateMachine);
+    // SECURITY: Grant minimal DynamoDB permissions to state machine
+    // State machine only needs UpdateItem for the DynamoUpdateItem task
+    // Avoid grantReadWriteData() which includes dangerous Scan and DeleteItem permissions
+    this.jobsTable.grant(this.translationStateMachine, 'dynamodb:UpdateItem');
 
     // Grant startTranslation Lambda permission to start state machine executions
     // SECURITY: Use CDK reference instead of hardcoded ARN string

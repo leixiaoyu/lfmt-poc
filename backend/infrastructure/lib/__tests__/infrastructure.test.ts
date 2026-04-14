@@ -417,6 +417,22 @@ describe('LFMT Infrastructure Stack', () => {
         })
       );
     });
+
+    test('No dynamodb:Scan in any IAM policy', () => {
+      // Security verification: Ensure dangerous DynamoDB Scan action is not granted
+      // This prevents expensive table scans and enforces query-based access patterns
+      const templateJson = template.toJSON();
+      const allPolicies = JSON.stringify(templateJson);
+      expect(allPolicies).not.toContain('dynamodb:Scan');
+    });
+
+    test('No dynamodb:DeleteItem in any IAM policy', () => {
+      // Security verification: Ensure dangerous DynamoDB DeleteItem action is not granted
+      // This prevents accidental data deletion and enforces soft-delete patterns
+      const templateJson = template.toJSON();
+      const allPolicies = JSON.stringify(templateJson);
+      expect(allPolicies).not.toContain('dynamodb:DeleteItem');
+    });
   });
 
   describe('Step Functions State Machine', () => {
@@ -483,13 +499,14 @@ describe('LFMT Infrastructure Stack', () => {
         },
       });
 
-      // State machine should have permission to read/write DynamoDB
+      // State machine should have minimal DynamoDB permissions (UpdateItem only)
+      // SECURITY: Verify state machine does NOT have broad read/write permissions
       template.hasResourceProperties('AWS::IAM::Policy', {
         PolicyDocument: {
           Statement: Match.arrayWith([
             Match.objectLike({
               Effect: 'Allow',
-              Action: Match.arrayWith([Match.stringLikeRegexp('dynamodb:.*')]),
+              Action: 'dynamodb:UpdateItem',
               Resource: Match.anyValue(),
             }),
           ]),
