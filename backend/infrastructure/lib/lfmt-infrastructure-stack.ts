@@ -1519,8 +1519,9 @@ export class LfmtInfrastructureStack extends Stack {
         },
         contentSecurityPolicy: {
           // NOTE: This CSP will be updated after API Gateway is created to include the actual API URL
-          // Temporary CSP allows connections to execute-api.us-east-1.amazonaws.com domain
-          contentSecurityPolicy: "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self' https://*.execute-api.us-east-1.amazonaws.com;",
+          // Hardened CSP without unsafe-inline and unsafe-eval (Issue #63)
+          // See: https://github.com/leixiaoyu/lfmt-poc/issues/63
+          contentSecurityPolicy: "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self' https://*.execute-api.us-east-1.amazonaws.com; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; upgrade-insecure-requests;",
           override: true,
         },
       },
@@ -1624,8 +1625,9 @@ export class LfmtInfrastructureStack extends Stack {
           override: true,
         },
         contentSecurityPolicy: {
-          // Use specific API Gateway domain instead of wildcard
-          contentSecurityPolicy: `default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self' https://${apiDomain};`,
+          // Hardened CSP with specific API Gateway domain (Issue #63)
+          // Removed unsafe-inline and unsafe-eval for improved XSS protection
+          contentSecurityPolicy: `default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self' https://${apiDomain}; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; upgrade-insecure-requests;`,
           override: true,
         },
       },
