@@ -2,15 +2,17 @@
  * Translation Progress Component
  *
  * Displays real-time translation progress with adaptive polling.
+ * Uses React Query for optimized polling with background sync.
  * Implements requirements from OpenSpec: translation-progress/spec.md
  */
 
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect } from 'react';
 import { Box, Typography, LinearProgress, Paper, Chip, Alert } from '@mui/material';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import ErrorIcon from '@mui/icons-material/Error';
 import HourglassEmptyIcon from '@mui/icons-material/HourglassEmpty';
-import { TranslationJob, translationService } from '../../services/translationService';
+import { TranslationJob } from '../../services/translationService';
+import { useTranslationJob, calculateProgress } from '../../hooks/useTranslationJob';
 
 export interface TranslationProgressProps {
   jobId: string;
@@ -45,103 +47,28 @@ export const TranslationProgress: React.FC<TranslationProgressProps> = ({
   onComplete,
   onError,
 }) => {
-  const [job, setJob] = useState<TranslationJob | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [pollingInterval, setPollingInterval] = useState(15000); // Start at 15 seconds
-  const [elapsedTime, setElapsedTime] = useState(0);
+  const { job, isLoading, error, isTerminal } = useTranslationJob(jobId);
 
-  const isTerminalState = (status: string) => {
-    return (
-      status === 'COMPLETED' ||
-      status === 'FAILED' ||
-      status === 'CHUNKING_FAILED' ||
-      status === 'TRANSLATION_FAILED'
-    );
-  };
-
-  const calculateProgress = (job: TranslationJob): number => {
-    if (job.status === 'COMPLETED') return 100;
-    if (
-      job.status === 'FAILED' ||
-      job.status === 'CHUNKING_FAILED' ||
-      job.status === 'TRANSLATION_FAILED'
-    )
-      return 0;
-    if (job.status === 'PENDING') return 5;
-    if (job.status === 'CHUNKING') return 10;
-    if (job.status === 'CHUNKED') return 15;
-
-    // IN_PROGRESS - calculate based on completed chunks
-    if (job.totalChunks && job.completedChunks !== undefined) {
-      const chunkProgress = (job.completedChunks / job.totalChunks) * 85; // 85% of progress bar
-      return 15 + chunkProgress; // Add 15% for pre-translation steps
-    }
-
-    return 20; // Default for IN_PROGRESS without chunk info
-  };
-
-  const fetchJobStatus = useCallback(async () => {
-    try {
-      const updatedJob = await translationService.getJobStatus(jobId);
-      setJob(updatedJob);
-      setLoading(false);
-      setError(null);
-
-      // Check if terminal state
-      if (isTerminalState(updatedJob.status)) {
-        if (updatedJob.status === 'COMPLETED' && onComplete) {
-          onComplete(updatedJob);
-        } else if (updatedJob.status !== 'COMPLETED' && onError) {
-          onError(updatedJob.errorMessage || 'Translation failed');
-        }
-      }
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    } catch (err: any) {
-      setError(err.message || 'Failed to fetch job status');
-      setLoading(false);
-      if (onError) {
-        onError(err.message || 'Failed to fetch job status');
-      }
-    }
-  }, [jobId, onComplete, onError]);
-
-  // Adaptive polling logic
+  // Handle callbacks when job reaches terminal state
   useEffect(() => {
-    fetchJobStatus(); // Initial fetch
+    if (!job || !isTerminal) return;
 
-    const timer = setInterval(() => {
-      setElapsedTime((prev) => prev + pollingInterval);
-    }, pollingInterval);
+    if (job.status === 'COMPLETED' && onComplete) {
+      onComplete(job);
+    } else if (job.status !== 'COMPLETED' && onError) {
+      onError(job.errorMessage || 'Translation failed');
+    }
+  }, [job, isTerminal, onComplete, onError]);
 
-    return () => clearInterval(timer);
-  }, [fetchJobStatus, pollingInterval]);
-
-  // Adjust polling interval based on elapsed time
+  // Handle query errors
   useEffect(() => {
-    if (job && isTerminalState(job.status)) {
-      return; // Stop adjusting if in terminal state
+    if (error && onError) {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to fetch job status';
+      onError(errorMessage);
     }
+  }, [error, onError]);
 
-    // Adaptive intervals: 15s → 30s after 2min → 60s after 5min
-    if (elapsedTime > 300000 && pollingInterval < 60000) {
-      setPollingInterval(60000); // 60 seconds
-    } else if (elapsedTime > 120000 && pollingInterval < 30000) {
-      setPollingInterval(30000); // 30 seconds
-    }
-  }, [elapsedTime, pollingInterval, job]);
-
-  // Polling effect
-  useEffect(() => {
-    if (!job || isTerminalState(job.status)) {
-      return;
-    }
-
-    const interval = setInterval(fetchJobStatus, pollingInterval);
-    return () => clearInterval(interval);
-  }, [job, pollingInterval, fetchJobStatus]);
-
-  if (loading) {
+  if (isLoading) {
     return (
       <Paper elevation={1} sx={{ p: 3 }}>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
@@ -153,9 +80,10 @@ export const TranslationProgress: React.FC<TranslationProgressProps> = ({
   }
 
   if (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Failed to fetch job status';
     return (
       <Alert severity="error" icon={<ErrorIcon />}>
-        {error}
+        {errorMessage}
       </Alert>
     );
   }
