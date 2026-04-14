@@ -1203,6 +1203,12 @@ export class LfmtInfrastructureStack extends Stack {
     // SECURITY: Grant minimal DynamoDB permissions to state machine
     // State machine only needs UpdateItem for the DynamoUpdateItem task
     // Avoid grantReadWriteData() which includes dangerous Scan and DeleteItem permissions
+    //
+    // SECURITY ANALYSIS: No additional condition keys needed because:
+    // 1. State machine only updates jobs passed via execution input (jobId, userId)
+    // 2. Execution is started by Lambda after validating user ownership
+    // 3. No broad resource patterns - only updates specific job records
+    // 4. Update expression is fixed (status fields only, no user data modification)
     this.jobsTable.grant(this.translationStateMachine, 'dynamodb:UpdateItem');
 
     // Grant startTranslation Lambda permission to start state machine executions

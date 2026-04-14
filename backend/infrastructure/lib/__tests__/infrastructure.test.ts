@@ -433,6 +433,95 @@ describe('LFMT Infrastructure Stack', () => {
       const allPolicies = JSON.stringify(templateJson);
       expect(allPolicies).not.toContain('dynamodb:DeleteItem');
     });
+
+    test('No dynamodb:* wildcard in any IAM policy', () => {
+      // Security verification: Ensure wildcard DynamoDB actions are not granted
+      // This prevents privilege escalation through broad permissions
+      // Verifies that all DynamoDB permissions are explicitly listed
+      const templateJson = template.toJSON();
+
+      // Extract all IAM policies from the template
+      const resources = templateJson.Resources || {};
+      const policyDocuments: any[] = [];
+
+      Object.values(resources).forEach((resource: any) => {
+        // Check inline policies in roles
+        if (resource.Type === 'AWS::IAM::Role' && resource.Properties?.Policies) {
+          resource.Properties.Policies.forEach((policy: any) => {
+            policyDocuments.push(policy.PolicyDocument);
+          });
+        }
+
+        // Check managed policies
+        if (resource.Type === 'AWS::IAM::ManagedPolicy' && resource.Properties?.PolicyDocument) {
+          policyDocuments.push(resource.Properties.PolicyDocument);
+        }
+
+        // Check standalone policy documents
+        if (resource.Type === 'AWS::IAM::Policy' && resource.Properties?.PolicyDocument) {
+          policyDocuments.push(resource.Properties.PolicyDocument);
+        }
+      });
+
+      // Check each policy document for wildcard actions
+      policyDocuments.forEach((policyDoc) => {
+        if (policyDoc?.Statement) {
+          policyDoc.Statement.forEach((statement: any) => {
+            if (statement.Action) {
+              const actions = Array.isArray(statement.Action) ? statement.Action : [statement.Action];
+              actions.forEach((action: any) => {
+                // Fail if we find dynamodb:* wildcard
+                expect(action).not.toBe('dynamodb:*');
+              });
+            }
+          });
+        }
+      });
+    });
+
+    test('No * wildcard in any IAM policy Action field', () => {
+      // Security verification: Ensure no policies grant all permissions via '*'
+      // This prevents privilege escalation and enforces principle of least privilege
+      const templateJson = template.toJSON();
+
+      // Extract all IAM policies from the template
+      const resources = templateJson.Resources || {};
+      const policyDocuments: any[] = [];
+
+      Object.values(resources).forEach((resource: any) => {
+        // Check inline policies in roles
+        if (resource.Type === 'AWS::IAM::Role' && resource.Properties?.Policies) {
+          resource.Properties.Policies.forEach((policy: any) => {
+            policyDocuments.push(policy.PolicyDocument);
+          });
+        }
+
+        // Check managed policies
+        if (resource.Type === 'AWS::IAM::ManagedPolicy' && resource.Properties?.PolicyDocument) {
+          policyDocuments.push(resource.Properties.PolicyDocument);
+        }
+
+        // Check standalone policy documents
+        if (resource.Type === 'AWS::IAM::Policy' && resource.Properties?.PolicyDocument) {
+          policyDocuments.push(resource.Properties.PolicyDocument);
+        }
+      });
+
+      // Check each policy document for wildcard actions
+      policyDocuments.forEach((policyDoc) => {
+        if (policyDoc?.Statement) {
+          policyDoc.Statement.forEach((statement: any) => {
+            if (statement.Action) {
+              const actions = Array.isArray(statement.Action) ? statement.Action : [statement.Action];
+              actions.forEach((action: any) => {
+                // Fail if we find global wildcard '*'
+                expect(action).not.toBe('*');
+              });
+            }
+          });
+        }
+      });
+    });
   });
 
   describe('Step Functions State Machine', () => {
