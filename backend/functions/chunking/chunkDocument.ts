@@ -25,6 +25,9 @@ import { marshall, unmarshall } from '@aws-sdk/util-dynamodb';
 import { createChunker, ChunkContext } from './documentChunker';
 import Logger from '../shared/logger';
 import { getRequiredEnv } from '../shared/env';
+import { createWriteStream, createReadStream, unlinkSync } from 'fs';
+import { pipeline } from 'stream/promises';
+import { Readable } from 'stream';
 
 const logger = new Logger('lfmt-chunk-document');
 const s3Client = new S3Client({});
@@ -71,10 +74,12 @@ function extractJobMetadata(s3Metadata: Record<string, string> | undefined): {
 }
 
 /**
- * Download document content from S3
+ * Download document content from S3 to temporary file using streaming
+ * This avoids loading the entire document into memory, which can cause
+ * memory exhaustion for large files (approaching the 100MB limit).
  */
-async function downloadDocument(bucket: string, key: string): Promise<string> {
-  logger.info('Downloading document from S3', { bucket, key });
+async function downloadDocumentToTempFile(bucket: string, key: string): Promise<string> {
+  logger.info('Streaming document from S3 to temp file', { bucket, key });
 
   const command = new GetObjectCommand({
     Bucket: bucket,
@@ -87,16 +92,49 @@ async function downloadDocument(bucket: string, key: string): Promise<string> {
     throw new Error('S3 object has no body');
   }
 
-  // Convert stream to string
-  const content = await response.Body.transformToString('utf-8');
+  // Generate unique temp file path
+  const tempFilePath = `/tmp/document-${Date.now()}-${Math.random().toString(36).substring(7)}.txt`;
 
-  logger.info('Document downloaded successfully', {
+  // Stream S3 object body to temp file
+  const bodyStream = response.Body as Readable;
+  const fileWriteStream = createWriteStream(tempFilePath);
+
+  await pipeline(bodyStream, fileWriteStream);
+
+  logger.info('Document streamed to temp file successfully', {
     bucket,
     key,
-    contentLength: content.length,
+    tempFilePath,
   });
 
-  return content;
+  return tempFilePath;
+}
+
+/**
+ * Read document content from temporary file in chunks/lines
+ * to avoid loading entire file into memory at once
+ */
+async function readDocumentFromTempFile(tempFilePath: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    const readStream = createReadStream(tempFilePath, {
+      encoding: 'utf8',
+      highWaterMark: 64 * 1024, // 64KB chunks
+    });
+
+    readStream.on('data', (chunk: Buffer) => {
+      chunks.push(chunk);
+    });
+
+    readStream.on('end', () => {
+      const content = Buffer.concat(chunks).toString('utf8');
+      resolve(content);
+    });
+
+    readStream.on('error', (error) => {
+      reject(error);
+    });
+  });
 }
 
 /**
@@ -254,47 +292,67 @@ export const handler: S3Handler = async (event: S3Event): Promise<void> => {
       // Update job status to CHUNKING
       await updateJobStatus(jobId, userId, 'CHUNKING');
 
-      // Download document content
-      const content = await downloadDocument(bucket, key);
+      let tempFilePath: string | null = null;
 
-      // Chunk the document
-      logger.info('Starting document chunking', {
-        jobId,
-        userId,
-        fileId,
-        contentLength: content.length,
-      });
+      try {
+        // Stream document to temp file to avoid memory exhaustion
+        tempFilePath = await downloadDocumentToTempFile(bucket, key);
 
-      const chunker = createChunker();
-      const result = chunker.chunkDocument(content);
+        // Read document content from temp file
+        const content = await readDocumentFromTempFile(tempFilePath);
 
-      logger.info('Document chunked successfully', {
-        jobId,
-        userId,
-        fileId,
-        totalChunks: result.metadata.totalChunks,
-        originalTokenCount: result.metadata.originalTokenCount,
-        averageChunkSize: result.metadata.averageChunkSize,
-        processingTimeMs: result.metadata.processingTimeMs,
-      });
+        // Chunk the document
+        logger.info('Starting document chunking', {
+          jobId,
+          userId,
+          fileId,
+          contentLength: content.length,
+        });
 
-      // Store chunks in S3
-      const chunkKeys = await storeChunks(result.chunks, userId, fileId, jobId);
+        const chunker = createChunker();
+        const result = chunker.chunkDocument(content);
 
-      // Update job status to CHUNKED with metadata
-      await updateJobStatus(jobId, userId, 'CHUNKED', {
-        totalChunks: result.metadata.totalChunks,
-        chunkKeys,
-        originalTokenCount: result.metadata.originalTokenCount,
-        averageChunkSize: result.metadata.averageChunkSize,
-        processingTimeMs: result.metadata.processingTimeMs,
-      });
+        logger.info('Document chunked successfully', {
+          jobId,
+          userId,
+          fileId,
+          totalChunks: result.metadata.totalChunks,
+          originalTokenCount: result.metadata.originalTokenCount,
+          averageChunkSize: result.metadata.averageChunkSize,
+          processingTimeMs: result.metadata.processingTimeMs,
+        });
 
-      logger.info('Document chunking completed successfully', {
-        jobId,
-        fileId,
-        totalChunks: result.metadata.totalChunks,
-      });
+        // Store chunks in S3
+        const chunkKeys = await storeChunks(result.chunks, userId, fileId, jobId);
+
+        // Update job status to CHUNKED with metadata
+        await updateJobStatus(jobId, userId, 'CHUNKED', {
+          totalChunks: result.metadata.totalChunks,
+          chunkKeys,
+          originalTokenCount: result.metadata.originalTokenCount,
+          averageChunkSize: result.metadata.averageChunkSize,
+          processingTimeMs: result.metadata.processingTimeMs,
+        });
+
+        logger.info('Document chunking completed successfully', {
+          jobId,
+          fileId,
+          totalChunks: result.metadata.totalChunks,
+        });
+      } finally {
+        // Clean up temp file
+        if (tempFilePath) {
+          try {
+            unlinkSync(tempFilePath);
+            logger.info('Temp file cleaned up', { tempFilePath });
+          } catch (cleanupError) {
+            logger.warn('Failed to clean up temp file', {
+              tempFilePath,
+              error: cleanupError instanceof Error ? cleanupError.message : 'Unknown error',
+            });
+          }
+        }
+      }
     } catch (error) {
       logger.error('Error processing document', {
         bucket,
