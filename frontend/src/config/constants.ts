@@ -82,6 +82,7 @@ export const ROUTES = {
   NEW_TRANSLATION: '/translation/new',
   TRANSLATION_HISTORY: '/translation/history',
   TRANSLATION_DETAIL: '/translation/:jobId',
+  TRANSLATION_COMPARE: '/translation/:jobId/compare',
   PROFILE: '/profile',
 } as const;
 
