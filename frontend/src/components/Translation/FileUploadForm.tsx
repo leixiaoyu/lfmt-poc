@@ -20,16 +20,17 @@ import {
   Error as ErrorIcon,
 } from '@mui/icons-material';
 import { uploadService, type UploadProgress } from '../../services/uploadService';
+import { FILE_VALIDATION } from '@lfmt/shared-types';
 
 /**
  * File validation constraints
- * Based on backend limits
+ * Imported from shared-types to ensure consistency with backend
  */
 const FILE_CONSTRAINTS = {
-  MAX_SIZE: 100 * 1024 * 1024, // 100MB (matches backend)
-  MIN_SIZE: 1000, // 1KB (matches backend)
-  ALLOWED_TYPE: 'text/plain',
-  ALLOWED_EXTENSION: '.txt',
+  MAX_SIZE: FILE_VALIDATION.MAX_FILE_SIZE,
+  MIN_SIZE: FILE_VALIDATION.MIN_FILE_SIZE,
+  ALLOWED_TYPE: FILE_VALIDATION.ALLOWED_FILE_TYPE,
+  ALLOWED_EXTENSION: FILE_VALIDATION.ALLOWED_FILE_EXTENSION,
 };
 
 /**

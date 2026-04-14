@@ -27,6 +27,7 @@ import {
   RateLimitConfig,
   RateLimitType,
   TokenAcquisitionResult,
+  RateLimitError,
 } from './types/rateLimiting';
 
 /**
@@ -76,7 +77,8 @@ export class DistributedRateLimiter {
    *
    * @param tokensRequested - Number of tokens to acquire
    * @param limitType - Type of rate limit (RPM, TPM, or RPD)
-   * @returns Result indicating success/failure and token availability
+   * @returns Result indicating successful token acquisition
+   * @throws {RateLimitError} When rate limit is exceeded
    */
   async acquire(
     tokensRequested: number,
@@ -112,12 +114,13 @@ export class DistributedRateLimiter {
 
         // Check if sufficient tokens available
         if (availableTokens < tokensRequested) {
-          return this.createRateLimitExceededResponse(
-            tokensRequested,
-            availableTokens,
-            bucket.refillRate,
-            limitType
-          );
+          const timeToRefill = (tokensRequested - availableTokens) / bucket.refillRate;
+          throw new RateLimitError({
+            tokensNeeded: tokensRequested,
+            tokensAvailable: availableTokens,
+            retryAfterMs: Math.ceil(timeToRefill * 1000),
+            limitType,
+          });
         }
 
         const tokensAfterAcquisition = availableTokens - tokensRequested;
@@ -380,13 +383,13 @@ export class DistributedRateLimiter {
 
     // Acquire tokens
     if (bucket.tokensAvailable < tokensRequested) {
-      return this.createRateLimitExceededResponse(
-        tokensRequested,
-        bucket.tokensAvailable,
-        refillRate,
+      const timeToRefill = (tokensRequested - bucket.tokensAvailable) / refillRate;
+      throw new RateLimitError({
+        tokensNeeded: tokensRequested,
+        tokensAvailable: bucket.tokensAvailable,
+        retryAfterMs: Math.ceil(timeToRefill * 1000),
         limitType,
-        true // fallbackMode
-      );
+      });
     }
 
     bucket.tokensAvailable -= tokensRequested;

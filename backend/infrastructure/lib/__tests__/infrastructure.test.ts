@@ -447,7 +447,8 @@ describe('LFMT Infrastructure Stack', () => {
       const mapState = Object.values(states).find((state: any) => state.Type === 'Map');
       expect(mapState).toBeDefined();
 
-      // Verify parallel processing (maxConcurrency: 10) with distributed rate limiting
+      // Verify parallel processing (default maxConcurrency: 10) with distributed rate limiting
+      // Note: maxConcurrency can be overridden via CDK context
       expect((mapState as any).MaxConcurrency).toBe(10);
     });
 

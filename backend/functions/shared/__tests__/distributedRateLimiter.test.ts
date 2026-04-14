@@ -17,7 +17,7 @@ import {
 import { marshall, unmarshall } from '@aws-sdk/util-dynamodb';
 import { mockClient } from 'aws-sdk-client-mock';
 import { DistributedRateLimiter } from '../distributedRateLimiter';
-import { GEMINI_RATE_LIMITS, RateLimitType } from '../types/rateLimiting';
+import { GEMINI_RATE_LIMITS, RateLimitType, RateLimitError } from '../types/rateLimiting';
 
 // Mock DynamoDB client
 const ddbMock = mockClient(DynamoDBClient);
@@ -167,11 +167,18 @@ describe('DistributedRateLimiter', () => {
       });
 
       // Second request should fail (request #25)
-      const result2 = await rateLimiter.acquire(1, RateLimitType.RPD);
-      expect(result2.success).toBe(false);
-      expect(result2.error).toContain('RPD');
-      expect(result2.error).toContain('rate limit');
-      expect(result2.retryAfterMs).toBeGreaterThan(0);
+      await expect(rateLimiter.acquire(1, RateLimitType.RPD)).rejects.toThrow(RateLimitError);
+
+      try {
+        await rateLimiter.acquire(1, RateLimitType.RPD);
+        fail('Should have thrown RateLimitError');
+      } catch (error) {
+        expect(error).toBeInstanceOf(RateLimitError);
+        const rateLimitError = error as RateLimitError;
+        expect(rateLimitError.message).toContain('RPD');
+        expect(rateLimitError.limitType).toBe(RateLimitType.RPD);
+        expect(rateLimitError.retryAfterMs).toBeGreaterThan(0);
+      }
     });
   });
 

@@ -136,9 +136,6 @@ export const chunkingRequestSchema = z.object({
 
 export const fileValidationSchema = z.object({
   filename: z.string().regex(/^[a-zA-Z0-9._-]+\.txt$/, 'Invalid filename format'),
-  fileSize: z
-    .number()
-    .min(1000)
-    .max(100 * 1024 * 1024), // 1KB to 100MB
+  fileSize: fileSizeSchema,
   contentType: z.literal('text/plain'),
 });

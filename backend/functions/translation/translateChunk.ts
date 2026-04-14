@@ -19,7 +19,7 @@ import {
 import { marshall, unmarshall } from '@aws-sdk/util-dynamodb';
 import { GeminiClient } from './geminiClient';
 import { DistributedRateLimiter } from '../shared/distributedRateLimiter';
-import { GEMINI_RATE_LIMITS, RateLimitType } from '../shared/types/rateLimiting';
+import { GEMINI_RATE_LIMITS, RateLimitType, RateLimitError } from '../shared/types/rateLimiting';
 import { TranslationOptions, TranslationContext, GeminiApiError } from './types';
 import Logger from '../shared/logger';
 import { getRequiredEnv } from '../shared/env';
@@ -150,23 +150,27 @@ export const handler = async (
     });
 
     // Acquire rate limit tokens before making API call
-    const rateLimitAcquire = await rateLimiter.acquire(estimatedTokens, RateLimitType.TPM);
+    try {
+      await rateLimiter.acquire(estimatedTokens, RateLimitType.TPM);
+    } catch (error) {
+      if (error instanceof RateLimitError) {
+        logger.warn('Rate limit exceeded, returning retryable error', {
+          error: error.message,
+          retryAfterMs: error.retryAfterMs,
+          tokensAvailable: error.tokensAvailable,
+          tokensNeeded: error.tokensNeeded,
+        });
 
-    if (!rateLimitAcquire.success) {
-      logger.warn('Rate limit exceeded, returning retryable error', {
-        error: rateLimitAcquire.error,
-        retryAfterMs: rateLimitAcquire.retryAfterMs,
-        tokensRemaining: rateLimitAcquire.tokensRemaining,
-      });
-
-      return {
-        success: false,
-        jobId: event.jobId,
-        chunkIndex: event.chunkIndex,
-        processingTimeMs: Date.now() - startTime,
-        error: `Rate limit exceeded: ${rateLimitAcquire.error}`,
-        retryable: true,
-      };
+        return {
+          success: false,
+          jobId: event.jobId,
+          chunkIndex: event.chunkIndex,
+          processingTimeMs: Date.now() - startTime,
+          error: error.message,
+          retryable: true,
+        };
+      }
+      throw error;
     }
 
     // Translate the chunk

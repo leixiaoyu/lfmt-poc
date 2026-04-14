@@ -220,10 +220,7 @@ export const createJobRequestSchema = z.object({
   targetLanguage: z.enum(['spanish', 'french', 'italian', 'german', 'chinese']),
   documentMetadata: z.object({
     wordCount: z.number().min(65000).max(400000),
-    fileSize: z
-      .number()
-      .min(1)
-      .max(100 * 1024 * 1024), // 100MB
+    fileSize: fileSizeSchema,
     contentHash: z.string().min(1),
   }),
   translationOptions: z
