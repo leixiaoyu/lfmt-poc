@@ -124,6 +124,40 @@ export interface TokenAcquisitionResult {
 }
 
 /**
+ * Custom exception thrown when rate limits are exceeded
+ *
+ * Provides structured error information for rate limit failures,
+ * making error handling more explicit and following standard exception patterns.
+ */
+export class RateLimitError extends Error {
+  /** Number of tokens that were requested */
+  public readonly tokensNeeded: number;
+  /** Number of tokens currently available */
+  public readonly tokensAvailable: number;
+  /** Milliseconds to wait before retrying */
+  public readonly retryAfterMs: number;
+  /** Type of rate limit that was exceeded (RPM, TPM, or RPD) */
+  public readonly limitType: RateLimitType;
+
+  constructor(params: {
+    tokensNeeded: number;
+    tokensAvailable: number;
+    retryAfterMs: number;
+    limitType: RateLimitType;
+  }) {
+    const limitTypeName = params.limitType.toUpperCase();
+    super(
+      `Rate limit exceeded for ${limitTypeName}: ${params.tokensNeeded} tokens requested, ${params.tokensAvailable} available. Retry after ${params.retryAfterMs}ms`
+    );
+    this.name = 'RateLimitError';
+    this.tokensNeeded = params.tokensNeeded;
+    this.tokensAvailable = params.tokensAvailable;
+    this.retryAfterMs = params.retryAfterMs;
+    this.limitType = params.limitType;
+  }
+}
+
+/**
  * Gemini API Rate Limits (Free Tier)
  * Source: https://ai.google.dev/gemini-api/docs/models/gemini#model-variations
  */
