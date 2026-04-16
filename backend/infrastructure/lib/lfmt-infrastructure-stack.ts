@@ -1,4 +1,10 @@
-import { Stack, StackProps, RemovalPolicy, Duration, CfnOutput } from 'aws-cdk-lib';
+import {
+  Stack,
+  StackProps,
+  RemovalPolicy,
+  Duration,
+  CfnOutput
+} from 'aws-cdk-lib';
 import { Construct } from 'constructs';
 
 // AWS Service Imports - grouped by service
@@ -22,7 +28,7 @@ export interface LfmtInfrastructureStackProps extends StackProps {
   environment: string;
   enableLogging: boolean;
   retainData: boolean;
-  skipLambdaBundling?: boolean; // For testing purposes
+  skipLambdaBundling?: boolean;  // For testing purposes
 }
 
 export class LfmtInfrastructureStack extends Stack {
@@ -241,29 +247,19 @@ export class LfmtInfrastructureStack extends Stack {
       encryption: s3.BucketEncryption.S3_MANAGED,
       publicReadAccess: false,
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
-      cors: [
-        {
-          allowedMethods: [s3.HttpMethods.GET, s3.HttpMethods.PUT, s3.HttpMethods.POST],
-          allowedOrigins: getAllowedOrigins(),
-          allowedHeaders: [
-            'Content-Type',
-            'x-amz-date',
-            'Authorization',
-            'x-api-key',
-            'x-amz-security-token',
-          ],
-          maxAge: 3000,
-        },
-      ],
-      lifecycleRules: [
-        {
-          id: 'DocumentCleanup',
-          enabled: true,
-          expiration: Duration.days(90), // 90 days retention for source documents
-          abortIncompleteMultipartUploadAfter: Duration.days(1),
-          noncurrentVersionExpiration: Duration.days(30),
-        },
-      ],
+      cors: [{
+        allowedMethods: [s3.HttpMethods.GET, s3.HttpMethods.PUT, s3.HttpMethods.POST],
+        allowedOrigins: getAllowedOrigins(),
+        allowedHeaders: ['Content-Type', 'x-amz-date', 'Authorization', 'x-api-key', 'x-amz-security-token'],
+        maxAge: 3000,
+      }],
+      lifecycleRules: [{
+        id: 'DocumentCleanup',
+        enabled: true,
+        expiration: Duration.days(90), // 90 days retention for source documents
+        abortIncompleteMultipartUploadAfter: Duration.days(1),
+        noncurrentVersionExpiration: Duration.days(30),
+      }],
     });
 
     // Translation Results Bucket
@@ -271,28 +267,24 @@ export class LfmtInfrastructureStack extends Stack {
       bucketName: `lfmt-results-${this.stackName.toLowerCase()}`,
       removalPolicy,
       autoDeleteObjects: removalPolicy === RemovalPolicy.DESTROY,
-      versioned: false,
+      versioned: true, // Enable versioning for data protection (Phase C3.3.2)
       encryption: s3.BucketEncryption.S3_MANAGED,
       publicReadAccess: false,
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
       // Intelligent tiering can be enabled via AWS console or CLI post-deployment
-      lifecycleRules: [
-        {
-          id: 'ResultsCleanup',
-          enabled: true,
-          expiration: Duration.days(90), // 90 days retention for results
-          transitions: [
-            {
-              storageClass: s3.StorageClass.INFREQUENT_ACCESS,
-              transitionAfter: Duration.days(30), // AWS minimum for STANDARD_IA
-            },
-            {
-              storageClass: s3.StorageClass.GLACIER,
-              transitionAfter: Duration.days(60), // Transition to Glacier after 60 days
-            },
-          ],
-        },
-      ],
+      lifecycleRules: [{
+        id: 'ResultsCleanup',
+        enabled: true,
+        expiration: Duration.days(90), // 90 days retention for results
+        noncurrentVersionExpiration: Duration.days(30), // Clean up old versions after 30 days
+        transitions: [{
+          storageClass: s3.StorageClass.INFREQUENT_ACCESS,
+          transitionAfter: Duration.days(30), // AWS minimum for STANDARD_IA
+        }, {
+          storageClass: s3.StorageClass.GLACIER,
+          transitionAfter: Duration.days(60), // Transition to Glacier after 60 days
+        }],
+      }],
     });
   }
 
@@ -312,18 +304,14 @@ export class LfmtInfrastructureStack extends Stack {
       selfSignUpEnabled: true,
       // Disable email verification in dev to avoid SES limits
       // Integration tests create many users, exhausting 50 email/day quota
-      autoVerify: isDev
-        ? {}
-        : {
-            email: true,
-          },
-      userVerification: isDev
-        ? undefined
-        : {
-            emailSubject: 'LFMT Account Verification',
-            emailBody: 'Please verify your account by clicking the link: {##Verify Email##}',
-            emailStyle: cognito.VerificationEmailStyle.LINK,
-          },
+      autoVerify: isDev ? {} : {
+        email: true,
+      },
+      userVerification: isDev ? undefined : {
+        emailSubject: 'LFMT Account Verification',
+        emailBody: 'Please verify your account by clicking the link: {##Verify Email##}',
+        emailStyle: cognito.VerificationEmailStyle.LINK,
+      },
       passwordPolicy: {
         minLength: 8,
         requireLowercase: true,
@@ -381,11 +369,7 @@ export class LfmtInfrastructureStack extends Stack {
 
     // Add User Pool Domain (required for Cognito sign-up flow)
     // Create a simple hash from account ID to ensure uniqueness
-    const accountHash = Buffer.from(this.account)
-      .toString('base64')
-      .toLowerCase()
-      .replace(/[^a-z0-9]/g, '')
-      .substring(0, 8);
+    const accountHash = Buffer.from(this.account).toString('base64').toLowerCase().replace(/[^a-z0-9]/g, '').substring(0, 8);
     const userPoolDomain = new cognito.UserPoolDomain(this, 'UserPoolDomain', {
       userPool: this.userPool,
       cognitoDomain: {
@@ -467,10 +451,9 @@ export class LfmtInfrastructureStack extends Stack {
 
   private createLogGroups(removalPolicy: RemovalPolicy) {
     // Determine log retention based on environment
-    const logRetention =
-      this.node.tryGetContext('environment') === 'prod'
-        ? logs.RetentionDays.SIX_MONTHS
-        : logs.RetentionDays.ONE_MONTH;
+    const logRetention = this.node.tryGetContext('environment') === 'prod' 
+      ? logs.RetentionDays.SIX_MONTHS 
+      : logs.RetentionDays.ONE_MONTH;
 
     // API Gateway Logs
     new logs.LogGroup(this, 'ApiGatewayLogs', {
@@ -497,10 +480,9 @@ export class LfmtInfrastructureStack extends Stack {
     new logs.LogGroup(this, 'SecurityAuditLogs', {
       logGroupName: `/aws/security/lfmt-${this.stackName}`,
       removalPolicy,
-      retention:
-        this.node.tryGetContext('environment') === 'prod'
-          ? logs.RetentionDays.ONE_YEAR
-          : logs.RetentionDays.THREE_MONTHS,
+      retention: this.node.tryGetContext('environment') === 'prod' 
+        ? logs.RetentionDays.ONE_YEAR 
+        : logs.RetentionDays.THREE_MONTHS,
     });
   }
 
@@ -513,14 +495,14 @@ export class LfmtInfrastructureStack extends Stack {
     // - DynamoDB: Scoped to specific tables (no wildcards)
     // - S3: Scoped to specific buckets (no wildcards)
     // - Cognito: Scoped to specific User Pool (no wildcards)
-    // - Secrets Manager: Scoped to lfmt/gemini-api-key-* pattern
-    // - Lambda Invoke: Scoped to lfmt-* functions in this account/region
+    // - Secrets Manager: Scoped to lfmt/gemini-api-key-${this.stackName} (environment-specific, no wildcards)
+    // - Lambda Invoke: Removed from Translation role (Step Functions invokes Lambda, not vice versa)
     //
     // Least Privilege Principle: Separate roles per Lambda function group
     // Function-specific permission requirements:
     // - Auth functions: Cognito + DynamoDB (users table)
     // - Upload functions: S3 + DynamoDB (jobs + attestations tables)
-    // - Translation functions: S3 + DynamoDB (all tables) + Secrets Manager + Lambda Invoke
+    // - Translation functions: S3 + DynamoDB (all tables) + Secrets Manager (no Lambda Invoke)
     // - Chunking functions: S3 + DynamoDB (jobs table)
 
     // ===================================================================
@@ -529,8 +511,7 @@ export class LfmtInfrastructureStack extends Stack {
     // ===================================================================
     (this as any).authRole = new iam.Role(this, 'AuthLambdaRole', {
       assumedBy: new iam.ServicePrincipal('lambda.amazonaws.com'),
-      description:
-        'Execution role for authentication Lambda functions (register, login, getCurrentUser, etc.)',
+      description: 'Execution role for authentication Lambda functions (register, login, getCurrentUser, etc.)',
       managedPolicies: [
         iam.ManagedPolicy.fromAwsManagedPolicyName('service-role/AWSLambdaBasicExecutionRole'),
       ],
@@ -559,6 +540,8 @@ export class LfmtInfrastructureStack extends Stack {
     });
 
     // Auth: DynamoDB Access (users + rate limit buckets tables only)
+    // SECURITY: Scan removed - auth functions use GetItem/Query for specific records, not full table scans
+    // SECURITY: DeleteItem removed - auth role doesn't delete users directly (handled via Cognito)
     new iam.ManagedPolicy(this, 'AuthDynamoDBPolicy', {
       roles: [(this as any).authRole],
       statements: [
@@ -568,9 +551,7 @@ export class LfmtInfrastructureStack extends Stack {
             'dynamodb:GetItem',
             'dynamodb:PutItem',
             'dynamodb:UpdateItem',
-            'dynamodb:DeleteItem',
             'dynamodb:Query',
-            'dynamodb:Scan',
           ],
           resources: [
             this.usersTable.tableArn,
@@ -599,18 +580,30 @@ export class LfmtInfrastructureStack extends Stack {
       statements: [
         new iam.PolicyStatement({
           effect: iam.Effect.ALLOW,
-          actions: ['s3:GetObject', 's3:PutObject', 's3:DeleteObject'],
-          resources: [`${this.documentBucket.bucketArn}/*`, `${this.resultsBucket.bucketArn}/*`],
+          actions: [
+            's3:GetObject',
+            's3:PutObject',
+            's3:DeleteObject',
+          ],
+          resources: [
+            `${this.documentBucket.bucketArn}/*`,
+            `${this.resultsBucket.bucketArn}/*`,
+          ],
         }),
         new iam.PolicyStatement({
           effect: iam.Effect.ALLOW,
           actions: ['s3:ListBucket'],
-          resources: [this.documentBucket.bucketArn, this.resultsBucket.bucketArn],
+          resources: [
+            this.documentBucket.bucketArn,
+            this.resultsBucket.bucketArn,
+          ],
         }),
       ],
     });
 
     // Upload: DynamoDB Access (jobs + attestations + rate limit buckets tables)
+    // SECURITY: Scan removed - upload uses Query on GSIs, not full table scans
+    // SECURITY: DeleteItem removed - not used by upload functions
     new iam.ManagedPolicy(this, 'UploadDynamoDBPolicy', {
       roles: [(this as any).uploadRole],
       statements: [
@@ -620,9 +613,7 @@ export class LfmtInfrastructureStack extends Stack {
             'dynamodb:GetItem',
             'dynamodb:PutItem',
             'dynamodb:UpdateItem',
-            'dynamodb:DeleteItem',
             'dynamodb:Query',
-            'dynamodb:Scan',
           ],
           resources: [
             this.jobsTable.tableArn,
@@ -653,18 +644,31 @@ export class LfmtInfrastructureStack extends Stack {
       statements: [
         new iam.PolicyStatement({
           effect: iam.Effect.ALLOW,
-          actions: ['s3:GetObject', 's3:PutObject', 's3:DeleteObject'],
-          resources: [`${this.documentBucket.bucketArn}/*`, `${this.resultsBucket.bucketArn}/*`],
+          actions: [
+            's3:GetObject',
+            's3:PutObject',
+            's3:DeleteObject',
+          ],
+          resources: [
+            `${this.documentBucket.bucketArn}/*`,
+            `${this.resultsBucket.bucketArn}/*`,
+          ],
         }),
         new iam.PolicyStatement({
           effect: iam.Effect.ALLOW,
           actions: ['s3:ListBucket'],
-          resources: [this.documentBucket.bucketArn, this.resultsBucket.bucketArn],
+          resources: [
+            this.documentBucket.bucketArn,
+            this.resultsBucket.bucketArn,
+          ],
         }),
       ],
     });
 
     // Chunking: DynamoDB Access (jobs + rate limit buckets tables)
+    // SECURITY: Scan removed - not used by chunking (uses GetItem with composite key)
+    // SECURITY: DeleteItem removed - not used by chunking
+    // SECURITY: Query removed - not used by chunking functions
     new iam.ManagedPolicy(this, 'ChunkingDynamoDBPolicy', {
       roles: [(this as any).chunkingRole],
       statements: [
@@ -674,9 +678,6 @@ export class LfmtInfrastructureStack extends Stack {
             'dynamodb:GetItem',
             'dynamodb:PutItem',
             'dynamodb:UpdateItem',
-            'dynamodb:DeleteItem',
-            'dynamodb:Query',
-            'dynamodb:Scan',
           ],
           resources: [
             this.jobsTable.tableArn,
@@ -689,12 +690,11 @@ export class LfmtInfrastructureStack extends Stack {
 
     // ===================================================================
     // Role 4: Translation Lambda Functions Role
-    // Permissions: S3 + DynamoDB (all tables) + Secrets Manager + Lambda Invoke
+    // Permissions: S3 + DynamoDB (all tables) + Secrets Manager (no Lambda Invoke)
     // ===================================================================
     (this as any).translationRole = new iam.Role(this, 'TranslationLambdaRole', {
       assumedBy: new iam.ServicePrincipal('lambda.amazonaws.com'),
-      description:
-        'Execution role for translation Lambda functions (translate-chunk, start-translation, get-translation-status)',
+      description: 'Execution role for translation Lambda functions (translate-chunk, start-translation, get-translation-status)',
       managedPolicies: [
         iam.ManagedPolicy.fromAwsManagedPolicyName('service-role/AWSLambdaBasicExecutionRole'),
       ],
@@ -706,18 +706,30 @@ export class LfmtInfrastructureStack extends Stack {
       statements: [
         new iam.PolicyStatement({
           effect: iam.Effect.ALLOW,
-          actions: ['s3:GetObject', 's3:PutObject', 's3:DeleteObject'],
-          resources: [`${this.documentBucket.bucketArn}/*`, `${this.resultsBucket.bucketArn}/*`],
+          actions: [
+            's3:GetObject',
+            's3:PutObject',
+            's3:DeleteObject',
+          ],
+          resources: [
+            `${this.documentBucket.bucketArn}/*`,
+            `${this.resultsBucket.bucketArn}/*`,
+          ],
         }),
         new iam.PolicyStatement({
           effect: iam.Effect.ALLOW,
           actions: ['s3:ListBucket'],
-          resources: [this.documentBucket.bucketArn, this.resultsBucket.bucketArn],
+          resources: [
+            this.documentBucket.bucketArn,
+            this.resultsBucket.bucketArn,
+          ],
         }),
       ],
     });
 
     // Translation: DynamoDB Access (all tables)
+    // SECURITY: Scan removed - translation uses GetItem/Query, not full table scans
+    // SECURITY: DeleteItem removed - translation doesn't delete records
     new iam.ManagedPolicy(this, 'TranslationDynamoDBPolicy', {
       roles: [(this as any).translationRole],
       statements: [
@@ -727,9 +739,7 @@ export class LfmtInfrastructureStack extends Stack {
             'dynamodb:GetItem',
             'dynamodb:PutItem',
             'dynamodb:UpdateItem',
-            'dynamodb:DeleteItem',
             'dynamodb:Query',
-            'dynamodb:Scan',
           ],
           resources: [
             this.jobsTable.tableArn,
@@ -752,6 +762,7 @@ export class LfmtInfrastructureStack extends Stack {
     //     --secret-string "YOUR_GEMINI_API_KEY"
     //
     // This secret is NOT created by CDK for security reasons (avoid storing secrets in code)
+    // SECURITY: Changed wildcard to environment-specific secret name
     new iam.ManagedPolicy(this, 'TranslationSecretsPolicy', {
       roles: [(this as any).translationRole],
       statements: [
@@ -759,29 +770,22 @@ export class LfmtInfrastructureStack extends Stack {
           effect: iam.Effect.ALLOW,
           actions: ['secretsmanager:GetSecretValue'],
           resources: [
-            `arn:aws:secretsmanager:${this.region}:${this.account}:secret:lfmt/gemini-api-key-*`,
+            `arn:aws:secretsmanager:${this.region}:${this.account}:secret:lfmt/gemini-api-key-${this.stackName}`,
           ],
         }),
       ],
     });
 
-    // Translation: Lambda Invoke Access (for invoking translation functions)
-    new iam.ManagedPolicy(this, 'TranslationLambdaInvokePolicy', {
-      roles: [(this as any).translationRole],
-      statements: [
-        new iam.PolicyStatement({
-          effect: iam.Effect.ALLOW,
-          actions: ['lambda:InvokeFunction'],
-          resources: [`arn:aws:lambda:${this.region}:${this.account}:function:lfmt-*`],
-        }),
-      ],
-    });
+    // SECURITY: Removed TranslationLambdaInvokePolicy
+    // Translation functions do NOT invoke other Lambda functions directly
+    // startTranslation invokes Step Functions (states:StartExecution), not Lambda
 
     // Maintain backward compatibility with legacy code that references this.lambdaRole
     // New deployments should use specific roles (authRole, uploadRole, chunkingRole, translationRole)
     this.lambdaRole = (this as any).translationRole; // Default to most permissive role for backward compatibility
 
     // Step Functions Execution Role
+    // SECURITY: Changed wildcard to specific function (only translate-chunk is invoked by Step Functions)
     const stepFunctionsRole = new iam.Role(this, 'StepFunctionsExecutionRole', {
       assumedBy: new iam.ServicePrincipal('states.amazonaws.com'),
       inlinePolicies: {
@@ -790,7 +794,7 @@ export class LfmtInfrastructureStack extends Stack {
             new iam.PolicyStatement({
               effect: iam.Effect.ALLOW,
               actions: ['lambda:InvokeFunction'],
-              resources: [`arn:aws:lambda:${this.region}:${this.account}:function:lfmt-*`],
+              resources: [`arn:aws:lambda:${this.region}:${this.account}:function:lfmt-translate-chunk-${this.stackName}`],
             }),
           ],
         }),
@@ -841,7 +845,7 @@ export class LfmtInfrastructureStack extends Stack {
         externalModules: ['aws-sdk', '@aws-sdk/*'],
         minify: true,
         sourceMap: true,
-        forceDockerBundling: false, // Use local esbuild instead of Docker
+        forceDockerBundling: false,  // Use local esbuild instead of Docker
       },
     });
 
@@ -1154,21 +1158,14 @@ export class LfmtInfrastructureStack extends Stack {
         jobId: tasks.DynamoAttributeValue.fromString(stepfunctions.JsonPath.stringAt('$.jobId')),
         userId: tasks.DynamoAttributeValue.fromString(stepfunctions.JsonPath.stringAt('$.userId')),
       },
-      updateExpression:
-        'SET translationStatus = :status, translationCompletedAt = :completedAt, translatedChunks = :totalChunks, updatedAt = :updatedAt',
+      updateExpression: 'SET translationStatus = :status, translationCompletedAt = :completedAt, translatedChunks = :totalChunks, updatedAt = :updatedAt',
       expressionAttributeValues: {
         ':status': tasks.DynamoAttributeValue.fromString('COMPLETED'),
-        ':completedAt': tasks.DynamoAttributeValue.fromString(
-          stepfunctions.JsonPath.stringAt('$$.State.EnteredTime')
-        ),
+        ':completedAt': tasks.DynamoAttributeValue.fromString(stepfunctions.JsonPath.stringAt('$$.State.EnteredTime')),
         // CRITICAL FIX: DynamoDB NUMBER attributes in Step Functions MUST be provided as strings
         // Using States.Format() to convert the number result from States.ArrayLength() to a string
-        ':totalChunks': tasks.DynamoAttributeValue.fromString(
-          stepfunctions.JsonPath.stringAt("States.Format('{}', States.ArrayLength($.chunks))")
-        ),
-        ':updatedAt': tasks.DynamoAttributeValue.fromString(
-          stepfunctions.JsonPath.stringAt('$$.State.EnteredTime')
-        ),
+        ':totalChunks': tasks.DynamoAttributeValue.fromString(stepfunctions.JsonPath.stringAt("States.Format('{}', States.ArrayLength($.chunks))")),
+        ':updatedAt': tasks.DynamoAttributeValue.fromString(stepfunctions.JsonPath.stringAt('$$.State.EnteredTime')),
       },
       resultPath: stepfunctions.JsonPath.DISCARD,
     });
@@ -1179,48 +1176,54 @@ export class LfmtInfrastructureStack extends Stack {
     });
 
     // Define the state machine workflow
-    const definition = processChunksMap.next(updateJobCompleted).next(successState);
+    const definition = processChunksMap
+      .next(updateJobCompleted)
+      .next(successState);
 
     // Create the state machine
-    (this as any).translationStateMachine = new stepfunctions.StateMachine(
-      this,
-      'TranslationStateMachine',
-      {
-        stateMachineName: `lfmt-translation-workflow-${this.stackName}`,
-        definition,
-        timeout: Duration.hours(6), // Max 6 hours for large documents (400K words)
-        logs: {
-          destination: new logs.LogGroup(this, 'TranslationStateMachineLogGroup', {
-            logGroupName: `/aws/stepfunctions/lfmt-translation-${this.stackName}`,
-            removalPolicy: RemovalPolicy.DESTROY,
-            retention: logs.RetentionDays.ONE_WEEK,
-          }),
-          level: stepfunctions.LogLevel.ALL, // Restore to ALL for better debugging
-          includeExecutionData: true, // Restore to true for complete execution logs
-        },
-        tracingEnabled: true,
-      }
-    );
+    (this as any).translationStateMachine = new stepfunctions.StateMachine(this, 'TranslationStateMachine', {
+      stateMachineName: `lfmt-translation-workflow-${this.stackName}`,
+      definition,
+      timeout: Duration.hours(6), // Max 6 hours for large documents (400K words)
+      logs: {
+        destination: new logs.LogGroup(this, 'TranslationStateMachineLogGroup', {
+          logGroupName: `/aws/stepfunctions/lfmt-translation-${this.stackName}`,
+          removalPolicy: RemovalPolicy.DESTROY,
+          retention: logs.RetentionDays.ONE_WEEK,
+        }),
+        level: stepfunctions.LogLevel.ALL, // Restore to ALL for better debugging
+        includeExecutionData: true, // Restore to true for complete execution logs
+      },
+      tracingEnabled: true,
+    });
 
     // Grant the state machine permission to invoke the Lambda function
     this.translateChunkFunction.grantInvoke(this.translationStateMachine);
 
-    // Grant the state machine permission to update DynamoDB
-    this.jobsTable.grantReadWriteData(this.translationStateMachine);
+    // SECURITY: Grant minimal DynamoDB permissions to state machine
+    // State machine only needs UpdateItem for the DynamoUpdateItem task
+    // Avoid grantReadWriteData() which includes dangerous Scan and DeleteItem permissions
+    //
+    // SECURITY ANALYSIS: No additional condition keys needed because:
+    // 1. State machine only updates jobs passed via execution input (jobId, userId)
+    // 2. Execution is started by Lambda after validating user ownership
+    // 3. No broad resource patterns - only updates specific job records
+    // 4. Update expression is fixed (status fields only, no user data modification)
+    this.jobsTable.grant(this.translationStateMachine, 'dynamodb:UpdateItem');
 
     // Grant startTranslation Lambda permission to start state machine executions
-    // Create managed policy with constructed ARN to avoid circular dependency
-    // (grantStartExecution() creates State Machine → Lambda dependency even when called here)
+    // SECURITY: Use CDK reference instead of hardcoded ARN string
     if (this.lambdaRole) {
       new iam.ManagedPolicy(this, 'LambdaStepFunctionsPolicy', {
         roles: [this.lambdaRole],
         statements: [
           new iam.PolicyStatement({
             effect: iam.Effect.ALLOW,
-            actions: ['states:StartExecution'],
+            actions: [
+              'states:StartExecution',
+            ],
             resources: [
-              // Construct ARN pattern without referencing the state machine resource
-              `arn:aws:states:${Stack.of(this).region}:${Stack.of(this).account}:stateMachine:lfmt-translation-workflow-${this.stackName}`,
+              this.translationStateMachine.stateMachineArn
             ],
           }),
         ],
@@ -1229,16 +1232,7 @@ export class LfmtInfrastructureStack extends Stack {
   }
 
   private createApiEndpoints() {
-    if (
-      !this.registerFunction ||
-      !this.loginFunction ||
-      !this.refreshTokenFunction ||
-      !this.resetPasswordFunction ||
-      !this.getCurrentUserFunction ||
-      !this.uploadRequestFunction ||
-      !this.startTranslationFunction ||
-      !this.getTranslationStatusFunction
-    ) {
+    if (!this.registerFunction || !this.loginFunction || !this.refreshTokenFunction || !this.resetPasswordFunction || !this.getCurrentUserFunction || !this.uploadRequestFunction || !this.startTranslationFunction || !this.getTranslationStatusFunction) {
       throw new Error('Lambda functions must be created before API endpoints');
     }
 
@@ -1365,20 +1359,16 @@ export class LfmtInfrastructureStack extends Stack {
         allowCredentials: true,
       },
     });
-    translateResource.addMethod(
-      'POST',
-      new apigateway.LambdaIntegration(this.startTranslationFunction),
-      {
-        authorizationType: apigateway.AuthorizationType.COGNITO,
-        authorizer: authorizer,
-        requestValidator: new apigateway.RequestValidator(this, 'StartTranslationValidator', {
-          restApi: this.api,
-          requestValidatorName: 'start-translation-validator',
-          validateRequestBody: true,
-          validateRequestParameters: false,
-        }),
-      }
-    );
+    translateResource.addMethod('POST', new apigateway.LambdaIntegration(this.startTranslationFunction), {
+      authorizationType: apigateway.AuthorizationType.COGNITO,
+      authorizer: authorizer,
+      requestValidator: new apigateway.RequestValidator(this, 'StartTranslationValidator', {
+        restApi: this.api,
+        requestValidatorName: 'start-translation-validator',
+        validateRequestBody: true,
+        validateRequestParameters: false,
+      }),
+    });
 
     // GET /jobs/{jobId}/translation-status - Get Translation Status (requires authentication)
     const translationStatusResource = jobResource.addResource('translation-status', {
@@ -1396,14 +1386,10 @@ export class LfmtInfrastructureStack extends Stack {
         allowCredentials: true,
       },
     });
-    translationStatusResource.addMethod(
-      'GET',
-      new apigateway.LambdaIntegration(this.getTranslationStatusFunction),
-      {
-        authorizationType: apigateway.AuthorizationType.COGNITO,
-        authorizer: authorizer,
-      }
-    );
+    translationStatusResource.addMethod('GET', new apigateway.LambdaIntegration(this.getTranslationStatusFunction), {
+      authorizationType: apigateway.AuthorizationType.COGNITO,
+      authorizer: authorizer,
+    });
 
     // Add Gateway Responses to include CORS headers on errors
     // Note: Gateway Response headers must be static strings, cannot use dynamic origins
@@ -1426,8 +1412,7 @@ export class LfmtInfrastructureStack extends Stack {
       type: apigateway.ResponseType.UNAUTHORIZED,
       responseHeaders: {
         'Access-Control-Allow-Origin': "'*'",
-        'Access-Control-Allow-Headers':
-          "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,X-Request-ID'",
+        'Access-Control-Allow-Headers': "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,X-Request-ID'",
         'Access-Control-Allow-Methods': "'OPTIONS,GET,POST,PUT,DELETE'",
       },
     });
@@ -1437,8 +1422,7 @@ export class LfmtInfrastructureStack extends Stack {
       type: apigateway.ResponseType.ACCESS_DENIED,
       responseHeaders: {
         'Access-Control-Allow-Origin': "'*'",
-        'Access-Control-Allow-Headers':
-          "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,X-Request-ID'",
+        'Access-Control-Allow-Headers': "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,X-Request-ID'",
         'Access-Control-Allow-Methods': "'OPTIONS,GET,POST,PUT,DELETE'",
       },
     });
@@ -1448,8 +1432,7 @@ export class LfmtInfrastructureStack extends Stack {
       type: apigateway.ResponseType.BAD_REQUEST_BODY,
       responseHeaders: {
         'Access-Control-Allow-Origin': "'*'",
-        'Access-Control-Allow-Headers':
-          "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,X-Request-ID'",
+        'Access-Control-Allow-Headers': "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,X-Request-ID'",
         'Access-Control-Allow-Methods': "'OPTIONS,GET,POST,PUT,DELETE'",
       },
     });
@@ -1459,8 +1442,7 @@ export class LfmtInfrastructureStack extends Stack {
       type: apigateway.ResponseType.DEFAULT_5XX,
       responseHeaders: {
         'Access-Control-Allow-Origin': "'*'",
-        'Access-Control-Allow-Headers':
-          "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,X-Request-ID'",
+        'Access-Control-Allow-Headers': "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,X-Request-ID'",
         'Access-Control-Allow-Methods': "'OPTIONS,GET,POST,PUT,DELETE'",
       },
     });
@@ -1469,9 +1451,9 @@ export class LfmtInfrastructureStack extends Stack {
   private createFrontendHosting(removalPolicy: RemovalPolicy) {
     /**
      * Frontend Hosting Infrastructure
-     *
+     * 
      * Creates CloudFront distribution and S3 bucket for hosting React SPA.
-     *
+     * 
      * Key Features:
      * - Origin Access Control (OAC) for secure S3 access
      * - Custom error responses for SPA routing (403 + 404 → /index.html)
@@ -1489,14 +1471,12 @@ export class LfmtInfrastructureStack extends Stack {
       encryption: s3.BucketEncryption.S3_MANAGED,
       publicReadAccess: false,
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
-      lifecycleRules: [
-        {
-          id: 'FrontendCleanup',
-          enabled: true,
-          expiration: Duration.days(90), // Delete old deployments after 90 days
-          noncurrentVersionExpiration: Duration.days(30),
-        },
-      ],
+      lifecycleRules: [{
+        id: 'FrontendCleanup',
+        enabled: true,
+        expiration: Duration.days(90), // Delete old deployments after 90 days
+        noncurrentVersionExpiration: Duration.days(30),
+      }],
     });
 
     // 2. Create Origin Access Control (OAC) for CloudFront
@@ -1509,47 +1489,42 @@ export class LfmtInfrastructureStack extends Stack {
     const isProd = environment === 'prod';
 
     // Environment-specific configuration
-    const priceClass = isProd
-      ? cloudfront.PriceClass.PRICE_CLASS_ALL // Global edge locations for production
+    const priceClass = isProd 
+      ? cloudfront.PriceClass.PRICE_CLASS_ALL  // Global edge locations for production
       : cloudfront.PriceClass.PRICE_CLASS_100; // North America & Europe only for dev (cost-optimized)
 
     // Create Response Headers Policy with security headers
-    const responseHeadersPolicy = new cloudfront.ResponseHeadersPolicy(
-      this,
-      'FrontendSecurityHeaders',
-      {
-        securityHeadersBehavior: {
-          strictTransportSecurity: {
-            accessControlMaxAge: Duration.days(365),
-            includeSubdomains: true,
-            override: true,
-          },
-          contentTypeOptions: {
-            override: true,
-          },
-          frameOptions: {
-            frameOption: cloudfront.HeadersFrameOption.DENY,
-            override: true,
-          },
-          xssProtection: {
-            protection: true,
-            modeBlock: true,
-            override: true,
-          },
-          referrerPolicy: {
-            referrerPolicy: cloudfront.HeadersReferrerPolicy.STRICT_ORIGIN_WHEN_CROSS_ORIGIN,
-            override: true,
-          },
-          contentSecurityPolicy: {
-            // NOTE: This CSP will be updated after API Gateway is created to include the actual API URL
-            // Temporary CSP allows connections to execute-api.us-east-1.amazonaws.com domain
-            contentSecurityPolicy:
-              "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self' https://*.execute-api.us-east-1.amazonaws.com;",
-            override: true,
-          },
+    const responseHeadersPolicy = new cloudfront.ResponseHeadersPolicy(this, 'FrontendSecurityHeaders', {
+      securityHeadersBehavior: {
+        strictTransportSecurity: {
+          accessControlMaxAge: Duration.days(365),
+          includeSubdomains: true,
+          override: true,
         },
-      }
-    );
+        contentTypeOptions: {
+          override: true,
+        },
+        frameOptions: {
+          frameOption: cloudfront.HeadersFrameOption.DENY,
+          override: true,
+        },
+        xssProtection: {
+          protection: true,
+          modeBlock: true,
+          override: true,
+        },
+        referrerPolicy: {
+          referrerPolicy: cloudfront.HeadersReferrerPolicy.STRICT_ORIGIN_WHEN_CROSS_ORIGIN,
+          override: true,
+        },
+        contentSecurityPolicy: {
+          // NOTE: This CSP will be updated after API Gateway is created to include the actual API URL
+          // Temporary CSP allows connections to execute-api.us-east-1.amazonaws.com domain
+          contentSecurityPolicy: "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self' https://*.execute-api.us-east-1.amazonaws.com;",
+          override: true,
+        },
+      },
+    });
 
     (this as any).frontendDistribution = new cloudfront.Distribution(this, 'FrontendDistribution', {
       defaultBehavior: {
@@ -1583,33 +1558,27 @@ export class LfmtInfrastructureStack extends Stack {
       ],
       comment: `LFMT Frontend Distribution - ${this.stackName}`,
       enableLogging: isProd, // Enable access logging for production
-      logBucket: isProd
-        ? new s3.Bucket(this, 'CloudFrontLogBucket', {
-            bucketName: `lfmt-cloudfront-logs-${this.stackName.toLowerCase()}`,
-            removalPolicy,
-            autoDeleteObjects: removalPolicy === RemovalPolicy.DESTROY,
-            lifecycleRules: [
-              {
-                expiration: Duration.days(90),
-              },
-            ],
-          })
-        : undefined,
+      logBucket: isProd ? new s3.Bucket(this, 'CloudFrontLogBucket', {
+        bucketName: `lfmt-cloudfront-logs-${this.stackName.toLowerCase()}`,
+        removalPolicy,
+        autoDeleteObjects: removalPolicy === RemovalPolicy.DESTROY,
+        lifecycleRules: [{
+          expiration: Duration.days(90),
+        }],
+      }) : undefined,
     });
 
     // 4. Grant CloudFront OAC access to frontend bucket
-    this.frontendBucket.addToResourcePolicy(
-      new iam.PolicyStatement({
-        actions: ['s3:GetObject'],
-        resources: [`${this.frontendBucket.bucketArn}/*`],
-        principals: [new iam.ServicePrincipal('cloudfront.amazonaws.com')],
-        conditions: {
-          StringEquals: {
-            'AWS:SourceArn': `arn:aws:cloudfront::${this.account}:distribution/${this.frontendDistribution.distributionId}`,
-          },
+    this.frontendBucket.addToResourcePolicy(new iam.PolicyStatement({
+      actions: ['s3:GetObject'],
+      resources: [`${this.frontendBucket.bucketArn}/*`],
+      principals: [new iam.ServicePrincipal('cloudfront.amazonaws.com')],
+      conditions: {
+        StringEquals: {
+          'AWS:SourceArn': `arn:aws:cloudfront::${this.account}:distribution/${this.frontendDistribution.distributionId}`,
         },
-      })
-    );
+      },
+    }));
   }
 
   private updateCloudFrontCSP() {
@@ -1631,49 +1600,41 @@ export class LfmtInfrastructureStack extends Stack {
     const apiDomain = `${this.api.restApiId}.execute-api.${this.region}.amazonaws.com`;
 
     // Create a new Response Headers Policy with the updated CSP
-    const updatedResponseHeadersPolicy = new cloudfront.ResponseHeadersPolicy(
-      this,
-      'FrontendSecurityHeadersUpdated',
-      {
-        securityHeadersBehavior: {
-          strictTransportSecurity: {
-            accessControlMaxAge: Duration.days(365),
-            includeSubdomains: true,
-            override: true,
-          },
-          contentTypeOptions: {
-            override: true,
-          },
-          frameOptions: {
-            frameOption: cloudfront.HeadersFrameOption.DENY,
-            override: true,
-          },
-          xssProtection: {
-            protection: true,
-            modeBlock: true,
-            override: true,
-          },
-          referrerPolicy: {
-            referrerPolicy: cloudfront.HeadersReferrerPolicy.STRICT_ORIGIN_WHEN_CROSS_ORIGIN,
-            override: true,
-          },
-          contentSecurityPolicy: {
-            // Use specific API Gateway domain instead of wildcard
-            contentSecurityPolicy: `default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self' https://${apiDomain};`,
-            override: true,
-          },
+    const updatedResponseHeadersPolicy = new cloudfront.ResponseHeadersPolicy(this, 'FrontendSecurityHeadersUpdated', {
+      securityHeadersBehavior: {
+        strictTransportSecurity: {
+          accessControlMaxAge: Duration.days(365),
+          includeSubdomains: true,
+          override: true,
         },
-      }
-    );
+        contentTypeOptions: {
+          override: true,
+        },
+        frameOptions: {
+          frameOption: cloudfront.HeadersFrameOption.DENY,
+          override: true,
+        },
+        xssProtection: {
+          protection: true,
+          modeBlock: true,
+          override: true,
+        },
+        referrerPolicy: {
+          referrerPolicy: cloudfront.HeadersReferrerPolicy.STRICT_ORIGIN_WHEN_CROSS_ORIGIN,
+          override: true,
+        },
+        contentSecurityPolicy: {
+          // Use specific API Gateway domain instead of wildcard
+          contentSecurityPolicy: `default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self' https://${apiDomain};`,
+          override: true,
+        },
+      },
+    });
 
     // Update the CloudFront distribution's default behavior to use the new response headers policy
     // Note: We need to access the L1 CloudFormation construct to update this property
-    const cfnDistribution = this.frontendDistribution.node
-      .defaultChild as cloudfront.CfnDistribution;
-    cfnDistribution.addPropertyOverride(
-      'DistributionConfig.DefaultCacheBehavior.ResponseHeadersPolicyId',
-      updatedResponseHeadersPolicy.responseHeadersPolicyId
-    );
+    const cfnDistribution = this.frontendDistribution.node.defaultChild as cloudfront.CfnDistribution;
+    cfnDistribution.addPropertyOverride('DistributionConfig.DefaultCacheBehavior.ResponseHeadersPolicyId', updatedResponseHeadersPolicy.responseHeadersPolicyId);
   }
 
   private createOutputs() {

@@ -380,18 +380,6 @@ describe('LFMT Infrastructure Stack', () => {
         },
       });
 
-      // Verify Lambda invoke permissions in managed policy
-      template.hasResourceProperties('AWS::IAM::ManagedPolicy', {
-        PolicyDocument: {
-          Statement: Match.arrayWith([
-            Match.objectLike({
-              Effect: 'Allow',
-              Action: 'lambda:InvokeFunction',
-            }),
-          ]),
-        },
-      });
-
       // Verify Step Functions permissions in managed policy
       template.hasResourceProperties('AWS::IAM::ManagedPolicy', {
         PolicyDocument: {
@@ -405,18 +393,133 @@ describe('LFMT Infrastructure Stack', () => {
       });
     });
 
-    test('Step Functions role has Lambda invoke permissions', () => {
-      template.hasResourceProperties('AWS::IAM::Role', {
-        AssumeRolePolicyDocument: {
-          Statement: Match.arrayWith([
-            Match.objectLike({
-              Effect: 'Allow',
-              Principal: {
-                Service: 'states.amazonaws.com',
-              },
-            }),
-          ]),
-        },
+    test('Step Functions execution role exists with Lambda invoke', () => {
+      // Find the StepFunctionsExecutionRole by checking for the assume role policy
+      const roles = template.findResources('AWS::IAM::Role');
+      const stepFunctionsRole = Object.values(roles).find((role: any) => {
+        const statements = role.Properties?.AssumeRolePolicyDocument?.Statement || [];
+        return statements.some((s: any) => s.Principal?.Service === 'states.amazonaws.com');
+      });
+
+      expect(stepFunctionsRole).toBeDefined();
+      expect((stepFunctionsRole as any).Properties.Policies).toBeDefined();
+
+      // Verify the inline policy has Lambda invoke
+      const policies = (stepFunctionsRole as any).Properties.Policies;
+      const lambdaInvokePolicy = policies.find((p: any) => p.PolicyName === 'LambdaInvoke');
+      expect(lambdaInvokePolicy).toBeDefined();
+
+      const statements = lambdaInvokePolicy.PolicyDocument.Statement;
+      expect(statements).toContainEqual(
+        expect.objectContaining({
+          Effect: 'Allow',
+          Action: 'lambda:InvokeFunction',
+        })
+      );
+    });
+
+    test('No dynamodb:Scan in any IAM policy', () => {
+      // Security verification: Ensure dangerous DynamoDB Scan action is not granted
+      // This prevents expensive table scans and enforces query-based access patterns
+      const templateJson = template.toJSON();
+      const allPolicies = JSON.stringify(templateJson);
+      expect(allPolicies).not.toContain('dynamodb:Scan');
+    });
+
+    test('No dynamodb:DeleteItem in any IAM policy', () => {
+      // Security verification: Ensure dangerous DynamoDB DeleteItem action is not granted
+      // This prevents accidental data deletion and enforces soft-delete patterns
+      const templateJson = template.toJSON();
+      const allPolicies = JSON.stringify(templateJson);
+      expect(allPolicies).not.toContain('dynamodb:DeleteItem');
+    });
+
+    test('No dynamodb:* wildcard in any IAM policy', () => {
+      // Security verification: Ensure wildcard DynamoDB actions are not granted
+      // This prevents privilege escalation through broad permissions
+      // Verifies that all DynamoDB permissions are explicitly listed
+      const templateJson = template.toJSON();
+
+      // Extract all IAM policies from the template
+      const resources = templateJson.Resources || {};
+      const policyDocuments: any[] = [];
+
+      Object.values(resources).forEach((resource: any) => {
+        // Check inline policies in roles
+        if (resource.Type === 'AWS::IAM::Role' && resource.Properties?.Policies) {
+          resource.Properties.Policies.forEach((policy: any) => {
+            policyDocuments.push(policy.PolicyDocument);
+          });
+        }
+
+        // Check managed policies
+        if (resource.Type === 'AWS::IAM::ManagedPolicy' && resource.Properties?.PolicyDocument) {
+          policyDocuments.push(resource.Properties.PolicyDocument);
+        }
+
+        // Check standalone policy documents
+        if (resource.Type === 'AWS::IAM::Policy' && resource.Properties?.PolicyDocument) {
+          policyDocuments.push(resource.Properties.PolicyDocument);
+        }
+      });
+
+      // Check each policy document for wildcard actions
+      policyDocuments.forEach((policyDoc) => {
+        if (policyDoc?.Statement) {
+          policyDoc.Statement.forEach((statement: any) => {
+            if (statement.Action) {
+              const actions = Array.isArray(statement.Action) ? statement.Action : [statement.Action];
+              actions.forEach((action: any) => {
+                // Fail if we find dynamodb:* wildcard
+                expect(action).not.toBe('dynamodb:*');
+              });
+            }
+          });
+        }
+      });
+    });
+
+    test('No * wildcard in any IAM policy Action field', () => {
+      // Security verification: Ensure no policies grant all permissions via '*'
+      // This prevents privilege escalation and enforces principle of least privilege
+      const templateJson = template.toJSON();
+
+      // Extract all IAM policies from the template
+      const resources = templateJson.Resources || {};
+      const policyDocuments: any[] = [];
+
+      Object.values(resources).forEach((resource: any) => {
+        // Check inline policies in roles
+        if (resource.Type === 'AWS::IAM::Role' && resource.Properties?.Policies) {
+          resource.Properties.Policies.forEach((policy: any) => {
+            policyDocuments.push(policy.PolicyDocument);
+          });
+        }
+
+        // Check managed policies
+        if (resource.Type === 'AWS::IAM::ManagedPolicy' && resource.Properties?.PolicyDocument) {
+          policyDocuments.push(resource.Properties.PolicyDocument);
+        }
+
+        // Check standalone policy documents
+        if (resource.Type === 'AWS::IAM::Policy' && resource.Properties?.PolicyDocument) {
+          policyDocuments.push(resource.Properties.PolicyDocument);
+        }
+      });
+
+      // Check each policy document for wildcard actions
+      policyDocuments.forEach((policyDoc) => {
+        if (policyDoc?.Statement) {
+          policyDoc.Statement.forEach((statement: any) => {
+            if (statement.Action) {
+              const actions = Array.isArray(statement.Action) ? statement.Action : [statement.Action];
+              actions.forEach((action: any) => {
+                // Fail if we find global wildcard '*'
+                expect(action).not.toBe('*');
+              });
+            }
+          });
+        }
       });
     });
   });
@@ -485,13 +588,14 @@ describe('LFMT Infrastructure Stack', () => {
         },
       });
 
-      // State machine should have permission to read/write DynamoDB
+      // State machine should have minimal DynamoDB permissions (UpdateItem only)
+      // SECURITY: Verify state machine does NOT have broad read/write permissions
       template.hasResourceProperties('AWS::IAM::Policy', {
         PolicyDocument: {
           Statement: Match.arrayWith([
             Match.objectLike({
               Effect: 'Allow',
-              Action: Match.arrayWith([Match.stringLikeRegexp('dynamodb:.*')]),
+              Action: 'dynamodb:UpdateItem',
               Resource: Match.anyValue(),
             }),
           ]),
