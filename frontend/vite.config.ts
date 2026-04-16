@@ -90,6 +90,8 @@ export default defineConfig(({ command, mode }) => {
         // Targets: Critical paths 100%, General code 80%
         thresholds: {
           // Critical path: Auth components (authentication is zero-tolerance)
+          // 100% coverage is required for all authentication-related code.
+          // Please write meaningful tests. If struggling to meet this, consult the team before requesting a reduction.
           'src/components/Auth/**/*.tsx': {
             statements: 100,
             branches: 95,
@@ -104,6 +106,8 @@ export default defineConfig(({ command, mode }) => {
             lines: 98,       // Currently 98.39% - excellent coverage
           },
           // Critical path: Auth service (business logic is zero-tolerance)
+          // 100% coverage is required for all authentication-related code.
+          // Please write meaningful tests. If struggling to meet this, consult the team before requesting a reduction.
           'src/services/authService.ts': {
             statements: 100,
             branches: 100,
@@ -111,15 +115,17 @@ export default defineConfig(({ command, mode }) => {
             lines: 100,
           },
           // Critical path: Translation service (business logic is zero-tolerance)
+          // 100% coverage is required for all authentication-related code.
+          // Please write meaningful tests. If struggling to meet this, consult the team before requesting a reduction.
           'src/services/translationService.ts': {
             statements: 100,
             branches: 99,
             functions: 100,
             lines: 100,
           },
-          // General code: 80% target (Production Foundation spec)
+          // General code: 95% target (raised from 80% to lock in current high standard)
           global: {
-            statements: 80,
+            statements: 95,
             branches: 75,
             functions: 80,
             lines: 80,
