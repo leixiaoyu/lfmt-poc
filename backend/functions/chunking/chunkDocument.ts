@@ -95,11 +95,23 @@ async function downloadDocumentToTempFile(bucket: string, key: string): Promise<
   // Generate unique temp file path
   const tempFilePath = `/tmp/document-${Date.now()}-${Math.random().toString(36).substring(7)}.txt`;
 
-  // Stream S3 object body to temp file
-  const bodyStream = response.Body as Readable;
+  // Handle both real Readable streams (AWS SDK) and mock objects with transformToString
+  const body = response.Body as any;
   const fileWriteStream = createWriteStream(tempFilePath);
 
-  await pipeline(bodyStream, fileWriteStream);
+  if (body.pipe) {
+    // Real Readable stream - use pipeline
+    await pipeline(body as Readable, fileWriteStream);
+  } else if (typeof body.transformToString === 'function') {
+    // Mock object with transformToString - read content and write to file
+    const content = await body.transformToString();
+    await new Promise<void>((resolve, reject) => {
+      fileWriteStream.write(content, (err) => (err ? reject(err) : resolve()));
+      fileWriteStream.end();
+    });
+  } else {
+    throw new Error('S3 object body is neither a stream nor a transformable object');
+  }
 
   logger.info('Document streamed to temp file successfully', {
     bucket,
@@ -116,18 +128,18 @@ async function downloadDocumentToTempFile(bucket: string, key: string): Promise<
  */
 async function readDocumentFromTempFile(tempFilePath: string): Promise<string> {
   return new Promise((resolve, reject) => {
-    const chunks: Buffer[] = [];
+    const chunks: string[] = [];
     const readStream = createReadStream(tempFilePath, {
       encoding: 'utf8',
       highWaterMark: 64 * 1024, // 64KB chunks
     });
 
-    readStream.on('data', (chunk: Buffer) => {
+    readStream.on('data', (chunk: string) => {
       chunks.push(chunk);
     });
 
     readStream.on('end', () => {
-      const content = Buffer.concat(chunks).toString('utf8');
+      const content = chunks.join('');
       resolve(content);
     });
 
