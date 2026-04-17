@@ -149,6 +149,11 @@ export class DistributedRateLimiter {
           throw error;
         }
       } catch (error) {
+        // Re-throw RateLimitError immediately - it's not a DynamoDB error
+        if (error instanceof RateLimitError) {
+          throw error;
+        }
+
         // DynamoDB error - try fallback if enabled
         if (this.config.enableFallback && attempt === this.config.maxRetries - 1) {
           return this.acquireFallback(tokensRequested, limitType);
