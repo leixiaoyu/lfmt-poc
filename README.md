@@ -1,8 +1,10 @@
 # LFMT POC - Long-Form Translation Service
 
+> ⭐ **LFMT Development Repository**
+
 ## Overview
 
-This is a proof-of-concept implementation of a Long-Form Translation Service that translates 65K-400K word documents using Google Gemini 1.5 Pro API (POC phase) with intelligent document chunking and AWS serverless infrastructure.
+This is a proof-of-concept implementation of a Long-Form Translation Service that translates 65K-400K word documents using Google Gemini 2.5 Flash API with intelligent document chunking and AWS serverless infrastructure.
 
 **For detailed implementation progress and status, see [PROGRESS.md](PROGRESS.md)**
 
@@ -15,9 +17,8 @@ This is a proof-of-concept implementation of a Long-Form Translation Service tha
 - **Database**: DynamoDB with appropriate GSIs
 - **Storage**: S3 with intelligent tiering and lifecycle policies
 - **Authentication**: AWS Cognito with JWT tokens
-- **Translation Engine**: Google Gemini 1.5 Pro (POC phase)
+- **Translation Engine**: Google Gemini 2.5 Flash
   - **Note**: Using Gemini free tier for POC to meet <$50/month cost target
-  - **Future**: May upgrade to Claude Sonnet 4 for production if quality requirements increase
 
 ### Key Features
 

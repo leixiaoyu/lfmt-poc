@@ -2,24 +2,25 @@
 
 ## Purpose
 
-LFMT POC (Long-Form Translation Service) is a proof-of-concept serverless application that translates extremely long documents (65K-400K words) from Project Gutenberg using Claude Sonnet 4 API. The system addresses the key technical challenge of processing documents that exceed LLM context windows through intelligent chunking and reassembly strategies.
+LFMT POC (Long-Form Translation Service) is a proof-of-concept serverless application that translates extremely long documents (65K-400K words) from Project Gutenberg using Gemini 2.5 Flash API. The system addresses the key technical challenge of processing documents that exceed LLM context windows through intelligent chunking and reassembly strategies.
 
 **Key Goals**:
 
-- Translate documents within Claude Sonnet 4's 200K token context window
+- Translate documents through intelligent 3,500-token chunking with 250-token overlap
 - Maintain translation coherence across chunks using sliding window context
 - Provide cost-effective solution (<$50/month for 1000 translations)
 - Ensure legal compliance with 7-year attestation retention
 - Deliver production-ready architecture despite POC status
 
-**Current Status**: Phase 5 - Document Chunking Service (Next) | ~30% Complete
+**Current Status**: Phase 10 - Investor Demo & Production Readiness | ~80% Complete
 
 - ✅ Infrastructure (AWS CDK, DynamoDB, S3, API Gateway, Cognito)
 - ✅ Authentication (Backend Lambda + Frontend React)
 - ✅ Document Upload Service (S3 presigned URLs, file validation)
-- 🔄 Document Chunking Service (In Progress)
-- ⏳ Translation Engine (Claude API integration)
-- ⏳ Legal Attestation System
+- ✅ Document Chunking Service (Complete)
+- ✅ Translation Engine (Gemini 2.5 Flash integration)
+- ✅ Legal Attestation System
+- 🔄 Demo Preparation & UI/UX Polish (In Progress)
 
 ## Tech Stack
 
