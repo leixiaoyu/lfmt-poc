@@ -443,6 +443,16 @@
 
 ### 3.8 Data Privacy & GDPR Compliance 🆕 **CRITICAL GAP**
 
+- [ ] 3.8.0 **Wire Legal Attestation Write Path** 🆕 **PRE-PROD BLOCKER (OWASP A09)**
+  - **Problem**: Frontend `LegalAttestation.tsx` collects user consent and the `AttestationsTable` is provisioned (`backend/infrastructure/lib/lfmt-infrastructure-stack.ts:188`), but no Lambda persists consent data. Consent is silently dropped → compliance gap + audit-trail failure.
+  - **Required Fields**: `userId`, `jobId`, `documentHash`, `sourceIp`, `attestationVersion`, `acceptedAt` (ISO-8601), `userAgent`.
+  - **Implementation**:
+    - Extend `upload/uploadComplete.ts` (or `translation/startTranslation.ts`) to write an attestation record to `AttestationsTable` at the moment consent is captured.
+    - Add IAM `dynamodb:PutItem` permission on `AttestationsTable` to the appropriate Lambda role.
+    - Add unit + integration tests asserting the write happens and failures surface a 5xx (do NOT silently swallow).
+    - Add a CloudWatch alarm on `AttestationsTable` write errors.
+  - **Severity**: HIGH — do not deploy to production users without this.
+  - **Estimated Time**: 4 hours
 - [ ] 3.8.1 Implement formal data retention policy
   - **Policy**: User-uploaded documents deleted 30 days after translation (or immediate if user opts in)
   - S3 Lifecycle Policies: Auto-delete from `documentBucket` after 30 days

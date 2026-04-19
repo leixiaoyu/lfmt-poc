@@ -1,15 +1,14 @@
 # LFMT POC - Claude Development Guide
 
+> ⭐ **LFMT Development Repository**
+>
+> This is the active development repository for LFMT. All commits and development work happen here.
+
 ## Project Overview
 
-**Long-Form Translation Service** Proof of Concept (POC) - A React SPA with AWS serverless backend for translating large documents (65K-400K words) using Claude Sonnet 4 API.
+**Long-Form Translation Service** Proof of Concept (POC) - A React SPA with AWS serverless backend for translating large documents (65K-400K words) using Gemini 2.5 Flash API.
 
-**Current Status** (2025-11-26):
-
-- ✅ **Phases 1-9 Complete**: Infrastructure, auth, upload, chunking, translation engine, UI deployed
-- ✅ **Translation Workflow**: Gemini 2.5 Flash integrated and validated end-to-end
-- 🔄 **Phase 10 In Progress**: Demo content preparation, UI/UX polish
-- 🎯 **Target**: Production-ready demo by 2025-11-30
+**Current Status**: See [PROGRESS.md](PROGRESS.md) for the canonical phase, completion %, and active workstreams. Snapshot: translation workflow with Gemini 2.5 Flash deployed end-to-end; Phase 10 demo polish in progress.
 
 ---
 
@@ -19,7 +18,7 @@
 
 - **Framework**: React 18 + TypeScript (strict) + Material-UI + Vite
 - **Hosting**: AWS CloudFront + S3 (CDK-managed)
-- **Testing**: Vitest (499 unit tests) + Playwright (58 E2E tests)
+- **Testing**: Vitest (unit) + Playwright (E2E) — comprehensive coverage; see PROGRESS.md for counts
 
 ### Backend
 
@@ -32,7 +31,7 @@
 
 - **CI/CD**: GitHub Actions (automated test + deploy)
 - **IaC**: AWS CDK (no configuration drift)
-- **Testing**: 877 total tests (99% coverage on critical paths)
+- **Testing**: Comprehensive unit + integration + E2E coverage across backend, infrastructure, and frontend (>90% on critical paths; current totals tracked in PROGRESS.md)
 
 ---
 
@@ -190,12 +189,11 @@ aws logs tail /aws/lambda/lfmt-translate-chunk-LfmtPocDev --follow
 
 ---
 
-**Last Updated**: 2025-11-26 (Integration Tests Fixed)
-**Major Changes**:
+**Last Updated**: 2026-04-18
+
+**Previous Major Changes**:
 
 - Integration test failures resolved (PR #99)
-  - Fixed Step Functions progress tracking (translatedChunks update)
-  - Fixed TypeScript compilation errors in integration tests
 - Gemini 2.5 Flash migration complete (PR #98)
 - Translation workflow fully validated end-to-end
-- All 877 tests passing, CI/CD pipeline green
+- CI/CD pipeline green; latest test totals tracked in PROGRESS.md

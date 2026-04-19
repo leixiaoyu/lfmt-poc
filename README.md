@@ -1,8 +1,10 @@
 # LFMT POC - Long-Form Translation Service
 
+> ⭐ **LFMT Development Repository**
+
 ## Overview
 
-This is a proof-of-concept implementation of a Long-Form Translation Service that translates 65K-400K word documents using Google Gemini 1.5 Pro API (POC phase) with intelligent document chunking and AWS serverless infrastructure.
+This is a proof-of-concept implementation of a Long-Form Translation Service that translates 65K-400K word documents using Google Gemini 2.5 Flash API with intelligent document chunking and AWS serverless infrastructure.
 
 **For detailed implementation progress and status, see [PROGRESS.md](PROGRESS.md)**
 
@@ -15,9 +17,8 @@ This is a proof-of-concept implementation of a Long-Form Translation Service tha
 - **Database**: DynamoDB with appropriate GSIs
 - **Storage**: S3 with intelligent tiering and lifecycle policies
 - **Authentication**: AWS Cognito with JWT tokens
-- **Translation Engine**: Google Gemini 1.5 Pro (POC phase)
-  - **Note**: Using Gemini free tier for POC to meet <$50/month cost target
-  - **Future**: May upgrade to Claude Sonnet 4 for production if quality requirements increase
+- **Translation Engine**: Google Gemini 2.5 Flash
+  - **Note**: Running on the Gemini free tier (5 RPM / 250K TPM / 25 RPD) for the POC to stay within the <$50/month cost target
 
 ### Key Features
 
@@ -208,10 +209,10 @@ npm run test:coverage      # Coverage report
 
 ```bash
 cd frontend
-npm test                    # Run all unit tests (499 tests)
-npm run test:coverage      # Coverage report (99% on translation components)
+npm test                    # Run all unit tests (Vitest)
+npm run test:coverage      # Coverage report
 npm run test:ui            # Interactive test UI
-npm run test:e2e           # Run E2E tests (58 tests, requires local dev server)
+npm run test:e2e           # Run E2E tests (Playwright; requires local dev server)
 npm run test:e2e:ui        # Interactive E2E testing with Playwright UI
 ```
 
@@ -219,14 +220,16 @@ npm run test:e2e:ui        # Interactive E2E testing with Playwright UI
 
 All pull requests automatically run:
 
-- Shared-types validation (11 tests)
-- Backend function unit tests (328 tests)
-- Infrastructure tests (33 tests)
-- Frontend unit tests (499 tests)
+- Shared-types validation
+- Backend function unit + integration tests
+- Infrastructure (CDK) tests
+- Frontend unit tests
 - Linting and format checks
 - Security audits (npm audit)
-- E2E tests (temporarily disabled - requires backend API or mock API setup)
+- E2E tests (Playwright; gated on dev API availability)
 - Pre-push validation hooks enforce local testing
+
+For current totals and per-package counts, see [PROGRESS.md](PROGRESS.md).
 
 ## Documentation
 
@@ -364,6 +367,6 @@ This is a proof-of-concept project. All rights reserved.
 
 ---
 
-**Last Updated**: 2025-11-20
+**Last Updated**: 2026-04-18
 **Repository**: https://github.com/leixiaoyu/lfmt-poc
-**Current Status**: See [PROGRESS.md](PROGRESS.md) for detailed status
+**Current Status**: See [PROGRESS.md](PROGRESS.md) for the canonical phase, completion %, and active workstreams
