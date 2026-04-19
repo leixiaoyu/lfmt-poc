@@ -21,12 +21,14 @@ import {
 import DownloadIcon from '@mui/icons-material/Download';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import RefreshIcon from '@mui/icons-material/Refresh';
+import CompareArrowsIcon from '@mui/icons-material/CompareArrows';
 import {
   TranslationJob,
   translationService,
   TranslationServiceError,
 } from '../services/translationService';
 import { TranslationProgress } from '../components/Translation/TranslationProgress';
+import { FEATURE_FLAGS } from '../config/constants';
 
 export const TranslationDetail: React.FC = () => {
   const { jobId } = useParams<{ jobId: string }>();
@@ -289,14 +291,30 @@ export const TranslationDetail: React.FC = () => {
       {/* Action Buttons */}
       <Box sx={{ display: 'flex', gap: 2 }}>
         {isCompleted && (
-          <Button
-            variant="contained"
-            startIcon={downloading ? <CircularProgress size={20} /> : <DownloadIcon />}
-            onClick={handleDownload}
-            disabled={downloading}
-          >
-            {downloading ? 'Downloading...' : 'Download Translation'}
-          </Button>
+          <>
+            <Button
+              variant="contained"
+              startIcon={downloading ? <CircularProgress size={20} /> : <DownloadIcon />}
+              onClick={handleDownload}
+              disabled={downloading}
+            >
+              {downloading ? 'Downloading...' : 'Download Translation'}
+            </Button>
+            {/*
+              Compare button gated behind feature flag — the source-pane backend
+              API is not yet implemented. See FEATURE_FLAGS.COMPARE_VIEW.
+            */}
+            {FEATURE_FLAGS.COMPARE_VIEW && (
+              <Button
+                variant="outlined"
+                startIcon={<CompareArrowsIcon />}
+                component={RouterLink}
+                to={`/translation/${jobId}/compare`}
+              >
+                Compare Side-by-Side
+              </Button>
+            )}
+          </>
         )}
 
         {isChunked && (
