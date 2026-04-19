@@ -10,6 +10,30 @@
  * - Concurrent request queuing during refresh
  * - Refresh failures and fallback behavior
  * - Edge cases and error conditions
+ *
+ * ----------------------------------------------------------------------
+ * KNOWN ISSUE: All 9 refresh-flow tests in this file are currently
+ * skipped. The root cause is a test-architecture mismatch:
+ *
+ *   vi.spyOn(axios, 'post' | 'get') patches the top-level axios module,
+ *   but our apiClient is an axios INSTANCE created via axios.create().
+ *   Calls on that instance (including the retry path in
+ *   responseErrorInterceptor that re-invokes axios(originalRequest))
+ *   do not flow through the spied module methods, so the mocked
+ *   401 / refresh / retry sequence never fires as expected.
+ *
+ * Remediation — tracked in GitHub issue:
+ *   https://github.com/leixiaoyu/lfmt-poc/issues/132
+ *   [TEST] Rewrite api.refresh tests using axios-mock-adapter
+ *
+ *   Rewrite these tests to mock at the axios adapter level (e.g.,
+ *   `axios-mock-adapter` or a manual adapter injected into the client),
+ *   which intercepts requests regardless of whether they originate
+ *   from the module or an instance. Once fixed, the per-file
+ *   coverage bucket for src/utils/api.ts (currently 60-65% floor,
+ *   sitting 3-5pp below actual coverage per the team-review safety
+ *   margin) should ratchet back toward 95%+.
+ * ----------------------------------------------------------------------
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
@@ -31,8 +55,10 @@ describe('API Token Refresh Interceptor', () => {
   });
 
   describe('Successful Token Refresh', () => {
-    // TODO: Fix these tests - they fail in CI because spies on global axios don't affect the apiClient instance
-    // These tests need to be rewritten to use axios adapter mocking instead of method spies
+    // TODO(api-refresh-spy): Rewrite using axios adapter mocking.
+    // vi.spyOn(axios, 'post'|'get') patches the module, but apiClient
+    // is an axios.create() instance — spies never intercept its calls.
+    // See file-level comment for full context.
     it.skip('should refresh token on 401 and retry original request', async () => {
       // Setup: Store initial tokens
       const expiredToken = 'expired-token';
@@ -290,8 +316,9 @@ describe('API Token Refresh Interceptor', () => {
   });
 
   describe('Error Message Formatting', () => {
-    // TODO: Fix this test - it fails in CI because spies on global axios don't affect the apiClient instance
-    // This test needs to be rewritten to use axios adapter mocking instead of method spies
+    // TODO(api-refresh-spy): Same axios-spy architecture issue as the
+    // "Successful Token Refresh" suite above. Rewrite using axios
+    // adapter mocking. See file-level comment for full context.
     it.skip('should preserve backend error messages in refresh failures', async () => {
       setAuthToken('expired-token');
       localStorage.setItem(AUTH_CONFIG.REFRESH_TOKEN_KEY, 'refresh-token');
