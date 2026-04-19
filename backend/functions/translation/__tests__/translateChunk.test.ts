@@ -14,6 +14,7 @@ import { SecretsManagerClient, GetSecretValueCommand } from '@aws-sdk/client-sec
 import { Readable } from 'stream';
 import { handler, TranslateChunkEvent, resetClients } from '../translateChunk';
 import { sdkStreamMixin } from '@smithy/util-stream';
+import { RateLimitError, RateLimitType } from '../../shared/types/rateLimiting';
 
 // Create mocks
 const dynamoMock = mockClient(DynamoDBClient);
@@ -955,14 +956,16 @@ describe('translateChunk Lambda', () => {
         Body: createMockStream(chunkContent),
       } as any);
 
-      // Create mock rate limiter that returns failure
+      // Create mock rate limiter that throws RateLimitError (new API)
       const mockRateLimiter = {
-        acquire: jest.fn().mockResolvedValue({
-          success: false,
-          error: 'Token bucket exhausted',
-          retryAfterMs: 5000,
-          tokensRemaining: 0,
-        }),
+        acquire: jest.fn().mockRejectedValue(
+          new RateLimitError({
+            tokensNeeded: 1000,
+            tokensAvailable: 0,
+            retryAfterMs: 5000,
+            limitType: RateLimitType.TPM,
+          })
+        ),
       } as any;
 
       const event: TranslateChunkEvent = {
@@ -977,7 +980,7 @@ describe('translateChunk Lambda', () => {
 
       expect(result.success).toBe(false);
       expect(result.error).toContain('Rate limit exceeded');
-      expect(result.error).toContain('Token bucket exhausted');
+      expect(result.error).toContain('TPM');
       expect(result.retryable).toBe(true);
       expect(result.jobId).toBe('job-123');
       expect(result.chunkIndex).toBe(0);
