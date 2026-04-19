@@ -16,10 +16,21 @@
  * Tagged with @smoke for selective execution in CI/CD
  */
 
+import * as path from 'path';
 import { test, expect } from '@playwright/test';
 
-// Smoke tests use a longer timeout because they run against production
+// Smoke tests use a longer timeout because they run against production.
+// 3 minutes is sufficient when we use the ~1 KB smoke-test-minimal.txt
+// fixture (one chunk, deterministic translation time).
 test.setTimeout(180000); // 3 minutes
+
+// Path to the tiny fixture we upload during the smoke test. Keeping this
+// ~1 KB guarantees the test completes inside the timeout regardless of
+// upstream translation-provider latency on a given day.
+const SMOKE_FIXTURE_PATH = path.resolve(
+  __dirname,
+  '../../fixtures/smoke-test-minimal.txt'
+);
 
 test.describe('Production Smoke Tests @smoke', () => {
   // Test configuration from environment
@@ -74,35 +85,18 @@ test.describe('Production Smoke Tests @smoke', () => {
     });
 
     // Step 3: Upload document
-    let jobId: string | null = null;
-
     await test.step('User can upload a document', async () => {
-      // Create a small test document
-      const testContent = `Smoke Test Document
-
-This is a minimal test document used for production smoke tests.
-It contains just enough content to trigger the translation workflow.
-
-The quick brown fox jumps over the lazy dog. This sentence is used
-to test translation capabilities across different languages.
-
-Production smoke tests run after every deployment to ensure the
-system is functioning correctly before real users access it.`;
-
-      // Create a file from the test content
-      const buffer = Buffer.from(testContent);
-      const file = {
-        name: 'smoke-test.txt',
-        mimeType: 'text/plain',
-        buffer: buffer,
-      };
-
-      // Find and interact with file input
+      // Upload the shared minimal smoke-test fixture (see
+      // frontend/e2e/fixtures/smoke-test-minimal.txt). Using a committed
+      // ~1 KB file avoids allocating large documents inside the test and
+      // keeps translation time well under the 3-minute test timeout.
       const fileInput = page.locator('input[type="file"]');
-      await fileInput.setInputFiles(file);
+      await fileInput.setInputFiles(SMOKE_FIXTURE_PATH);
 
       // Wait for file to be processed
-      await expect(page.getByText(/smoke-test\.txt/i)).toBeVisible({ timeout: 10000 });
+      await expect(page.getByText(/smoke-test-minimal\.txt/i)).toBeVisible({
+        timeout: 10000,
+      });
     });
 
     // Step 4: Configure translation settings
@@ -131,11 +125,12 @@ system is functioning correctly before real users access it.`;
         page.getByText(/translation.*started|translating|processing/i).first()
       ).toBeVisible({ timeout: 15000 });
 
-      // Extract job ID from URL or page if possible
+      // If the URL exposes a job id, surface it in the trace to aid debugging
+      // when the smoke test fails in CI. We don't need to branch on it.
       const url = page.url();
       const jobIdMatch = url.match(/job[=/]([a-f0-9-]+)/i);
       if (jobIdMatch) {
-        jobId = jobIdMatch[1];
+        test.info().annotations.push({ type: 'jobId', description: jobIdMatch[1] });
       }
     });
 

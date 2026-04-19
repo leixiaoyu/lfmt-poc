@@ -34,12 +34,20 @@ interface BenchmarkResult {
   documentSize: string;
   wordCount: number;
   estimatedChunks: number;
+  // startTime/endTime are epoch-ms values anchored to server-side timestamps
+  // (job.createdAt and job.translationCompletedAt) when available, so
+  // durationMs reflects the full user-wait window (upload finalize → chunking →
+  // translation → completion) measured on a single clock. Falls back to
+  // client-side Date.now() only if server timestamps are missing.
   startTime: number;
   endTime: number;
   durationMs: number;
   durationMinutes: number;
   throughputWordsPerMinute: number;
   success: boolean;
+  // Whether startTime/endTime were anchored to server timestamps. When false,
+  // treat the numbers as approximate (client-clock, client-side measured).
+  serverTimestamped: boolean;
   error?: string;
 }
 
@@ -164,29 +172,54 @@ async function startTranslation(
 }
 
 /**
- * Poll translation status until complete
+ * Shape of the translation-status response we care about for the benchmark.
+ * The API returns additional fields; only these are read here.
+ */
+interface TranslationStatusSnapshot {
+  status: string;
+  translationStatus?: string;
+  createdAt?: string;
+  translationStartedAt?: string;
+  translationCompletedAt?: string;
+}
+
+/**
+ * Fetch a single translation-status snapshot.
+ */
+async function fetchTranslationStatus(
+  apiUrl: string,
+  accessToken: string,
+  jobId: string
+): Promise<TranslationStatusSnapshot> {
+  const response = await axios.get(`${apiUrl}translation/status/${jobId}`, {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+  });
+  return response.data as TranslationStatusSnapshot;
+}
+
+/**
+ * Poll translation status until complete. Returns the final status snapshot
+ * so callers can use server-side timestamps (createdAt / translationCompletedAt)
+ * for accurate duration measurement.
  */
 async function waitForTranslationComplete(
   apiUrl: string,
   accessToken: string,
   jobId: string,
   timeoutMs: number = 3600000 // 1 hour default timeout
-): Promise<void> {
-  const startTime = Date.now();
+): Promise<TranslationStatusSnapshot> {
+  const pollStartTime = Date.now();
   const pollIntervalMs = 10000; // Poll every 10 seconds
 
-  while (Date.now() - startTime < timeoutMs) {
+  while (Date.now() - pollStartTime < timeoutMs) {
     try {
-      const response = await axios.get(`${apiUrl}translation/status/${jobId}`, {
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-        },
-      });
-
-      const { status } = response.data;
+      const snapshot = await fetchTranslationStatus(apiUrl, accessToken, jobId);
+      const { status } = snapshot;
 
       if (status === 'completed') {
-        return; // Success
+        return snapshot; // Success
       } else if (status === 'failed') {
         throw new Error('Translation failed');
       }
@@ -226,34 +259,90 @@ async function runBenchmark(
     durationMinutes: 0,
     throughputWordsPerMinute: 0,
     success: false,
+    serverTimestamped: false,
   };
+
+  // Client-side fallback anchor: used only if the API does not expose
+  // createdAt on the status snapshot (shouldn't happen against a current
+  // backend, but keeps the benchmark robust against older deployments).
+  const clientStartFallback = Date.now();
 
   try {
     // Authenticate
     console.log('   Authenticating...');
     const accessToken = await authenticate(apiUrl, email, password);
 
-    // Start translation
+    // Start translation (uploads document and kicks off chunking + translation)
     console.log('   Starting translation...');
-    result.startTime = Date.now();
-    const jobId = await startTranslation(accessToken, apiUrl, content, 'en', 'es');
+    const jobId = await startTranslation(apiUrl, accessToken, content, 'en', 'es');
 
-    // Wait for completion
+    // Immediately fetch the status snapshot so we can capture the server-side
+    // createdAt timestamp. This is the true start of the user's wait window
+    // (the moment the backend persisted the job record), and anchoring to it
+    // ensures durationMs reflects the full upload-finalize → chunking →
+    // translation → completion path on a single clock — not a client clock
+    // that can drift vs. the server.
+    let jobCreatedAtMs: number | undefined;
+    try {
+      const initialSnapshot = await fetchTranslationStatus(apiUrl, accessToken, jobId);
+      if (initialSnapshot.createdAt) {
+        jobCreatedAtMs = Date.parse(initialSnapshot.createdAt);
+      }
+    } catch (snapshotErr: any) {
+      console.log(
+        `   ⚠️  Could not read initial status for createdAt (${snapshotErr.message}); will fall back to client clock.`
+      );
+    }
+
+    // Wait for completion and capture the final snapshot (which carries the
+    // server-side translationCompletedAt timestamp).
     console.log(`   Waiting for translation to complete (Job ID: ${jobId})...`);
-    await waitForTranslationComplete(apiUrl, accessToken, jobId);
+    const finalSnapshot = await waitForTranslationComplete(apiUrl, accessToken, jobId);
 
-    result.endTime = Date.now();
+    const completedAtMs = finalSnapshot.translationCompletedAt
+      ? Date.parse(finalSnapshot.translationCompletedAt)
+      : undefined;
+
+    if (jobCreatedAtMs !== undefined && completedAtMs !== undefined && !Number.isNaN(jobCreatedAtMs) && !Number.isNaN(completedAtMs)) {
+      // Both anchors are server-side: most accurate duration.
+      result.startTime = jobCreatedAtMs;
+      result.endTime = completedAtMs;
+      result.serverTimestamped = true;
+    } else if (jobCreatedAtMs !== undefined && !Number.isNaN(jobCreatedAtMs)) {
+      // Only start is server-side; end falls back to client clock at completion.
+      result.startTime = jobCreatedAtMs;
+      result.endTime = Date.now();
+      result.serverTimestamped = false;
+    } else {
+      // No server timestamps available — use client-side fallback. This is
+      // the legacy behavior; flag it so readers of the report know the
+      // numbers may include extra client-side overhead.
+      // TODO: If you see this path hit regularly, check that the status
+      // endpoint is returning createdAt and translationCompletedAt.
+      result.startTime = clientStartFallback;
+      result.endTime = Date.now();
+      result.serverTimestamped = false;
+    }
+
     result.durationMs = result.endTime - result.startTime;
     result.durationMinutes = result.durationMs / 60000;
-    result.throughputWordsPerMinute = wordCount / result.durationMinutes;
+    result.throughputWordsPerMinute =
+      result.durationMinutes > 0 ? wordCount / result.durationMinutes : 0;
     result.success = true;
 
-    console.log(`   ✅ Completed in ${result.durationMinutes.toFixed(2)} minutes`);
+    console.log(
+      `   ✅ Completed in ${result.durationMinutes.toFixed(2)} minutes (${result.serverTimestamped ? 'server-timestamped' : 'client-clock fallback'})`
+    );
     console.log(
       `   📊 Throughput: ${result.throughputWordsPerMinute.toFixed(0)} words/minute`
     );
   } catch (error: any) {
+    // On failure, we may not have server timestamps — use client clock as a
+    // best effort so a partial duration is still captured for triage.
     result.endTime = Date.now();
+    if (result.startTime === 0) {
+      result.startTime = clientStartFallback;
+    }
     result.durationMs = result.endTime - result.startTime;
     result.error = error.message;
     result.success = false;

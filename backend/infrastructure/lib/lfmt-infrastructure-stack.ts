@@ -1519,9 +1519,20 @@ export class LfmtInfrastructureStack extends Stack {
         },
         contentSecurityPolicy: {
           // NOTE: This CSP will be updated after API Gateway is created to include the actual API URL
-          // Hardened CSP without unsafe-inline and unsafe-eval (Issue #63)
+          //
+          // CSP uses 'unsafe-inline' for style-src and 'unsafe-eval' for script-src
+          // because the current frontend stack (MUI/Emotion) emits runtime inline
+          // styles, and Vite's legacy build output uses eval. Removing these
+          // directives breaks the production UI.
+          //
+          // Future hardening path: implement a nonce-based CSP once the build
+          // pipeline can inject per-request nonces into index.html and MUI/Emotion
+          // are configured to consume them. Tracked in follow-up issue (TBD).
+          //
+          // Other hardening directives retained: object-src 'none', base-uri 'self',
+          // form-action 'self', frame-ancestors 'none', upgrade-insecure-requests.
           // See: https://github.com/leixiaoyu/lfmt-poc/issues/63
-          contentSecurityPolicy: "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self' https://*.execute-api.us-east-1.amazonaws.com; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; upgrade-insecure-requests;",
+          contentSecurityPolicy: "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self' https://*.execute-api.us-east-1.amazonaws.com; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; upgrade-insecure-requests;",
           override: true,
         },
       },
@@ -1625,9 +1636,20 @@ export class LfmtInfrastructureStack extends Stack {
           override: true,
         },
         contentSecurityPolicy: {
-          // Hardened CSP with specific API Gateway domain (Issue #63)
-          // Removed unsafe-inline and unsafe-eval for improved XSS protection
-          contentSecurityPolicy: `default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self' https://${apiDomain}; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; upgrade-insecure-requests;`,
+          // CSP with specific API Gateway domain (Issue #63)
+          //
+          // CSP uses 'unsafe-inline' for style-src and 'unsafe-eval' for script-src
+          // because the current frontend stack (MUI/Emotion) emits runtime inline
+          // styles, and Vite's legacy build output uses eval. Removing these
+          // directives breaks the production UI.
+          //
+          // Future hardening path: implement a nonce-based CSP once the build
+          // pipeline can inject per-request nonces into index.html and MUI/Emotion
+          // are configured to consume them. Tracked in follow-up issue (TBD).
+          //
+          // Other hardening directives retained: object-src 'none', base-uri 'self',
+          // form-action 'self', frame-ancestors 'none', upgrade-insecure-requests.
+          contentSecurityPolicy: `default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self' https://${apiDomain}; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; upgrade-insecure-requests;`,
           override: true,
         },
       },

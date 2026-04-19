@@ -31,6 +31,12 @@ interface TranslationStatusResponse {
   progressPercentage: number;
   tokensUsed?: number;
   estimatedCost?: number;
+  // createdAt is the server-side ISO timestamp recorded when the job record
+  // was first persisted (during upload/request). It represents the true start
+  // of a user's wait time, and benchmark tooling uses it as the anchor for
+  // end-to-end duration measurements so results aren't skewed by client-side
+  // clock drift or upload timing. See backend/tests/performance/performance-benchmark.ts.
+  createdAt?: string;
   translationStartedAt?: string;
   translationCompletedAt?: string;
   estimatedCompletion?: string;
@@ -87,6 +93,7 @@ export const handler = async (
       ),
       tokensUsed: job.tokensUsed,
       estimatedCost: job.estimatedCost,
+      createdAt: job.createdAt,
       translationStartedAt: job.translationStartedAt,
       translationCompletedAt: job.translationCompletedAt,
     };
