@@ -22,14 +22,17 @@
  *   do not flow through the spied module methods, so the mocked
  *   401 / refresh / retry sequence never fires as expected.
  *
- * Remediation (tracked in vite.config.ts src/utils/api.ts threshold
- * comment):
+ * Remediation — tracked in GitHub issue:
+ *   https://github.com/leixiaoyu/lfmt-poc/issues/132
+ *   [TEST] Rewrite api.refresh tests using axios-mock-adapter
+ *
  *   Rewrite these tests to mock at the axios adapter level (e.g.,
  *   `axios-mock-adapter` or a manual adapter injected into the client),
  *   which intercepts requests regardless of whether they originate
  *   from the module or an instance. Once fixed, the per-file
- *   coverage bucket for src/utils/api.ts (currently 65-70% floor,
- *   sitting just below actual coverage) should ratchet back toward 95%+.
+ *   coverage bucket for src/utils/api.ts (currently 60-65% floor,
+ *   sitting 3-5pp below actual coverage per the team-review safety
+ *   margin) should ratchet back toward 95%+.
  * ----------------------------------------------------------------------
  */
 
