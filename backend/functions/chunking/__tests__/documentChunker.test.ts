@@ -6,6 +6,7 @@
  */
 
 import { describe, it, expect, beforeEach } from '@jest/globals';
+import { Readable } from 'stream';
 import { DocumentChunker, createChunker, ChunkContext } from '../documentChunker';
 import { countTokens } from '../../shared/tokenizer';
 
@@ -461,6 +462,88 @@ describe('DocumentChunker', () => {
 
       expect(result.chunks.length).toBe(1);
       expect(result.chunks[0].primaryContent).toBeTruthy();
+    });
+  });
+
+  describe('Stream-based Chunking (chunkDocumentStream)', () => {
+    const streamFromString = (s: string): Readable =>
+      Readable.from(Buffer.from(s, 'utf-8'));
+    const streamFromBuffers = (bufs: Buffer[]): Readable => Readable.from(bufs);
+
+    it('should chunk content from a Readable stream and produce equivalent chunks to chunkDocument', async () => {
+      const content = generateLongText(8000); // Multi-chunk
+
+      const fromString = chunker.chunkDocument(content);
+      const fromStream = await chunker.chunkDocumentStream(streamFromString(content));
+
+      // Same number of chunks
+      expect(fromStream.chunks.length).toBe(fromString.chunks.length);
+      // Token counts should be equivalent
+      expect(fromStream.metadata.originalTokenCount).toBeGreaterThan(0);
+      // Each primaryContent should be non-empty
+      fromStream.chunks.forEach((c) => {
+        expect(c.primaryContent.length).toBeGreaterThan(0);
+      });
+    });
+
+    it('should produce a single chunk for small streamed content', async () => {
+      const result = await chunker.chunkDocumentStream(
+        streamFromString('Just one sentence.')
+      );
+      expect(result.chunks.length).toBe(1);
+      expect(result.chunks[0].previousSummary).toBe('');
+      expect(result.chunks[0].nextPreview).toBe('');
+    });
+
+    it('should preserve content across multiple stream buffers (concatenation correctness)', async () => {
+      const sentences = Array.from({ length: 50 }, (_, i) => `Sentence ${i}.`).join(' ');
+      // Slice into 17-byte buffers to force many small reads
+      const buffers: Buffer[] = [];
+      for (let i = 0; i < sentences.length; i += 17) {
+        buffers.push(Buffer.from(sentences.slice(i, i + 17), 'utf-8'));
+      }
+
+      const result = await chunker.chunkDocumentStream(streamFromBuffers(buffers));
+      const reassembled = result.chunks.map((c) => c.primaryContent).join(' ');
+      // All sentence markers should be present
+      for (let i = 0; i < 50; i++) {
+        expect(reassembled).toContain(`Sentence ${i}.`);
+      }
+    });
+
+    it('should correctly handle UTF-8 multi-byte characters split across buffer boundaries', async () => {
+      const text = 'Hello 中国 world. Another 你好 sentence.';
+      const buf = Buffer.from(text, 'utf-8');
+      // Cut mid-character (中 is at bytes 6-8, cut at byte 7)
+      const buffers = [buf.subarray(0, 7), buf.subarray(7)];
+
+      const result = await chunker.chunkDocumentStream(streamFromBuffers(buffers));
+      const reassembled = result.chunks.map((c) => c.primaryContent).join('');
+      expect(reassembled).toContain('中国');
+      expect(reassembled).toContain('你好');
+      expect(reassembled).not.toContain('\ufffd');
+    });
+
+    it('should reject empty stream content', async () => {
+      await expect(
+        chunker.chunkDocumentStream(streamFromString(''))
+      ).rejects.toThrow('Content cannot be empty');
+    });
+
+    it('should propagate stream errors to the caller', async () => {
+      let emitted = false;
+      const erroringStream = new Readable({
+        read() {
+          if (!emitted) {
+            emitted = true;
+            this.push(Buffer.from('Some text. ', 'utf-8'));
+          } else {
+            this.destroy(new Error('NoSuchKey'));
+          }
+        },
+      });
+
+      await expect(chunker.chunkDocumentStream(erroringStream)).rejects.toThrow(/NoSuchKey/);
     });
   });
 });

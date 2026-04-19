@@ -1,9 +1,10 @@
 /**
  * Document Chunking Lambda Handler
  *
- * Triggered by S3 upload events to process uploaded documents
- * - Downloads document from S3
- * - Chunks document using sliding window algorithm
+ * Triggered by S3 upload events to process uploaded documents.
+ * - Validates document size via HeadObject (DoS guard) before downloading
+ * - Streams document body directly into the chunker — never holds the full
+ *   document in memory at once (issue #24)
  * - Stores chunks in S3
  * - Updates job status in DynamoDB
  */
@@ -13,6 +14,8 @@ import {
   S3Client,
   GetObjectCommand,
   GetObjectCommandOutput,
+  HeadObjectCommand,
+  HeadObjectCommandOutput,
   PutObjectCommand,
 } from '@aws-sdk/client-s3';
 import {
@@ -22,7 +25,8 @@ import {
   GetItemCommandOutput,
 } from '@aws-sdk/client-dynamodb';
 import { marshall, unmarshall } from '@aws-sdk/util-dynamodb';
-import { createChunker, ChunkContext } from './documentChunker';
+import { Readable } from 'stream';
+import { createChunker, ChunkContext, ChunkingResult } from './documentChunker';
 import Logger from '../shared/logger';
 import { getRequiredEnv } from '../shared/env';
 
@@ -32,6 +36,14 @@ const dynamoClient = new DynamoDBClient({});
 
 const DOCUMENT_BUCKET = getRequiredEnv('DOCUMENT_BUCKET');
 const JOBS_TABLE = getRequiredEnv('JOBS_TABLE');
+
+/**
+ * Maximum allowed document size in bytes (DoS guard).
+ * Matches shared-types/src/validation.ts fileSizeSchema upper bound (100 MB).
+ * Documents above this limit are rejected at HeadObject time, before any body
+ * is downloaded — bounding both Lambda memory and execution time.
+ */
+const MAX_DOCUMENT_BYTES = 100 * 1024 * 1024;
 
 interface JobRecord {
   jobId: string;
@@ -47,6 +59,13 @@ interface JobRecord {
     originalFilename?: string;
     uploadRequestId?: string;
   };
+}
+
+interface S3ObjectMetadata {
+  userId: string;
+  jobId: string;
+  fileId: string;
+  contentLength: number;
 }
 
 /**
@@ -71,32 +90,57 @@ function extractJobMetadata(s3Metadata: Record<string, string> | undefined): {
 }
 
 /**
- * Download document content from S3
+ * Fetch S3 object metadata + content length via HeadObject (no body download).
+ *
+ * This is the DoS guard: documents larger than MAX_DOCUMENT_BYTES are rejected
+ * here, before any body bytes flow. Also extracts the user/job/file IDs from
+ * S3 user-defined metadata so we can update job status before fetching the body.
  */
-async function downloadDocument(bucket: string, key: string): Promise<string> {
-  logger.info('Downloading document from S3', { bucket, key });
+async function headObjectWithSizeGuard(
+  bucket: string,
+  key: string
+): Promise<S3ObjectMetadata> {
+  const command = new HeadObjectCommand({ Bucket: bucket, Key: key });
+  const response: HeadObjectCommandOutput = await s3Client.send(command);
 
-  const command = new GetObjectCommand({
-    Bucket: bucket,
-    Key: key,
-  });
+  const contentLength = response.ContentLength ?? 0;
 
+  if (contentLength > MAX_DOCUMENT_BYTES) {
+    logger.warn('Rejecting oversized document', {
+      bucket,
+      key,
+      contentLength,
+      maxBytes: MAX_DOCUMENT_BYTES,
+    });
+    throw new Error(
+      `Document exceeds maximum size: ${contentLength} bytes (limit: ${MAX_DOCUMENT_BYTES} bytes)`
+    );
+  }
+
+  const { userId, jobId, fileId } = extractJobMetadata(response.Metadata);
+  return { userId, jobId, fileId, contentLength };
+}
+
+/**
+ * Open a streaming GetObject body for the document.
+ *
+ * Returns the SDK's Readable directly — the chunker consumes it incrementally
+ * via `for await`. No temp file, no in-memory buffer of the whole document.
+ */
+async function openDocumentStream(bucket: string, key: string): Promise<Readable> {
+  logger.info('Opening S3 object stream', { bucket, key });
+
+  const command = new GetObjectCommand({ Bucket: bucket, Key: key });
   const response: GetObjectCommandOutput = await s3Client.send(command);
 
   if (!response.Body) {
     throw new Error('S3 object has no body');
   }
 
-  // Convert stream to string
-  const content = await response.Body.transformToString('utf-8');
-
-  logger.info('Document downloaded successfully', {
-    bucket,
-    key,
-    contentLength: content.length,
-  });
-
-  return content;
+  // In Node.js Lambda the SDK v3 returns a Readable. We do not support the browser
+  // ReadableStream/Blob variants here — this Lambda is Node-only.
+  const body = response.Body as Readable;
+  return body;
 }
 
 /**
@@ -235,53 +279,53 @@ export const handler: S3Handler = async (event: S3Event): Promise<void> => {
 
     logger.info('Processing S3 object', { bucket, key });
 
-    try {
-      // Get object metadata to extract job information
-      const getObjectCommand = new GetObjectCommand({
-        Bucket: bucket,
-        Key: key,
-      });
-      const objectResponse: GetObjectCommandOutput = await s3Client.send(getObjectCommand);
-      const { userId, jobId, fileId } = extractJobMetadata(objectResponse.Metadata);
+    // Track metadata so we can report failures even if the body stream fails.
+    let metadata: S3ObjectMetadata | null = null;
 
-      // Verify job exists in DynamoDB
+    try {
+      // 1. HeadObject: extract metadata + DoS size guard. Never downloads body.
+      metadata = await headObjectWithSizeGuard(bucket, key);
+      const { userId, jobId, fileId, contentLength } = metadata;
+
+      // 2. Verify job exists in DynamoDB
       const jobRecord = await getJobRecord(jobId, userId);
       if (!jobRecord) {
         logger.error('Job record not found', { jobId, userId, bucket, key });
         continue;
       }
 
-      // Update job status to CHUNKING
+      // 3. Update job status to CHUNKING
       await updateJobStatus(jobId, userId, 'CHUNKING');
 
-      // Download document content
-      const content = await downloadDocument(bucket, key);
+      // 4. Open the body as a Readable stream and chunk incrementally.
+      //    Memory peak is bounded by chunk size + small text buffer, NOT by document size.
+      const bodyStream = await openDocumentStream(bucket, key);
 
-      // Chunk the document
-      logger.info('Starting document chunking', {
+      logger.info('Starting streaming document chunking', {
         jobId,
         userId,
         fileId,
-        contentLength: content.length,
+        contentLength,
       });
 
       const chunker = createChunker();
-      const result = chunker.chunkDocument(content);
+      const result: ChunkingResult = await chunker.chunkDocumentStream(bodyStream);
 
       logger.info('Document chunked successfully', {
         jobId,
         userId,
         fileId,
+        bytesProcessed: contentLength,
         totalChunks: result.metadata.totalChunks,
         originalTokenCount: result.metadata.originalTokenCount,
         averageChunkSize: result.metadata.averageChunkSize,
         processingTimeMs: result.metadata.processingTimeMs,
       });
 
-      // Store chunks in S3
+      // 5. Store chunks in S3
       const chunkKeys = await storeChunks(result.chunks, userId, fileId, jobId);
 
-      // Update job status to CHUNKED with metadata
+      // 6. Update job status to CHUNKED with metadata
       await updateJobStatus(jobId, userId, 'CHUNKED', {
         totalChunks: result.metadata.totalChunks,
         chunkKeys,
@@ -303,28 +347,25 @@ export const handler: S3Handler = async (event: S3Event): Promise<void> => {
         stack: error instanceof Error ? error.stack : undefined,
       });
 
-      // Try to extract job ID and user ID from key for error reporting
-      try {
-        const getObjectCommand = new GetObjectCommand({
-          Bucket: bucket,
-          Key: key,
-        });
-        const objectResponse: GetObjectCommandOutput = await s3Client.send(getObjectCommand);
-        const { jobId, userId } = extractJobMetadata(objectResponse.Metadata);
-
-        await updateJobStatus(
-          jobId,
-          userId,
-          'CHUNKING_FAILED',
-          undefined,
-          error instanceof Error ? error.message : 'Unknown error'
-        );
-      } catch (updateError) {
-        logger.error('Failed to update job status after error', {
-          bucket,
-          key,
-          updateError: updateError instanceof Error ? updateError.message : 'Unknown error',
-        });
+      // Best-effort job status update. We use the metadata captured before the failure;
+      // if HeadObject itself failed we have no IDs to update with — log and continue.
+      if (metadata) {
+        try {
+          await updateJobStatus(
+            metadata.jobId,
+            metadata.userId,
+            'CHUNKING_FAILED',
+            undefined,
+            error instanceof Error ? error.message : 'Unknown error'
+          );
+        } catch (updateError) {
+          logger.error('Failed to update job status after error', {
+            bucket,
+            key,
+            updateError:
+              updateError instanceof Error ? updateError.message : 'Unknown error',
+          });
+        }
       }
 
       // Don't throw - allow other records to process
