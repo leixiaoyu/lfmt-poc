@@ -12,15 +12,17 @@ LFMT POC (Long-Form Translation Service) is a proof-of-concept serverless applic
 - Ensure legal compliance with 7-year attestation retention
 - Deliver production-ready architecture despite POC status
 
-**Current Status**: Phase 10 - Investor Demo & Production Readiness | ~80% Complete
+**Current Status**: See [PROGRESS.md](../PROGRESS.md) for the canonical phase, completion percentage, and active workstreams.
+
+High-level capability map (detailed status in PROGRESS.md):
 
 - ✅ Infrastructure (AWS CDK, DynamoDB, S3, API Gateway, Cognito)
 - ✅ Authentication (Backend Lambda + Frontend React)
 - ✅ Document Upload Service (S3 presigned URLs, file validation)
-- ✅ Document Chunking Service (Complete)
+- ✅ Document Chunking Service
 - ✅ Translation Engine (Gemini 2.5 Flash integration)
-- ✅ Legal Attestation System
-- 🔄 Demo Preparation & UI/UX Polish (In Progress)
+- 🔄 Legal Attestation System (frontend UI + DynamoDB table provisioned; production write path not yet wired — tracked for follow-up)
+- 🔄 Demo Preparation & UI/UX Polish
 
 ## Tech Stack
 
@@ -60,9 +62,9 @@ LFMT POC (Long-Form Translation Service) is a proof-of-concept serverless applic
 
 ### Translation Engine
 
-- **LLM Provider**: Claude Sonnet 4 API (Anthropic)
+- **LLM Provider**: Google Gemini 2.5 Flash (free tier for POC)
 - **Chunking Strategy**: 3,500 tokens primary + 250 tokens overlap
-- **Rate Limiting**: 45 req/min, 405K input tokens/min, 81K output tokens/min
+- **Rate Limiting**: 5 RPM, 250K TPM, 25 RPD (Gemini free tier — see `backend/functions/translation/rateLimiter.ts`)
 - **Supported Languages**: Spanish, French, Italian, German, Chinese
 
 ### Shared Infrastructure
@@ -149,11 +151,11 @@ LFMT POC (Long-Form Translation Service) is a proof-of-concept serverless applic
 - **Tagging**: Consistent tags (Environment, Project, ManagedBy)
 - **Cost Optimization**: ARM64 Lambda, on-demand DynamoDB, S3 lifecycle policies
 
-**Translation Processing** (Planned):
+**Translation Processing**:
 
 - **Chunking**: Sliding window approach with 250-token overlap
 - **Context Management**: Last 2 chunks provide context for next translation
-- **Rate Limiting**: Exponential backoff for Claude API
+- **Rate Limiting**: Exponential backoff for Gemini API (token-bucket rate limiter)
 - **Progress Tracking**: Polling-based architecture (15s → 30s → 60s intervals)
 
 ### Testing Strategy
@@ -273,8 +275,8 @@ LFMT POC (Long-Form Translation Service) is a proof-of-concept serverless applic
 - **Input Format**: Plain text (.txt files)
 - **Output Format**: Translated text files
 - **Chunk Size**: 3,500 tokens (primary content) + 250 tokens (context overlap)
-- **Token Counting**: Claude's tokenizer (not standard word count)
-- **Context Window**: 200K tokens (Claude Sonnet 4 limit)
+- **Token Counting**: Gemini-compatible tokenizer (not standard word count)
+- **Context Window**: 1M tokens (Gemini 2.5 Flash limit; chunking is throughput-driven, not context-driven)
 - **Processing Time**: 30-60 min (65K words) to 2-6 hours (400K words)
 
 **Legal Compliance**:
@@ -288,26 +290,26 @@ LFMT POC (Long-Form Translation Service) is a proof-of-concept serverless applic
 
 - **Target**: <$0.05 per 100K word document
 - **Monthly Budget**: <$50 for 1000 translations
-- **Primary Cost Driver**: Claude API calls (~$0.02-0.04 per 100K words)
+- **Primary Cost Driver**: Gemini 2.5 Flash API calls (Google AI free tier currently used for POC; ~$0.00 incremental cost within free-tier quotas)
 - **Optimization**: ARM64 Lambda (20% savings), S3 lifecycle policies
 
 **Rate Limiting**:
 
-- **Claude API Limits**:
-  - 45 requests per minute
-  - 405K input tokens per minute
-  - 81K output tokens per minute
-- **Strategy**: Exponential backoff with jitter
-- **Queue Management**: DynamoDB-based job queue (planned)
+- **Gemini 2.5 Flash Free-Tier Limits** (enforced in `backend/functions/translation/rateLimiter.ts`):
+  - 5 requests per minute (RPM)
+  - 250,000 tokens per minute (TPM)
+  - 25 requests per day (RPD)
+- **Strategy**: Token-bucket limiter with exponential backoff and jitter
+- **Queue Management**: DynamoDB-backed distributed rate limiter (`backend/functions/shared/distributedRateLimiter.ts`)
 
 ## Important Constraints
 
 **Technical Constraints**:
 
-- **Context Window**: Claude Sonnet 4 limited to 200K tokens
+- **Context Window**: Gemini 2.5 Flash supports up to 1M tokens; chunking is driven by throughput and rate-limit constraints, not context
 - **File Size**: Documents up to 400K words (~500K tokens)
 - **Chunking Overhead**: 250-token overlap reduces effective throughput
-- **API Rate Limits**: Must respect Claude API throttling
+- **API Rate Limits**: Must respect Gemini free-tier throttling (5 RPM / 250K TPM / 25 RPD)
 - **Cold Start**: Lambda functions have 1-3 second cold start latency
 
 **Business Constraints**:
@@ -362,10 +364,10 @@ LFMT POC (Long-Form Translation Service) is a proof-of-concept serverless applic
 
 **AI/ML Services**:
 
-- **Anthropic Claude API**: Sonnet 4 model for translations
-  - API Endpoint: `https://api.anthropic.com/v1/messages`
-  - Authentication: API key in headers
-  - Rate Limits: See Domain Context section
+- **Google AI / Gemini 2.5 Flash**: `gemini-2.5-flash` model for translations
+  - SDK: `@google/genai` (see `backend/functions/translation/geminiClient.ts`)
+  - Authentication: API key sourced from AWS Secrets Manager (`lfmt/gemini-api-key-LfmtPocDev`)
+  - Rate Limits: See Domain Context section (Gemini free tier: 5 RPM / 250K TPM / 25 RPD)
 
 **Third-Party Libraries**:
 

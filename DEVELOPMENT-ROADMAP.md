@@ -3,7 +3,7 @@
 **Last Updated:** 2026-04-17
 **Team Lead:** xlei-raymond (Principal Engineer)
 **Based on:** Project Priorities Proposal v2 (2025-11-02)
-**Status:** Phase 10 In Progress - Investor Demo & Production Readiness
+**Status:** See [PROGRESS.md](PROGRESS.md) for the canonical phase, completion %, and active workstreams.
 
 ---
 
@@ -16,7 +16,7 @@
 ✅ **Functional End-to-End Workflow**: Upload → Chunking → Translation → Download
 ✅ **Translation UI Deployed**: Live at https://d39xcun7144jgl.cloudfront.net
 ✅ **CI/CD Pipeline**: Automated deployment with health checks operational
-✅ **Testing Infrastructure**: 877 tests passing (499 frontend + 328 backend + 50 infrastructure)
+✅ **Testing Infrastructure**: Comprehensive unit, integration, and E2E coverage across backend, infrastructure, and frontend (see [PROGRESS.md](PROGRESS.md) for current counts)
 ✅ **Production-Ready Architecture**: CDK-managed infrastructure, HTTPS-only, comprehensive monitoring
 
 ### Resolved Critical Risks
@@ -69,13 +69,13 @@ The conflict between the project's cost targets and the estimated cost of the tr
 
 **Decision Made:**
 
-- **Selected Engine**: Google Gemini 1.5 Pro (POC phase)
+- **Selected Engine**: Google Gemini 2.5 Flash (POC phase; migrated from Gemini 1.5 Pro in PR #98 after Google deprecated 1.5 models)
 - **Cost Model**: Using Gemini free tier to meet <$50/month cost target
-- **Future Path**: Option to upgrade to Claude Sonnet 4 for production if quality requirements increase
+- **Future Path**: Re-evaluate model tier (e.g., Gemini 2.5 Pro) if production quality requirements demand it
 
 **Action Items:**
 
-- [x] Finalize choice of translation engine (Claude Sonnet 4 vs. Gemini 1.5 Pro) - **Gemini selected**
+- [x] Finalize choice of translation engine (Gemini selected; migrated to 2.5 Flash)
 - [x] Get business approval on realistic cost model - **Approved: Gemini free tier**
 - [x] Update all documentation to reflect final engine choice - **README.md updated**
 - [x] Update infrastructure to support chosen engine - **PR #6 merged (87 tests, 93-100% coverage)**
