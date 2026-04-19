@@ -277,7 +277,7 @@ High-level capability map (detailed status in PROGRESS.md):
 - **Chunk Size**: 3,500 tokens (primary content) + 250 tokens (context overlap)
 - **Token Counting**: Gemini-compatible tokenizer (not standard word count)
 - **Context Window**: 1M tokens (Gemini 2.5 Flash limit; chunking is throughput-driven, not context-driven)
-- **Processing Time**: 30-60 min (65K words) to 2-6 hours (400K words)
+- **Processing Time**: Targets are `<20s` for 65K-word documents and `<90s` for 400K-word documents with parallel translation (Step Functions Map state, `maxConcurrency: 10`). Actual end-to-end wall time is bounded by Gemini free-tier rate limits (5 RPM / 250K TPM / 25 RPD) — large documents that exceed RPD will queue across days. See PROGRESS.md Success Criteria for current benchmark status.
 
 **Legal Compliance**:
 

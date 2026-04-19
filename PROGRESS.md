@@ -131,10 +131,10 @@ The LFMT POC has completed **Phases 1-9** (foundation through translation UI dep
 
 #### Verification Completed
 
-- ✅ Infrastructure tests: 33/33 passing
+- ✅ Infrastructure tests: all passing
 - ✅ TypeScript compilation: 0 errors
-- ✅ CI/CD pipeline: 12/12 checks passed
-- ✅ Total tests: 877 passing (345 backend + 33 infrastructure + 499 frontend)
+- ✅ CI/CD pipeline: all checks passed
+- ✅ Full test suite passing across backend, infrastructure, and frontend (see "Project Metrics" for latest totals)
 - ✅ Comprehensive test proof added to PR as documentation
 
 ### 2025-11-26: Gemini API Migration to 2.5 Flash ✅ DEPLOYED
@@ -166,7 +166,7 @@ The LFMT POC has completed **Phases 1-9** (foundation through translation UI dep
    - **Files Modified**:
      - `geminiClient.test.ts` - 7 mock responses updated
      - `translateChunk.test.ts` - Global mock setup updated
-   - **Result**: All 877 tests passing (345 backend + 532 frontend)
+   - **Result**: Full backend + frontend test suite passing (see "Project Metrics" for current counts)
 
 #### Verification Completed
 
@@ -273,6 +273,15 @@ The LFMT POC has completed **Phases 1-9** (foundation through translation UI dep
 
 ## Current Risks & Mitigation
 
+### Pre-Production Blockers
+
+#### Pre-Production Blocker: Legal Attestation Write Path
+
+- **Impact**: Frontend collects user consent for legal attestation but no Lambda persists the data to the provisioned `AttestationsTable`. Consent is silently dropped, creating a potential compliance gap (OWASP A09 — Security Logging & Monitoring Failures) and audit-trail failure.
+- **Status**: Table provisioned (`backend/infrastructure/lib/lfmt-infrastructure-stack.ts:188`), frontend UI exists (`frontend/src/components/translation/LegalAttestation.tsx`), integration tests pass `legalAttestation` payloads — but no production write path.
+- **Required before launch**: Wire the write path in the upload / startTranslation flow so consent data is persisted with the job record (user identity, document hash, IP, timestamp, attestation version).
+- **Severity**: HIGH — do not deploy to production users without this.
+
 ### Active Risks
 
 **MEDIUM Risk**: Gemini API Rate Limiting
@@ -307,10 +316,14 @@ The LFMT POC has completed **Phases 1-9** (foundation through translation UI dep
 
 ### Testing
 
-- **Total Tests**: 877 (499 frontend + 328 backend + 50 infrastructure)
+- **Total Tests**: 877+ across backend, infrastructure, and frontend (milestone snapshot as of PR #99, 2025-11-26)
 - **Passing Rate**: 100%
-- **E2E Tests**: 58 Playwright tests
-- **Integration Tests**: In progress validation with Gemini API
+- **E2E Tests**: Playwright suite (frontend/e2e)
+- **Integration Tests**: Validated end-to-end against Gemini 2.5 Flash
+
+> Note: Test totals are a point-in-time snapshot. For the authoritative count,
+> run `npm test` in each package (`backend/functions`, `backend/infrastructure`,
+> `frontend`).
 
 ### Cost (AWS + Gemini)
 
