@@ -28,6 +28,7 @@ import {
   TranslationServiceError,
 } from '../services/translationService';
 import { TranslationProgress } from '../components/Translation/TranslationProgress';
+import { FEATURE_FLAGS } from '../config/constants';
 
 export const TranslationDetail: React.FC = () => {
   const { jobId } = useParams<{ jobId: string }>();
@@ -299,14 +300,20 @@ export const TranslationDetail: React.FC = () => {
             >
               {downloading ? 'Downloading...' : 'Download Translation'}
             </Button>
-            <Button
-              variant="outlined"
-              startIcon={<CompareArrowsIcon />}
-              component={RouterLink}
-              to={`/translation/${jobId}/compare`}
-            >
-              Compare Side-by-Side
-            </Button>
+            {/*
+              Compare button gated behind feature flag — the source-pane backend
+              API is not yet implemented. See FEATURE_FLAGS.COMPARE_VIEW.
+            */}
+            {FEATURE_FLAGS.COMPARE_VIEW && (
+              <Button
+                variant="outlined"
+                startIcon={<CompareArrowsIcon />}
+                component={RouterLink}
+                to={`/translation/${jobId}/compare`}
+              >
+                Compare Side-by-Side
+              </Button>
+            )}
           </>
         )}
 

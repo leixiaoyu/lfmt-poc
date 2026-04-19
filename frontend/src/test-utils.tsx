@@ -5,7 +5,7 @@
  * for testing Material-UI components and React Query.
  */
 
-import React, { ReactElement } from 'react';
+import React, { ReactElement, useState } from 'react';
 import { render, RenderOptions } from '@testing-library/react';
 import { ThemeProvider, createTheme } from '@mui/material/styles';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -34,7 +34,9 @@ interface AllTheProvidersProps {
 
 // eslint-disable-next-line react-refresh/only-export-components
 const AllTheProviders: React.FC<AllTheProvidersProps> = ({ children }) => {
-  const testQueryClient = createTestQueryClient();
+  // Lazy init via useState — guarantees a single client instance per render tree,
+  // so re-renders during a test don't blow away cached queries (was causing flakes).
+  const [testQueryClient] = useState(() => createTestQueryClient());
   return (
     <QueryClientProvider client={testQueryClient}>
       <ThemeProvider theme={theme}>{children}</ThemeProvider>

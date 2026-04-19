@@ -14,7 +14,7 @@ import { QueryClientProvider } from '@tanstack/react-query';
 import { AuthProvider } from './contexts/AuthContext';
 import { ProtectedRoute } from './components/Auth/ProtectedRoute';
 import { theme } from './theme';
-import { ROUTES } from './config/constants';
+import { ROUTES, FEATURE_FLAGS } from './config/constants';
 import { queryClient } from './lib/queryClient';
 
 // Lazy load pages for better performance
@@ -105,14 +105,20 @@ function App() {
                     </ProtectedRoute>
                   }
                 />
-                <Route
-                  path="/translation/:jobId/compare"
-                  element={
-                    <ProtectedRoute>
-                      <TranslationCompare />
-                    </ProtectedRoute>
-                  }
-                />
+                {/*
+                  Compare route gated behind FEATURE_FLAGS.COMPARE_VIEW —
+                  source-pane retrieval API is not yet implemented.
+                */}
+                {FEATURE_FLAGS.COMPARE_VIEW && (
+                  <Route
+                    path="/translation/:jobId/compare"
+                    element={
+                      <ProtectedRoute>
+                        <TranslationCompare />
+                      </ProtectedRoute>
+                    }
+                  />
+                )}
 
                 {/* Default redirect to login */}
                 <Route path="/" element={<Navigate to={ROUTES.LOGIN} replace />} />

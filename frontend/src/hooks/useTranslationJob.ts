@@ -2,7 +2,7 @@
  * React Query hook for translation job status
  *
  * Implements adaptive polling with background sync:
- * - Automatic refetching when window regains focus
+ * - Automatic refetching when window regains focus (until terminal state)
  * - Adaptive polling intervals (15s → 30s → 60s)
  * - Automatic stop when job reaches terminal state
  */
@@ -18,7 +18,7 @@ const TERMINAL_STATES = [
   'TRANSLATION_FAILED',
 ] as const;
 
-function isTerminalState(status: string): boolean {
+export function isTerminalState(status: string): boolean {
   return TERMINAL_STATES.includes(status as (typeof TERMINAL_STATES)[number]);
 }
 
@@ -41,7 +41,15 @@ export function useTranslationJob(jobId: string | undefined) {
       }
       return pollingInterval;
     },
-    refetchOnWindowFocus: true,
+    // Disable focus-refetch once we have terminal data — no point re-fetching
+    // a finished job every time the user tabs back to the window.
+    refetchOnWindowFocus: (query) => {
+      const job = query.state.data;
+      if (job && isTerminalState(job.status)) {
+        return false;
+      }
+      return true;
+    },
     staleTime: 0, // Always consider data stale for active polling
   });
 

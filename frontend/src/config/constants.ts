@@ -195,6 +195,19 @@ export const FEATURE_FLAGS = {
    * Enable analytics tracking
    */
   ANALYTICS: import.meta.env.PROD,
+
+  /**
+   * Enable Side-by-Side Compare View.
+   *
+   * Default OFF: the source-text retrieval API is not yet implemented, so
+   * the source pane currently renders a "requires backend implementation"
+   * placeholder. Hiding the entry-point prevents shipping a half-built
+   * feature to end users. Set VITE_ENABLE_COMPARE_VIEW=true to expose it
+   * for development / demos.
+   *
+   * Tracking issue: source-text retrieval API + viewer completion.
+   */
+  COMPARE_VIEW: import.meta.env.VITE_ENABLE_COMPARE_VIEW === 'true',
 } as const;
 
 /**
