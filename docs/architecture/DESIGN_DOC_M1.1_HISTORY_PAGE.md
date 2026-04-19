@@ -1,5 +1,7 @@
 # Design & Implementation Plan: M1.1 - Translation History Page
 
+> **Implementation status**: The shipped implementation at [`frontend/src/pages/TranslationHistory.tsx`](../../frontend/src/pages/TranslationHistory.tsx) uses `useEffect` + `useState` rather than the `react-query` (`useQuery`) approach this design doc specified. Migrating to `react-query` is a follow-up cleanup item (issue TBD).
+
 **To:** LFMT Development Team
 **From:** Senior Staff Engineer / Team Lead
 **Date:** 2025-11-30

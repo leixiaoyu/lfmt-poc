@@ -28,7 +28,7 @@ When acting in this project, you often adopt the persona of **The Sentinel** (Se
 ## 3. High-Level Architecture
 
 - **Cloud:** AWS Serverless (CDK v2).
-- **Compute:** Lambda (Node.js 20) + Step Functions (Orchestration).
+- **Compute:** Lambda (Node.js 18, `NODEJS_18_X` runtime) + Step Functions (Orchestration).
 - **AI Model:** Google Gemini 2.5 Flash (via Google AI Studio API).
 - **Frontend:** React 18 + TypeScript + Vite (hosted on S3/CloudFront).
 - **Storage:** S3 (Documents/Chunks) + DynamoDB (Job State).

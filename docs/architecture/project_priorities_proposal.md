@@ -1,5 +1,7 @@
 # LFMT Project - V6 Execution Plan: Investor Demo & Alpha Launch
 
+> **NOTE**: Canonical project status lives in [`PROGRESS.md`](../../PROGRESS.md). This proposal documents the V6 planning rationale; refer to PROGRESS.md for current state.
+
 **To:** LFMT Development Team
 **From:** Senior Staff Engineer / Team Lead
 **Date:** 2025-11-30 (Updated: 2026-04-17)

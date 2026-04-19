@@ -1,8 +1,12 @@
 # CORS Resolution Plan: A Systematic Approach
 
-**Objective:** To definitively identify and resolve all outstanding CORS issues, unblocking the end-to-end user journey. This is a P0 initiative to be executed immediately.
+> **STATUS: RESOLVED** — closed by PR #94 (merged 2025-11-23). Preserved for historical context.
+>
+> For the current canonical CORS reference, see [`docs/CORS-REFERENCE.md`](../CORS-REFERENCE.md).
 
-**Owner:** Team Lead / Senior Staff Engineer
+**Objective (historical):** To systematically identify and resolve the CORS issues that were blocking the end-to-end user journey. At the time of writing this was tracked as a P0 initiative; it has since been resolved.
+
+**Owner (historical):** Team Lead / Senior Staff Engineer
 
 ---
 
@@ -40,7 +44,9 @@ This phase verifies the deployed backend infrastructure from the command line, b
   - **Action:** Obtain a valid ID token for a test user and execute the following `curl` command.
 
     ```sh
-    # Replace with actual dev environment URLs and a valid token
+    # Replace with actual dev environment URLs and a valid token.
+    # Security: do not paste real ID_TOKEN values into shell history; use a temp var
+    # (e.g. read -s ID_TOKEN) or source them from a non-tracked file.
     CLOUDFRONT_URL="https://d39xcun7144jgl.cloudfront.net"
     API_GATEWAY_URL="https://8brwlwf68h.execute-api.us-east-1.amazonaws.com/v1"
     ID_TOKEN="<PASTE_VALID_ID_TOKEN_HERE>"
@@ -86,9 +92,6 @@ Based on the diagnosis, we will execute one of the following targeted fixes.
 - **Scenario C: Frontend Request is the Issue (Phase 2 Discrepancy)**
   - **Fix:** Modify the relevant frontend service file (e.g., `frontend/src/services/translationService.ts`). Compare the request being built by `axios` with the failing request from the browser's network tab. Adjust the frontend code to align with what the backend's CORS policy allows (e.g., remove a non-standard header).
 
-### Final Deliverable: Prevention
+### Final Deliverable: Prevention (historical)
 
-To prevent this issue in the future, a new document will be created.
-
-- **File:** `CORS-DEBUGGING-GUIDE.md`
-- **Content:** This guide will contain the systematic `curl`-based validation steps from Phase 1. It will serve as a permanent, reusable playbook for any developer to quickly and reliably diagnose CORS issues, preventing the team from "spinning in circles" again.
+The original plan called for creating a new `CORS-DEBUGGING-GUIDE.md`. That deliverable was superseded by [`docs/CORS-REFERENCE.md`](../CORS-REFERENCE.md), which already documents the canonical CORS configuration, validation steps, and common issues. No further document is required.

@@ -1,4 +1,6 @@
-# CLAUDE.md
+# Workspace Context (Obsidian)
+
+> **NOTE**: This is workspace-level Obsidian guidance, distinct from the project-level [`CLAUDE.md`](../../CLAUDE.md) at the repo root. The canonical Claude Code guide for this repository is the root `CLAUDE.md`; this file documents the broader Obsidian vault that contains the repo and is preserved for historical context.
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
