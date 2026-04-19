@@ -797,6 +797,58 @@ describe('LFMT Infrastructure Stack', () => {
       expect(policyWithUpdatedCSP).toBeDefined();
     });
 
+    test('CSP includes hardening directives (object-src, base-uri, form-action, frame-ancestors, upgrade-insecure-requests)', () => {
+      // Regression coverage for the CSP hardening work on PR #127 / issue #63.
+      // These directives MUST be present on every CSP emitted by the stack.
+      // We intentionally do NOT assert the absence of 'unsafe-inline' or
+      // 'unsafe-eval' — the team rolled those back because MUI/Emotion
+      // require them. The hardening-path follow-up is tracked in issue #133.
+      const requiredDirectives = [
+        "object-src 'none'",
+        "base-uri 'self'",
+        "form-action 'self'",
+        "frame-ancestors 'none'",
+        'upgrade-insecure-requests',
+      ];
+
+      // Helper: flatten a CSP value (which may be a plain string or an
+      // Fn::Join-wrapped CloudFormation intrinsic containing a mix of
+      // literals and Ref/GetAtt objects) into a single searchable string.
+      const flattenCsp = (csp: unknown): string => {
+        if (typeof csp === 'string') return csp;
+        if (csp && typeof csp === 'object' && 'Fn::Join' in (csp as object)) {
+          const join = (csp as { 'Fn::Join': [string, unknown[]] })['Fn::Join'];
+          const parts = join[1];
+          return parts
+            .map((p) => (typeof p === 'string' ? p : JSON.stringify(p)))
+            .join('');
+        }
+        return JSON.stringify(csp);
+      };
+
+      const policies = template.findResources('AWS::CloudFront::ResponseHeadersPolicy');
+      const policyList = Object.values(policies);
+      expect(policyList.length).toBeGreaterThan(0);
+
+      // Every ResponseHeadersPolicy in the stack that carries a CSP must
+      // include all the hardening directives. (Both the initial policy and
+      // the post-API-Gateway "updated" policy are expected here.)
+      const cspCarryingPolicies = policyList.filter((policy: any) => {
+        return !!policy?.Properties?.ResponseHeadersPolicyConfig?.SecurityHeadersConfig
+          ?.ContentSecurityPolicy?.ContentSecurityPolicy;
+      });
+      expect(cspCarryingPolicies.length).toBeGreaterThanOrEqual(2);
+
+      cspCarryingPolicies.forEach((policy: any) => {
+        const csp = policy.Properties.ResponseHeadersPolicyConfig.SecurityHeadersConfig
+          .ContentSecurityPolicy.ContentSecurityPolicy;
+        const flat = flattenCsp(csp);
+        requiredDirectives.forEach((directive) => {
+          expect(flat).toContain(directive);
+        });
+      });
+    });
+
     test('Origin Access Control configured for S3', () => {
       template.hasResourceProperties('AWS::CloudFront::OriginAccessControl', {
         OriginAccessControlConfig: {

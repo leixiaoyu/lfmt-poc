@@ -110,8 +110,9 @@ async function authenticate(apiUrl: string, email: string, password: string): Pr
       password,
     });
     return response.data.accessToken;
-  } catch (error: any) {
-    throw new Error(`Authentication failed: ${error.message}`);
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`Authentication failed: ${message}`);
   }
 }
 
@@ -166,8 +167,14 @@ async function startTranslation(
     );
 
     return jobId;
-  } catch (error: any) {
-    throw new Error(`Translation start failed: ${error.response?.data?.message || error.message}`);
+  } catch (error: unknown) {
+    // axios errors carry response?.data?.message; fall back to Error.message,
+    // then stringify anything else (shouldn't happen in practice).
+    const axiosMessage =
+      (error as { response?: { data?: { message?: string } } })?.response?.data?.message;
+    const message =
+      axiosMessage ?? (error instanceof Error ? error.message : String(error));
+    throw new Error(`Translation start failed: ${message}`);
   }
 }
 
@@ -226,10 +233,12 @@ async function waitForTranslationComplete(
 
       // Wait before next poll
       await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
-    } catch (error: any) {
-      throw new Error(
-        `Status polling failed: ${error.response?.data?.message || error.message}`
-      );
+    } catch (error: unknown) {
+      const axiosMessage =
+        (error as { response?: { data?: { message?: string } } })?.response?.data?.message;
+      const message =
+        axiosMessage ?? (error instanceof Error ? error.message : String(error));
+      throw new Error(`Status polling failed: ${message}`);
     }
   }
 
@@ -288,9 +297,11 @@ async function runBenchmark(
       if (initialSnapshot.createdAt) {
         jobCreatedAtMs = Date.parse(initialSnapshot.createdAt);
       }
-    } catch (snapshotErr: any) {
+    } catch (snapshotErr: unknown) {
+      const message =
+        snapshotErr instanceof Error ? snapshotErr.message : String(snapshotErr);
       console.log(
-        `   ⚠️  Could not read initial status for createdAt (${snapshotErr.message}); will fall back to client clock.`
+        `   ⚠️  Could not read initial status for createdAt (${message}); will fall back to client clock.`
       );
     }
 
@@ -336,7 +347,7 @@ async function runBenchmark(
     console.log(
       `   📊 Throughput: ${result.throughputWordsPerMinute.toFixed(0)} words/minute`
     );
-  } catch (error: any) {
+  } catch (error: unknown) {
     // On failure, we may not have server timestamps — use client clock as a
     // best effort so a partial duration is still captured for triage.
     result.endTime = Date.now();
@@ -344,9 +355,10 @@ async function runBenchmark(
       result.startTime = clientStartFallback;
     }
     result.durationMs = result.endTime - result.startTime;
-    result.error = error.message;
+    const message = error instanceof Error ? error.message : String(error);
+    result.error = message;
     result.success = false;
-    console.log(`   ❌ Failed: ${error.message}`);
+    console.log(`   ❌ Failed: ${message}`);
   }
 
   return result;
@@ -386,9 +398,20 @@ function generateReport(config: BenchmarkConfig, results: BenchmarkResult[]): Be
   // - 65K words: ~3-5 minutes (baseline sequential: 20-30 minutes)
   // - 400K words: ~15-25 minutes (baseline sequential: 120-180 minutes)
   // This represents a 5-7x improvement
+  //
+  // Semantics: "target met" means EVERY size that was actually measured met
+  // its per-size threshold. Previously this was OR'd, which meant a fast 65K
+  // run could mask a slow 400K run — hiding the very regression that matters
+  // most (large-document scaling is where parallelism earns its keep).
+  //
+  // If no sizes were measured (e.g. all runs failed), target is not met.
+  const size65kMet = averageDuration65k !== undefined ? averageDuration65k <= 5 : undefined;
+  const size400kMet = averageDuration400k !== undefined ? averageDuration400k <= 25 : undefined;
+  const measuredResults = [size65kMet, size400kMet].filter(
+    (v): v is boolean => v !== undefined
+  );
   const performanceTargetMet =
-    (averageDuration65k !== undefined && averageDuration65k <= 5) ||
-    (averageDuration400k !== undefined && averageDuration400k <= 25);
+    measuredResults.length > 0 && measuredResults.every((met) => met);
 
   return {
     timestamp: new Date().toISOString(),
@@ -504,8 +527,20 @@ async function main(): Promise<void> {
   const iterations =
     parseInt(args.find((arg) => arg.startsWith('--iterations='))?.split('=')[1] || '1', 10) || 1;
 
-  const email = process.env.TEST_EMAIL || 'benchmark@example.com';
-  const password = process.env.TEST_PASSWORD || 'BenchmarkPass123!';
+  // Fail fast if benchmark credentials aren't supplied. We deliberately do NOT
+  // fall back to a hardcoded default — a shipped default (even to a demo
+  // account) risks leaking into CI artifacts, logs, or bundles and makes
+  // rotating the credential a find-and-replace exercise. Require operators to
+  // set TEST_EMAIL / TEST_PASSWORD explicitly.
+  const email = process.env.TEST_EMAIL;
+  const password = process.env.TEST_PASSWORD;
+  if (!email || !password) {
+    console.error(
+      '\n❌ Missing benchmark credentials. Set TEST_EMAIL and TEST_PASSWORD in the\n' +
+        '   environment before running this benchmark (see README). Aborting.\n'
+    );
+    process.exit(2);
+  }
 
   const config: BenchmarkConfig = {
     apiUrl,

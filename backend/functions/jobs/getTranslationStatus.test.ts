@@ -38,12 +38,15 @@ describe('getTranslationStatus endpoint', () => {
 
   describe('successful status retrieval', () => {
     it('should return status for translation not started', async () => {
+      const createdAt = new Date('2025-10-30T09:45:00Z').toISOString();
+
       dynamoMock.on(GetItemCommand).resolves({
         Item: {
           jobId: { S: 'job-123' },
           userId: { S: 'user-123' },
           status: { S: 'CHUNKED' },
           totalChunks: { N: '10' },
+          createdAt: { S: createdAt },
         },
       } as any);
 
@@ -60,9 +63,11 @@ describe('getTranslationStatus endpoint', () => {
       expect(body.chunksTranslated).toBe(0);
       expect(body.progressPercentage).toBe(0);
       expect(body.estimatedCompletion).toBeUndefined();
+      expect(body.createdAt).toBe(createdAt);
     });
 
     it('should return status for in-progress translation', async () => {
+      const createdAt = new Date('2025-10-30T09:55:00Z').toISOString();
       const startedAt = new Date('2025-10-30T10:00:00Z').toISOString();
 
       dynamoMock.on(GetItemCommand).resolves({
@@ -77,6 +82,7 @@ describe('getTranslationStatus endpoint', () => {
           translatedChunks: { N: '5' },
           tokensUsed: { N: '15000' },
           estimatedCost: { N: '0.001125' },
+          createdAt: { S: createdAt },
           translationStartedAt: { S: startedAt },
         },
       } as any);
@@ -97,11 +103,13 @@ describe('getTranslationStatus endpoint', () => {
       expect(body.progressPercentage).toBe(50);
       expect(body.tokensUsed).toBe(15000);
       expect(body.estimatedCost).toBe(0.001125);
+      expect(body.createdAt).toBe(createdAt);
       expect(body.translationStartedAt).toBe(startedAt);
       expect(body.estimatedCompletion).toBeDefined();
     });
 
     it('should return status for completed translation', async () => {
+      const createdAt = new Date('2025-10-30T09:55:00Z').toISOString();
       const startedAt = new Date('2025-10-30T10:00:00Z').toISOString();
       const completedAt = new Date('2025-10-30T10:30:00Z').toISOString();
 
@@ -116,6 +124,7 @@ describe('getTranslationStatus endpoint', () => {
           translatedChunks: { N: '10' },
           tokensUsed: { N: '35000' },
           estimatedCost: { N: '0.002625' },
+          createdAt: { S: createdAt },
           translationStartedAt: { S: startedAt },
           translationCompletedAt: { S: completedAt },
         },
@@ -363,6 +372,8 @@ describe('getTranslationStatus endpoint', () => {
 
   describe('response format', () => {
     it('should include all required fields in response', async () => {
+      const createdAt = new Date('2025-10-30T09:55:00Z').toISOString();
+
       dynamoMock.on(GetItemCommand).resolves({
         Item: {
           jobId: { S: 'job-123' },
@@ -375,6 +386,7 @@ describe('getTranslationStatus endpoint', () => {
           translatedChunks: { N: '2' },
           tokensUsed: { N: '7000' },
           estimatedCost: { N: '0.000525' },
+          createdAt: { S: createdAt },
           translationStartedAt: { S: new Date().toISOString() },
         },
       } as any);
@@ -394,7 +406,59 @@ describe('getTranslationStatus endpoint', () => {
       expect(body).toHaveProperty('progressPercentage');
       expect(body).toHaveProperty('tokensUsed');
       expect(body).toHaveProperty('estimatedCost');
+      expect(body).toHaveProperty('createdAt');
       expect(body).toHaveProperty('translationStartedAt');
+    });
+
+    it('should return createdAt as a valid ISO-8601 timestamp from DynamoDB', async () => {
+      // Regression coverage for TranslationStatusResponse.createdAt: the
+      // performance benchmark anchors its start-of-window to this field, so
+      // the contract must be honored (both: exposed, and ISO-formatted).
+      const createdAt = '2025-10-30T09:45:12.345Z';
+
+      dynamoMock.on(GetItemCommand).resolves({
+        Item: {
+          jobId: { S: 'job-123' },
+          userId: { S: 'user-123' },
+          status: { S: 'UPLOADED' },
+          totalChunks: { N: '0' },
+          createdAt: { S: createdAt },
+        },
+      } as any);
+
+      const event = createEvent('job-123');
+      const result = await handler(event as APIGatewayProxyEvent);
+
+      expect(result.statusCode).toBe(200);
+      const body = JSON.parse(result.body);
+
+      // Exposed verbatim...
+      expect(body.createdAt).toBe(createdAt);
+
+      // ...and round-trips through Date parsing to a valid ISO string.
+      const parsed = new Date(body.createdAt);
+      expect(Number.isNaN(parsed.getTime())).toBe(false);
+      expect(parsed.toISOString()).toBe(createdAt);
+    });
+
+    it('should omit createdAt when DynamoDB item lacks the attribute', async () => {
+      // Backward compatibility: legacy job records (pre-createdAt) must not
+      // crash the handler. The field is optional in the response type.
+      dynamoMock.on(GetItemCommand).resolves({
+        Item: {
+          jobId: { S: 'job-123' },
+          userId: { S: 'user-123' },
+          status: { S: 'UPLOADED' },
+          totalChunks: { N: '0' },
+        },
+      } as any);
+
+      const event = createEvent('job-123');
+      const result = await handler(event as APIGatewayProxyEvent);
+
+      expect(result.statusCode).toBe(200);
+      const body = JSON.parse(result.body);
+      expect(body.createdAt).toBeUndefined();
     });
 
     it('should have CORS headers in response', async () => {

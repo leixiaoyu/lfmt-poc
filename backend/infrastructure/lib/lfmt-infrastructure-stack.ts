@@ -1527,7 +1527,8 @@ export class LfmtInfrastructureStack extends Stack {
           //
           // Future hardening path: implement a nonce-based CSP once the build
           // pipeline can inject per-request nonces into index.html and MUI/Emotion
-          // are configured to consume them. Tracked in follow-up issue (TBD).
+          // are configured to consume them.
+          // Tracked in: https://github.com/leixiaoyu/lfmt-poc/issues/133
           //
           // Other hardening directives retained: object-src 'none', base-uri 'self',
           // form-action 'self', frame-ancestors 'none', upgrade-insecure-requests.
@@ -1645,7 +1646,8 @@ export class LfmtInfrastructureStack extends Stack {
           //
           // Future hardening path: implement a nonce-based CSP once the build
           // pipeline can inject per-request nonces into index.html and MUI/Emotion
-          // are configured to consume them. Tracked in follow-up issue (TBD).
+          // are configured to consume them.
+          // Tracked in: https://github.com/leixiaoyu/lfmt-poc/issues/133
           //
           // Other hardening directives retained: object-src 'none', base-uri 'self',
           // form-action 'self', frame-ancestors 'none', upgrade-insecure-requests.
