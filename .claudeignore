@@ -2,6 +2,11 @@
 # Saves ~7,500 tokens by excluding 17+ archived documents
 docs/archive/
 
+# Architecture / historical context docs (~7,100 tokens)
+# Excluded from auto-load to preserve the tiered-loading token budget defined
+# in CLAUDE.md. Load these explicitly when working on architecture changes.
+docs/architecture/
+
 # Serena AI tool cache
 .serena/
 
