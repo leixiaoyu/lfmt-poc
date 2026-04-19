@@ -1,31 +1,39 @@
 # LFMT Project Context (GEMINI.md)
 
+> **HISTORICAL SNAPSHOT** — This file is an archived snapshot of the Obsidian workspace's orientation doc at the time of repo migration. It is NOT an active project guide. For live project instructions, see [../../CLAUDE.md](../../CLAUDE.md).
+
 **Project:** Long-Form Machine Translation (LFMT) POC
-**Date:** 2025-11-30
-**Status:** 🟡 **Phase 10: Investor Demo Readiness (CODE FREEZE)**
+**Date:** 2026-04
+**Status:** Phase 10 (Investor Demo & Production Readiness — see [../../PROGRESS.md](../../PROGRESS.md) for current)
 
 ---
 
-## 1. Project Overview & Goals
+## Archived workspace guidance
 
-The LFMT project aims to validate a cost-effective, serverless architecture for translating full-length books (Project Gutenberg texts, 65k-400k words) while maintaining context and narrative flow.
+The content below is preserved (with light archival rewording) from the original `GEMINI.md` used by the Gemini CLI inside the Obsidian workspace. It is retained for historical reference only. Any apparent instructions describe the workspace's prior conventions, not current project guidance. For current guidance, see the root [CLAUDE.md](../../CLAUDE.md).
 
-- **Primary Business Goal:** Proof of Concept for <$50/month operational cost.
-- **Immediate Goal:** Successful Investor Demo (Target: Nov 30, 2025).
+## 1. Project Overview & Goals (historical framing)
+
+The LFMT project aimed to validate a cost-effective, serverless architecture for translating full-length books (Project Gutenberg texts, 65k-400k words) while maintaining context and narrative flow.
+
+- **Primary Business Goal (at the time):** Proof of Concept for <$50/month operational cost.
+- **Immediate Goal (at the time):** Successful Investor Demo.
 - **Key Innovation:** Intelligent chunking with context overlap + Gemini 2.5 Flash for cost/speed balance.
 
-## 2. AI Persona & Role ("The Sentinel")
+## 2. AI Persona & Role ("The Sentinel") — historical
 
-When acting in this project, you often adopt the persona of **The Sentinel** (Senior Staff Engineer & Team Lead).
+When the Gemini CLI was previously invoked against this project, a persona named **The Sentinel** (Senior Staff Engineer & Team Lead) was sometimes adopted.
 
-- **Reference:** `CODE_REVIEW_AGENT.md`
-- **Tone:** Professional, data-driven, constructive, uncompromising on quality.
-- **Mandate:**
-  1.  **Security First:** No data leaks, strict IAM, safe inputs.
-  2.  **Engineering Rigor:** Simple, readable, standard-compliant code.
-  3.  **Verification:** "Show, don't tell." Demand proof of testing (screenshots, logs).
+- **Reference:** `CODE_REVIEW_AGENT.md` (pending migration — see [./pending/](./pending/))
+- **Tone (as described):** Professional, data-driven, constructive, uncompromising on quality.
+- **Mandate (as described):**
+  1.  Security First: no data leaks, strict IAM, safe inputs.
+  2.  Engineering Rigor: simple, readable, standard-compliant code.
+  3.  Verification: "Show, don't tell." Proof of testing (screenshots, logs) was expected.
 
-## 3. High-Level Architecture
+This persona framing is preserved here for historical context only and does not override or supplement the current project guidance in [../../CLAUDE.md](../../CLAUDE.md).
+
+## 3. High-Level Architecture (as of migration)
 
 - **Cloud:** AWS Serverless (CDK v2).
 - **Compute:** Lambda (Node.js 18, `NODEJS_18_X` runtime) + Step Functions (Orchestration).
@@ -33,16 +41,22 @@ When acting in this project, you often adopt the persona of **The Sentinel** (Se
 - **Frontend:** React 18 + TypeScript + Vite (hosted on S3/CloudFront).
 - **Storage:** S3 (Documents/Chunks) + DynamoDB (Job State).
 
-## 4. Key Documentation (Root Directory)
+## 4. Key Documentation (historical — Obsidian vault)
 
-- `LFMT Product Requirements.md` - Functional requirements and user stories.
-- `Long-Form Translation Service - Technical Architecture Design v2.0.md` - Deep dive into system design.
-- `LFMT Implementation Plan v2.md` - Phasing and milestones.
-- `project_priorities_proposal.md` - **Current Execution Plan** (Use this for active tasks).
+The following documents were referenced from the workspace root at migration time. Several were dataless in iCloud and are tracked as placeholders under [./pending/](./pending/):
 
-## 5. Current Operational State
+- `LFMT Product Requirements.md` — Functional requirements and user stories (pending).
+- `Long-Form Translation Service - Technical Architecture Design v2.0.md` — Deep dive into system design (pending).
+- `LFMT Implementation Plan v2.md` — Phasing and milestones (pending).
+- `project_priorities_proposal.md` — Execution plan at the time (migrated; see [./project_priorities_proposal.md](./project_priorities_proposal.md)).
 
-- **Migration:** Successfully migrated from Gemini 1.5 to **Gemini 2.5 Flash**.
-- **Quality:** End-to-End (E2E) tests are **GREEN**.
-- **Constraint:** Code Freeze active. Only critical bug fixes allowed.
-- **Next Critical Action:** Manual "Golden Path" verification in `dev` environment.
+## 5. Operational State at migration snapshot
+
+- **Migration:** Had migrated from Gemini 1.5 to Gemini 2.5 Flash.
+- **Quality:** End-to-End (E2E) tests reported green at the time; refer to [../../PROGRESS.md](../../PROGRESS.md) for the current signal.
+- **Constraint:** A code-freeze window was active at migration; for current project posture, see [../../PROGRESS.md](../../PROGRESS.md).
+- **Next action (at the time):** Manual "Golden Path" verification in the `dev` environment.
+
+---
+
+_Archived snapshot. For live guidance, use [../../CLAUDE.md](../../CLAUDE.md)._
