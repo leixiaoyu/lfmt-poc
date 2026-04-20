@@ -59,7 +59,7 @@ December 2025
    - Legal attestation system (7-year retention)
    - Adaptive progress tracking
 
-**Result**: Translate 400K word documents in 4-6 hours for $0.10-0.15
+**Result**: Translate 400K word documents in 4-6 hours for $0.10-0.15 _(placeholder — to be replaced with captured data in Week 2)_
 
 ---
 
@@ -133,17 +133,19 @@ December 2025
 
 **Demo Documents** (Project Gutenberg - Public Domain):
 
-1. ✅ **Sherlock Holmes** (107K words) → Spanish (35 min, $0.03)
-2. ✅ **Pride and Prejudice** (127K words) → French (75 min, $0.04)
-3. ✅ **War and Peace** (566K words) → German (5 hours, $0.12)
+1. ✅ **Sherlock Holmes** (107K words) → Spanish (35 min, $0.03) [TBD — Week 2 capture]
+2. ✅ **Pride and Prejudice** (127K words) → French (75 min, $0.04) [TBD — Week 2 capture]
+3. ✅ **War and Peace** (566K words) → German (5 hours, $0.12) [TBD — Week 2 capture]
 
 ---
 
 ## Slide 6: Translation Quality Validation
 
-### Spot-Check Results (8 Passages per Document)
+### Spot-Check Results (20-30 Passages per Document) [TBD — Week 2 capture]
 
-**Quality Metrics** (1-5 scale):
+> **All numbers in this slide are placeholders** — to be replaced with captured data from Week 2 native-speaker spot-checks (target: 20-30 passages per book, ≥4.0/5.0 per dimension).
+
+**Quality Metrics** (1-5 scale) _(placeholder — to be replaced with captured data in Week 2)_:
 | Document | Coherence | Context Preservation | Semantic Accuracy | Formatting | Overall |
 |----------|-----------|---------------------|-------------------|------------|---------|
 | Sherlock Holmes | 4.5 | 4.2 | 4.7 | 5.0 | **4.6** |
@@ -171,16 +173,18 @@ December 2025
 
 ## Slide 7: Performance & Cost Analysis
 
-### Actual Results vs. Estimates
+### Actual Results vs. Estimates [TBD — Week 2 capture]
 
-**Performance** (Processing Time):
+> **All "Actual" and "Variance" columns below are placeholders** pending Week 2 capture against real Gemini 2.5 Flash on free + paid tiers. Token and cost figures are modeled from Gemini's published pricing ($0.075/1M input, $0.30/1M output) and are expected to be accurate; wall-clock times are the primary variable to verify.
+
+**Performance** (Processing Time) _(placeholder — to be replaced with captured data in Week 2)_:
 | Document | Word Count | Estimate | Actual | Variance |
 |----------|-----------|----------|--------|----------|
 | Sherlock Holmes | 107,562 | 30-45 min | 35 min | **-22%** ✅ |
 | Pride & Prejudice | 127,381 | 60-90 min | 75 min | **-17%** ✅ |
 | War and Peace | 566,338 | 4-6 hours | 5 hours | **-17%** ✅ |
 
-**Cost** (Gemini API - Free Tier):
+**Cost** (Gemini API - Free Tier) _(token counts placeholder — to be replaced with captured data in Week 2)_:
 | Document | Input Tokens | Output Tokens | Est. Cost (Paid) | Actual Cost (Free) |
 |----------|--------------|---------------|------------------|-------------------|
 | Sherlock Holmes | 150,000 | 120,000 | $0.047 | **$0.00** ✅ |
@@ -188,45 +192,47 @@ December 2025
 | War and Peace | 820,000 | 680,000 | $0.265 | **$0.00** ✅ |
 
 **Total Demo Cost**: $0.00 (within Gemini free tier)
-**Estimated Paid Cost**: $0.369 for 800K+ words translated
+**Estimated Paid Cost**: $0.15-0.22 for 800K+ words translated across all three books (placeholder — to be replaced with captured data in Week 2)
 
-**Scaling to 1000 Translations/Month** (100K words avg):
+**Scaling to 1000 Translations/Month** (100K words avg) _(placeholder — to be replaced with captured data in Week 2)_:
 
-- **Free Tier**: $0/month (within limits: 5 RPM, 250K TPM, 25 RPD)
-- **Paid Tier**: ~$45/month (well within $50 budget target)
+- **Free Tier**: Blocked by 25 RPD ceiling at scale — single-user demos only
+- **Paid Tier**: ~$45/month (well within $50 budget target, based on Gemini 2.5 Flash published pricing)
 
 ---
 
-## Slide 8: Technical Metrics & Reliability
+## Slide 8: Technical Metrics & Reliability [TBD — Week 2 capture]
 
 ### System Performance Under Load
 
-**Step Functions Execution**:
+> Latency, cold-start, and rate-limit-delay numbers below are **placeholders** from initial POC testing — to be re-captured under Week 2 benchmark harness (PR #127) against real Gemini 2.5 Flash on free tier.
+
+**Step Functions Execution** _(placeholder — to be replaced with captured data in Week 2)_:
 
 - Average execution time: 2,100s (35 min for 107K words)
 - Parallel chunk processing: 10 concurrent Lambda invocations
 - Success rate: **100%** (0 permanent failures in POC testing)
 
-**Lambda Performance**:
+**Lambda Performance** _(placeholder — to be replaced with captured data in Week 2)_:
 
 - Cold start average: 1.2s
 - Warm start average: 0.3s
 - Memory usage: 512MB (well below 1024MB limit)
 - Timeout incidents: 0 (60s timeout, avg invocation 45s)
 
-**Data Layer Latency**:
+**Data Layer Latency** _(placeholder — to be replaced with captured data in Week 2)_:
 
 - S3 upload: 120ms avg
 - S3 download: 85ms avg
 - DynamoDB query: 15ms avg
 
-**Rate Limiting**:
+**Rate Limiting** (verified):
 
-- Gemini API limits: 5 RPM, 250K TPM, 25 RPD
+- Gemini API limits: 5 RPM, 250K TPM, **25 RPD** (the binding constraint for full-book translations)
 - Distributed rate limiter: Exponential backoff (2s, 4s, 8s, 16s, 32s)
-- Rate limit delays: <5% of total processing time
+- Rate limit delays: <5% of total processing time _(placeholder — to be replaced with captured data in Week 2)_
 
-**Reliability**:
+**Reliability** _(placeholder — to be replaced with captured data in Week 2)_:
 
 - Uptime: 100% (no service interruptions during testing)
 - Error rate: 0% (all chunks processed successfully)
@@ -238,13 +244,13 @@ December 2025
 
 ### Why LFMT Wins
 
-**vs. Manual Copy-Paste (Google Translate)**:
+**vs. Manual Copy-Paste (Google Translate)** _(speedup numbers placeholder — to be replaced with captured data in Week 2)_:
 
 - ⏱️ **95% Faster**: 5 hours automated vs. 100+ hours manual
 - 💰 **100% Cost Savings**: $0 vs. opportunity cost of manual labor
 - ✅ **Better Quality**: Context-aware chunking vs. blind segmentation
 
-**vs. Professional Translation Services**:
+**vs. Professional Translation Services** _(cost-reduction % placeholder — to be replaced with captured data in Week 2)_:
 
 - 💰 **99.8% Cheaper**: $0.12 vs. $45,000+ for 400K words
 - ⏱️ **99% Faster**: 5 hours automated vs. 2-4 weeks human translation
@@ -520,21 +526,22 @@ December 2025
 
 ### POC Results (December 2025)
 
-**Technical Validation**:
+**Technical Validation** (verified):
 
 - ✅ End-to-end workflow operational (upload → chunk → translate → reassemble → download)
-- ✅ 3 successful translations (800K+ words total, 0 failures)
-- ✅ 877 automated tests passing (100% success rate)
-- ✅ Translation quality: 4.5/5.0 average (professional-grade)
+- ✅ 877+ automated tests passing across backend, infrastructure, frontend
+- ✅ Gemini 2.5 Flash integrated and validated end-to-end in AWS
+- ⏳ 3 successful translations (800K+ words total, 0 failures) _(placeholder — to be replaced with captured data in Week 2)_
+- ⏳ Translation quality: 4.5/5.0 average _(placeholder — to be replaced with captured data in Week 2)_
 
-**Cost Validation**:
+**Cost Validation** _(placeholder — to be replaced with captured data in Week 2)_:
 
 - ✅ $0.00 actual cost (Gemini free tier)
-- ✅ $0.369 estimated paid cost for 800K words
+- ✅ $0.15-0.22 modeled paid cost for 800K words across all three books
 - ✅ 99.8% cost reduction vs. professional translation
 - ✅ <$50/month target validated for 1000 translations
 
-**Performance Validation**:
+**Performance Validation** _(placeholder — to be replaced with captured data in Week 2)_:
 
 - ✅ Processing times: 30-45 min (100K words), 4-6 hours (400K words)
 - ✅ 10x faster than manual copy-paste
@@ -590,9 +597,9 @@ December 2025
 
 **What We've Built**:
 
-- ✅ Production-ready POC with 100% success rate
-- ✅ 99.8% cost reduction vs. professional translation
-- ✅ Proven technical architecture (AWS + Gemini)
+- ✅ Production-ready POC with 100% success rate _(placeholder — to be replaced with captured data in Week 2)_
+- ✅ 99.8% cost reduction vs. professional translation _(placeholder — to be replaced with captured data in Week 2)_
+- ✅ Proven technical architecture (AWS + Gemini 2.5 Flash, 877+ tests passing)
 - ✅ Clear path to product-market fit
 
 **What We Need**:
