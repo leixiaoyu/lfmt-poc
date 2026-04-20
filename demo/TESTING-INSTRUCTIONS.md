@@ -32,6 +32,21 @@ This document provides detailed instructions for manually testing the translatio
 
 ## 🚀 Testing Workflow
 
+### Free-Tier Timing Expectations
+
+On the free tier (5 RPM / 250K TPM / **25 RPD**), each chunk processes in ~12 seconds. Plan accordingly:
+
+- **Chapter-sized uploads (1-5 chunks)**: complete in **12-60 seconds** — ideal for live demos and quick validation runs.
+- **Full-book uploads (140-755 chunks)** must **stagger across multiple days** within the 25 RPD ceiling:
+  - Sherlock Holmes (~140 chunks) → ~6 days staggered
+  - Pride & Prejudice (~170 chunks) → ~7 days staggered
+  - War & Peace (~755 chunks) → ~30 days staggered OR paid-tier for single-session
+- **Paid-tier fallback**: $0.075/1M input + $0.30/1M output tokens ≈ $0.05-0.15 per book; removes the 25 RPD ceiling.
+
+See `demo/DEMO-CONTENT-PLAN.md` for book-by-book estimates and the two-track (live / pre-recorded) demo strategy.
+
+---
+
 ### Step 1: Login to Application
 
 1. **Open Frontend URL**:
@@ -261,6 +276,30 @@ aws logs filter-log-events \
   }
 }
 ```
+
+---
+
+#### Quality Spot-Check Workflow (Week 2 Capture)
+
+For each completed translation, perform a rigorous native-speaker review before publishing numbers to the pitch deck:
+
+1. **Select 20-30 random passages** from the translated output. Stratify across:
+   - Beginning / middle / end of the book
+   - Dialogue vs. narrative
+   - Chunk-boundary crossings (where the 250-token overlap is load-bearing)
+   - Passages containing proper nouns (test consistency across chunks)
+2. **Have a native speaker of the target language** rate each passage on the four dimensions below, 1-5 scale:
+   - **Coherence**: does it read naturally?
+   - **Context preservation**: are connections across chunk boundaries maintained?
+   - **Accuracy**: does meaning match the source?
+   - **Formatting preservation**: are paragraphs, chapters, punctuation intact?
+3. **Target average ≥4.0/5.0 per dimension** across all sampled passages.
+4. **Record results** in `demo/results/<doc-name>-quality.md` with:
+   - Per-passage scores and the passage text (source + translation snippets)
+   - Dimension averages
+   - Rater name, date, native-language credential
+   - Any flagged errors (proper-noun inconsistencies, context loss, idiomatic misses)
+5. **Aggregate** into `demo/results/METRICS-SUMMARY.md` so the pitch deck and FAQ can cite captured numbers, not placeholders.
 
 ---
 

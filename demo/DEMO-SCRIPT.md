@@ -127,9 +127,11 @@
 
 > "Click 'New Translation.' Here's the upload interface."
 
-**Upload Document** (use smallest test file for demo):
+> **Presenter guidance — live demo document choice**: For the live upload step, use a **micro-document (~1-2 KB, one chapter or shorter)** — NOT a full book. Free-tier Gemini limits (5 RPM / 25 RPD) mean a full-book upload would either stall mid-demo or burn the day's request quota. Full-book impact is demonstrated via the demo user's pre-loaded history (Track B content from DEMO-CONTENT-PLAN.md). Suggested live files: Sherlock "A Scandal in Bohemia" (~5 chunks, <60s), Pride & Prejudice Chapter 1 (1 chunk, ~12s), or War & Peace Book 1 Chapter 1 (1 chunk, ~12s).
 
-> "I'm going to drag and drop 'sherlock-holmes.txt' here. You can also use the file picker. The system supports up to 100MB files—that's about 15 million words."
+**Upload Document** (use chapter-sized test file for live demo):
+
+> "I'm going to drag and drop a chapter here. You can also use the file picker. The system supports up to 100MB files—that's about 15 million words. For this live demo I'm showing one chapter so we see the full workflow end-to-end in under a minute; the pre-loaded history below shows the full-book versions we've already completed."
 
 **Select Language**:
 
@@ -179,6 +181,20 @@
 **Return to Frontend**:
 
 > "Progress is now at 15%. Let's talk about cost while this runs."
+
+---
+
+#### Fallback — If the Live Upload Stalls
+
+If the live upload hangs, errors out, or runs into a free-tier rate limit, **pivot immediately** rather than debugging on stage:
+
+1. **Acknowledge briefly without explaining the error in detail**:
+   > "We've got a slow network / rate-limit hiccup on the free tier — let me show you the same workflow from our pre-recorded run so we don't lose momentum."
+2. **Pivot to the pre-recorded time-compressed video** of a full-book translation (kept open in a second tab). This also lets you demonstrate _full-book_ impact that a live chapter-upload can't show.
+3. **Pivot to the completed-job view** in the demo user's history (Track B content from DEMO-CONTENT-PLAN.md) — show the download button, click through to a translated chapter, highlight quality.
+4. **Return to the narrative** without dwelling on the failure. Investors care that you handled it gracefully, not that it happened.
+
+**Rehearse this fallback explicitly during the 3× dry-runs**: practice the pivot so it feels natural. Have the pre-recorded video cued and the pre-loaded history tab open from the start of the demo.
 
 ---
 

@@ -43,6 +43,8 @@ The LFMT POC has completed **Phases 1-9** (foundation through translation UI dep
 **Target Date**: Originally 2025-11-30 (Phase 10 ongoing)
 **Goal**: Production-ready application for investor demos and alpha user testing
 
+**Detailed execution plan**: see [`demo/PHASE-10-STATUS.md`](demo/PHASE-10-STATUS.md)
+
 ### Critical Path Items
 
 #### 1. **Translation Workflow Validation** (P0 - ✅ COMPLETED)
