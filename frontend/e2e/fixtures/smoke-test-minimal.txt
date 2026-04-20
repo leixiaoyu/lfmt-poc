@@ -1,0 +1,18 @@
+Smoke Test Document
+
+This is a minimal fixture used by the production smoke-test suite. It is
+intentionally small (roughly one kilobyte) so the post-deploy smoke job
+completes deterministically inside its 3-minute Playwright timeout without
+depending on the long translation times of a real worst-case document.
+
+The quick brown fox jumps over the lazy dog. Pack my box with five dozen
+liquor jugs. How vexingly quick daft zebras jump! Sphinx of black quartz,
+judge my vow. The five boxing wizards jump quickly. Jived fox nymph grabs
+quick waltz.
+
+Translation is more than just word substitution; it carries meaning,
+register, and intent across languages. These two short paragraphs are
+enough to exercise upload, chunking, translation, and completion without
+burning provider budget or flaking on slow days. If you need to test the
+large-document path, use the full-size fixtures under demo/test-documents/
+or the backend performance benchmark in backend/tests/performance/.

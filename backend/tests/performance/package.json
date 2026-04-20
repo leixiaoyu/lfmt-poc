@@ -1,0 +1,22 @@
+{
+  "name": "@lfmt/performance-tests",
+  "version": "1.0.0",
+  "description": "Performance benchmarking suite for LFMT parallel translation",
+  "private": true,
+  "scripts": {
+    "benchmark": "ts-node performance-benchmark.ts",
+    "benchmark:65k": "ts-node performance-benchmark.ts --doc-size=65k",
+    "benchmark:400k": "ts-node performance-benchmark.ts --doc-size=400k",
+    "benchmark:all": "ts-node performance-benchmark.ts --doc-size=all --iterations=2"
+  },
+  "dependencies": {
+    "axios": "^1.6.2",
+    "uuid": "^9.0.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.4",
+    "@types/uuid": "^9.0.7",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.3.3"
+  }
+}
