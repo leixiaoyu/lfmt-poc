@@ -368,13 +368,16 @@ describe('LFMT Infrastructure Stack', () => {
         },
       });
 
-      // Verify Secrets Manager permissions in managed policy
-      template.hasResourceProperties('AWS::IAM::ManagedPolicy', {
+      // Verify Secrets Manager permissions are granted. PR #126 replaced the manual
+      // ManagedPolicy with a CDK-managed secret + grantRead() call, which synthesises
+      // the permission onto the role's inline AWS::IAM::Policy (DefaultPolicy) with
+      // both GetSecretValue and DescribeSecret actions.
+      template.hasResourceProperties('AWS::IAM::Policy', {
         PolicyDocument: {
           Statement: Match.arrayWith([
             Match.objectLike({
               Effect: 'Allow',
-              Action: 'secretsmanager:GetSecretValue',
+              Action: ['secretsmanager:GetSecretValue', 'secretsmanager:DescribeSecret'],
             }),
           ]),
         },
@@ -550,7 +553,8 @@ describe('LFMT Infrastructure Stack', () => {
       const mapState = Object.values(states).find((state: any) => state.Type === 'Map');
       expect(mapState).toBeDefined();
 
-      // Verify parallel processing (maxConcurrency: 10) with distributed rate limiting
+      // Verify parallel processing (default maxConcurrency: 10) with distributed rate limiting
+      // Note: maxConcurrency can be overridden via CDK context
       expect((mapState as any).MaxConcurrency).toBe(10);
     });
 

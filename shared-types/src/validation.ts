@@ -6,6 +6,18 @@ export const uuidSchema = z.string().uuid();
 export const emailSchema = z.string().email();
 export const timestampSchema = z.string().datetime();
 
+// File validation constants
+export const FILE_VALIDATION = {
+  /** Minimum file size in bytes (1KB) */
+  MIN_FILE_SIZE: 1000,
+  /** Maximum file size in bytes (100MB) */
+  MAX_FILE_SIZE: 100 * 1024 * 1024,
+  /** Allowed file type */
+  ALLOWED_FILE_TYPE: 'text/plain',
+  /** Allowed file extension */
+  ALLOWED_FILE_EXTENSION: '.txt',
+} as const;
+
 // File validation
 export const filenamePatter = /^[a-zA-Z0-9._-]+\.txt$/;
 export const filenameSchema = z.string().regex(filenamePatter, 'Invalid filename format');
@@ -20,8 +32,8 @@ export const wordCountSchema = z.number().min(65000).max(400000);
 // File size validation (1KB to 100MB)
 export const fileSizeSchema = z
   .number()
-  .min(1000)
-  .max(100 * 1024 * 1024);
+  .min(FILE_VALIDATION.MIN_FILE_SIZE)
+  .max(FILE_VALIDATION.MAX_FILE_SIZE);
 
 // Token count validation for chunks
 export const tokenCountSchema = z.number().min(3000).max(4000);

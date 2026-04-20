@@ -31,4 +31,23 @@ export {
 } from './polling';
 
 // Validation utilities (exclude ValidationError and ValidationResult to avoid conflicts)
-export { ValidationUtils } from './validation';
+export {
+  ValidationUtils,
+  FILE_VALIDATION,
+  uuidSchema,
+  emailSchema,
+  timestampSchema,
+  filenamePatter,
+  filenameSchema,
+  supportedLanguages,
+  languageSchema,
+  wordCountSchema,
+  fileSizeSchema,
+  tokenCountSchema,
+  progressSchema,
+  costSchema,
+  prioritySchema,
+  qualityLevelSchema,
+  jobStatusSchema,
+  errorSeveritySchema,
+} from './validation';

@@ -22,6 +22,7 @@ import * as logs from 'aws-cdk-lib/aws-logs';
 import * as cloudfront from 'aws-cdk-lib/aws-cloudfront';
 import * as origins from 'aws-cdk-lib/aws-cloudfront-origins';
 import * as route53 from 'aws-cdk-lib/aws-route53';
+import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
 
 export interface LfmtInfrastructureStackProps extends StackProps {
   stackName: string;
@@ -42,6 +43,7 @@ export class LfmtInfrastructureStack extends Stack {
   public readonly frontendBucket: s3.Bucket;
   public readonly api: apigateway.RestApi;
   public readonly frontendDistribution: cloudfront.Distribution;
+  public readonly translationApiKeySecret: secretsmanager.Secret;
 
   // Lambda functions
   private registerFunction?: lambda.Function;
@@ -111,33 +113,36 @@ export class LfmtInfrastructureStack extends Stack {
     // 3. Cognito User Pool
     this.createCognitoUserPool(removalPolicy);
 
-    // 4. CloudWatch Log Groups
+    // 4. Secrets Manager - Create translation API key secret
+    this.createSecretsManagerResources(removalPolicy);
+
+    // 5. CloudWatch Log Groups
     if (enableLogging) {
       this.createLogGroups(removalPolicy);
     }
 
-    // 5. Frontend Hosting (CloudFront + S3) - Create early to get CloudFront URL for CORS
+    // 6. Frontend Hosting (CloudFront + S3) - Create early to get CloudFront URL for CORS
     this.createFrontendHosting(removalPolicy);
 
-    // 6. IAM Roles and Policies
+    // 7. IAM Roles and Policies
     this.createIamRoles();
 
-    // 7. Lambda Functions - Created after CloudFront to include CloudFront URL in ALLOWED_ORIGINS
+    // 8. Lambda Functions - Created after CloudFront to include CloudFront URL in ALLOWED_ORIGINS
     this.createLambdaFunctions();
 
-    // 8. Step Functions State Machine
+    // 9. Step Functions State Machine
     this.createStepFunctions();
 
-    // 9. API Gateway - Create after CloudFront to include CloudFront URL in CORS origins
+    // 10. API Gateway - Create after CloudFront to include CloudFront URL in CORS origins
     this.createApiGateway();
 
-    // 9.5. Update CloudFront CSP with API Gateway URL (must be after API Gateway creation)
+    // 10.5. Update CloudFront CSP with API Gateway URL (must be after API Gateway creation)
     this.updateCloudFrontCSP();
 
-    // 10. API Gateway Endpoints
+    // 11. API Gateway Endpoints
     this.createApiEndpoints();
 
-    // 11. Outputs
+    // 12. Outputs
     this.createOutputs();
   }
 
@@ -271,20 +276,29 @@ export class LfmtInfrastructureStack extends Stack {
       encryption: s3.BucketEncryption.S3_MANAGED,
       publicReadAccess: false,
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
-      // Intelligent tiering can be enabled via AWS console or CLI post-deployment
-      lifecycleRules: [{
-        id: 'ResultsCleanup',
-        enabled: true,
-        expiration: Duration.days(90), // 90 days retention for results
-        noncurrentVersionExpiration: Duration.days(30), // Clean up old versions after 30 days
-        transitions: [{
-          storageClass: s3.StorageClass.INFREQUENT_ACCESS,
-          transitionAfter: Duration.days(30), // AWS minimum for STANDARD_IA
-        }, {
-          storageClass: s3.StorageClass.GLACIER,
-          transitionAfter: Duration.days(60), // Transition to Glacier after 60 days
-        }],
-      }],
+      // Cost-optimized storage lifecycle using manual transitions:
+      // - First 30 days: STANDARD (frequent access for recent translations)
+      // - Days 30-60: INFREQUENT_ACCESS (occasional retrieval)
+      // - Days 60-90: GLACIER (archival, rare retrieval)
+      // - After 90 days: Automatic deletion
+      lifecycleRules: [
+        {
+          id: 'ResultsCleanup',
+          enabled: true,
+          expiration: Duration.days(90), // 90 days retention for results
+          noncurrentVersionExpiration: Duration.days(30), // Clean up old versions after 30 days
+          transitions: [
+            {
+              storageClass: s3.StorageClass.INFREQUENT_ACCESS,
+              transitionAfter: Duration.days(30), // AWS minimum for STANDARD_IA
+            },
+            {
+              storageClass: s3.StorageClass.GLACIER,
+              transitionAfter: Duration.days(60), // Transition to Glacier after 60 days
+            },
+          ],
+        },
+      ],
     });
   }
 
@@ -397,6 +411,33 @@ export class LfmtInfrastructureStack extends Stack {
       value: userPoolDomain.domainName,
       description: 'Cognito User Pool Domain',
     });
+  }
+
+  private createSecretsManagerResources(removalPolicy: RemovalPolicy) {
+    /**
+     * Create Secrets Manager resources for sensitive configuration
+     *
+     * Creates a placeholder secret for the Gemini API key.
+     * The secret value must be populated manually after deployment:
+     *
+     * aws secretsmanager put-secret-value \
+     *   --secret-id lfmt/gemini-api-key-${STACK_NAME} \
+     *   --secret-string "YOUR_GEMINI_API_KEY"
+     *
+     * This approach:
+     * - Ensures the secret resource exists (IaC-managed)
+     * - Avoids storing sensitive keys in code
+     * - Follows security best practices
+     */
+    (this as any).translationApiKeySecret = new secretsmanager.Secret(
+      this,
+      'TranslationApiKeySecret',
+      {
+        secretName: `lfmt/gemini-api-key-${this.stackName}`,
+        description: 'API Key for the translation service (Gemini)',
+        removalPolicy,
+      }
+    );
   }
 
   private createApiGateway() {
@@ -755,26 +796,13 @@ export class LfmtInfrastructureStack extends Stack {
     });
 
     // Translation: Secrets Manager Access
-    // NOTE: The Gemini API key secret must be created manually before deployment:
-    //   aws secretsmanager create-secret \
-    //     --name lfmt/gemini-api-key-${this.stackName} \
-    //     --description "Gemini API key for LFMT translation service" \
+    // SECURITY: The Gemini API key secret is now CDK-managed (see createSecretsManagerResources).
+    // grantRead() scopes the policy to this specific secret ARN, replacing the previous
+    // manually-scoped ManagedPolicy. The secret value must still be populated out-of-band via:
+    //   aws secretsmanager put-secret-value \
+    //     --secret-id lfmt/gemini-api-key-${this.stackName} \
     //     --secret-string "YOUR_GEMINI_API_KEY"
-    //
-    // This secret is NOT created by CDK for security reasons (avoid storing secrets in code)
-    // SECURITY: Changed wildcard to environment-specific secret name
-    new iam.ManagedPolicy(this, 'TranslationSecretsPolicy', {
-      roles: [(this as any).translationRole],
-      statements: [
-        new iam.PolicyStatement({
-          effect: iam.Effect.ALLOW,
-          actions: ['secretsmanager:GetSecretValue'],
-          resources: [
-            `arn:aws:secretsmanager:${this.region}:${this.account}:secret:lfmt/gemini-api-key-${this.stackName}`,
-          ],
-        }),
-      ],
-    });
+    this.translationApiKeySecret.grantRead((this as any).translationRole);
 
     // SECURITY: Removed TranslationLambdaInvokePolicy
     // Translation functions do NOT invoke other Lambda functions directly
@@ -825,7 +853,7 @@ export class LfmtInfrastructureStack extends Stack {
       RATE_LIMIT_BUCKETS_TABLE: (this as any).rateLimitBucketsTable.tableName,
       DOCUMENT_BUCKET: this.documentBucket.bucketName,
       CHUNKS_BUCKET: this.documentBucket.bucketName, // Chunks stored in same bucket as documents
-      GEMINI_API_KEY_SECRET_NAME: `lfmt/gemini-api-key-${this.stackName}`,
+      GEMINI_API_KEY_SECRET_NAME: this.translationApiKeySecret.secretName,
       // Pass all allowed origins as comma-separated list (includes localhost + CloudFront URL)
       ALLOWED_ORIGINS: this.getAllowedApiOrigins().join(','),
     };
@@ -1135,8 +1163,14 @@ export class LfmtInfrastructureStack extends Stack {
     });
 
     // Map state to process all chunks in parallel
+    // maxConcurrency can be configured per environment via CDK context:
+    // - Dev: Lower concurrency (5) to conserve resources
+    // - Staging: Match production (10) for testing
+    // - Production: Higher concurrency (15-20) as we scale
+    // Default: 10 (balanced for Gemini rate limits: 5 RPM per account)
+    const maxConcurrency = this.node.tryGetContext('maxConcurrency') || 10;
     const processChunksMap = new stepfunctions.Map(this, 'ProcessChunksMap', {
-      maxConcurrency: 10, // Parallel processing with distributed rate limiting
+      maxConcurrency,
       itemsPath: stepfunctions.JsonPath.stringAt('$.chunks'),
       parameters: {
         'jobId.$': '$.jobId',

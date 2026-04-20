@@ -27,6 +27,7 @@ import {
   RateLimitConfig,
   RateLimitType,
   TokenAcquisitionResult,
+  RateLimitError,
 } from './types/rateLimiting';
 
 /**
@@ -76,7 +77,8 @@ export class DistributedRateLimiter {
    *
    * @param tokensRequested - Number of tokens to acquire
    * @param limitType - Type of rate limit (RPM, TPM, or RPD)
-   * @returns Result indicating success/failure and token availability
+   * @returns Result indicating successful token acquisition
+   * @throws {RateLimitError} When rate limit is exceeded
    */
   async acquire(
     tokensRequested: number,
@@ -112,12 +114,13 @@ export class DistributedRateLimiter {
 
         // Check if sufficient tokens available
         if (availableTokens < tokensRequested) {
-          return this.createRateLimitExceededResponse(
-            tokensRequested,
-            availableTokens,
-            bucket.refillRate,
-            limitType
-          );
+          const timeToRefill = (tokensRequested - availableTokens) / bucket.refillRate;
+          throw new RateLimitError({
+            tokensNeeded: tokensRequested,
+            tokensAvailable: availableTokens,
+            retryAfterMs: Math.ceil(timeToRefill * 1000),
+            limitType,
+          });
         }
 
         const tokensAfterAcquisition = availableTokens - tokensRequested;
@@ -146,6 +149,11 @@ export class DistributedRateLimiter {
           throw error;
         }
       } catch (error) {
+        // Re-throw RateLimitError immediately - it's not a DynamoDB error
+        if (error instanceof RateLimitError) {
+          throw error;
+        }
+
         // DynamoDB error - try fallback if enabled
         if (this.config.enableFallback && attempt === this.config.maxRetries - 1) {
           return this.acquireFallback(tokensRequested, limitType);
@@ -194,29 +202,6 @@ export class DistributedRateLimiter {
       : Math.min(currentTokens + tokensToAdd, maxCapacity);
 
     return { availableTokens, shouldResetWindow };
-  }
-
-  /**
-   * Create a rate limit exceeded response
-   */
-  private createRateLimitExceededResponse(
-    tokensRequested: number,
-    availableTokens: number,
-    refillRate: number,
-    limitType: RateLimitType,
-    fallbackMode: boolean = false
-  ): TokenAcquisitionResult {
-    const timeToRefill = (tokensRequested - availableTokens) / refillRate;
-    const limitTypeName = limitType.toUpperCase();
-    const mode = fallbackMode ? ' (fallback mode)' : '';
-
-    return {
-      success: false,
-      tokensAcquired: 0,
-      tokensRemaining: availableTokens,
-      retryAfterMs: Math.ceil(timeToRefill * 1000),
-      error: `${limitTypeName} rate limit exceeded${mode}. Need ${tokensRequested}, have ${availableTokens}`,
-    };
   }
 
   /**
@@ -380,13 +365,13 @@ export class DistributedRateLimiter {
 
     // Acquire tokens
     if (bucket.tokensAvailable < tokensRequested) {
-      return this.createRateLimitExceededResponse(
-        tokensRequested,
-        bucket.tokensAvailable,
-        refillRate,
+      const timeToRefill = (tokensRequested - bucket.tokensAvailable) / refillRate;
+      throw new RateLimitError({
+        tokensNeeded: tokensRequested,
+        tokensAvailable: bucket.tokensAvailable,
+        retryAfterMs: Math.ceil(timeToRefill * 1000),
         limitType,
-        true // fallbackMode
-      );
+      });
     }
 
     bucket.tokensAvailable -= tokensRequested;

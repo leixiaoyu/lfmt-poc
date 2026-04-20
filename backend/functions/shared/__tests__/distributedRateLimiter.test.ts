@@ -17,7 +17,7 @@ import {
 import { marshall, unmarshall } from '@aws-sdk/util-dynamodb';
 import { mockClient } from 'aws-sdk-client-mock';
 import { DistributedRateLimiter } from '../distributedRateLimiter';
-import { GEMINI_RATE_LIMITS, RateLimitType } from '../types/rateLimiting';
+import { GEMINI_RATE_LIMITS, RateLimitType, RateLimitError } from '../types/rateLimiting';
 
 // Mock DynamoDB client
 const ddbMock = mockClient(DynamoDBClient);
@@ -129,49 +129,62 @@ describe('DistributedRateLimiter', () => {
      * THEN: The daily limit check SHALL fail
      */
     it('should enforce daily limit (RPD) and reject when exceeded', async () => {
-      ddbMock.on(GetItemCommand).resolvesOnce({
-        Item: marshall({
-          bucketKey: 'gemini-api-rpd',
-          tokensAvailable: 1, // Only 1 request left
-          maxCapacity: 25,
-          refillRate: 25 / 86400, // requests per second
-          lastRefillTimestamp: FIXED_TIME_SEC,
-          windowStartTimestamp: FIXED_TIME_SEC,
-          ttl: FIXED_TIME_SEC + 7 * 24 * 60 * 60,
-          createdAt: new Date(FIXED_TIME_MS).toISOString(),
-          updatedAt: new Date(FIXED_TIME_MS).toISOString(),
-          version: 24, // 24 requests used
-        }),
+      let getCallCount = 0;
+      ddbMock.on(GetItemCommand).callsFake(() => {
+        getCallCount++;
+        if (getCallCount === 1) {
+          return {
+            Item: marshall({
+              bucketKey: 'gemini-api-rpd',
+              tokensAvailable: 1, // Only 1 request left
+              maxCapacity: 25,
+              refillRate: 25 / 86400, // requests per second
+              lastRefillTimestamp: FIXED_TIME_SEC,
+              windowStartTimestamp: FIXED_TIME_SEC,
+              ttl: FIXED_TIME_SEC + 7 * 24 * 60 * 60,
+              createdAt: new Date(FIXED_TIME_MS).toISOString(),
+              updatedAt: new Date(FIXED_TIME_MS).toISOString(),
+              version: 24, // 24 requests used
+            }),
+          };
+        } else {
+          return {
+            Item: marshall({
+              bucketKey: 'gemini-api-rpd',
+              tokensAvailable: 0,
+              maxCapacity: 25,
+              refillRate: 25 / 86400,
+              lastRefillTimestamp: FIXED_TIME_SEC,
+              windowStartTimestamp: FIXED_TIME_SEC,
+              ttl: FIXED_TIME_SEC + 7 * 24 * 60 * 60,
+              createdAt: new Date(FIXED_TIME_MS).toISOString(),
+              updatedAt: new Date(FIXED_TIME_MS).toISOString(),
+              version: 25,
+            }),
+          };
+        }
       });
 
-      ddbMock.on(UpdateItemCommand).resolves({});
+      ddbMock.on(UpdateItemCommand).callsFake(() => ({}));
+      ddbMock.on(PutItemCommand).callsFake(() => ({}));
 
       // First request should succeed (request #24)
       const result1 = await rateLimiter.acquire(1, RateLimitType.RPD);
       expect(result1.success).toBe(true);
 
-      // Update mock to show bucket exhausted
-      ddbMock.on(GetItemCommand).resolves({
-        Item: marshall({
-          bucketKey: 'gemini-api-rpd',
-          tokensAvailable: 0,
-          maxCapacity: 25,
-          refillRate: 25 / 86400,
-          lastRefillTimestamp: FIXED_TIME_SEC,
-          windowStartTimestamp: FIXED_TIME_SEC,
-          ttl: FIXED_TIME_SEC + 7 * 24 * 60 * 60,
-          createdAt: new Date(FIXED_TIME_MS).toISOString(),
-          updatedAt: new Date(FIXED_TIME_MS).toISOString(),
-          version: 25,
-        }),
-      });
-
       // Second request should fail (request #25)
-      const result2 = await rateLimiter.acquire(1, RateLimitType.RPD);
-      expect(result2.success).toBe(false);
-      expect(result2.error).toContain('RPD');
-      expect(result2.error).toContain('rate limit');
-      expect(result2.retryAfterMs).toBeGreaterThan(0);
+      await expect(rateLimiter.acquire(1, RateLimitType.RPD)).rejects.toThrow(RateLimitError);
+
+      try {
+        await rateLimiter.acquire(1, RateLimitType.RPD);
+        fail('Should have thrown RateLimitError');
+      } catch (error) {
+        expect(error).toBeInstanceOf(RateLimitError);
+        const rateLimitError = error as RateLimitError;
+        expect(rateLimitError.message).toContain('RPD');
+        expect(rateLimitError.limitType).toBe(RateLimitType.RPD);
+        expect(rateLimitError.retryAfterMs).toBeGreaterThan(0);
+      }
     });
   });
 
@@ -218,30 +231,40 @@ describe('DistributedRateLimiter', () => {
      * THEN: The acquisition SHALL fail with a rate limit error
      */
     it('should fail acquisition when insufficient tokens available', async () => {
-      ddbMock.on(GetItemCommand).resolves({
-        Item: marshall({
-          bucketKey: 'gemini-api-tpm',
-          tokensAvailable: 1000,
-          maxCapacity: 250000,
-          refillRate: 250000 / 60,
-          lastRefillTimestamp: FIXED_TIME_SEC,
-          windowStartTimestamp: FIXED_TIME_SEC,
-          ttl: FIXED_TIME_SEC + 7 * 24 * 60 * 60,
-          createdAt: new Date(FIXED_TIME_MS).toISOString(),
-          updatedAt: new Date(FIXED_TIME_MS).toISOString(),
-          version: 1,
-        }),
+      // Use callsFake to ensure consistent mock behavior across retries
+      ddbMock.on(GetItemCommand).callsFake(() => {
+        return {
+          Item: marshall({
+            bucketKey: 'gemini-api-tpm',
+            tokensAvailable: 1000,
+            maxCapacity: 250000,
+            refillRate: 250000 / 60,
+            lastRefillTimestamp: FIXED_TIME_SEC,
+            windowStartTimestamp: FIXED_TIME_SEC,
+            ttl: FIXED_TIME_SEC + 7 * 24 * 60 * 60,
+            createdAt: new Date(FIXED_TIME_MS).toISOString(),
+            updatedAt: new Date(FIXED_TIME_MS).toISOString(),
+            version: 1,
+          }),
+        };
       });
 
-      ddbMock.on(UpdateItemCommand).resolves({});
+      ddbMock.on(UpdateItemCommand).callsFake(() => ({}));
+      ddbMock.on(PutItemCommand).callsFake(() => ({}));
 
-      const result = await rateLimiter.acquire(3750, RateLimitType.TPM);
+      // Should throw RateLimitError when insufficient tokens
+      await expect(rateLimiter.acquire(3750, RateLimitType.TPM)).rejects.toThrow(RateLimitError);
 
-      expect(result.success).toBe(false);
-      expect(result.tokensAcquired).toBe(0);
-      expect(result.error).toContain('rate limit');
-      expect(result.retryAfterMs).toBeGreaterThan(0);
-      expect(result.retryAfterMs).toBeLessThanOrEqual(60000); // Should suggest retry within 1 minute
+      try {
+        await rateLimiter.acquire(3750, RateLimitType.TPM);
+        fail('Should have thrown RateLimitError');
+      } catch (error) {
+        expect(error).toBeInstanceOf(RateLimitError);
+        const rateLimitError = error as RateLimitError;
+        expect(rateLimitError.message).toContain('Rate limit');
+        expect(rateLimitError.retryAfterMs).toBeGreaterThan(0);
+        expect(rateLimitError.retryAfterMs).toBeLessThanOrEqual(60000);
+      }
     });
 
     /**
@@ -287,121 +310,155 @@ describe('DistributedRateLimiter', () => {
      * Test RPM (Requests Per Minute) limit enforcement
      */
     it('should enforce RPM limit of 5 requests per minute', async () => {
-      // Bucket has 2 requests remaining
-      ddbMock.on(GetItemCommand).resolvesOnce({
-        Item: marshall({
-          bucketKey: 'gemini-api-rpm',
-          tokensAvailable: 2,
-          maxCapacity: 5,
-          refillRate: 5 / 60,
-          lastRefillTimestamp: FIXED_TIME_SEC,
-          windowStartTimestamp: FIXED_TIME_SEC,
-          ttl: FIXED_TIME_SEC + 7 * 24 * 60 * 60,
-          createdAt: new Date(FIXED_TIME_MS).toISOString(),
-          updatedAt: new Date(FIXED_TIME_MS).toISOString(),
-          version: 3, // 3 requests already used
-        }),
+      // Use callsFake to handle sequential GetItem calls
+      let getCallCount = 0;
+      ddbMock.on(GetItemCommand).callsFake(() => {
+        getCallCount++;
+        if (getCallCount === 1) {
+          return {
+            Item: marshall({
+              bucketKey: 'gemini-api-rpm',
+              tokensAvailable: 2,
+              maxCapacity: 5,
+              refillRate: 5 / 60,
+              lastRefillTimestamp: FIXED_TIME_SEC,
+              windowStartTimestamp: FIXED_TIME_SEC,
+              ttl: FIXED_TIME_SEC + 7 * 24 * 60 * 60,
+              createdAt: new Date(FIXED_TIME_MS).toISOString(),
+              updatedAt: new Date(FIXED_TIME_MS).toISOString(),
+              version: 3, // 3 requests already used
+            }),
+          };
+        } else if (getCallCount === 2) {
+          return {
+            Item: marshall({
+              bucketKey: 'gemini-api-rpm',
+              tokensAvailable: 1,
+              maxCapacity: 5,
+              refillRate: 5 / 60,
+              lastRefillTimestamp: FIXED_TIME_SEC,
+              windowStartTimestamp: FIXED_TIME_SEC,
+              ttl: FIXED_TIME_SEC + 7 * 24 * 60 * 60,
+              createdAt: new Date(FIXED_TIME_MS).toISOString(),
+              updatedAt: new Date(FIXED_TIME_MS).toISOString(),
+              version: 4,
+            }),
+          };
+        } else {
+          return {
+            Item: marshall({
+              bucketKey: 'gemini-api-rpm',
+              tokensAvailable: 0,
+              maxCapacity: 5,
+              refillRate: 5 / 60,
+              lastRefillTimestamp: FIXED_TIME_SEC,
+              windowStartTimestamp: FIXED_TIME_SEC,
+              ttl: FIXED_TIME_SEC + 7 * 24 * 60 * 60,
+              createdAt: new Date(FIXED_TIME_MS).toISOString(),
+              updatedAt: new Date(FIXED_TIME_MS).toISOString(),
+              version: 5,
+            }),
+          };
+        }
       });
 
-      ddbMock.on(UpdateItemCommand).resolvesOnce({});
+      ddbMock.on(UpdateItemCommand).callsFake(() => ({}));
+      ddbMock.on(PutItemCommand).callsFake(() => ({}));
 
       const result1 = await rateLimiter.acquire(1, RateLimitType.RPM);
       expect(result1.success).toBe(true);
 
-      ddbMock.on(GetItemCommand).resolvesOnce({
-        Item: marshall({
-          bucketKey: 'gemini-api-rpm',
-          tokensAvailable: 1,
-          maxCapacity: 5,
-          refillRate: 5 / 60,
-          lastRefillTimestamp: FIXED_TIME_SEC,
-          windowStartTimestamp: FIXED_TIME_SEC,
-          ttl: FIXED_TIME_SEC + 7 * 24 * 60 * 60,
-          createdAt: new Date(FIXED_TIME_MS).toISOString(),
-          updatedAt: new Date(FIXED_TIME_MS).toISOString(),
-          version: 4,
-        }),
-      });
-
-      ddbMock.on(UpdateItemCommand).resolvesOnce({});
-
       const result2 = await rateLimiter.acquire(1, RateLimitType.RPM);
       expect(result2.success).toBe(true);
 
-      // Update mock to show bucket exhausted
-      ddbMock.on(GetItemCommand).resolves({
-        Item: marshall({
-          bucketKey: 'gemini-api-rpm',
-          tokensAvailable: 0,
-          maxCapacity: 5,
-          refillRate: 5 / 60,
-          lastRefillTimestamp: FIXED_TIME_SEC,
-          windowStartTimestamp: FIXED_TIME_SEC,
-          ttl: FIXED_TIME_SEC + 7 * 24 * 60 * 60,
-          createdAt: new Date(FIXED_TIME_MS).toISOString(),
-          updatedAt: new Date(FIXED_TIME_MS).toISOString(),
-          version: 5,
-        }),
-      });
+      // 6th request should fail (throw RateLimitError)
+      await expect(rateLimiter.acquire(1, RateLimitType.RPM)).rejects.toThrow(RateLimitError);
 
-      // 6th request should fail
-      const result3 = await rateLimiter.acquire(1, RateLimitType.RPM);
-      expect(result3.success).toBe(false);
-      expect(result3.error).toContain('RPM');
+      try {
+        await rateLimiter.acquire(1, RateLimitType.RPM);
+        fail('Should have thrown RateLimitError');
+      } catch (error) {
+        expect(error).toBeInstanceOf(RateLimitError);
+        const rateLimitError = error as RateLimitError;
+        expect(rateLimitError.message).toContain('RPM');
+      }
     });
 
     /**
      * Test TPM (Tokens Per Minute) limit enforcement
      */
     it('should enforce TPM limit of 250K tokens per minute', async () => {
-      ddbMock.on(GetItemCommand).resolves({
-        Item: marshall({
-          bucketKey: 'gemini-api-tpm',
-          tokensAvailable: 1000, // Only 1000 tokens left
-          maxCapacity: 250000,
-          refillRate: 250000 / 60,
-          lastRefillTimestamp: FIXED_TIME_SEC,
-          windowStartTimestamp: FIXED_TIME_SEC,
-          ttl: FIXED_TIME_SEC + 7 * 24 * 60 * 60,
-          createdAt: new Date(FIXED_TIME_MS).toISOString(),
-          updatedAt: new Date(FIXED_TIME_MS).toISOString(),
-          version: 1,
-        }),
+      // Use callsFake to ensure consistent mock behavior
+      ddbMock.on(GetItemCommand).callsFake(() => {
+        return {
+          Item: marshall({
+            bucketKey: 'gemini-api-tpm',
+            tokensAvailable: 1000, // Only 1000 tokens left
+            maxCapacity: 250000,
+            refillRate: 250000 / 60,
+            lastRefillTimestamp: FIXED_TIME_SEC,
+            windowStartTimestamp: FIXED_TIME_SEC,
+            ttl: FIXED_TIME_SEC + 7 * 24 * 60 * 60,
+            createdAt: new Date(FIXED_TIME_MS).toISOString(),
+            updatedAt: new Date(FIXED_TIME_MS).toISOString(),
+            version: 1,
+          }),
+        };
       });
 
-      ddbMock.on(UpdateItemCommand).resolves({});
+      ddbMock.on(UpdateItemCommand).callsFake(() => ({}));
+      ddbMock.on(PutItemCommand).callsFake(() => ({}));
 
-      // Request more tokens than available
-      const result = await rateLimiter.acquire(5000, RateLimitType.TPM);
-      expect(result.success).toBe(false);
-      expect(result.error).toContain('TPM');
+      // Request more tokens than available (should throw)
+      await expect(rateLimiter.acquire(5000, RateLimitType.TPM)).rejects.toThrow(RateLimitError);
+
+      try {
+        await rateLimiter.acquire(5000, RateLimitType.TPM);
+        fail('Should have thrown RateLimitError');
+      } catch (error) {
+        expect(error).toBeInstanceOf(RateLimitError);
+        const rateLimitError = error as RateLimitError;
+        expect(rateLimitError.message).toContain('TPM');
+      }
     });
 
     /**
      * Test RPD (Requests Per Day) limit enforcement
      */
     it('should enforce RPD limit of 25 requests per day', async () => {
-      ddbMock.on(GetItemCommand).resolves({
-        Item: marshall({
-          bucketKey: 'gemini-api-rpd',
-          tokensAvailable: 0, // All 25 requests used
-          maxCapacity: 25,
-          refillRate: 25 / 86400,
-          lastRefillTimestamp: FIXED_TIME_SEC,
-          windowStartTimestamp: FIXED_TIME_SEC,
-          ttl: FIXED_TIME_SEC + 7 * 24 * 60 * 60,
-          createdAt: new Date(FIXED_TIME_MS).toISOString(),
-          updatedAt: new Date(FIXED_TIME_MS).toISOString(),
-          version: 25,
-        }),
+      // Use callsFake to ensure consistent mock behavior
+      ddbMock.on(GetItemCommand).callsFake(() => {
+        return {
+          Item: marshall({
+            bucketKey: 'gemini-api-rpd',
+            tokensAvailable: 0, // All 25 requests used
+            maxCapacity: 25,
+            refillRate: 25 / 86400,
+            lastRefillTimestamp: FIXED_TIME_SEC,
+            windowStartTimestamp: FIXED_TIME_SEC,
+            ttl: FIXED_TIME_SEC + 7 * 24 * 60 * 60,
+            createdAt: new Date(FIXED_TIME_MS).toISOString(),
+            updatedAt: new Date(FIXED_TIME_MS).toISOString(),
+            version: 25,
+          }),
+        };
       });
 
-      ddbMock.on(UpdateItemCommand).resolves({});
+      ddbMock.on(UpdateItemCommand).callsFake(() => ({}));
+      ddbMock.on(PutItemCommand).callsFake(() => ({}));
 
-      const result = await rateLimiter.acquire(1, RateLimitType.RPD);
-      expect(result.success).toBe(false);
-      expect(result.error).toContain('RPD');
-      expect(result.retryAfterMs).toBeGreaterThan(60000); // Should be hours until midnight
+      // Should throw RateLimitError when all requests used
+      await expect(rateLimiter.acquire(1, RateLimitType.RPD)).rejects.toThrow(RateLimitError);
+
+      try {
+        await rateLimiter.acquire(1, RateLimitType.RPD);
+        fail('Should have thrown RateLimitError');
+      } catch (error) {
+        expect(error).toBeInstanceOf(RateLimitError);
+        const rateLimitError = error as RateLimitError;
+        expect(rateLimitError.message).toContain('RPD');
+        expect(rateLimitError.retryAfterMs).toBeGreaterThan(60000); // Should be hours until midnight
+      }
     });
   });
 
@@ -733,11 +790,18 @@ describe('DistributedRateLimiter', () => {
       expect(result1.success).toBe(true);
 
       // Try to acquire more than remaining (only 1000 left)
-      const result2 = await rateLimiter.acquire(2000, RateLimitType.TPM);
-      expect(result2.success).toBe(false);
-      expect(result2.error).toContain('TPM');
-      expect(result2.error).toContain('rate limit exceeded');
-      expect(result2.error).toContain('fallback mode');
+      // Should throw RateLimitError in fallback mode
+      await expect(rateLimiter.acquire(2000, RateLimitType.TPM)).rejects.toThrow(RateLimitError);
+
+      try {
+        await rateLimiter.acquire(2000, RateLimitType.TPM);
+        fail('Should have thrown RateLimitError');
+      } catch (error) {
+        expect(error).toBeInstanceOf(RateLimitError);
+        const rateLimitError = error as RateLimitError;
+        expect(rateLimitError.message).toContain('TPM');
+        expect(rateLimitError.message).toContain('Rate limit exceeded');
+      }
     });
 
     /**
