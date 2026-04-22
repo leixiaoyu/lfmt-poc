@@ -98,14 +98,12 @@ export default defineConfig(({ command, mode }) => {
         // - 91% per-file for view components with hard-to-test rAF/scroll
         //   cleanup handlers (e.g., SideBySideViewer — actual ~95.47%,
         //   ~4pp safety margin).
-        // - 60-65% for src/utils/api.ts — JWT refresh interceptor is
-        //   high-risk auth code, but 9 refresh tests are currently
-        //   skipped due to an axios-spy architecture issue (see
-        //   api.refresh.test.ts KNOWN ISSUE block). Floor sits 3-5pp
-        //   below current actuals so incidental changes don't trip CI.
-        //   Ratchet up once the spy blocker is resolved and the skipped
-        //   tests are re-enabled (tracked in a GitHub issue referenced
-        //   from the test file).
+        // - 93%/84%/85%/93% for src/utils/api.ts — JWT refresh
+        //   interceptor is high-risk auth code, now fully covered after
+        //   the test suite was rewritten on top of axios-mock-adapter
+        //   (the previous axios-spy approach never intercepted instance
+        //   calls; all 9 refresh-flow tests had been skipped). Floor sits
+        //   ~5pp below current actuals so incidental changes don't trip CI.
         // - 95% global baseline (statements) — locks in current
         //   high standard, raised from 80% in #124.
         //
@@ -161,22 +159,19 @@ export default defineConfig(({ command, mode }) => {
             lines: 95,
           },
           // High-risk auth code: JWT refresh interceptor in api.ts.
-          // Realistic floor today — 9 refresh-flow tests are skipped due
-          // to an axios-spy blocker (spies on global axios don't intercept
-          // the per-instance apiClient used inside Promise.race).
-          // Tracked in: https://github.com/leixiaoyu/lfmt-poc/issues/132
-          // See frontend/src/utils/__tests__/api.refresh.test.ts KNOWN
-          // ISSUE block for the remediation plan (migrate to
-          // axios-mock-adapter).
-          // Current actuals: 66.66%/78.57%/72.72%/66.66%. Floor widened
-          // by ~5pp (previously 65/60/70/65) per team review guidance
-          // to avoid brittle CI. Ratchet up once issue #132 is resolved
-          // and the 9 skipped tests are re-enabled.
+          // Resolved in PR <resolved-in-pr-this-pr>: refresh-flow tests
+          // were rewritten on top of axios-mock-adapter (the prior
+          // axios-spy approach never intercepted instance calls). All 9
+          // previously-skipped scenarios are now live, plus a token-
+          // rotation persistence test.
+          // Current actuals: 98.38%/89.58%/90.9%/98.38%. Floor widened
+          // ~5pp below actuals per team review guidance (3–5pp safety
+          // margin to avoid brittle CI on incidental changes).
           'src/utils/api.ts': {
-            statements: 60,
-            branches: 55,
-            functions: 65,
-            lines: 60,
+            statements: 93,
+            branches: 84,
+            functions: 85,
+            lines: 93,
           },
           // General code: 95% statements baseline (raised from 80% to
           // lock in current high standard). Branches/functions floors
