@@ -12,10 +12,17 @@ import {
   PresignedUrlRequest,
   PresignedUrlResponse,
   fileValidationSchema,
+  legalAttestationPayloadSchema,
+  LegalAttestationPayload,
 } from '@lfmt/shared-types';
 import { createSuccessResponse, createErrorResponse } from '../shared/api-response';
 import Logger from '../shared/logger';
 import { getRequiredEnv } from '../shared/env';
+import {
+  AttestationWriteError,
+  buildAttestationRecord,
+  writeAttestation,
+} from '../shared/attestationWriter';
 import { randomUUID } from 'crypto';
 
 const logger = new Logger('lfmt-upload-request');
@@ -48,7 +55,9 @@ export const handler = async (event: APIGatewayProxyEvent): Promise<APIGatewayPr
     }
 
     // Parse and validate request body
-    const body = JSON.parse(event.body || '{}') as PresignedUrlRequest;
+    const body = JSON.parse(event.body || '{}') as PresignedUrlRequest & {
+      legalAttestation?: LegalAttestationPayload;
+    };
 
     const validationResult = fileValidationSchema.safeParse({
       filename: body.fileName,
@@ -71,12 +80,80 @@ export const handler = async (event: APIGatewayProxyEvent): Promise<APIGatewayPr
       );
     }
 
+    // Legal attestation is REQUIRED — silently dropping consent is the
+    // OWASP A09 bug we are explicitly closing in OpenSpec task 3.8.0.
+    const attestationParse = legalAttestationPayloadSchema.safeParse(
+      body.legalAttestation
+    );
+    if (!attestationParse.success) {
+      logger.warn('Legal attestation validation failed', {
+        requestId,
+        errors: attestationParse.error.flatten().fieldErrors,
+      });
+      return createErrorResponse(
+        400,
+        'Legal attestation is required: you must accept all three clauses to upload.',
+        requestId,
+        attestationParse.error.flatten().fieldErrors,
+        requestOrigin
+      );
+    }
+    const attestationPayload = attestationParse.data;
+
     const { filename, fileSize, contentType } = validationResult.data;
 
     // Generate unique IDs for file and job
     const fileId = randomUUID();
     const jobId = randomUUID();
     const s3Key = `uploads/${userId}/${fileId}/${filename}`;
+
+    // Persist the legal attestation BEFORE issuing the presigned URL
+    // or creating the job record. If this write fails, the entire upload
+    // request fails — we never let a user upload without an audit-trail
+    // entry. (OWASP A09 — Security Logging & Monitoring Failures.)
+    const sourceIp =
+      event.requestContext.identity?.sourceIp || 'unknown';
+    const userAgent =
+      event.headers['User-Agent'] ||
+      event.headers['user-agent'] ||
+      event.requestContext.identity?.userAgent ||
+      'unknown';
+
+    try {
+      const attestationRecord = buildAttestationRecord({
+        userId,
+        jobId,
+        documentId: fileId,
+        filename,
+        fileSize,
+        contentType,
+        ipAddress: sourceIp,
+        userAgent,
+        acceptedClauses: {
+          acceptCopyrightOwnership: attestationPayload.acceptCopyrightOwnership,
+          acceptTranslationRights: attestationPayload.acceptTranslationRights,
+          acceptLiabilityTerms: attestationPayload.acceptLiabilityTerms,
+        },
+      });
+      await writeAttestation(attestationRecord, { logger });
+    } catch (err) {
+      const isWriteError = err instanceof AttestationWriteError;
+      logger.error('Refusing upload — attestation persistence failed', {
+        requestId,
+        userId,
+        jobId,
+        fileId,
+        errorCode: isWriteError ? err.code : 'UnknownAttestationError',
+        error: err instanceof Error ? err.message : 'Unknown error',
+      });
+      return createErrorResponse(
+        500,
+        'AttestationPersistFailure: legal attestation could not be recorded; upload aborted.',
+        requestId,
+        undefined,
+        requestOrigin
+      );
+    }
 
     logger.info('Generating presigned URL', {
       requestId,

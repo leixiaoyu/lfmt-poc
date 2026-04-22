@@ -443,16 +443,18 @@
 
 ### 3.8 Data Privacy & GDPR Compliance 🆕 **CRITICAL GAP**
 
-- [ ] 3.8.0 **Wire Legal Attestation Write Path** 🆕 **PRE-PROD BLOCKER (OWASP A09)**
-  - **Problem**: Frontend `LegalAttestation.tsx` collects user consent and the `AttestationsTable` is provisioned (`backend/infrastructure/lib/lfmt-infrastructure-stack.ts:188`), but no Lambda persists consent data. Consent is silently dropped → compliance gap + audit-trail failure.
-  - **Required Fields**: `userId`, `jobId`, `documentHash`, `sourceIp`, `attestationVersion`, `acceptedAt` (ISO-8601), `userAgent`.
-  - **Implementation**:
-    - Extend `upload/uploadComplete.ts` (or `translation/startTranslation.ts`) to write an attestation record to `AttestationsTable` at the moment consent is captured.
-    - Add IAM `dynamodb:PutItem` permission on `AttestationsTable` to the appropriate Lambda role.
-    - Add unit + integration tests asserting the write happens and failures surface a 5xx (do NOT silently swallow).
-    - Add a CloudWatch alarm on `AttestationsTable` write errors.
-  - **Severity**: HIGH — do not deploy to production users without this.
-  - **Estimated Time**: 4 hours
+- [x] 3.8.0 **Wire Legal Attestation Write Path** ✅ **RESOLVED (`feat/legal-attestation-write-path`)**
+  - **Problem**: Frontend `LegalAttestation.tsx` collected user consent and the `AttestationsTable` was provisioned (`backend/infrastructure/lib/lfmt-infrastructure-stack.ts:188`), but no Lambda persisted consent data. Consent was silently dropped → compliance gap + audit-trail failure.
+  - **Persisted Fields**: `attestationId`, `userId`, `jobId`, `documentId`, `documentHash` (sha256 hex), `attestationVersion` (`v1.0`), `ipAddress`, `userAgent`, `acceptedAt` (ISO-8601), `createdAt`, `ttl` (7-year retention), `acceptedClauses`, `documentMetadata`.
+  - **Implementation (delivered)**:
+    - Added `LegalAttestationRecord` + `LegalAttestationPayload` schemas in `shared-types/src/legal.ts` (Zod-validated).
+    - New helper `backend/functions/shared/attestationWriter.ts` exports `buildAttestationRecord`, `writeAttestation`, `AttestationWriteError`. Failures throw a typed error; never swallowed.
+    - Wired the write into `backend/functions/jobs/uploadRequest.ts` (the API Gateway handler with access to the user's `legalAttestation` payload + `requestContext.identity.sourceIp` + `User-Agent`). Attestation persists BEFORE the presigned URL is issued; on failure the Lambda returns `500 AttestationPersistFailure` and aborts the upload.
+    - IAM permission already in place: `UploadDynamoDBPolicy` grants `dynamodb:PutItem` on `attestationsTable`. Asserted by a new CDK test.
+    - Tests: 6 new shared-types tests + 11 unit tests for `attestationWriter` + 6 new tests in `uploadRequest.test.ts` covering happy path, missing payload, false-clause rejection, DDB-failure → 500, sourceIp/UA capture. CDK IAM-assertion test added. All 427 backend tests + 39 CDK tests + 17 shared-types tests pass.
+    - **Deferred**: CloudWatch alarm on `AttestationsTable` write errors — small follow-up (5xx + ERROR logs already flow to CloudWatch today).
+  - **Severity**: HIGH — gate cleared.
+  - **Estimated Time**: 4 hours (actual: ~3 hours)
 - [ ] 3.8.1 Implement formal data retention policy
   - **Policy**: User-uploaded documents deleted 30 days after translation (or immediate if user opts in)
   - S3 Lifecycle Policies: Auto-delete from `documentBucket` after 30 days

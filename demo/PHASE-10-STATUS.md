@@ -98,7 +98,7 @@ Seven PRs merged into `main` have materially hardened the POC since the original
 
 - **#132** — Rewrite `api.refresh` tests using `axios-mock-adapter` (un-skips 9 JWT refresh tests; P1).
 - **#133** — Harden CSP: nonce-based injection + re-evaluate `'unsafe-eval'` (P1). Part 2 (`'unsafe-eval'` removed from `script-src`) shipped; Part 1 (nonce pipeline for `'unsafe-inline'`) tracked in follow-up.
-- **OpenSpec `production-foundation` task 3.8.0** — Legal Attestation write path (OWASP A09 — HIGH; consent silently dropped today).
+- ✅ **OpenSpec `production-foundation` task 3.8.0** — Legal Attestation write path (OWASP A09 — HIGH). RESOLVED in `feat/legal-attestation-write-path`: every consent is persisted to `AttestationsTable` before the presigned URL is issued; failures return `500 AttestationPersistFailure` and abort the upload (no silent drop).
 
 ---
 
@@ -137,10 +137,7 @@ See `demo/DEMO-CONTENT-PLAN.md` for the two-track demo strategy (Track A: live c
 ### Week 1 — Engineering Close-out
 
 1. **Close PR #129** as redundant (PR #126 absorbed its test-mock fixes, merged at `90d926f`).
-2. **Wire Legal Attestation write path** (OpenSpec `production-foundation` task 3.8.0):
-   - Frontend already collects consent; `AttestationsTable` already provisioned; integration tests already pass `legalAttestation` payloads.
-   - Required: Lambda write path in upload / startTranslation flow persisting user identity, document hash, IP, timestamp, attestation version.
-   - Scope: ~4h engineering. **OWASP A09 — HIGH**.
+2. ✅ **Wire Legal Attestation write path** (OpenSpec `production-foundation` task 3.8.0) — DONE in `feat/legal-attestation-write-path`. `uploadRequest.ts` now persists every consent (jobId, userId, documentHash, attestationVersion, ipAddress, userAgent, acceptedAt + accepted clauses + document metadata) to `AttestationsTable` BEFORE issuing a presigned URL. Failures return `500 AttestationPersistFailure` and abort. **OWASP A09 — CLOSED**.
 3. **Confirm free-tier rate-limiter throttling** on `dev`:
    - Validate distributed rate limiter respects 5 RPM / 250K TPM / 25 RPD against real Gemini.
    - Capture CloudWatch evidence of backoff behavior.

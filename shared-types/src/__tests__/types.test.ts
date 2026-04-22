@@ -8,6 +8,9 @@ import {
   createJobRequestSchema,
   attestationRequestSchema,
   ValidationUtils,
+  legalAttestationPayloadSchema,
+  legalAttestationRecordSchema,
+  ATTESTATION_VERSION,
 } from '../index';
 
 describe('Shared Types Validation', () => {
@@ -219,6 +222,96 @@ describe('Shared Types Validation', () => {
       expect(ValidationUtils.isValidWordCount(75000)).toBe(true); // Valid
       expect(ValidationUtils.isValidWordCount(50000)).toBe(false); // Too small
       expect(ValidationUtils.isValidWordCount(500000)).toBe(false); // Too large
+    });
+  });
+
+  describe('Legal Attestation Write-Path Schemas (OpenSpec task 3.8.0)', () => {
+    test('ATTESTATION_VERSION is a stable, non-empty string', () => {
+      expect(typeof ATTESTATION_VERSION).toBe('string');
+      expect(ATTESTATION_VERSION.length).toBeGreaterThan(0);
+    });
+
+    test('legalAttestationPayloadSchema accepts the frontend payload shape', () => {
+      const payload = {
+        acceptCopyrightOwnership: true,
+        acceptTranslationRights: true,
+        acceptLiabilityTerms: true,
+        userIPAddress: '127.0.0.1',
+        userAgent: 'Mozilla/5.0',
+        timestamp: new Date().toISOString(),
+      };
+      expect(legalAttestationPayloadSchema.safeParse(payload).success).toBe(true);
+    });
+
+    test('legalAttestationPayloadSchema rejects payload missing required acceptance', () => {
+      const result = legalAttestationPayloadSchema.safeParse({
+        acceptCopyrightOwnership: false,
+        acceptTranslationRights: true,
+        acceptLiabilityTerms: true,
+      });
+      expect(result.success).toBe(false);
+    });
+
+    test('legalAttestationPayloadSchema rejects payload missing fields entirely', () => {
+      const result = legalAttestationPayloadSchema.safeParse({
+        acceptCopyrightOwnership: true,
+      });
+      expect(result.success).toBe(false);
+    });
+
+    test('legalAttestationRecordSchema validates a complete persisted record', () => {
+      const now = new Date().toISOString();
+      const record = {
+        attestationId: '11111111-1111-4111-8111-111111111111',
+        userId: 'cognito-user-sub-abc',
+        jobId: '22222222-2222-4222-8222-222222222222',
+        documentId: '33333333-3333-4333-8333-333333333333',
+        documentHash: 'a'.repeat(64),
+        attestationVersion: ATTESTATION_VERSION,
+        ipAddress: '127.0.0.1',
+        userAgent: 'integration-test',
+        acceptedAt: now,
+        createdAt: now,
+        ttl: Math.floor(Date.now() / 1000) + 60 * 60 * 24 * 365 * 7,
+        acceptedClauses: {
+          acceptCopyrightOwnership: true as const,
+          acceptTranslationRights: true as const,
+          acceptLiabilityTerms: true as const,
+        },
+        documentMetadata: {
+          filename: 'doc.txt',
+          fileSize: 1024,
+          contentType: 'text/plain',
+        },
+      };
+      expect(legalAttestationRecordSchema.safeParse(record).success).toBe(true);
+    });
+
+    test('legalAttestationRecordSchema rejects malformed documentHash', () => {
+      const record = {
+        attestationId: '11111111-1111-4111-8111-111111111111',
+        userId: 'cognito-user-sub-abc',
+        jobId: '22222222-2222-4222-8222-222222222222',
+        documentId: '33333333-3333-4333-8333-333333333333',
+        documentHash: 'not-a-real-sha256',
+        attestationVersion: ATTESTATION_VERSION,
+        ipAddress: '127.0.0.1',
+        userAgent: 'integration-test',
+        acceptedAt: new Date().toISOString(),
+        createdAt: new Date().toISOString(),
+        ttl: 1,
+        acceptedClauses: {
+          acceptCopyrightOwnership: true as const,
+          acceptTranslationRights: true as const,
+          acceptLiabilityTerms: true as const,
+        },
+        documentMetadata: {
+          filename: 'doc.txt',
+          fileSize: 1024,
+          contentType: 'text/plain',
+        },
+      };
+      expect(legalAttestationRecordSchema.safeParse(record).success).toBe(false);
     });
   });
 });
