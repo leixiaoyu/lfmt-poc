@@ -804,9 +804,6 @@ describe('LFMT Infrastructure Stack', () => {
     test('CSP includes hardening directives (object-src, base-uri, form-action, frame-ancestors, upgrade-insecure-requests)', () => {
       // Regression coverage for the CSP hardening work on PR #127 / issue #63.
       // These directives MUST be present on every CSP emitted by the stack.
-      // We intentionally do NOT assert the absence of 'unsafe-inline' or
-      // 'unsafe-eval' — the team rolled those back because MUI/Emotion
-      // require them. The hardening-path follow-up is tracked in issue #133.
       const requiredDirectives = [
         "object-src 'none'",
         "base-uri 'self'",
@@ -850,6 +847,41 @@ describe('LFMT Infrastructure Stack', () => {
         requiredDirectives.forEach((directive) => {
           expect(flat).toContain(directive);
         });
+      });
+    });
+
+    test("CSP does not contain 'unsafe-eval' (Issue #133 Part 2)", () => {
+      // Regression guard for Issue #133 Part 2.
+      // 'unsafe-eval' was removed from script-src after verifying that the
+      // production Vite/MUI bundle contains no eval()/new Function() calls.
+      // Re-introducing it would weaken script-src CSP and must trip CI.
+      // Note: 'unsafe-inline' is intentionally NOT asserted absent yet —
+      // that lands with Part 1 (nonce-injection pipeline). Tracked in the
+      // Part 1 follow-up issue.
+      const flattenCsp = (csp: unknown): string => {
+        if (typeof csp === 'string') return csp;
+        if (csp && typeof csp === 'object' && 'Fn::Join' in (csp as object)) {
+          const join = (csp as { 'Fn::Join': [string, unknown[]] })['Fn::Join'];
+          const parts = join[1];
+          return parts
+            .map((p) => (typeof p === 'string' ? p : JSON.stringify(p)))
+            .join('');
+        }
+        return JSON.stringify(csp);
+      };
+
+      const policies = template.findResources('AWS::CloudFront::ResponseHeadersPolicy');
+      const cspCarryingPolicies = Object.values(policies).filter((policy: any) => {
+        return !!policy?.Properties?.ResponseHeadersPolicyConfig?.SecurityHeadersConfig
+          ?.ContentSecurityPolicy?.ContentSecurityPolicy;
+      });
+      expect(cspCarryingPolicies.length).toBeGreaterThanOrEqual(2);
+
+      cspCarryingPolicies.forEach((policy: any) => {
+        const csp = policy.Properties.ResponseHeadersPolicyConfig.SecurityHeadersConfig
+          .ContentSecurityPolicy.ContentSecurityPolicy;
+        const flat = flattenCsp(csp);
+        expect(flat).not.toContain("'unsafe-eval'");
       });
     });
 

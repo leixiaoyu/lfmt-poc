@@ -1552,22 +1552,23 @@ export class LfmtInfrastructureStack extends Stack {
           override: true,
         },
         contentSecurityPolicy: {
-          // NOTE: This CSP will be updated after API Gateway is created to include the actual API URL
+          // NOTE: This CSP will be updated after API Gateway is created to include the actual API URL.
           //
-          // CSP uses 'unsafe-inline' for style-src and 'unsafe-eval' for script-src
-          // because the current frontend stack (MUI/Emotion) emits runtime inline
-          // styles, and Vite's legacy build output uses eval. Removing these
-          // directives breaks the production UI.
-          //
-          // Future hardening path: implement a nonce-based CSP once the build
-          // pipeline can inject per-request nonces into index.html and MUI/Emotion
-          // are configured to consume them.
-          // Tracked in: https://github.com/leixiaoyu/lfmt-poc/issues/133
+          // CSP hardening status (Issue #133):
+          //   - 'unsafe-eval' REMOVED from script-src (Part 2 — verified safe via
+          //     bundle inspection; standard Vite + MUI/Emotion do not require eval).
+          //   - 'unsafe-inline' RETAINED on style-src — MUI/Emotion emit runtime
+          //     inline styles. Removal blocked on a nonce-injection pipeline
+          //     (Lambda@Edge + Emotion CacheProvider integration). Tracked in
+          //     follow-up issue (Part 1 of #133).
+          //   - 'unsafe-inline' RETAINED on script-src — kept until the same
+          //     nonce pipeline lands (so the script-src tightening rolls out
+          //     atomically with style-src).
           //
           // Other hardening directives retained: object-src 'none', base-uri 'self',
           // form-action 'self', frame-ancestors 'none', upgrade-insecure-requests.
           // See: https://github.com/leixiaoyu/lfmt-poc/issues/63
-          contentSecurityPolicy: "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self' https://*.execute-api.us-east-1.amazonaws.com; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; upgrade-insecure-requests;",
+          contentSecurityPolicy: "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self' https://*.execute-api.us-east-1.amazonaws.com; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; upgrade-insecure-requests;",
           override: true,
         },
       },
@@ -1671,21 +1672,22 @@ export class LfmtInfrastructureStack extends Stack {
           override: true,
         },
         contentSecurityPolicy: {
-          // CSP with specific API Gateway domain (Issue #63)
+          // CSP with specific API Gateway domain (Issue #63).
           //
-          // CSP uses 'unsafe-inline' for style-src and 'unsafe-eval' for script-src
-          // because the current frontend stack (MUI/Emotion) emits runtime inline
-          // styles, and Vite's legacy build output uses eval. Removing these
-          // directives breaks the production UI.
-          //
-          // Future hardening path: implement a nonce-based CSP once the build
-          // pipeline can inject per-request nonces into index.html and MUI/Emotion
-          // are configured to consume them.
-          // Tracked in: https://github.com/leixiaoyu/lfmt-poc/issues/133
+          // CSP hardening status (Issue #133):
+          //   - 'unsafe-eval' REMOVED from script-src (Part 2 — verified safe via
+          //     bundle inspection; standard Vite + MUI/Emotion do not require eval).
+          //   - 'unsafe-inline' RETAINED on style-src — MUI/Emotion emit runtime
+          //     inline styles. Removal blocked on a nonce-injection pipeline
+          //     (Lambda@Edge + Emotion CacheProvider integration). Tracked in
+          //     follow-up issue (Part 1 of #133).
+          //   - 'unsafe-inline' RETAINED on script-src — kept until the same
+          //     nonce pipeline lands (so the script-src tightening rolls out
+          //     atomically with style-src).
           //
           // Other hardening directives retained: object-src 'none', base-uri 'self',
           // form-action 'self', frame-ancestors 'none', upgrade-insecure-requests.
-          contentSecurityPolicy: `default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self' https://${apiDomain}; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; upgrade-insecure-requests;`,
+          contentSecurityPolicy: `default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self' https://${apiDomain}; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; upgrade-insecure-requests;`,
           override: true,
         },
       },
