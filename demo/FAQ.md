@@ -939,7 +939,7 @@ We've identified **five key risks** with mitigation strategies:
 We know exactly what's unfinished. This list is the fundable gap — presented up front as transparency, not excuse:
 
 - **Legal Attestation write path (HIGH)** — frontend collects user consent but no backend Lambda persists it to the provisioned `AttestationsTable`. OWASP A09 — Security Logging & Monitoring Failures. Fix in progress (~4h engineering; tracked in `openspec/changes/production-foundation` task 3.8.0).
-- **CSP `'unsafe-inline'` retained** — MUI/Emotion require runtime inline styles. Other CSP directives (`object-src`, `base-uri`, `form-action`, `frame-ancestors`, `upgrade-insecure-requests`) are hardened. Nonce-based injection pipeline tracked in #133 for removal.
+- **CSP `'unsafe-inline'` retained** — MUI/Emotion require runtime inline styles. Other CSP directives (`object-src`, `base-uri`, `form-action`, `frame-ancestors`, `upgrade-insecure-requests`) are hardened, and `'unsafe-eval'` was removed from `script-src` (Issue #133 Part 2). Nonce-based injection pipeline (Part 1) is the remaining work to drop `'unsafe-inline'` — tracked in the #133 Part 1 follow-up.
 - **9 JWT refresh tests skipped** — `axios.spy` can't intercept `axios.create()` instances. Tracked in #132 for migration to `axios-mock-adapter`.
 - **Side-by-Side Viewer feature-flag-gated** — backend source-retrieval API not yet built. UI exists and works end-to-end once the API lands (PR #125 merged the viewer; API is the remaining piece).
 - **No custom domain** — running on AWS default API Gateway + CloudFront domains.

@@ -97,7 +97,7 @@ Seven PRs merged into `main` have materially hardened the POC since the original
 **New tracking issues opened**:
 
 - **#132** — Rewrite `api.refresh` tests using `axios-mock-adapter` (un-skips 9 JWT refresh tests; P1).
-- **#133** — Harden CSP: nonce-based injection + re-evaluate `'unsafe-eval'` (P1).
+- **#133** — Harden CSP: nonce-based injection + re-evaluate `'unsafe-eval'` (P1). Part 2 (`'unsafe-eval'` removed from `script-src`) shipped; Part 1 (nonce pipeline for `'unsafe-inline'`) tracked in follow-up.
 - **OpenSpec `production-foundation` task 3.8.0** — Legal Attestation write path (OWASP A09 — HIGH; consent silently dropped today).
 
 ---

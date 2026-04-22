@@ -304,12 +304,16 @@ jobs:
           echo "CSP Policy: $CSP"
           echo ""
 
-          # NOTE: 'unsafe-inline' (style-src) and 'unsafe-eval' (script-src)
-          # are intentionally allowed because MUI/Emotion emit runtime inline
-          # styles and Vite's legacy build uses eval. See the CSP definition
-          # in backend/infrastructure/lib/lfmt-infrastructure-stack.ts for
-          # the full trade-off rationale and future-hardening plan.
-          # We therefore validate only the non-unsafe hardening directives.
+          # CSP hardening status (Issue #133):
+          #   - 'unsafe-eval' has been REMOVED from script-src (Part 2). The
+          #     production bundle was inspected and contains no eval()/Function()
+          #     calls; standard Vite + MUI/Emotion do not require it.
+          #   - 'unsafe-inline' is still permitted (style-src + script-src) and
+          #     will be removed when the nonce-injection pipeline lands
+          #     (Lambda@Edge + Emotion CacheProvider). Tracked in the Part 1
+          #     follow-up issue.
+          # We therefore validate the non-unsafe hardening directives plus the
+          # absence of 'unsafe-eval' as a regression guard.
 
           # Check that CSP contains baseline directives
           required_directives=("default-src" "script-src" "style-src" "connect-src")
@@ -323,7 +327,7 @@ jobs:
           done
 
           # Check that CSP contains additional hardening directives (retained
-          # from the Issue #63 pass even though 'unsafe-*' remains).
+          # from the Issue #63 pass even though 'unsafe-inline' remains).
           hardening_directives=(
             "object-src 'none'"
             "base-uri 'self'"
@@ -339,6 +343,15 @@ jobs:
               exit 1
             fi
           done
+
+          # Regression guard (Issue #133 Part 2): 'unsafe-eval' must NOT appear
+          # in the script-src directive of the deployed CSP.
+          if echo "$CSP" | grep -iF "'unsafe-eval'" > /dev/null; then
+            echo "❌ FAIL: CSP contains 'unsafe-eval' (regression — Issue #133 Part 2)"
+            exit 1
+          else
+            echo "✅ PASS: CSP does not contain 'unsafe-eval' (Issue #133 Part 2)"
+          fi
 
           echo ""
           echo "========================================="
