@@ -5,62 +5,60 @@
  * Tests the response error interceptor's ability to handle 401 errors
  * by refreshing tokens and retrying requests.
  *
+ * Mocking strategy:
+ *   We attach `axios-mock-adapter` directly to the apiClient INSTANCE
+ *   produced by `createApiClient()`. This intercepts every request that
+ *   goes through that instance, including the retry path inside the
+ *   response error interceptor. Module-level `axios.post`/`axios.get`
+ *   spies do not work for this purpose because the interceptor calls
+ *   `axios.post(...)` for `/auth/refresh` and `axios(originalRequest)`
+ *   for the retry — to keep these on the same mocked transport we also
+ *   attach a MockAdapter to the default `axios` module.
+ *
  * Key scenarios tested:
  * - Successful token refresh and request retry
- * - Concurrent request queuing during refresh
- * - Refresh failures and fallback behavior
- * - Edge cases and error conditions
- *
- * ----------------------------------------------------------------------
- * KNOWN ISSUE: All 9 refresh-flow tests in this file are currently
- * skipped. The root cause is a test-architecture mismatch:
- *
- *   vi.spyOn(axios, 'post' | 'get') patches the top-level axios module,
- *   but our apiClient is an axios INSTANCE created via axios.create().
- *   Calls on that instance (including the retry path in
- *   responseErrorInterceptor that re-invokes axios(originalRequest))
- *   do not flow through the spied module methods, so the mocked
- *   401 / refresh / retry sequence never fires as expected.
- *
- * Remediation — tracked in GitHub issue:
- *   https://github.com/leixiaoyu/lfmt-poc/issues/132
- *   [TEST] Rewrite api.refresh tests using axios-mock-adapter
- *
- *   Rewrite these tests to mock at the axios adapter level (e.g.,
- *   `axios-mock-adapter` or a manual adapter injected into the client),
- *   which intercepts requests regardless of whether they originate
- *   from the module or an instance. Once fixed, the per-file
- *   coverage bucket for src/utils/api.ts (currently 60-65% floor,
- *   sitting 3-5pp below actual coverage per the team-review safety
- *   margin) should ratchet back toward 95%+.
- * ----------------------------------------------------------------------
+ * - Concurrent request queuing during refresh (single refresh fan-out)
+ * - Refresh failures and fallback behavior (clear tokens)
+ * - Edge cases: missing refresh token, _retry guard, /auth/refresh URL
+ *   guard, non-401 passthrough
+ * - Error message formatting on refresh failure
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import axios from 'axios';
+import MockAdapter from 'axios-mock-adapter';
 import { createApiClient, setAuthToken } from '../api';
 import { AUTH_CONFIG } from '../../config/constants';
 
 describe('API Token Refresh Interceptor', () => {
   let apiClient: ReturnType<typeof createApiClient>;
+  let instanceMock: MockAdapter;
+  let moduleMock: MockAdapter;
 
   beforeEach(() => {
-    vi.clearAllMocks();
+    // Disable the dev-only mock-API interceptor (installed by createApiClient
+    // when VITE_MOCK_API='true', which is the default in .env.test). It would
+    // otherwise short-circuit /auth/* requests before they reach our adapter.
+    vi.stubEnv('VITE_MOCK_API', 'false');
     localStorage.clear();
     apiClient = createApiClient();
+    // Attach to the actual instance — this is what fixes the previous
+    // architecture mismatch where vi.spyOn(axios, 'post') never fired.
+    instanceMock = new MockAdapter(apiClient);
+    // The interceptor itself calls `axios.post('/auth/refresh', ...)` and
+    // `axios(originalRequest)` on the default module, so we mock that too.
+    moduleMock = new MockAdapter(axios);
   });
 
   afterEach(() => {
+    instanceMock.restore();
+    moduleMock.restore();
     localStorage.clear();
+    vi.unstubAllEnvs();
   });
 
   describe('Successful Token Refresh', () => {
-    // TODO(api-refresh-spy): Rewrite using axios adapter mocking.
-    // vi.spyOn(axios, 'post'|'get') patches the module, but apiClient
-    // is an axios.create() instance — spies never intercept its calls.
-    // See file-level comment for full context.
-    it.skip('should refresh token on 401 and retry original request', async () => {
-      // Setup: Store initial tokens
+    it('should refresh token on 401 and retry original request', async () => {
       const expiredToken = 'expired-token';
       const refreshToken = 'valid-refresh-token';
       const newAccessToken = 'new-access-token';
@@ -69,57 +67,42 @@ describe('API Token Refresh Interceptor', () => {
       setAuthToken(expiredToken);
       localStorage.setItem(AUTH_CONFIG.REFRESH_TOKEN_KEY, refreshToken);
 
-      // Mock: First request fails with 401
-      const mock401Response = {
-        response: {
-          status: 401,
-          data: { message: 'Token expired' },
-        },
-      };
+      // First call to /auth/me → 401, then retry succeeds.
+      instanceMock
+        .onGet('/auth/me')
+        .replyOnce(401, { message: 'Token expired' });
 
-      // Mock: Refresh request succeeds
-      const mockRefreshResponse = {
-        data: {
+      // The interceptor retries via `axios(originalRequest)` on the module,
+      // not the instance, so the retry hits the moduleMock.
+      moduleMock
+        .onPost(/\/auth\/refresh$/)
+        .replyOnce(200, {
           accessToken: newAccessToken,
           refreshToken: newRefreshToken,
-        },
-      };
+        });
 
-      // Mock: Retry succeeds with new token
-      const mockRetryResponse = {
-        data: { message: 'Success with new token' },
-      };
+      moduleMock
+        .onGet(/\/auth\/me$/)
+        .replyOnce(200, { message: 'Success with new token' });
 
-      // Setup axios mocks
-      const axiosPostSpy = vi.spyOn(axios, 'post');
-      const axiosGetSpy = vi.spyOn(axios, 'get');
-
-      // First GET fails with 401
-      axiosGetSpy.mockRejectedValueOnce(mock401Response);
-
-      // Refresh POST succeeds
-      axiosPostSpy.mockResolvedValueOnce(mockRefreshResponse);
-
-      // Retry GET succeeds
-      axiosGetSpy.mockResolvedValueOnce(mockRetryResponse);
-
-      // Execute: Make request that will trigger refresh
       const response = await apiClient.get('/auth/me');
 
-      // Assert: Refresh was called with correct token
-      expect(axiosPostSpy).toHaveBeenCalledWith(expect.stringContaining('/auth/refresh'), {
-        refreshToken,
-      });
+      // Refresh was called once with the stored refresh token.
+      const refreshCalls = moduleMock.history.post.filter((req) =>
+        (req.url ?? '').includes('/auth/refresh'),
+      );
+      expect(refreshCalls).toHaveLength(1);
+      expect(JSON.parse(refreshCalls[0].data)).toEqual({ refreshToken });
 
-      // Assert: New tokens were stored
+      // New tokens persisted.
       expect(localStorage.getItem(AUTH_CONFIG.ACCESS_TOKEN_KEY)).toBe(newAccessToken);
       expect(localStorage.getItem(AUTH_CONFIG.REFRESH_TOKEN_KEY)).toBe(newRefreshToken);
 
-      // Assert: Original request was retried and succeeded
-      expect(response.data.message).toBe('Success with new token');
+      // Retry succeeded.
+      expect(response.data).toEqual({ message: 'Success with new token' });
     });
 
-    it.skip('should queue concurrent requests during token refresh', async () => {
+    it('should queue concurrent requests during token refresh (single refresh fan-out)', async () => {
       const refreshToken = 'valid-refresh-token';
       const newAccessToken = 'new-access-token';
       const newRefreshToken = 'new-refresh-token';
@@ -127,226 +110,219 @@ describe('API Token Refresh Interceptor', () => {
       setAuthToken('expired-token');
       localStorage.setItem(AUTH_CONFIG.REFRESH_TOKEN_KEY, refreshToken);
 
-      const mock401 = {
-        response: { status: 401, data: {} },
-      };
+      // Each in-flight request gets its own 401.
+      instanceMock.onGet('/endpoint1').replyOnce(401, {});
+      instanceMock.onGet('/endpoint2').replyOnce(401, {});
+      instanceMock.onGet('/endpoint3').replyOnce(401, {});
 
-      const mockRefreshResponse = {
-        data: {
-          accessToken: newAccessToken,
-          refreshToken: newRefreshToken,
-        },
-      };
+      // Refresh: only one should fire even though three 401s land at once.
+      // We use replyOnce so a second refresh call would surface as
+      // "no handler" and reject.
+      moduleMock.onPost(/\/auth\/refresh$/).replyOnce(200, {
+        accessToken: newAccessToken,
+        refreshToken: newRefreshToken,
+      });
 
-      const axiosPostSpy = vi.spyOn(axios, 'post');
-      const axiosGetSpy = vi.spyOn(axios, 'get');
+      // Retries succeed via the module adapter.
+      moduleMock.onGet(/\/endpoint1$/).replyOnce(200, { result: 1 });
+      moduleMock.onGet(/\/endpoint2$/).replyOnce(200, { result: 2 });
+      moduleMock.onGet(/\/endpoint3$/).replyOnce(200, { result: 3 });
 
-      // All initial requests fail with 401
-      axiosGetSpy
-        .mockRejectedValueOnce(mock401)
-        .mockRejectedValueOnce(mock401)
-        .mockRejectedValueOnce(mock401);
-
-      // Refresh succeeds (should only be called once)
-      axiosPostSpy.mockResolvedValueOnce(mockRefreshResponse);
-
-      // Retries succeed
-      axiosGetSpy
-        .mockResolvedValueOnce({ data: { result: 1 } })
-        .mockResolvedValueOnce({ data: { result: 2 } })
-        .mockResolvedValueOnce({ data: { result: 3 } });
-
-      // Execute: Make 3 concurrent requests
-      const promises = [
+      const results = await Promise.all([
         apiClient.get('/endpoint1'),
         apiClient.get('/endpoint2'),
         apiClient.get('/endpoint3'),
-      ];
+      ]);
 
-      const results = await Promise.all(promises);
+      // Single refresh, despite three concurrent 401s.
+      const refreshCalls = moduleMock.history.post.filter((req) =>
+        (req.url ?? '').includes('/auth/refresh'),
+      );
+      expect(refreshCalls).toHaveLength(1);
 
-      // Assert: Refresh was only called once
-      expect(axiosPostSpy).toHaveBeenCalledTimes(1);
+      const resultValues = results.map((r) => r.data.result).sort();
+      expect(resultValues).toEqual([1, 2, 3]);
+    });
 
-      // Assert: All requests succeeded
-      expect(results[0].data.result).toBe(1);
-      expect(results[1].data.result).toBe(2);
-      expect(results[2].data.result).toBe(3);
+    it('should persist rotated refresh token after successful refresh', async () => {
+      const initialRefreshToken = 'initial-refresh-token';
+      const rotatedRefreshToken = 'rotated-refresh-token';
+      const newAccessToken = 'new-access-token';
+
+      setAuthToken('expired-token');
+      localStorage.setItem(AUTH_CONFIG.REFRESH_TOKEN_KEY, initialRefreshToken);
+
+      instanceMock.onGet('/auth/me').replyOnce(401, {});
+
+      moduleMock.onPost(/\/auth\/refresh$/).replyOnce(200, {
+        accessToken: newAccessToken,
+        refreshToken: rotatedRefreshToken,
+      });
+      moduleMock.onGet(/\/auth\/me$/).replyOnce(200, { ok: true });
+
+      await apiClient.get('/auth/me');
+
+      // Rotation: refresh token in storage replaced with the rotated value.
+      expect(localStorage.getItem(AUTH_CONFIG.REFRESH_TOKEN_KEY)).toBe(rotatedRefreshToken);
+      expect(localStorage.getItem(AUTH_CONFIG.REFRESH_TOKEN_KEY)).not.toBe(initialRefreshToken);
+      expect(localStorage.getItem(AUTH_CONFIG.ACCESS_TOKEN_KEY)).toBe(newAccessToken);
     });
   });
 
   describe('Refresh Failures', () => {
-    it.skip('should clear tokens and reject if refresh fails', async () => {
-      const expiredToken = 'expired-token';
-      const refreshToken = 'valid-refresh-token';
+    it('should clear tokens and reject if refresh fails', async () => {
+      setAuthToken('expired-token');
+      localStorage.setItem(AUTH_CONFIG.REFRESH_TOKEN_KEY, 'valid-refresh-token');
+      localStorage.setItem(AUTH_CONFIG.USER_DATA_KEY, JSON.stringify({ id: 'u1' }));
 
-      setAuthToken(expiredToken);
-      localStorage.setItem(AUTH_CONFIG.REFRESH_TOKEN_KEY, refreshToken);
+      instanceMock.onGet('/auth/me').replyOnce(401, {});
+      moduleMock
+        .onPost(/\/auth\/refresh$/)
+        .replyOnce(401, { message: 'Refresh token expired' });
 
-      const mock401 = {
-        response: { status: 401, data: {} },
-      };
-
-      const mockRefreshFailure = {
-        response: { status: 401, data: { message: 'Refresh token expired' } },
-      };
-
-      const axiosPostSpy = vi.spyOn(axios, 'post');
-      const axiosGetSpy = vi.spyOn(axios, 'get');
-
-      // Initial request fails
-      axiosGetSpy.mockRejectedValueOnce(mock401);
-
-      // Refresh fails
-      axiosPostSpy.mockRejectedValueOnce(mockRefreshFailure);
-
-      // Execute & Assert
       await expect(apiClient.get('/auth/me')).rejects.toMatchObject({
         message: expect.stringContaining('expired'),
         status: 401,
       });
 
-      // Assert: Tokens were cleared
+      // All three auth keys cleared by clearAuthToken().
       expect(localStorage.getItem(AUTH_CONFIG.ACCESS_TOKEN_KEY)).toBeNull();
       expect(localStorage.getItem(AUTH_CONFIG.REFRESH_TOKEN_KEY)).toBeNull();
+      expect(localStorage.getItem(AUTH_CONFIG.USER_DATA_KEY)).toBeNull();
     });
 
-    it.skip('should clear tokens immediately if no refresh token exists', async () => {
+    it('should clear tokens immediately if no refresh token exists', async () => {
       setAuthToken('expired-token');
-      // No refresh token in localStorage
+      // No refresh token stored.
 
-      const mock401 = {
-        response: { status: 401, data: {} },
-      };
+      instanceMock.onGet('/auth/me').replyOnce(401, {});
 
-      const axiosGetSpy = vi.spyOn(axios, 'get');
-      const axiosPostSpy = vi.spyOn(axios, 'post');
-
-      axiosGetSpy.mockRejectedValueOnce(mock401);
-
-      // Execute & Assert
       await expect(apiClient.get('/auth/me')).rejects.toMatchObject({
         status: 401,
       });
 
-      // Assert: Refresh was never called
-      expect(axiosPostSpy).not.toHaveBeenCalled();
+      // Refresh endpoint was never hit.
+      const refreshCalls = moduleMock.history.post.filter((req) =>
+        (req.url ?? '').includes('/auth/refresh'),
+      );
+      expect(refreshCalls).toHaveLength(0);
 
-      // Assert: Access token was cleared
       expect(localStorage.getItem(AUTH_CONFIG.ACCESS_TOKEN_KEY)).toBeNull();
+    });
+
+    it('should reject when refresh succeeds but the retried request fails', async () => {
+      setAuthToken('expired-token');
+      localStorage.setItem(AUTH_CONFIG.REFRESH_TOKEN_KEY, 'valid-refresh-token');
+
+      instanceMock.onGet('/auth/me').replyOnce(401, {});
+
+      moduleMock.onPost(/\/auth\/refresh$/).replyOnce(200, {
+        accessToken: 'new-access-token',
+        refreshToken: 'new-refresh-token',
+      });
+
+      // Retried request still fails (e.g., backend 500).
+      moduleMock.onGet(/\/auth\/me$/).replyOnce(500, { message: 'Server error' });
+
+      await expect(apiClient.get('/auth/me')).rejects.toBeDefined();
+
+      // Even though the retried request failed, refresh succeeded so the
+      // new tokens MUST be persisted (no spurious logout).
+      expect(localStorage.getItem(AUTH_CONFIG.ACCESS_TOKEN_KEY)).toBe('new-access-token');
+      expect(localStorage.getItem(AUTH_CONFIG.REFRESH_TOKEN_KEY)).toBe('new-refresh-token');
     });
   });
 
   describe('Edge Cases', () => {
-    it.skip('should not retry if request was already retried (_retry flag)', async () => {
+    it('should not retry if request was already retried (_retry flag)', async () => {
       setAuthToken('expired-token');
       localStorage.setItem(AUTH_CONFIG.REFRESH_TOKEN_KEY, 'refresh-token');
 
-      const mock401 = {
-        response: { status: 401, data: {} },
-        config: { _retry: true }, // Already retried
-      };
+      // Inject _retry=true into the outgoing config so the interceptor
+      // treats the 401 as a hard failure (no further refresh attempts).
+      instanceMock.onGet('/auth/me').replyOnce((config) => {
+        (config as unknown as { _retry?: boolean })._retry = true;
+        return [401, {}];
+      });
 
-      const axiosGetSpy = vi.spyOn(axios, 'get');
-      const axiosPostSpy = vi.spyOn(axios, 'post');
-
-      axiosGetSpy.mockRejectedValueOnce(mock401);
-
-      // Execute & Assert
       await expect(apiClient.get('/auth/me')).rejects.toMatchObject({
         status: 401,
       });
 
-      // Assert: Refresh was not attempted
-      expect(axiosPostSpy).not.toHaveBeenCalled();
+      // Refresh was not attempted.
+      const refreshCalls = moduleMock.history.post.filter((req) =>
+        (req.url ?? '').includes('/auth/refresh'),
+      );
+      expect(refreshCalls).toHaveLength(0);
 
-      // Assert: Tokens were cleared (fallback behavior)
+      // Tokens cleared as fallback.
       expect(localStorage.getItem(AUTH_CONFIG.ACCESS_TOKEN_KEY)).toBeNull();
     });
 
-    it.skip('should not refresh for /auth/refresh endpoint itself', async () => {
+    it('should not refresh for /auth/refresh endpoint itself (no infinite loop)', async () => {
       setAuthToken('some-token');
       localStorage.setItem(AUTH_CONFIG.REFRESH_TOKEN_KEY, 'refresh-token');
 
-      const mock401 = {
-        response: { status: 401, data: {} },
-        config: { url: '/auth/refresh' },
-      };
+      // A 401 returned BY the refresh endpoint must not trigger another
+      // refresh — it must immediately clear tokens and reject.
+      instanceMock.onPost('/auth/refresh').replyOnce(401, {});
 
-      const axiosPostSpy = vi.spyOn(axios, 'post');
+      await expect(
+        apiClient.post('/auth/refresh', { refreshToken: 'test' }),
+      ).rejects.toMatchObject({
+        status: 401,
+      });
 
-      axiosPostSpy.mockRejectedValueOnce(mock401);
-
-      // Execute & Assert: Should reject without attempting another refresh
-      await expect(apiClient.post('/auth/refresh', { refreshToken: 'test' })).rejects.toMatchObject(
-        {
-          status: 401,
-        }
+      // Only the one refresh post hit the instance; no fan-out via the module.
+      expect(instanceMock.history.post).toHaveLength(1);
+      const moduleRefreshCalls = moduleMock.history.post.filter((req) =>
+        (req.url ?? '').includes('/auth/refresh'),
       );
+      expect(moduleRefreshCalls).toHaveLength(0);
 
-      // Assert: Only the original refresh call was made, no retry
-      expect(axiosPostSpy).toHaveBeenCalledTimes(1);
+      // Tokens cleared.
+      expect(localStorage.getItem(AUTH_CONFIG.ACCESS_TOKEN_KEY)).toBeNull();
     });
 
-    it.skip('should handle non-401 errors normally without refresh', async () => {
+    it('should handle non-401 errors normally without refresh', async () => {
       setAuthToken('valid-token');
       localStorage.setItem(AUTH_CONFIG.REFRESH_TOKEN_KEY, 'refresh-token');
 
-      const mock500 = {
-        response: { status: 500, data: { message: 'Server error' } },
-      };
+      instanceMock.onGet('/some/endpoint').replyOnce(500, { message: 'Server error' });
 
-      const axiosGetSpy = vi.spyOn(axios, 'get');
-      const axiosPostSpy = vi.spyOn(axios, 'post');
-
-      axiosGetSpy.mockRejectedValueOnce(mock500);
-
-      // Execute & Assert
       await expect(apiClient.get('/some/endpoint')).rejects.toMatchObject({
         message: expect.any(String),
         status: 500,
       });
 
-      // Assert: Refresh was not attempted
-      expect(axiosPostSpy).not.toHaveBeenCalled();
+      // Refresh was not attempted.
+      const refreshCalls = moduleMock.history.post.filter((req) =>
+        (req.url ?? '').includes('/auth/refresh'),
+      );
+      expect(refreshCalls).toHaveLength(0);
 
-      // Assert: Tokens were NOT cleared
+      // Tokens preserved on non-auth errors.
       expect(localStorage.getItem(AUTH_CONFIG.ACCESS_TOKEN_KEY)).toBe('valid-token');
+      expect(localStorage.getItem(AUTH_CONFIG.REFRESH_TOKEN_KEY)).toBe('refresh-token');
     });
   });
 
   describe('Error Message Formatting', () => {
-    // TODO(api-refresh-spy): Same axios-spy architecture issue as the
-    // "Successful Token Refresh" suite above. Rewrite using axios
-    // adapter mocking. See file-level comment for full context.
-    it.skip('should preserve backend error messages in refresh failures', async () => {
+    it('should preserve SESSION_EXPIRED message in refresh failures', async () => {
       setAuthToken('expired-token');
       localStorage.setItem(AUTH_CONFIG.REFRESH_TOKEN_KEY, 'refresh-token');
 
-      const mock401 = {
-        response: { status: 401, data: {} },
-      };
+      instanceMock.onGet('/auth/me').replyOnce(401, {});
+      moduleMock
+        .onPost(/\/auth\/refresh$/)
+        .replyOnce(401, { message: 'Refresh token has been revoked' });
 
-      const mockRefreshError = {
-        response: {
-          status: 401,
-          data: { message: 'Refresh token has been revoked' },
-        },
-      };
-
-      const axiosGetSpy = vi.spyOn(axios, 'get');
-      const axiosPostSpy = vi.spyOn(axios, 'post');
-
-      axiosGetSpy.mockRejectedValueOnce(mock401);
-      axiosPostSpy.mockRejectedValueOnce(mockRefreshError);
-
-      // Execute & Assert
       await expect(apiClient.get('/auth/me')).rejects.toMatchObject({
         status: 401,
+        // The interceptor surfaces the SESSION_EXPIRED constant rather than
+        // the raw backend message — verify the contract.
+        message: expect.stringMatching(/expired/i),
       });
-
-      // Note: The exact error message depends on ERROR_MESSAGES.SESSION_EXPIRED
-      // We're just ensuring the error is properly formatted
     });
   });
 });
