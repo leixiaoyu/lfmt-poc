@@ -296,7 +296,257 @@ const authHandlers: HttpHandler[] = [
 ];
 
 // ---------------------------------------------------------------------------
+// Translation pipeline (Phase 3)
+// ---------------------------------------------------------------------------
+//
+// Endpoint inventory (all served against the wildcard pattern):
+//   POST /jobs/upload                             — presigned URL handoff
+//   PUT  /__mock-s3/:jobId                        — S3 PUT interceptor
+//   POST /jobs/:jobId/translate                   — kick off translation
+//   GET  /jobs/:jobId/translation-status          — poll progress
+//   GET  /jobs                                    — job history
+//   GET  /translation/:jobId/download             — download translated text
+//
+// All responses are wrapped in `{ data: T }` to match the existing
+// frontend contract (translationService.ts:175, 190, 203, 214 all
+// dereference `response.data.data`).
+//
+// On-demand simulation policy (Phase 4) lives inside the status
+// handler — there are NO setInterval/setTimeout calls. The status
+// handler computes progress from `translateStartedAt` (wall-clock)
+// or `statusPollCount` (instant mode). See computeProgress() below.
+//
+// Same-origin S3 mock: the upload handler returns a `uploadUrl` of
+// the form `${origin}/__mock-s3/<jobId>`, so the browser treats the
+// PUT as same-origin and the SW intercepts it. This is the only
+// way to mock S3 PUT — an axios interceptor cannot intercept the
+// raw `axios.put` call to a presigned URL on a different host.
+
+const SIMULATED_TRANSLATED_TEXT_MARKER = '[MOCK TRANSLATION COMPLETE]';
+
+/**
+ * Map an internal `JobState.status` to the deployed backend's
+ * `TranslationJob.status` enum (translationService.ts:20-28).
+ * The internal map uses lowercase for ergonomics; the wire format
+ * uses upper-snake-case.
+ */
+function toWireStatus(state: JobState): string {
+  switch (state.status) {
+    case 'uploaded':
+      return 'PENDING';
+    case 'translating':
+      return 'IN_PROGRESS';
+    case 'completed':
+      return 'COMPLETED';
+    case 'failed':
+      return 'FAILED';
+  }
+}
+
+/**
+ * Project the closure-scoped `JobState` to the wire shape the
+ * frontend expects (`TranslationJob` from translationService.ts:14-38).
+ */
+function toWireJob(state: JobState): Record<string, unknown> {
+  return {
+    jobId: state.jobId,
+    userId: 'mock-user-default',
+    fileName: state.fileName,
+    fileSize: 0,
+    contentType: 'text/plain',
+    status: toWireStatus(state),
+    targetLanguage: state.targetLang,
+    tone: 'neutral',
+    totalChunks: state.totalChunks,
+    completedChunks: state.completedChunks,
+    failedChunks: state.failedChunks,
+    createdAt: state.createdAt,
+    updatedAt: state.completedAt ?? state.createdAt,
+    completedAt: state.completedAt,
+  };
+}
+
+/**
+ * Estimate `totalChunks` from file size — mirrors the rough heuristic
+ * the real chunking engine uses (3.5K tokens per chunk ≈ 14KB text).
+ * Capped to a sensible demo range so the progress bar always animates.
+ */
+function estimateTotalChunks(fileSize: number): number {
+  if (!Number.isFinite(fileSize) || fileSize <= 0) return 4;
+  const estimated = Math.max(1, Math.round(fileSize / 14_000));
+  return Math.min(estimated, 50);
+}
+
+const translationHandlers: HttpHandler[] = [
+  // POST /jobs/upload — handles BOTH request shapes used today:
+  //   1. translationService.uploadDocument (translationService.ts:20-38)
+  //      → body: { fileName, fileSize, contentType, legalAttestation }
+  //   2. uploadService.requestUploadUrl (uploadService.ts:59,81)
+  //      → body: { fileName, fileSize, contentType }   (no legalAttestation)
+  // Both expect the same response envelope.
+  http.post(buildPath('/jobs/upload'), async ({ request }) => {
+    const body = (await request.json().catch(() => ({}))) as Record<
+      string,
+      unknown
+    >;
+    const fileName =
+      typeof body.fileName === 'string' ? body.fileName : 'mock-upload.txt';
+    const fileSize = typeof body.fileSize === 'number' ? body.fileSize : 0;
+    const jobId = uuid();
+    const now = new Date().toISOString();
+
+    jobs.set(jobId, {
+      jobId,
+      status: 'uploaded',
+      totalChunks: estimateTotalChunks(fileSize),
+      completedChunks: 0,
+      failedChunks: 0,
+      fileName,
+      sourceLang: 'auto',
+      targetLang: 'es',
+      createdAt: now,
+    });
+
+    // Build a same-origin presigned URL so the browser does NOT issue
+    // a CORS preflight on the PUT and the SW can intercept it
+    // regardless of transport (XHR / axios / fetch). We resolve the
+    // page origin from:
+    //   1. the `Origin` request header (set by the browser on cross-
+    //      origin XHR/fetch — most reliable in mock mode);
+    //   2. globalThis.location.origin (browser direct, e.g. when no
+    //      Origin header was sent);
+    //   3. `http://localhost:3000` (msw/node fallback for Vitest).
+    let pageOrigin = request.headers.get('origin');
+    if (!pageOrigin && typeof globalThis.location !== 'undefined') {
+      pageOrigin = globalThis.location.origin;
+    }
+    if (!pageOrigin) {
+      pageOrigin = 'http://localhost:3000';
+    }
+    const uploadUrl = `${pageOrigin}/__mock-s3/${jobId}`;
+
+    return HttpResponse.json(
+      {
+        data: {
+          uploadUrl,
+          fileId: jobId,
+          expiresIn: 900,
+          requiredHeaders: {
+            'Content-Type': 'text/plain',
+          },
+        },
+      },
+      { status: 200 }
+    );
+  }),
+
+  // PUT /__mock-s3/:jobId — the S3 PUT interceptor.
+  // Spike-validated: works for raw XHR (uploadService.ts), raw axios
+  // PUT (translationService.ts:137), and fetch.
+  http.put(buildPath('/__mock-s3/:jobId'), async ({ params }) => {
+    const jobId = String(params.jobId);
+    // We deliberately do NOT read the request body — for large files
+    // (50 MB cap) buffering the bytes wastes memory in the worker. S3
+    // returns an empty body with an ETag header; we do the same.
+    return new HttpResponse(null, {
+      status: 200,
+      headers: {
+        ETag: `"mock-etag-${jobId}"`,
+      },
+    });
+  }),
+
+  // POST /jobs/:jobId/translate — start translation.
+  http.post(
+    buildPath('/jobs/:jobId/translate'),
+    async ({ params, request }) => {
+      const jobId = String(params.jobId);
+      const job = jobs.get(jobId);
+      if (!job) {
+        return HttpResponse.json(
+          { message: 'Job not found' },
+          { status: 404 }
+        );
+      }
+      const body = (await request.json().catch(() => ({}))) as Record<
+        string,
+        unknown
+      >;
+      if (typeof body.targetLanguage === 'string') {
+        job.targetLang = body.targetLanguage;
+      }
+      job.status = 'translating';
+      job.translateStartedAt = Date.now();
+      job.statusPollCount = 0;
+      jobs.set(jobId, job);
+
+      return HttpResponse.json({ data: toWireJob(job) }, { status: 200 });
+    }
+  ),
+
+  // GET /jobs/:jobId/translation-status — on-demand simulation tick.
+  // Phase 4 will plug in the VITE_MOCK_SPEED branching; for now,
+  // every call advances completedChunks toward totalChunks at a
+  // generous default rate so the smoke test in this phase passes.
+  http.get(buildPath('/jobs/:jobId/translation-status'), ({ params }) => {
+    const jobId = String(params.jobId);
+    const job = jobs.get(jobId);
+    if (!job) {
+      return HttpResponse.json(
+        { message: 'Job not found' },
+        { status: 404 }
+      );
+    }
+    if (job.status === 'translating') {
+      // Default policy until Phase 4 lands the speed-profile branching.
+      const polls = (job.statusPollCount ?? 0) + 1;
+      job.statusPollCount = polls;
+      const target = Math.min(
+        job.totalChunks,
+        Math.ceil((polls / 4) * job.totalChunks)
+      );
+      job.completedChunks = target;
+      if (job.completedChunks >= job.totalChunks) {
+        job.status = 'completed';
+        job.completedAt = new Date().toISOString();
+      }
+      jobs.set(jobId, job);
+    }
+    return HttpResponse.json({ data: toWireJob(job) }, { status: 200 });
+  }),
+
+  // GET /jobs — list all jobs in the in-memory store.
+  http.get(buildPath('/jobs'), () => {
+    const list = Array.from(jobs.values()).map(toWireJob);
+    return HttpResponse.json({ data: list }, { status: 200 });
+  }),
+
+  // GET /translation/:jobId/download — return simulated translated text.
+  // The frontend's translationService.downloadTranslation requests
+  // `responseType: 'blob'`. MSW returns a body with the right
+  // Content-Type and axios will produce a Blob in the browser.
+  http.get(buildPath('/translation/:jobId/download'), ({ params }) => {
+    const jobId = String(params.jobId);
+    const job = jobs.get(jobId);
+    if (!job) {
+      return HttpResponse.json(
+        { message: 'Job not found' },
+        { status: 404 }
+      );
+    }
+    const body = `Translated content for ${job.fileName} (target: ${job.targetLang}).\n\n${SIMULATED_TRANSLATED_TEXT_MARKER}\n`;
+    return new HttpResponse(body, {
+      status: 200,
+      headers: {
+        'Content-Type': 'text/plain; charset=utf-8',
+        'Content-Disposition': `attachment; filename="${job.fileName}.translated.txt"`,
+      },
+    });
+  }),
+];
+
+// ---------------------------------------------------------------------------
 // Public handlers list (consumed by browser.ts and server.ts)
 // ---------------------------------------------------------------------------
 
-export const handlers: HttpHandler[] = [...authHandlers];
+export const handlers: HttpHandler[] = [...authHandlers, ...translationHandlers];
