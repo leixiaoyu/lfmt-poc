@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 /**
  * Upload Service Tests
  *
@@ -146,7 +145,17 @@ describe('uploadService', () => {
         statusText: 'OK',
       };
 
-      (globalThis as any).XMLHttpRequest = vi.fn(() => mockXHR);
+      // Use defineProperty rather than direct assignment because the
+      // global MSW (`msw/node`) server installed in setupTests.ts
+      // makes `globalThis.XMLHttpRequest` non-writable via
+      // `@mswjs/interceptors`. defineProperty with `configurable: true`
+      // re-establishes the stub for each test without fighting the
+      // interceptor.
+      Object.defineProperty(globalThis, 'XMLHttpRequest', {
+        value: vi.fn(() => mockXHR),
+        configurable: true,
+        writable: true,
+      });
     });
 
     it('should upload file to S3 with required headers', async () => {
@@ -295,7 +304,17 @@ describe('uploadService', () => {
         statusText: 'OK',
       };
 
-      (globalThis as any).XMLHttpRequest = vi.fn(() => mockXHR);
+      // Use defineProperty rather than direct assignment because the
+      // global MSW (`msw/node`) server installed in setupTests.ts
+      // makes `globalThis.XMLHttpRequest` non-writable via
+      // `@mswjs/interceptors`. defineProperty with `configurable: true`
+      // re-establishes the stub for each test without fighting the
+      // interceptor.
+      Object.defineProperty(globalThis, 'XMLHttpRequest', {
+        value: vi.fn(() => mockXHR),
+        configurable: true,
+        writable: true,
+      });
     });
 
     it('should complete full upload workflow', async () => {

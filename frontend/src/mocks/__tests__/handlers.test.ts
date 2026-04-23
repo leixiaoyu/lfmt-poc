@@ -12,25 +12,21 @@
  * wall-clock realistic / slow modes).
  */
 
-import { describe, expect, it, beforeAll, afterAll, beforeEach } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import axios from 'axios';
-import { server } from '../server';
 import {
-  resetState,
   computeProgress,
   classifyReservedFilename,
+  resetState,
   type JobState,
   type MockSpeed,
 } from '../handlers';
 
-const API_URL = 'https://example.com/v1';
+// Server lifecycle (listen / resetHandlers / resetState / close) lives
+// in `frontend/src/setupTests.ts` per design Decision 2 — shared
+// across all Vitest contexts.
 
-beforeAll(() => server.listen({ onUnhandledRequest: 'error' }));
-afterAll(() => server.close());
-beforeEach(() => {
-  server.resetHandlers();
-  resetState();
-});
+const API_URL = 'https://example.com/v1';
 
 describe('computeProgress (simulation policy)', () => {
   function buildJob(overrides: Partial<JobState> = {}): JobState {
