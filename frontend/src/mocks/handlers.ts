@@ -324,6 +324,86 @@ const authHandlers: HttpHandler[] = [
 
 const SIMULATED_TRANSLATED_TEXT_MARKER = '[MOCK TRANSLATION COMPLETE]';
 
+// ---------------------------------------------------------------------------
+// VITE_MOCK_SPEED branching (per design Decision 4)
+// ---------------------------------------------------------------------------
+//
+// Three speed profiles, selected by env var at module load:
+//
+//   instant   — Default for Vitest. Status handler advances
+//               completedChunks by 25% per call (4 polls to 100%).
+//               No wall-clock dependency; deterministic.
+//   realistic — Default for `npm run dev`. Wall-clock, ~10s end-to-end.
+//   slow      — Demo rehearsal cadence. Wall-clock, ~60s end-to-end.
+//               Also force-triggered by reserved filename
+//               `__lfmt_mock_slow__.txt` (Phase 5).
+//
+// Background timers are explicitly NOT used. setInterval/setTimeout
+// would leak across Vitest tests and Playwright workers; tick on-demand
+// inside the status handler instead. See spec Decision 4.
+
+export type MockSpeed = 'instant' | 'realistic' | 'slow';
+
+const REALISTIC_WINDOW_MS = 10_000;
+const SLOW_WINDOW_MS = 60_000;
+
+function readMockSpeed(): MockSpeed {
+  // import.meta.env.VITE_MOCK_SPEED is read once at module load. In
+  // Node (msw/node), import.meta.env is shimmed by Vitest from
+  // process.env / .env.test.
+  const raw =
+    typeof import.meta !== 'undefined'
+      ? (import.meta.env?.VITE_MOCK_SPEED as string | undefined)
+      : undefined;
+  if (raw === 'realistic' || raw === 'slow' || raw === 'instant') {
+    return raw;
+  }
+  // Default: instant in Vitest (jsdom), realistic in browser dev.
+  // We detect Vitest via the boolean env it sets (`VITEST`).
+  if (typeof import.meta !== 'undefined' && import.meta.env?.VITEST) {
+    return 'instant';
+  }
+  return 'realistic';
+}
+
+const mockSpeed: MockSpeed = readMockSpeed();
+
+/**
+ * Compute the next `completedChunks` value for a translating job
+ * given the current speed profile. Deterministic in `instant` mode
+ * (request-count-driven), wall-clock in `realistic` and `slow`.
+ *
+ * Exported for use by the status handler AND Vitest tests so the
+ * simulation policy has one tested implementation.
+ */
+export function computeProgress(
+  job: JobState,
+  now: number,
+  speed: MockSpeed = mockSpeed
+): { completedChunks: number; isComplete: boolean } {
+  if (job.status !== 'translating') {
+    const isComplete = job.completedChunks >= job.totalChunks;
+    return { completedChunks: job.completedChunks, isComplete };
+  }
+
+  let fraction = 0;
+  if (speed === 'instant') {
+    // statusPollCount is incremented BY THE HANDLER before this call
+    // — we read it as-is here. 1st poll → 25%, 4th poll → 100%.
+    const polls = job.statusPollCount ?? 0;
+    fraction = Math.min(1, polls / 4);
+  } else {
+    const windowMs = speed === 'slow' ? SLOW_WINDOW_MS : REALISTIC_WINDOW_MS;
+    const elapsed = now - (job.translateStartedAt ?? now);
+    fraction = Math.min(1, elapsed / windowMs);
+  }
+  const target = Math.min(
+    job.totalChunks,
+    Math.ceil(fraction * job.totalChunks)
+  );
+  return { completedChunks: target, isComplete: target >= job.totalChunks };
+}
+
 /**
  * Map an internal `JobState.status` to the deployed backend's
  * `TranslationJob.status` enum (translationService.ts:20-28).
@@ -485,9 +565,8 @@ const translationHandlers: HttpHandler[] = [
   ),
 
   // GET /jobs/:jobId/translation-status — on-demand simulation tick.
-  // Phase 4 will plug in the VITE_MOCK_SPEED branching; for now,
-  // every call advances completedChunks toward totalChunks at a
-  // generous default rate so the smoke test in this phase passes.
+  // The progression policy is delegated to computeProgress() which
+  // branches on VITE_MOCK_SPEED. NO setInterval/setTimeout here.
   http.get(buildPath('/jobs/:jobId/translation-status'), ({ params }) => {
     const jobId = String(params.jobId);
     const job = jobs.get(jobId);
@@ -498,15 +577,13 @@ const translationHandlers: HttpHandler[] = [
       );
     }
     if (job.status === 'translating') {
-      // Default policy until Phase 4 lands the speed-profile branching.
-      const polls = (job.statusPollCount ?? 0) + 1;
-      job.statusPollCount = polls;
-      const target = Math.min(
-        job.totalChunks,
-        Math.ceil((polls / 4) * job.totalChunks)
+      job.statusPollCount = (job.statusPollCount ?? 0) + 1;
+      const { completedChunks, isComplete } = computeProgress(
+        job,
+        Date.now()
       );
-      job.completedChunks = target;
-      if (job.completedChunks >= job.totalChunks) {
+      job.completedChunks = completedChunks;
+      if (isComplete) {
         job.status = 'completed';
         job.completedAt = new Date().toISOString();
       }
