@@ -421,6 +421,31 @@ describe('LFMT Infrastructure Stack', () => {
       );
     });
 
+    test('Upload Lambda role can PutItem on the AttestationsTable (OpenSpec 3.8.0)', () => {
+      // Validates OWASP A09 (Security Logging & Monitoring Failures) closure:
+      // the upload-request Lambda MUST be able to write attestation records
+      // before issuing a presigned URL. The UploadDynamoDBPolicy explicitly
+      // grants PutItem on both the jobs table and the attestations table.
+      template.hasResourceProperties('AWS::IAM::ManagedPolicy', {
+        PolicyDocument: {
+          Statement: Match.arrayWith([
+            Match.objectLike({
+              Effect: 'Allow',
+              Action: Match.arrayWith(['dynamodb:PutItem']),
+              Resource: Match.arrayWith([
+                // The attestations table ARN appears as a Fn::GetAtt reference.
+                Match.objectLike({
+                  'Fn::GetAtt': Match.arrayWith([
+                    Match.stringLikeRegexp('^AttestationsTable'),
+                  ]),
+                }),
+              ]),
+            }),
+          ]),
+        },
+      });
+    });
+
     test('No dynamodb:Scan in any IAM policy', () => {
       // Security verification: Ensure dangerous DynamoDB Scan action is not granted
       // This prevents expensive table scans and enforces query-based access patterns

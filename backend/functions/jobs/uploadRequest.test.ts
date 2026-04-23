@@ -13,6 +13,7 @@
 // Mock environment variables BEFORE importing handler
 process.env.DOCUMENT_BUCKET = 'test-document-bucket';
 process.env.JOBS_TABLE = 'test-jobs-table';
+process.env.ATTESTATIONS_TABLE_NAME = 'test-attestations-table';
 
 import { APIGatewayProxyEvent } from 'aws-lambda';
 import { mockClient } from 'aws-sdk-client-mock';
@@ -52,8 +53,24 @@ describe('uploadRequest Lambda Function - Comprehensive Coverage', () => {
     jest.clearAllMocks();
   });
 
+  // Default legal attestation block injected into every test request unless
+  // the test explicitly sets `legalAttestation` (including `null` to omit).
+  // Required after OpenSpec task 3.8.0 — uploads without consent are rejected.
+  const DEFAULT_ATTESTATION = {
+    acceptCopyrightOwnership: true,
+    acceptTranslationRights: true,
+    acceptLiabilityTerms: true,
+    userIPAddress: '127.0.0.1',
+    userAgent: 'jest-test',
+    timestamp: '2024-01-01T00:00:00.000Z',
+  };
+
   const createMockEvent = (body: any, userId = 'test-user-123'): APIGatewayProxyEvent => ({
-    body: JSON.stringify(body),
+    body: JSON.stringify(
+      'legalAttestation' in (body || {})
+        ? body
+        : { ...body, legalAttestation: DEFAULT_ATTESTATION }
+    ),
     headers: {},
     multiValueHeaders: {},
     httpMethod: 'POST',
@@ -126,9 +143,13 @@ describe('uploadRequest Lambda Function - Comprehensive Coverage', () => {
         'Content-Length': '50000',
       });
 
-      // Verify DynamoDB put was called
-      expect(dynamoMock.calls()).toHaveLength(1);
+      // Verify DynamoDB put was called twice — once for the legal-attestation
+      // record (OpenSpec 3.8.0), then once for the jobs record.
+      expect(dynamoMock.calls()).toHaveLength(2);
       expect((dynamoMock.call(0).args[0].input as PutItemCommandInput).TableName).toBe(
+        'test-attestations-table'
+      );
+      expect((dynamoMock.call(1).args[0].input as PutItemCommandInput).TableName).toBe(
         'test-jobs-table'
       );
     });
@@ -144,7 +165,8 @@ describe('uploadRequest Lambda Function - Comprehensive Coverage', () => {
 
       await handler(event);
 
-      const putCall = dynamoMock.call(0).args[0];
+      // call(0) is the attestation write; call(1) is the jobs PutItem.
+      const putCall = dynamoMock.call(1).args[0];
       const item = (putCall.input as PutItemCommandInput).Item!;
 
       // Verify all required fields in job record
@@ -178,7 +200,8 @@ describe('uploadRequest Lambda Function - Comprehensive Coverage', () => {
 
       await handler(event);
 
-      const putCall = dynamoMock.call(0).args[0];
+      // call(0) is the attestation write; call(1) is the jobs PutItem.
+      const putCall = dynamoMock.call(1).args[0];
       const s3Key = (putCall.input as PutItemCommandInput).Item!.s3Key!.S;
 
       expect(s3Key).toMatch(new RegExp(`^uploads/${userId}/[a-f0-9-]+/my-document\\.txt$`));
@@ -198,7 +221,8 @@ describe('uploadRequest Lambda Function - Comprehensive Coverage', () => {
       await handler(event);
 
       const afterRequest = Date.now();
-      const putCall = dynamoMock.call(0).args[0];
+      // call(0) is the attestation write; call(1) is the jobs PutItem.
+      const putCall = dynamoMock.call(1).args[0];
       const expiresAt = new Date(
         (putCall.input as PutItemCommandInput).Item!.expiresAt!.S!
       ).getTime();
@@ -567,8 +591,16 @@ describe('uploadRequest Lambda Function - Comprehensive Coverage', () => {
   });
 
   describe('DynamoDB Integration', () => {
-    it('should handle DynamoDB network errors gracefully', async () => {
-      dynamoMock.on(PutItemCommand).rejects(new Error('Network error'));
+    it('should handle DynamoDB network errors gracefully on the jobs PutItem', async () => {
+      // Attestation write succeeds; only the jobs PutItem fails.
+      let callCount = 0;
+      dynamoMock.on(PutItemCommand).callsFake(() => {
+        callCount += 1;
+        if (callCount === 1) {
+          return Promise.resolve({});
+        }
+        return Promise.reject(new Error('Network error'));
+      });
 
       const event = createMockEvent({
         fileName: 'document.txt',
@@ -613,7 +645,8 @@ describe('uploadRequest Lambda Function - Comprehensive Coverage', () => {
 
       await handler(event);
 
-      const putCall = dynamoMock.call(0).args[0];
+      // call(0) is the attestation PutItem; jobs PutItem is call(1).
+      const putCall = dynamoMock.call(1).args[0];
       expect((putCall.input as PutItemCommandInput).ConditionExpression).toBe(
         'attribute_not_exists(jobId)'
       );
@@ -630,8 +663,8 @@ describe('uploadRequest Lambda Function - Comprehensive Coverage', () => {
 
       await handler(event);
 
-      // Item should not contain any undefined values
-      const putCall = dynamoMock.call(0).args[0];
+      // Item should not contain any undefined values (jobs PutItem is call(1)).
+      const putCall = dynamoMock.call(1).args[0];
       const itemString = JSON.stringify((putCall.input as PutItemCommandInput).Item);
       expect(itemString).not.toContain('undefined');
     });
@@ -639,6 +672,8 @@ describe('uploadRequest Lambda Function - Comprehensive Coverage', () => {
 
   describe('S3 Integration', () => {
     it('should handle S3 getSignedUrl failures', async () => {
+      // Attestation write succeeds; only the S3 presign step fails.
+      dynamoMock.on(PutItemCommand).resolves({});
       mockGetSignedUrl.mockRejectedValueOnce(new Error('S3 error'));
 
       const event = createMockEvent({
@@ -651,8 +686,15 @@ describe('uploadRequest Lambda Function - Comprehensive Coverage', () => {
 
       expect(result.statusCode).toBe(500);
 
-      // DynamoDB should not be called if S3 fails
-      expect(dynamoMock.calls()).toHaveLength(0);
+      // The attestation write happens BEFORE the S3 presign — the audit
+      // record is required even if the upload itself never proceeds, so
+      // we expect exactly one DynamoDB write (attestations table) and no
+      // jobs-table write.
+      const calls = dynamoMock.calls();
+      expect(calls).toHaveLength(1);
+      expect((calls[0].args[0].input as PutItemCommandInput).TableName).toBe(
+        'test-attestations-table'
+      );
     });
   });
 
@@ -781,8 +823,16 @@ describe('uploadRequest Lambda Function - Comprehensive Coverage', () => {
 
       await Promise.all(events.map(handler));
 
-      const jobId1 = (dynamoMock.call(0).args[0].input as PutItemCommandInput).Item!.jobId!.S;
-      const jobId2 = (dynamoMock.call(1).args[0].input as PutItemCommandInput).Item!.jobId!.S;
+      // Filter to jobs PutItem calls only — attestation writes interleave.
+      const jobsCalls = dynamoMock
+        .calls()
+        .filter(
+          (c) =>
+            (c.args[0].input as PutItemCommandInput).TableName === 'test-jobs-table'
+        );
+      expect(jobsCalls).toHaveLength(2);
+      const jobId1 = (jobsCalls[0].args[0].input as PutItemCommandInput).Item!.jobId!.S;
+      const jobId2 = (jobsCalls[1].args[0].input as PutItemCommandInput).Item!.jobId!.S;
 
       expect(jobId1).not.toBe(jobId2);
     });
@@ -821,8 +871,16 @@ describe('uploadRequest Lambda Function - Comprehensive Coverage', () => {
       await handler(event1);
       await handler(event2);
 
-      const s3Key1 = (dynamoMock.call(0).args[0].input as PutItemCommandInput).Item!.s3Key!.S;
-      const s3Key2 = (dynamoMock.call(1).args[0].input as PutItemCommandInput).Item!.s3Key!.S;
+      // Filter to jobs PutItem calls only — attestation writes interleave.
+      const jobsCalls = dynamoMock
+        .calls()
+        .filter(
+          (c) =>
+            (c.args[0].input as PutItemCommandInput).TableName === 'test-jobs-table'
+        );
+      expect(jobsCalls).toHaveLength(2);
+      const s3Key1 = (jobsCalls[0].args[0].input as PutItemCommandInput).Item!.s3Key!.S;
+      const s3Key2 = (jobsCalls[1].args[0].input as PutItemCommandInput).Item!.s3Key!.S;
 
       expect(s3Key1).toContain(userId1);
       expect(s3Key2).toContain(userId2);
@@ -910,6 +968,149 @@ describe('uploadRequest Lambda Function - Comprehensive Coverage', () => {
       });
 
       await handler(event);
+    });
+  });
+
+  // =================================================================
+  // Legal Attestation Write-Path (OpenSpec task 3.8.0 — OWASP A09)
+  // =================================================================
+  describe('Legal Attestation Write-Path', () => {
+    it('persists an attestation record to AttestationsTable with all required fields', async () => {
+      dynamoMock.on(PutItemCommand).resolves({});
+
+      const event = createMockEvent({
+        fileName: 'doc.txt',
+        fileSize: 50000,
+        contentType: 'text/plain',
+      });
+
+      const result = await handler(event);
+      expect(result.statusCode).toBe(200);
+
+      const calls = dynamoMock.calls();
+      // First DDB call must hit the attestations table.
+      expect(calls).toHaveLength(2);
+      const attestCall = calls[0].args[0].input as PutItemCommandInput;
+      expect(attestCall.TableName).toBe('test-attestations-table');
+      expect(attestCall.Item!.attestationId!.S).toMatch(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
+      );
+      expect(attestCall.Item!.userId!.S).toBe('test-user-123');
+      expect(attestCall.Item!.documentHash!.S).toMatch(/^[a-f0-9]{64}$/);
+      expect(attestCall.Item!.attestationVersion!.S).toBeDefined();
+      expect(attestCall.Item!.ipAddress!.S).toBe('127.0.0.1');
+      expect(attestCall.Item!.userAgent!.S).toBeDefined();
+      expect(attestCall.Item!.acceptedAt!.S).toBeDefined();
+      expect(attestCall.Item!.ttl!.N).toBeDefined();
+      expect(attestCall.Item!.acceptedClauses!.M!.acceptCopyrightOwnership!.BOOL).toBe(true);
+      expect(attestCall.Item!.acceptedClauses!.M!.acceptTranslationRights!.BOOL).toBe(true);
+      expect(attestCall.Item!.acceptedClauses!.M!.acceptLiabilityTerms!.BOOL).toBe(true);
+    });
+
+    it('rejects upload with 400 when legalAttestation block is omitted', async () => {
+      dynamoMock.on(PutItemCommand).resolves({});
+
+      // Explicit null suppresses the auto-injected default in createMockEvent.
+      const event = createMockEvent({
+        fileName: 'doc.txt',
+        fileSize: 50000,
+        contentType: 'text/plain',
+        legalAttestation: null,
+      });
+
+      const result = await handler(event);
+      expect(result.statusCode).toBe(400);
+      const body = JSON.parse(result.body);
+      expect(body.message).toMatch(/Legal attestation is required/i);
+      // No DynamoDB writes when attestation validation fails.
+      expect(dynamoMock.calls()).toHaveLength(0);
+    });
+
+    it('rejects upload with 400 when any required clause is false', async () => {
+      const event = createMockEvent({
+        fileName: 'doc.txt',
+        fileSize: 50000,
+        contentType: 'text/plain',
+        legalAttestation: {
+          acceptCopyrightOwnership: true,
+          acceptTranslationRights: false, // user did not accept this clause
+          acceptLiabilityTerms: true,
+        },
+      });
+
+      const result = await handler(event);
+      expect(result.statusCode).toBe(400);
+      expect(dynamoMock.calls()).toHaveLength(0);
+    });
+
+    it('returns 500 AttestationPersistFailure when DynamoDB write fails (no silent drop)', async () => {
+      // Attestation PutItem fails; jobs PutItem would succeed if reached.
+      let callCount = 0;
+      dynamoMock.on(PutItemCommand).callsFake(() => {
+        callCount += 1;
+        if (callCount === 1) {
+          return Promise.reject(new Error('AccessDenied'));
+        }
+        return Promise.resolve({});
+      });
+
+      const event = createMockEvent({
+        fileName: 'doc.txt',
+        fileSize: 50000,
+        contentType: 'text/plain',
+      });
+
+      const result = await handler(event);
+      expect(result.statusCode).toBe(500);
+      const body = JSON.parse(result.body);
+      expect(body.message).toMatch(/AttestationPersistFailure/);
+
+      // Critically: the handler must NOT proceed to issue a presigned URL
+      // or write the jobs record after attestation failure.
+      expect(mockGetSignedUrl).not.toHaveBeenCalled();
+      const jobsCalls = dynamoMock
+        .calls()
+        .filter(
+          (c) =>
+            (c.args[0].input as PutItemCommandInput).TableName === 'test-jobs-table'
+        );
+      expect(jobsCalls).toHaveLength(0);
+    });
+
+    it('captures sourceIp and User-Agent from the API Gateway event', async () => {
+      dynamoMock.on(PutItemCommand).resolves({});
+
+      const event = createMockEvent({
+        fileName: 'doc.txt',
+        fileSize: 50000,
+        contentType: 'text/plain',
+      });
+      event.requestContext.identity.sourceIp = '203.0.113.42';
+      event.headers['User-Agent'] = 'Mozilla/5.0 (Test Browser)';
+
+      const result = await handler(event);
+      expect(result.statusCode).toBe(200);
+
+      const attestCall = dynamoMock.call(0).args[0].input as PutItemCommandInput;
+      expect(attestCall.Item!.ipAddress!.S).toBe('203.0.113.42');
+      expect(attestCall.Item!.userAgent!.S).toBe('Mozilla/5.0 (Test Browser)');
+    });
+
+    it('uses the lowercase user-agent header when User-Agent is absent', async () => {
+      dynamoMock.on(PutItemCommand).resolves({});
+
+      const event = createMockEvent({
+        fileName: 'doc.txt',
+        fileSize: 50000,
+        contentType: 'text/plain',
+      });
+      event.headers['user-agent'] = 'curl/8.0';
+
+      const result = await handler(event);
+      expect(result.statusCode).toBe(200);
+
+      const attestCall = dynamoMock.call(0).args[0].input as PutItemCommandInput;
+      expect(attestCall.Item!.userAgent!.S).toBe('curl/8.0');
     });
   });
 });

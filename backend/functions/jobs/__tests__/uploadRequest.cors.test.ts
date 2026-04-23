@@ -10,7 +10,8 @@
 // Set required environment variables BEFORE imports
 process.env.DOCUMENT_BUCKET = 'test-bucket';
 process.env.JOBS_TABLE = 'test-jobs-table';
-process.env.ATTESTATIONS_TABLE = 'test-attestations-table';
+// Required by attestationWriter (OpenSpec task 3.8.0).
+process.env.ATTESTATIONS_TABLE_NAME = 'test-attestations-table';
 process.env.ALLOWED_ORIGINS =
   'http://localhost:3000,https://localhost:3000,https://d39xcun7144jgl.cloudfront.net,https://staging.lfmt.yourcompany.com';
 

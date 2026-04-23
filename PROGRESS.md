@@ -277,12 +277,17 @@ The LFMT POC has completed **Phases 1-9** (foundation through translation UI dep
 
 ### Pre-Production Blockers
 
-#### Pre-Production Blocker: Legal Attestation Write Path
+_None open. See "Recently Resolved" below._
 
-- **Impact**: Frontend collects user consent for legal attestation but no Lambda persists the data to the provisioned `AttestationsTable`. Consent is silently dropped, creating a potential compliance gap (OWASP A09 — Security Logging & Monitoring Failures) and audit-trail failure.
-- **Status**: Table provisioned (`backend/infrastructure/lib/lfmt-infrastructure-stack.ts:188`), frontend UI exists (`frontend/src/components/translation/LegalAttestation.tsx`), integration tests pass `legalAttestation` payloads — but no production write path.
-- **Required before launch**: Wire the write path in the upload / startTranslation flow so consent data is persisted with the job record (user identity, document hash, IP, timestamp, attestation version).
-- **Severity**: HIGH — do not deploy to production users without this.
+#### Recently Resolved: Legal Attestation Write Path ✅ RESOLVED
+
+- **Was**: Frontend collected user consent for legal attestation but no Lambda persisted the data to the provisioned `AttestationsTable`. Consent was silently dropped — OWASP A09 (Security Logging & Monitoring Failures).
+- **Resolution** (`feat/legal-attestation-write-path`, OpenSpec task 3.8.0):
+  - New `LegalAttestationRecord` schema in `shared-types/src/legal.ts` (Zod-validated).
+  - New helper `backend/functions/shared/attestationWriter.ts` (`buildAttestationRecord`, `writeAttestation`, `AttestationWriteError`).
+  - Wired into `backend/functions/jobs/uploadRequest.ts`: persists every consent BEFORE issuing the presigned URL; on persistence failure returns `500 AttestationPersistFailure` and aborts upload.
+  - Tests: 23 new tests across shared-types + functions; CDK IAM-assertion test verifies `dynamodb:PutItem` grant. All suites green.
+- **Outstanding follow-up** (P2, not a blocker): CloudWatch alarm on `AttestationsTable` write errors.
 
 ### Active Risks
 
