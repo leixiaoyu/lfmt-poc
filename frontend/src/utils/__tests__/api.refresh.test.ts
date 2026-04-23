@@ -36,10 +36,6 @@ describe('API Token Refresh Interceptor', () => {
   let moduleMock: MockAdapter;
 
   beforeEach(() => {
-    // Disable the dev-only mock-API interceptor (installed by createApiClient
-    // when VITE_MOCK_API='true', which is the default in .env.test). It would
-    // otherwise short-circuit /auth/* requests before they reach our adapter.
-    vi.stubEnv('VITE_MOCK_API', 'false');
     localStorage.clear();
     apiClient = createApiClient();
     // Attach to the actual instance — this is what fixes the previous

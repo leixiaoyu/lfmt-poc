@@ -15,8 +15,10 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Routes, Route } from 'react-router-dom';
+import { http, HttpResponse, delay } from 'msw';
 import RegisterPage from '../RegisterPage';
 import { AuthProvider } from '../../contexts/AuthContext';
+import { server } from '../../mocks/server';
 
 // Mock dashboard component - matches actual Dashboard structure
 function MockDashboard() {
@@ -190,6 +192,29 @@ describe('RegisterPage - Integration Tests', () => {
 
   describe('Loading States', () => {
     it('should show loading state during registration', async () => {
+      // Override the default MSW register handler with a delayed response
+      // so the loading state is observable. The default handler resolves
+      // synchronously (per spec — VITE_MOCK_SPEED governs simulation
+      // ticking, not handler latency), which would race the assertion.
+      server.use(
+        http.post(/\/auth\/register$/, async () => {
+          await delay(100);
+          return HttpResponse.json(
+            {
+              user: {
+                id: 'mock-user-loading',
+                email: 'loading@test.com',
+                firstName: 'Loading',
+                lastName: 'Test',
+              },
+              accessToken: 'mock-access-token',
+              refreshToken: 'mock-refresh-token',
+            },
+            { status: 200 }
+          );
+        })
+      );
+
       const user = userEvent.setup();
       renderWithAppContext();
 

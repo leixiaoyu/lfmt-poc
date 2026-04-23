@@ -12,11 +12,15 @@ expect.extend(matchers);
 // strategy), Vitest unit / component / integration tests share the
 // same handler module the browser SW uses. The contract cannot drift.
 //
-// `onUnhandledRequest: 'bypass'` is intentional during the transition
-// window (Phases 6 and 7): the legacy `mockApi.test.ts` is still
-// present and emits requests to `https://api.example.com/api/*` that
-// the SW does not handle. Phase 8 deletes `mockApi.ts` AND
-// `mockApi.test.ts` atomically and switches this to `'error'`.
+// `onUnhandledRequest: 'bypass'` lets the existing axios-mock-adapter
+// unit tests (e.g., src/utils/__tests__/api.refresh.test.ts — PR #135
+// pattern) coexist: MockAdapter installs directly on the axios
+// instance/adapter and short-circuits before MSW can see the request,
+// but residual non-MSW requests in unit tests must not throw — strict
+// `'error'` would break tests that mix transports. Component and
+// integration tests that exercise the MSW-covered surface still get
+// the full handler set from src/mocks/handlers.ts; behavior is
+// unchanged from Phase 6 wiring.
 beforeAll(() => server.listen({ onUnhandledRequest: 'bypass' }));
 
 // Cleanup after each test:

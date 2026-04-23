@@ -12,7 +12,6 @@
 
 import axios, { AxiosInstance, AxiosError, InternalAxiosRequestConfig, AxiosResponse } from 'axios';
 import { API_CONFIG, AUTH_CONFIG, ERROR_MESSAGES } from '../config/constants';
-import { installMockApi, isMockApiEnabled } from './mockApi';
 
 /**
  * Standardized API Error
@@ -282,11 +281,6 @@ export function createApiClient(): AxiosInstance {
       'Content-Type': 'application/json',
     },
   });
-
-  // Install mock API if enabled (for development without backend)
-  if (isMockApiEnabled()) {
-    installMockApi(client);
-  }
 
   // Register request interceptors
   client.interceptors.request.use(requestInterceptor, requestErrorInterceptor);
