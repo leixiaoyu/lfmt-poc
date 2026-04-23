@@ -146,6 +146,9 @@ coverage/
 .nyc_output
 junit.xml
 
+# Playwright MCP cache (session-specific browser state, screenshots, etc.)
+.playwright-mcp/
+
 # Documentation build
 docs/_build
 

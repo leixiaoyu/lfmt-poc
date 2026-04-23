@@ -21,7 +21,8 @@
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
     "type-check": "tsc --noEmit",
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "postinstall": "msw init public/ --save"
   },
   "dependencies": {
     "@emotion/react": "^11.11.3",
@@ -58,6 +59,7 @@
     "eslint-plugin-react-hooks": "^4.6.0",
     "eslint-plugin-react-refresh": "^0.4.5",
     "jsdom": "^24.0.0",
+    "msw": "^2.13.4",
     "typescript": "^5.3.3",
     "vite": "^5.1.0",
     "vitest": "^1.2.2"
@@ -70,5 +72,10 @@
     "translation"
   ],
   "author": "LFMT Team",
-  "license": "UNLICENSED"
+  "license": "UNLICENSED",
+  "msw": {
+    "workerDirectory": [
+      "public"
+    ]
+  }
 }
