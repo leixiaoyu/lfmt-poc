@@ -457,6 +457,49 @@ function estimateTotalChunks(fileSize: number): number {
   return Math.min(estimated, 50);
 }
 
+// ---------------------------------------------------------------------------
+// Error injection (per design Decision 7)
+// ---------------------------------------------------------------------------
+//
+// Reserved filename pattern. Match is recomputed PER REQUEST — no
+// sticky state. Re-uploading a normally-named file recovers normally.
+//
+// The pattern is intentionally absurd (`__lfmt_mock_*__.txt`) so the
+// collision probability with real user uploads is ~0. The handlers
+// only consult this matcher when `VITE_MOCK_API === 'true'` (the
+// handlers themselves are not registered in production).
+
+export type ReservedFileMode =
+  | { kind: 'error'; httpStatus: 403 | 413 | 429 | 500 }
+  | { kind: 'network' } // HttpResponse.error() — axios sees !error.response
+  | { kind: 'slow' }
+  | { kind: 'normal' };
+
+const RESERVED_FILENAME_REGEX =
+  /^__lfmt_mock_(error_(403|413|429|500|network)|slow)__\.txt$/;
+
+/**
+ * Inspect a filename for a reserved error-injection trigger.
+ * Exported for unit tests; consumed by upload / translate / status
+ * handlers below.
+ */
+export function classifyReservedFilename(
+  fileName: string | undefined | null
+): ReservedFileMode {
+  if (!fileName) return { kind: 'normal' };
+  const m = fileName.match(RESERVED_FILENAME_REGEX);
+  if (!m) return { kind: 'normal' };
+  const inner = m[1];
+  if (inner === 'slow') return { kind: 'slow' };
+  if (inner === 'error_network') return { kind: 'network' };
+  // inner === 'error_NNN' for NNN ∈ {403,413,429,500}
+  const code = Number(inner.slice('error_'.length));
+  if (code === 403 || code === 413 || code === 429 || code === 500) {
+    return { kind: 'error', httpStatus: code };
+  }
+  return { kind: 'normal' };
+}
+
 const translationHandlers: HttpHandler[] = [
   // POST /jobs/upload — handles BOTH request shapes used today:
   //   1. translationService.uploadDocument (translationService.ts:20-38)
@@ -472,6 +515,27 @@ const translationHandlers: HttpHandler[] = [
     const fileName =
       typeof body.fileName === 'string' ? body.fileName : 'mock-upload.txt';
     const fileSize = typeof body.fileSize === 'number' ? body.fileSize : 0;
+
+    // Reserved-filename error injection — recomputed per request.
+    const reserved = classifyReservedFilename(fileName);
+    if (reserved.kind === 'network') {
+      return HttpResponse.error();
+    }
+    if (reserved.kind === 'error') {
+      // Only 403 and 413 apply to upload; 429 and 500 are deferred to
+      // the translate / status handlers below to keep the simulation
+      // contract per spec §5.1.
+      if (reserved.httpStatus === 403) {
+        return HttpResponse.json({ message: 'Forbidden' }, { status: 403 });
+      }
+      if (reserved.httpStatus === 413) {
+        return HttpResponse.json(
+          { message: 'Payload too large' },
+          { status: 413 }
+        );
+      }
+    }
+
     const jobId = uuid();
     const now = new Date().toISOString();
 
@@ -548,6 +612,15 @@ const translationHandlers: HttpHandler[] = [
           { status: 404 }
         );
       }
+      // Reserved-filename error injection — 429 (rate limit) is
+      // routed here per spec §5.1.
+      const reserved = classifyReservedFilename(job.fileName);
+      if (reserved.kind === 'error' && reserved.httpStatus === 429) {
+        return HttpResponse.json(
+          { message: 'Rate limit exceeded' },
+          { status: 429 }
+        );
+      }
       const body = (await request.json().catch(() => ({}))) as Record<
         string,
         unknown
@@ -576,11 +649,24 @@ const translationHandlers: HttpHandler[] = [
         { status: 404 }
       );
     }
+    // Reserved-filename error injection — 500 (server error) is
+    // routed here per spec §5.1.
+    const reserved = classifyReservedFilename(job.fileName);
+    if (reserved.kind === 'error' && reserved.httpStatus === 500) {
+      return HttpResponse.json(
+        { message: 'Internal server error' },
+        { status: 500 }
+      );
+    }
     if (job.status === 'translating') {
       job.statusPollCount = (job.statusPollCount ?? 0) + 1;
+      // `__lfmt_mock_slow__.txt` forces the 60s wall-clock policy
+      // regardless of VITE_MOCK_SPEED (per spec §5.1).
+      const speed: MockSpeed = reserved.kind === 'slow' ? 'slow' : mockSpeed;
       const { completedChunks, isComplete } = computeProgress(
         job,
-        Date.now()
+        Date.now(),
+        speed
       );
       job.completedChunks = completedChunks;
       if (isComplete) {

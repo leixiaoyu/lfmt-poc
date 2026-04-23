@@ -13,10 +13,12 @@
  */
 
 import { describe, expect, it, beforeAll, afterAll, beforeEach } from 'vitest';
+import axios from 'axios';
 import { server } from '../server';
 import {
   resetState,
   computeProgress,
+  classifyReservedFilename,
   type JobState,
   type MockSpeed,
 } from '../handlers';
@@ -261,5 +263,174 @@ describe('Translation pipeline (msw/node)', () => {
       body: JSON.stringify({ targetLanguage: 'es', tone: 'neutral' }),
     });
     expect(r.status).toBe(404);
+  });
+});
+
+describe('Reserved filename error injection (Phase 5)', () => {
+  it('classifyReservedFilename returns the right kind for each pattern', () => {
+    expect(classifyReservedFilename(undefined)).toEqual({ kind: 'normal' });
+    expect(classifyReservedFilename('plain.txt')).toEqual({ kind: 'normal' });
+    expect(classifyReservedFilename('__lfmt_mock_error_403__.txt')).toEqual({
+      kind: 'error',
+      httpStatus: 403,
+    });
+    expect(classifyReservedFilename('__lfmt_mock_error_413__.txt')).toEqual({
+      kind: 'error',
+      httpStatus: 413,
+    });
+    expect(classifyReservedFilename('__lfmt_mock_error_429__.txt')).toEqual({
+      kind: 'error',
+      httpStatus: 429,
+    });
+    expect(classifyReservedFilename('__lfmt_mock_error_500__.txt')).toEqual({
+      kind: 'error',
+      httpStatus: 500,
+    });
+    expect(classifyReservedFilename('__lfmt_mock_error_network__.txt')).toEqual(
+      { kind: 'network' }
+    );
+    expect(classifyReservedFilename('__lfmt_mock_slow__.txt')).toEqual({
+      kind: 'slow',
+    });
+    // Lookalikes should NOT trigger.
+    expect(classifyReservedFilename('error_403.txt')).toEqual({
+      kind: 'normal',
+    });
+    expect(classifyReservedFilename('mock_error_403.txt')).toEqual({
+      kind: 'normal',
+    });
+  });
+
+  it('upload of __lfmt_mock_error_403__.txt returns 403', async () => {
+    const r = await fetch(`${API_URL}/jobs/upload`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        fileName: '__lfmt_mock_error_403__.txt',
+        fileSize: 100,
+        contentType: 'text/plain',
+      }),
+    });
+    expect(r.status).toBe(403);
+  });
+
+  it('upload of __lfmt_mock_error_413__.txt returns 413', async () => {
+    const r = await fetch(`${API_URL}/jobs/upload`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        fileName: '__lfmt_mock_error_413__.txt',
+        fileSize: 100,
+        contentType: 'text/plain',
+      }),
+    });
+    expect(r.status).toBe(413);
+  });
+
+  it('translate of an error-429 job returns 429', async () => {
+    // First upload a job with the 429-trigger filename — upload itself
+    // does NOT 429 (only translate does), so the upload succeeds.
+    const upload = await fetch(`${API_URL}/jobs/upload`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        fileName: '__lfmt_mock_error_429__.txt',
+        fileSize: 100,
+        contentType: 'text/plain',
+      }),
+    }).then((r) => r.json());
+    const jobId = upload.data.fileId;
+
+    const r = await fetch(`${API_URL}/jobs/${jobId}/translate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ targetLanguage: 'es', tone: 'neutral' }),
+    });
+    expect(r.status).toBe(429);
+  });
+
+  it('status of an error-500 job returns 500', async () => {
+    const upload = await fetch(`${API_URL}/jobs/upload`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        fileName: '__lfmt_mock_error_500__.txt',
+        fileSize: 100,
+        contentType: 'text/plain',
+      }),
+    }).then((r) => r.json());
+    const jobId = upload.data.fileId;
+
+    const r = await fetch(`${API_URL}/jobs/${jobId}/translation-status`);
+    expect(r.status).toBe(500);
+  });
+
+  it('upload of __lfmt_mock_error_network__.txt produces axios !error.response', async () => {
+    // Per spec §5.1 + risk #1, this must satisfy the contract at
+    // frontend/src/utils/api.ts:230-236 (`if (!axiosError.response)`).
+    let captured: unknown = null;
+    try {
+      await axios.post(`${API_URL}/jobs/upload`, {
+        fileName: '__lfmt_mock_error_network__.txt',
+        fileSize: 100,
+        contentType: 'text/plain',
+      });
+    } catch (err) {
+      captured = err;
+    }
+    expect(captured).toBeTruthy();
+    expect(axios.isAxiosError(captured)).toBe(true);
+    if (axios.isAxiosError(captured)) {
+      expect(captured.response).toBeUndefined();
+    }
+  });
+
+  it('re-uploading a normal file after an error recovers (no sticky state)', async () => {
+    const bad = await fetch(`${API_URL}/jobs/upload`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        fileName: '__lfmt_mock_error_403__.txt',
+        fileSize: 100,
+        contentType: 'text/plain',
+      }),
+    });
+    expect(bad.status).toBe(403);
+
+    const good = await fetch(`${API_URL}/jobs/upload`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        fileName: 'recovered.txt',
+        fileSize: 100,
+        contentType: 'text/plain',
+      }),
+    });
+    expect(good.status).toBe(200);
+  });
+
+  it('__lfmt_mock_slow__.txt forces the 60s policy regardless of mockSpeed', () => {
+    // Direct unit test on computeProgress with the slow policy — the
+    // status handler picks `slow` whenever the filename matches, so
+    // the wire test would just re-cover what the unit test already
+    // proves. Assert the policy directly.
+    const start = 0;
+    const job: JobState = {
+      jobId: 'j',
+      status: 'translating',
+      totalChunks: 4,
+      completedChunks: 0,
+      failedChunks: 0,
+      fileName: '__lfmt_mock_slow__.txt',
+      sourceLang: 'auto',
+      targetLang: 'es',
+      createdAt: new Date(0).toISOString(),
+      translateStartedAt: start,
+    };
+    // After 10s, slow mode is only ~17% — would have been 100% in
+    // realistic mode.
+    const r = computeProgress(job, 10_000, 'slow');
+    expect(r.isComplete).toBe(false);
+    expect(r.completedChunks).toBeLessThan(job.totalChunks);
   });
 });
