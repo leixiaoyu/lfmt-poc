@@ -140,11 +140,19 @@ temp/
 # Local development
 local/
 *.local
+# Exception: frontend/e2e/tests/local/ is the MSW-backed E2E spec
+# directory added by add-local-mock-api-foundation — it must be
+# tracked in git despite the catch-all `local/` pattern above.
+!frontend/e2e/tests/local/
+!frontend/e2e/tests/local/**
 
 # Testing
 coverage/
 .nyc_output
 junit.xml
+
+# Playwright MCP cache (session-specific browser state, screenshots, etc.)
+.playwright-mcp/
 
 # Documentation build
 docs/_build

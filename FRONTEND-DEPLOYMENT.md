@@ -22,6 +22,16 @@ The frontend is deployed using:
 
 ## Environment Configuration
 
+> **Mock API mode is dev-only.** `VITE_MOCK_API=true` activates the
+> in-browser MSW mock layer used by `npm run dev` and the local
+> Playwright suite (see [`frontend/LOCAL-TESTING.md`](frontend/LOCAL-TESTING.md)).
+> All deploys (dev, staging, prod) MUST use `VITE_MOCK_API=false`.
+> Three independent safety layers prevent the mock from ever shipping
+> to a deployed environment: (1) a non-dismissible UI banner, (2) a
+> Vite build-time guard that fails `vite build` when `VITE_MOCK_API=true`,
+> and (3) a `closeBundle` hook that deletes `dist/mockServiceWorker.js`
+> after every prod build.
+
 ### Development Environment
 
 **Configuration File**: `frontend/.env.dev`

@@ -229,6 +229,26 @@ describe('LoginForm - Error Handling', () => {
     });
   });
 
+  it('should fall back to a generic message when the rejection has no message field', async () => {
+    // Covers the `apiError.message || 'An error occurred during login'`
+    // fallback in LoginForm.tsx — exercises the right-hand side of the
+    // `||` so the auth-glob branch coverage stays at 100% (the auth
+    // threshold is 95% branches; one un-tested fallback drops it).
+    const user = userEvent.setup();
+    const onSubmit = vi.fn().mockRejectedValue({ /* no message */ });
+    renderWithRouter(<LoginForm onSubmit={onSubmit} />);
+
+    await user.type(screen.getByLabelText(/email/i), 'test@example.com');
+    await user.type(screen.getByLabelText(/password/i), 'Password123!');
+    await user.click(screen.getByRole('button', { name: /log in/i }));
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(/an error occurred during login/i)
+      ).toBeInTheDocument();
+    });
+  });
+
   it('should keep form values when submission fails', async () => {
     const user = userEvent.setup();
     const onSubmit = vi.fn().mockRejectedValue({

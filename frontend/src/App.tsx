@@ -13,6 +13,7 @@ import { ThemeProvider, CssBaseline, Container, Box } from '@mui/material';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { AuthProvider } from './contexts/AuthContext';
 import { ProtectedRoute } from './components/Auth/ProtectedRoute';
+import { MockModeBanner } from './components/common/MockModeBanner';
 import { theme } from './theme';
 import { ROUTES, FEATURE_FLAGS } from './config/constants';
 import { queryClient } from './lib/queryClient';
@@ -61,6 +62,13 @@ function App() {
     <QueryClientProvider client={queryClient}>
       <ThemeProvider theme={theme}>
         <CssBaseline />
+        {/*
+          MockModeBanner is mounted at the top of the tree (before the
+          router) so it is visible on every route — login, register,
+          dashboard, and all translation pages — whenever
+          VITE_MOCK_API=true. It returns null in normal mode.
+        */}
+        <MockModeBanner />
         <AuthProvider>
           <BrowserRouter>
             <Suspense fallback={<LoadingFallback />}>

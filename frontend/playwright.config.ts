@@ -88,5 +88,15 @@ export default defineConfig({
         url: 'http://localhost:3000',
         reuseExistingServer: !process.env.CI,
         timeout: 180 * 1000, // 3 minutes - CI needs more time for dev server startup
+        // Local mock API foundation (per add-local-mock-api-foundation):
+        // E2E suite runs against the MSW-mocked dev server so the full
+        // demo flow (register → upload → translate → download) works
+        // without AWS dependencies. `instant` speed keeps the suite
+        // under the spec's <30s target by collapsing the simulated
+        // translation to ~4 status polls (no wall-clock waits).
+        env: {
+          VITE_MOCK_API: 'true',
+          VITE_MOCK_SPEED: 'instant',
+        },
       },
 });

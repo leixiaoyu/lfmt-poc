@@ -170,6 +170,33 @@ aws logs tail /aws/lambda/lfmt-translate-chunk-LfmtPocDev --follow
 - **E2E Tests**: For critical user journeys
 - **Coverage Target**: >90% on critical paths
 
+#### Three-Layer Mock Strategy (Frontend)
+
+The frontend deliberately uses three different mocking primitives —
+one per test layer — so the right tool always matches the right layer.
+See `frontend/LOCAL-TESTING.md` for the full guide.
+
+| Layer                           | Environment | Tool                                   |
+| ------------------------------- | ----------- | -------------------------------------- |
+| Unit (jsdom)                    | Vitest      | `axios-mock-adapter` (PR #135 pattern) |
+| Component / integration (jsdom) | Vitest      | `msw/node` (shared handlers)           |
+| E2E (browser)                   | Playwright  | MSW Service Worker                     |
+
+Quick start for the local mock loop:
+
+```bash
+cd frontend
+VITE_MOCK_API=true npm run dev
+```
+
+A non-dismissible yellow banner confirms mock mode is on. The same MSW
+handlers (`frontend/src/mocks/handlers.ts`) serve both browser and
+Vitest, so the contract cannot drift. Three independent safety layers
+prevent the mock from ever shipping to production (UI banner + Vite
+build guard + post-build SW cleanup). See `frontend/LOCAL-TESTING.md`
+for `VITE_MOCK_SPEED`, error injection (reserved filename pattern),
+and known footguns.
+
 ### Infrastructure
 
 - **CDK Only**: No manual AWS console changes
