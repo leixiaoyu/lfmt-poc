@@ -47,9 +47,7 @@ interface TranslationStatusResponse {
 /**
  * Lambda handler for getting translation status
  */
-export const handler = async (
-  event: APIGatewayProxyEvent
-): Promise<APIGatewayProxyResult> => {
+export const handler = async (event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> => {
   const requestOrigin = event.headers.origin || event.headers.Origin;
 
   logger.info('Translation status request', {
@@ -75,7 +73,13 @@ export const handler = async (
 
     // Verify job exists
     if (!job) {
-      return createErrorResponse(404, `Job not found: ${jobId}`, undefined, undefined, requestOrigin);
+      return createErrorResponse(
+        404,
+        `Job not found: ${jobId}`,
+        undefined,
+        undefined,
+        requestOrigin
+      );
     }
 
     // Build response
@@ -87,10 +91,7 @@ export const handler = async (
       tone: job.translationTone,
       totalChunks: job.totalChunks || 0,
       chunksTranslated: job.translatedChunks || 0,
-      progressPercentage: calculateProgress(
-        job.translatedChunks || 0,
-        job.totalChunks || 0
-      ),
+      progressPercentage: calculateProgress(job.translatedChunks || 0, job.totalChunks || 0),
       tokensUsed: job.tokensUsed,
       estimatedCost: job.estimatedCost,
       createdAt: job.createdAt,

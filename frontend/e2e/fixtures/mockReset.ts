@@ -34,10 +34,7 @@ interface MockResetFixtures {
   resetMockState: ResetFn;
 }
 
-async function resetMockState(
-  page: Page,
-  options: { gotoPath?: string } = {}
-): Promise<void> {
+async function resetMockState(page: Page, options: { gotoPath?: string } = {}): Promise<void> {
   // Step 1: navigate to the app so localStorage / SW are accessible.
   // We use the absolute root URL so the test does not need a baseURL
   // set — Playwright resolves `'/'` against the configured baseURL.

@@ -95,29 +95,23 @@ test.describe('Local mock foundation — full demo flow', () => {
     // 3. Login — re-authenticate, confirming the handler is stateless
     //    across fresh calls (mirrors real backend).
     // ---------------------------------------------------------------
-    const login = await apiCall<{ accessToken: string }>(
-      page,
-      `${API_BASE}/auth/login`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          email: 'full-flow@e2e.dev',
-          password: 'hunter2',
-        }),
-      }
-    );
+    const login = await apiCall<{ accessToken: string }>(page, `${API_BASE}/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: 'full-flow@e2e.dev',
+        password: 'hunter2',
+      }),
+    });
     expect(login.status).toBe(200);
     const bearer = `Bearer ${login.body.accessToken}`;
 
     // ---------------------------------------------------------------
     // 4. /auth/me — validates the bearer-token → user resolution.
     // ---------------------------------------------------------------
-    const me = await apiCall<{ user: { email: string } }>(
-      page,
-      `${API_BASE}/auth/me`,
-      { headers: { Authorization: bearer } }
-    );
+    const me = await apiCall<{ user: { email: string } }>(page, `${API_BASE}/auth/me`, {
+      headers: { Authorization: bearer },
+    });
     expect(me.status).toBe(200);
     expect(me.body.user.email).toBe('full-flow@e2e.dev');
 
@@ -208,25 +202,20 @@ test.describe('Local mock foundation — full demo flow', () => {
       headers: { Authorization: bearer },
     });
     expect(dl.status).toBe(200);
-    expect(
-      typeof dl.body === 'string' && dl.body.includes('[MOCK TRANSLATION COMPLETE]')
-    ).toBe(true);
+    expect(typeof dl.body === 'string' && dl.body.includes('[MOCK TRANSLATION COMPLETE]')).toBe(
+      true
+    );
 
     // ---------------------------------------------------------------
     // 10. Network-hygiene assertion — no AWS hosts were contacted.
     // ---------------------------------------------------------------
     const awsHosts = offsiteRequests.filter((u) => {
       const h = new URL(u).host;
-      return (
-        h.includes('execute-api') ||
-        h.endsWith('amazonaws.com') ||
-        h.includes('cognito')
-      );
+      return h.includes('execute-api') || h.endsWith('amazonaws.com') || h.includes('cognito');
     });
     expect(
       awsHosts,
-      'Mock mode must never reach real AWS hosts — ' +
-        'if this fails the SW is not intercepting'
+      'Mock mode must never reach real AWS hosts — ' + 'if this fails the SW is not intercepting'
     ).toEqual([]);
   });
 });

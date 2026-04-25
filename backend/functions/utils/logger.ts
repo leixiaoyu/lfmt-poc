@@ -26,12 +26,14 @@ export enum LogLevel {
   ERROR = 'ERROR',
 }
 
+export type LogMetadata = Record<string, unknown>;
+
 export interface LogEntry {
   timestamp: string;
   level: LogLevel;
   correlationId: string;
   message: string;
-  metadata?: Record<string, any>;
+  metadata?: LogMetadata;
 }
 
 export class Logger {
@@ -44,9 +46,18 @@ export class Logger {
   /**
    * Create logger from API Gateway event
    * Extracts correlation ID from event.requestContext.requestId
+   *
+   * Accepts `unknown` so callers can pass raw event objects without first
+   * narrowing them; we defensively read the requestId field if present.
    */
-  static fromAPIGatewayEvent(event: any): Logger {
-    const correlationId = event?.requestContext?.requestId || 'unknown';
+  static fromAPIGatewayEvent(event: unknown): Logger {
+    let correlationId = 'unknown';
+    if (typeof event === 'object' && event !== null) {
+      const ctx = (event as { requestContext?: { requestId?: unknown } }).requestContext;
+      if (ctx && typeof ctx.requestId === 'string') {
+        correlationId = ctx.requestId;
+      }
+    }
     return new Logger(correlationId);
   }
 
@@ -66,7 +77,7 @@ export class Logger {
     return new Logger(correlationId);
   }
 
-  private log(level: LogLevel, message: string, metadata?: Record<string, any>): void {
+  private log(level: LogLevel, message: string, metadata?: LogMetadata): void {
     const entry: LogEntry = {
       timestamp: new Date().toISOString(),
       level,
@@ -79,19 +90,19 @@ export class Logger {
     console.log(JSON.stringify(entry));
   }
 
-  debug(message: string, metadata?: Record<string, any>): void {
+  debug(message: string, metadata?: LogMetadata): void {
     this.log(LogLevel.DEBUG, message, metadata);
   }
 
-  info(message: string, metadata?: Record<string, any>): void {
+  info(message: string, metadata?: LogMetadata): void {
     this.log(LogLevel.INFO, message, metadata);
   }
 
-  warn(message: string, metadata?: Record<string, any>): void {
+  warn(message: string, metadata?: LogMetadata): void {
     this.log(LogLevel.WARN, message, metadata);
   }
 
-  error(message: string, metadata?: Record<string, any>): void {
+  error(message: string, metadata?: LogMetadata): void {
     this.log(LogLevel.ERROR, message, metadata);
   }
 

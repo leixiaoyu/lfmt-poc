@@ -216,7 +216,8 @@ describe('Document Chunking Lambda Handler', () => {
       // The chunker must accumulate them correctly without losing or duplicating bytes.
       const bucket = 'test-bucket';
       const key = 'uploads/user123/file456/multibuf.txt';
-      const fullText = 'Sentence number ' + Array.from({ length: 200 }, (_, i) => `${i}.`).join(' ');
+      const fullText =
+        'Sentence number ' + Array.from({ length: 200 }, (_, i) => `${i}.`).join(' ');
       // Slice into ~100-byte buffers to simulate network-driven reads
       const buffers: Buffer[] = [];
       for (let i = 0; i < fullText.length; i += 100) {

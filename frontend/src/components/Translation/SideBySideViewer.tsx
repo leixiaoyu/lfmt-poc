@@ -155,7 +155,9 @@ export const SideBySideViewer: React.FC<SideBySideViewerProps> = ({
           <IconButton
             onClick={toggleSync}
             color={syncEnabled ? 'primary' : 'default'}
-            aria-label={syncEnabled ? 'Disable synchronized scrolling' : 'Enable synchronized scrolling'}
+            aria-label={
+              syncEnabled ? 'Disable synchronized scrolling' : 'Enable synchronized scrolling'
+            }
           >
             {syncEnabled ? <SyncIcon /> : <SyncDisabledIcon />}
           </IconButton>

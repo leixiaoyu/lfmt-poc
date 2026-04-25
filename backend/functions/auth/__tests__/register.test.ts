@@ -570,9 +570,7 @@ describe('register Lambda Function', () => {
     });
 
     it('should return 500 for unexpected errors', async () => {
-      cognitoMock.on(SignUpCommand).rejects(
-        new Error('Unexpected Cognito error')
-      );
+      cognitoMock.on(SignUpCommand).rejects(new Error('Unexpected Cognito error'));
 
       const event = createMockEvent({
         body: JSON.stringify({

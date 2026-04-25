@@ -127,11 +127,7 @@ function uuid(): string {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
-function buildMockUser(input: {
-  email?: string;
-  firstName?: string;
-  lastName?: string;
-}): MockUser {
+function buildMockUser(input: { email?: string; firstName?: string; lastName?: string }): MockUser {
   return {
     id: `mock-user-${uuid()}`,
     email: input.email ?? 'demo@lfmt.dev',
@@ -165,14 +161,10 @@ function userFromAuthHeader(authHeader: string | null): MockUser | null {
 const authHandlers: HttpHandler[] = [
   // POST /auth/register
   http.post(buildPath('/auth/register'), async ({ request }) => {
-    const body = (await request.json().catch(() => ({}))) as Record<
-      string,
-      unknown
-    >;
+    const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
     const user = buildMockUser({
       email: typeof body.email === 'string' ? body.email : undefined,
-      firstName:
-        typeof body.firstName === 'string' ? body.firstName : undefined,
+      firstName: typeof body.firstName === 'string' ? body.firstName : undefined,
       lastName: typeof body.lastName === 'string' ? body.lastName : undefined,
     });
     const tokens = issueTokens(user);
@@ -181,10 +173,7 @@ const authHandlers: HttpHandler[] = [
 
   // POST /auth/login
   http.post(buildPath('/auth/login'), async ({ request }) => {
-    const body = (await request.json().catch(() => ({}))) as Record<
-      string,
-      unknown
-    >;
+    const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
     const user = buildMockUser({
       email: typeof body.email === 'string' ? body.email : undefined,
     });
@@ -194,20 +183,13 @@ const authHandlers: HttpHandler[] = [
 
   // POST /auth/refresh
   http.post(buildPath('/auth/refresh'), async ({ request }) => {
-    const body = (await request.json().catch(() => ({}))) as Record<
-      string,
-      unknown
-    >;
-    const refreshToken =
-      typeof body.refreshToken === 'string' ? body.refreshToken : undefined;
+    const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+    const refreshToken = typeof body.refreshToken === 'string' ? body.refreshToken : undefined;
     if (!refreshToken) {
       // Match the real backend's 401 contract — apiClient's response
       // error interceptor (api.ts:230-236) will surface this as a
       // session-expired error.
-      return HttpResponse.json(
-        { message: 'Missing refresh token' },
-        { status: 401 }
-      );
+      return HttpResponse.json({ message: 'Missing refresh token' }, { status: 401 });
     }
     // Look up — if absent, mint a fresh anonymous user so demo flows
     // never get stuck behind a stale token from a previous page load.
@@ -222,10 +204,7 @@ const authHandlers: HttpHandler[] = [
     const auth = request.headers.get('Authorization');
     const match = auth?.match(/^Bearer\s+(.+)$/i);
     if (match) sessions.delete(match[1]);
-    return HttpResponse.json(
-      { message: 'Logged out successfully' },
-      { status: 200 }
-    );
+    return HttpResponse.json({ message: 'Logged out successfully' }, { status: 200 });
   }),
 
   // GET /auth/me — authService expects { user: User } (NOT bare User).
@@ -248,18 +227,12 @@ const authHandlers: HttpHandler[] = [
   // POST /auth/forgot-password — mirrors real backend: success even
   // for unknown emails (prevents user enumeration).
   http.post(buildPath('/auth/forgot-password'), async () => {
-    return HttpResponse.json(
-      { message: 'Password reset email sent' },
-      { status: 200 }
-    );
+    return HttpResponse.json({ message: 'Password reset email sent' }, { status: 200 });
   }),
 
   // POST /auth/verify-email — NEW (currently 501 in real backend).
   http.post(buildPath('/auth/verify-email'), async ({ request }) => {
-    const body = (await request.json().catch(() => ({}))) as Record<
-      string,
-      unknown
-    >;
+    const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
     const token = typeof body.token === 'string' ? body.token : '';
     if (!token) {
       return HttpResponse.json(
@@ -267,31 +240,21 @@ const authHandlers: HttpHandler[] = [
         { status: 400 }
       );
     }
-    return HttpResponse.json(
-      { message: 'Email verified successfully' },
-      { status: 200 }
-    );
+    return HttpResponse.json({ message: 'Email verified successfully' }, { status: 200 });
   }),
 
   // POST /auth/reset-password — NEW (currently 501 in real backend).
   http.post(buildPath('/auth/reset-password'), async ({ request }) => {
-    const body = (await request.json().catch(() => ({}))) as Record<
-      string,
-      unknown
-    >;
+    const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
     const token = typeof body.token === 'string' ? body.token : '';
-    const newPassword =
-      typeof body.newPassword === 'string' ? body.newPassword : '';
+    const newPassword = typeof body.newPassword === 'string' ? body.newPassword : '';
     if (!token || !newPassword) {
       return HttpResponse.json(
         { message: 'Invalid or missing token or new password' },
         { status: 400 }
       );
     }
-    return HttpResponse.json(
-      { message: 'Password reset successfully' },
-      { status: 200 }
-    );
+    return HttpResponse.json({ message: 'Password reset successfully' }, { status: 200 });
   }),
 ];
 
@@ -397,10 +360,7 @@ export function computeProgress(
     const elapsed = now - (job.translateStartedAt ?? now);
     fraction = Math.min(1, elapsed / windowMs);
   }
-  const target = Math.min(
-    job.totalChunks,
-    Math.ceil(fraction * job.totalChunks)
-  );
+  const target = Math.min(job.totalChunks, Math.ceil(fraction * job.totalChunks));
   return { completedChunks: target, isComplete: target >= job.totalChunks };
 }
 
@@ -475,17 +435,14 @@ export type ReservedFileMode =
   | { kind: 'slow' }
   | { kind: 'normal' };
 
-const RESERVED_FILENAME_REGEX =
-  /^__lfmt_mock_(error_(403|413|429|500|network)|slow)__\.txt$/;
+const RESERVED_FILENAME_REGEX = /^__lfmt_mock_(error_(403|413|429|500|network)|slow)__\.txt$/;
 
 /**
  * Inspect a filename for a reserved error-injection trigger.
  * Exported for unit tests; consumed by upload / translate / status
  * handlers below.
  */
-export function classifyReservedFilename(
-  fileName: string | undefined | null
-): ReservedFileMode {
+export function classifyReservedFilename(fileName: string | undefined | null): ReservedFileMode {
   if (!fileName) return { kind: 'normal' };
   const m = fileName.match(RESERVED_FILENAME_REGEX);
   if (!m) return { kind: 'normal' };
@@ -508,12 +465,8 @@ const translationHandlers: HttpHandler[] = [
   //      → body: { fileName, fileSize, contentType }   (no legalAttestation)
   // Both expect the same response envelope.
   http.post(buildPath('/jobs/upload'), async ({ request }) => {
-    const body = (await request.json().catch(() => ({}))) as Record<
-      string,
-      unknown
-    >;
-    const fileName =
-      typeof body.fileName === 'string' ? body.fileName : 'mock-upload.txt';
+    const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+    const fileName = typeof body.fileName === 'string' ? body.fileName : 'mock-upload.txt';
     const fileSize = typeof body.fileSize === 'number' ? body.fileSize : 0;
 
     // Reserved-filename error injection — recomputed per request.
@@ -529,10 +482,7 @@ const translationHandlers: HttpHandler[] = [
         return HttpResponse.json({ message: 'Forbidden' }, { status: 403 });
       }
       if (reserved.httpStatus === 413) {
-        return HttpResponse.json(
-          { message: 'Payload too large' },
-          { status: 413 }
-        );
+        return HttpResponse.json({ message: 'Payload too large' }, { status: 413 });
       }
     }
 
@@ -601,41 +551,29 @@ const translationHandlers: HttpHandler[] = [
   }),
 
   // POST /jobs/:jobId/translate — start translation.
-  http.post(
-    buildPath('/jobs/:jobId/translate'),
-    async ({ params, request }) => {
-      const jobId = String(params.jobId);
-      const job = jobs.get(jobId);
-      if (!job) {
-        return HttpResponse.json(
-          { message: 'Job not found' },
-          { status: 404 }
-        );
-      }
-      // Reserved-filename error injection — 429 (rate limit) is
-      // routed here per spec §5.1.
-      const reserved = classifyReservedFilename(job.fileName);
-      if (reserved.kind === 'error' && reserved.httpStatus === 429) {
-        return HttpResponse.json(
-          { message: 'Rate limit exceeded' },
-          { status: 429 }
-        );
-      }
-      const body = (await request.json().catch(() => ({}))) as Record<
-        string,
-        unknown
-      >;
-      if (typeof body.targetLanguage === 'string') {
-        job.targetLang = body.targetLanguage;
-      }
-      job.status = 'translating';
-      job.translateStartedAt = Date.now();
-      job.statusPollCount = 0;
-      jobs.set(jobId, job);
-
-      return HttpResponse.json({ data: toWireJob(job) }, { status: 200 });
+  http.post(buildPath('/jobs/:jobId/translate'), async ({ params, request }) => {
+    const jobId = String(params.jobId);
+    const job = jobs.get(jobId);
+    if (!job) {
+      return HttpResponse.json({ message: 'Job not found' }, { status: 404 });
     }
-  ),
+    // Reserved-filename error injection — 429 (rate limit) is
+    // routed here per spec §5.1.
+    const reserved = classifyReservedFilename(job.fileName);
+    if (reserved.kind === 'error' && reserved.httpStatus === 429) {
+      return HttpResponse.json({ message: 'Rate limit exceeded' }, { status: 429 });
+    }
+    const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+    if (typeof body.targetLanguage === 'string') {
+      job.targetLang = body.targetLanguage;
+    }
+    job.status = 'translating';
+    job.translateStartedAt = Date.now();
+    job.statusPollCount = 0;
+    jobs.set(jobId, job);
+
+    return HttpResponse.json({ data: toWireJob(job) }, { status: 200 });
+  }),
 
   // GET /jobs/:jobId/translation-status — on-demand simulation tick.
   // The progression policy is delegated to computeProgress() which
@@ -644,30 +582,20 @@ const translationHandlers: HttpHandler[] = [
     const jobId = String(params.jobId);
     const job = jobs.get(jobId);
     if (!job) {
-      return HttpResponse.json(
-        { message: 'Job not found' },
-        { status: 404 }
-      );
+      return HttpResponse.json({ message: 'Job not found' }, { status: 404 });
     }
     // Reserved-filename error injection — 500 (server error) is
     // routed here per spec §5.1.
     const reserved = classifyReservedFilename(job.fileName);
     if (reserved.kind === 'error' && reserved.httpStatus === 500) {
-      return HttpResponse.json(
-        { message: 'Internal server error' },
-        { status: 500 }
-      );
+      return HttpResponse.json({ message: 'Internal server error' }, { status: 500 });
     }
     if (job.status === 'translating') {
       job.statusPollCount = (job.statusPollCount ?? 0) + 1;
       // `__lfmt_mock_slow__.txt` forces the 60s wall-clock policy
       // regardless of VITE_MOCK_SPEED (per spec §5.1).
       const speed: MockSpeed = reserved.kind === 'slow' ? 'slow' : mockSpeed;
-      const { completedChunks, isComplete } = computeProgress(
-        job,
-        Date.now(),
-        speed
-      );
+      const { completedChunks, isComplete } = computeProgress(job, Date.now(), speed);
       job.completedChunks = completedChunks;
       if (isComplete) {
         job.status = 'completed';
@@ -692,10 +620,7 @@ const translationHandlers: HttpHandler[] = [
     const jobId = String(params.jobId);
     const job = jobs.get(jobId);
     if (!job) {
-      return HttpResponse.json(
-        { message: 'Job not found' },
-        { status: 404 }
-      );
+      return HttpResponse.json({ message: 'Job not found' }, { status: 404 });
     }
     const body = `Translated content for ${job.fileName} (target: ${job.targetLang}).\n\n${SIMULATED_TRANSLATED_TEXT_MARKER}\n`;
     return new HttpResponse(body, {

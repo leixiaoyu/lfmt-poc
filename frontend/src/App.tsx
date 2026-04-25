@@ -95,7 +95,7 @@ function App() {
                     <ProtectedRoute>
                       <TranslationUpload />
                     </ProtectedRoute>
-                    }
+                  }
                 />
                 <Route
                   path="/translation/history"

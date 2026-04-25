@@ -72,11 +72,11 @@ The handlers themselves respond synchronously (the speed profile
 controls only the simulated chunk-progress ticking inside
 `GET /jobs/:jobId/translation-status`).
 
-| Profile     | Default for     | Behavior                                                                                                                       |
-| ----------- | --------------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| `instant`   | Vitest          | Request-count-driven. Status handler advances `completedChunks` by 25% per call → 4 polls reach 100%. No wall-clock dependency. |
-| `realistic` | `npm run dev`   | Wall-clock. `progress = min(1, (now - startTs) / 10s)`. ~10s end-to-end.                                                       |
-| `slow`      | Demo rehearsal  | Wall-clock, ~60s end-to-end. Also force-triggered by uploading `__lfmt_mock_slow__.txt`.                                       |
+| Profile     | Default for    | Behavior                                                                                                                        |
+| ----------- | -------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `instant`   | Vitest         | Request-count-driven. Status handler advances `completedChunks` by 25% per call → 4 polls reach 100%. No wall-clock dependency. |
+| `realistic` | `npm run dev`  | Wall-clock. `progress = min(1, (now - startTs) / 10s)`. ~10s end-to-end.                                                        |
+| `slow`      | Demo rehearsal | Wall-clock, ~60s end-to-end. Also force-triggered by uploading `__lfmt_mock_slow__.txt`.                                        |
 
 Set the profile at startup:
 
@@ -96,14 +96,14 @@ whose name matches the reserved pattern. The match is recomputed at
 request time — there is no sticky state, so re-uploading a
 normally-named file recovers immediately.
 
-| Filename                              | Effect                                                  |
-| ------------------------------------- | ------------------------------------------------------- |
-| `__lfmt_mock_error_403__.txt`         | upload returns `403 Forbidden`                          |
-| `__lfmt_mock_error_413__.txt`         | upload returns `413 Payload Too Large`                  |
-| `__lfmt_mock_error_429__.txt`         | translate returns `429 Too Many Requests`               |
-| `__lfmt_mock_error_500__.txt`         | status returns `500 Internal Server Error`              |
-| `__lfmt_mock_error_network__.txt`     | network error (`HttpResponse.error()`) — axios sees `!error.response` |
-| `__lfmt_mock_slow__.txt`              | forces 60s wall-clock simulation regardless of `VITE_MOCK_SPEED` |
+| Filename                          | Effect                                                                |
+| --------------------------------- | --------------------------------------------------------------------- |
+| `__lfmt_mock_error_403__.txt`     | upload returns `403 Forbidden`                                        |
+| `__lfmt_mock_error_413__.txt`     | upload returns `413 Payload Too Large`                                |
+| `__lfmt_mock_error_429__.txt`     | translate returns `429 Too Many Requests`                             |
+| `__lfmt_mock_error_500__.txt`     | status returns `500 Internal Server Error`                            |
+| `__lfmt_mock_error_network__.txt` | network error (`HttpResponse.error()`) — axios sees `!error.response` |
+| `__lfmt_mock_slow__.txt`          | forces 60s wall-clock simulation regardless of `VITE_MOCK_SPEED`      |
 
 The pattern (`/^__lfmt_mock_(error_(403\|413\|429\|500\|network)\|slow)__\.txt$/`)
 is intentionally absurd; collision probability with real user
@@ -248,7 +248,12 @@ it('shows loading state', async () => {
   server.use(
     http.post(/\/auth\/login$/, async () => {
       await delay(100);
-      return HttpResponse.json({ /* ... */ }, { status: 200 });
+      return HttpResponse.json(
+        {
+          /* ... */
+        },
+        { status: 200 }
+      );
     })
   );
   // ... test runs against the slowed handler ...

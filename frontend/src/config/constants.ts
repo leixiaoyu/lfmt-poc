@@ -11,9 +11,7 @@
 function getRequiredEnv(key: string): string {
   const value = import.meta.env[key];
   if (!value) {
-    throw new Error(
-      `${key} environment variable is not defined. Please check your .env file.`
-    );
+    throw new Error(`${key} environment variable is not defined. Please check your .env file.`);
   }
   return value;
 }

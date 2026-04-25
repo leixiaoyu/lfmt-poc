@@ -147,14 +147,12 @@ describe('Auth Service', () => {
     });
 
     it('should return 400 for invalid password from Cognito', async () => {
-      cognitoMock
-        .on(SignUpCommand)
-        .rejects(
-          new InvalidPasswordException({
-            $metadata: {},
-            message: 'Password does not meet requirements',
-          })
-        );
+      cognitoMock.on(SignUpCommand).rejects(
+        new InvalidPasswordException({
+          $metadata: {},
+          message: 'Password does not meet requirements',
+        })
+      );
       const event = createMockEvent({
         email: 'test@test.com',
         password: 'Password123!',

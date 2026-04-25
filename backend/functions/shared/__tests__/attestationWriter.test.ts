@@ -9,11 +9,7 @@
  *   - Schema-invalid records are refused before hitting DynamoDB.
  */
 
-import {
-  DynamoDBClient,
-  PutItemCommand,
-  PutItemCommandInput,
-} from '@aws-sdk/client-dynamodb';
+import { DynamoDBClient, PutItemCommand, PutItemCommandInput } from '@aws-sdk/client-dynamodb';
 import { mockClient } from 'aws-sdk-client-mock';
 import { unmarshall } from '@aws-sdk/util-dynamodb';
 import { ATTESTATION_VERSION } from '@lfmt/shared-types';
@@ -129,8 +125,7 @@ describe('buildAttestationRecord', () => {
   it('sets ttl to ~7 years from acceptedAt', () => {
     const acceptedAt = '2024-01-01T00:00:00.000Z';
     const record = buildAttestationRecord({ ...VALID_INPUT, acceptedAt });
-    const expectedTtl =
-      Math.floor(Date.parse(acceptedAt) / 1000) + 60 * 60 * 24 * 365 * 7;
+    const expectedTtl = Math.floor(Date.parse(acceptedAt) / 1000) + 60 * 60 * 24 * 365 * 7;
     expect(record.ttl).toBe(expectedTtl);
   });
 
@@ -187,9 +182,7 @@ describe('writeAttestation', () => {
     ddbMock.on(PutItemCommand).rejects(new Error('AccessDenied'));
     const record = buildAttestationRecord(VALID_INPUT);
 
-    await expect(writeAttestation(record)).rejects.toBeInstanceOf(
-      AttestationWriteError
-    );
+    await expect(writeAttestation(record)).rejects.toBeInstanceOf(AttestationWriteError);
   });
 
   it('preserves the original DynamoDB error as the cause', async () => {
@@ -202,9 +195,7 @@ describe('writeAttestation', () => {
       throw new Error('expected writeAttestation to throw');
     } catch (err) {
       expect(err).toBeInstanceOf(AttestationWriteError);
-      expect((err as AttestationWriteError).code).toBe(
-        'AttestationPersistFailure'
-      );
+      expect((err as AttestationWriteError).code).toBe('AttestationPersistFailure');
       expect((err as AttestationWriteError).cause).toBe(original);
     }
   });
@@ -215,17 +206,13 @@ describe('writeAttestation', () => {
     // Tamper with the record post-build: an obviously-bad documentHash.
     const tampered = { ...record, documentHash: 'not-a-hash' };
 
-    await expect(writeAttestation(tampered)).rejects.toBeInstanceOf(
-      AttestationWriteError
-    );
+    await expect(writeAttestation(tampered)).rejects.toBeInstanceOf(AttestationWriteError);
     expect(ddbMock.calls()).toHaveLength(0);
   });
 
   it('throws when ATTESTATIONS_TABLE_NAME is missing and no override provided', async () => {
     delete process.env.ATTESTATIONS_TABLE_NAME;
     const record = buildAttestationRecord(VALID_INPUT);
-    await expect(writeAttestation(record)).rejects.toThrow(
-      /ATTESTATIONS_TABLE_NAME/
-    );
+    await expect(writeAttestation(record)).rejects.toThrow(/ATTESTATIONS_TABLE_NAME/);
   });
 });

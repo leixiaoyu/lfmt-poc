@@ -27,10 +27,7 @@ test.setTimeout(180000); // 3 minutes
 // Path to the tiny fixture we upload during the smoke test. Keeping this
 // ~1 KB guarantees the test completes inside the timeout regardless of
 // upstream translation-provider latency on a given day.
-const SMOKE_FIXTURE_PATH = path.resolve(
-  __dirname,
-  '../../fixtures/smoke-test-minimal.txt'
-);
+const SMOKE_FIXTURE_PATH = path.resolve(__dirname, '../../fixtures/smoke-test-minimal.txt');
 
 test.describe('Production Smoke Tests @smoke', () => {
   // Test configuration from environment
@@ -79,9 +76,9 @@ test.describe('Production Smoke Tests @smoke', () => {
       }
 
       // Verify we're on the upload page
-      await expect(
-        page.getByText(/upload|select.*file|drag.*drop/i).first()
-      ).toBeVisible({ timeout: 10000 });
+      await expect(page.getByText(/upload|select.*file|drag.*drop/i).first()).toBeVisible({
+        timeout: 10000,
+      });
     });
 
     // Step 3: Upload document

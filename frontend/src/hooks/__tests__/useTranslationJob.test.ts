@@ -13,11 +13,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import React, { ReactNode, useState } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import {
-  useTranslationJob,
-  calculateProgress,
-  isTerminalState,
-} from '../useTranslationJob';
+import { useTranslationJob, calculateProgress, isTerminalState } from '../useTranslationJob';
 import { translationService, type TranslationJob } from '../../services/translationService';
 
 vi.mock('../../services/translationService', () => ({
@@ -279,4 +275,3 @@ describe('useTranslationJob', () => {
     unmount();
   });
 });
-

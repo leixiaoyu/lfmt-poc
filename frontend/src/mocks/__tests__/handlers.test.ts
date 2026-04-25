@@ -64,12 +64,7 @@ describe('computeProgress (simulation policy)', () => {
     }
     expect(observed.map((o) => o.completed)).toEqual(expected);
     // Only the final poll completes the job.
-    expect(observed.map((o) => o.isComplete)).toEqual([
-      false,
-      false,
-      false,
-      true,
-    ]);
+    expect(observed.map((o) => o.isComplete)).toEqual([false, false, false, true]);
   });
 
   it('instant mode: independent of Date.now()', () => {
@@ -233,9 +228,7 @@ describe('Translation pipeline (msw/node)', () => {
     // 4. poll status — instant mode → 4 polls reach 100%.
     let lastStatus = '';
     for (let i = 0; i < 4; i++) {
-      const s = await fetch(
-        `${API_URL}/jobs/${jobId}/translation-status`
-      ).then((r) => r.json());
+      const s = await fetch(`${API_URL}/jobs/${jobId}/translation-status`).then((r) => r.json());
       lastStatus = s.data.status;
     }
     expect(lastStatus).toBe('COMPLETED');
@@ -282,9 +275,9 @@ describe('Reserved filename error injection (Phase 5)', () => {
       kind: 'error',
       httpStatus: 500,
     });
-    expect(classifyReservedFilename('__lfmt_mock_error_network__.txt')).toEqual(
-      { kind: 'network' }
-    );
+    expect(classifyReservedFilename('__lfmt_mock_error_network__.txt')).toEqual({
+      kind: 'network',
+    });
     expect(classifyReservedFilename('__lfmt_mock_slow__.txt')).toEqual({
       kind: 'slow',
     });

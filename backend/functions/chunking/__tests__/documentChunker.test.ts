@@ -466,8 +466,7 @@ describe('DocumentChunker', () => {
   });
 
   describe('Stream-based Chunking (chunkDocumentStream)', () => {
-    const streamFromString = (s: string): Readable =>
-      Readable.from(Buffer.from(s, 'utf-8'));
+    const streamFromString = (s: string): Readable => Readable.from(Buffer.from(s, 'utf-8'));
     const streamFromBuffers = (bufs: Buffer[]): Readable => Readable.from(bufs);
 
     it('should chunk content from a Readable stream and produce equivalent chunks to chunkDocument', async () => {
@@ -487,9 +486,7 @@ describe('DocumentChunker', () => {
     });
 
     it('should produce a single chunk for small streamed content', async () => {
-      const result = await chunker.chunkDocumentStream(
-        streamFromString('Just one sentence.')
-      );
+      const result = await chunker.chunkDocumentStream(streamFromString('Just one sentence.'));
       expect(result.chunks.length).toBe(1);
       expect(result.chunks[0].previousSummary).toBe('');
       expect(result.chunks[0].nextPreview).toBe('');
@@ -525,9 +522,9 @@ describe('DocumentChunker', () => {
     });
 
     it('should reject empty stream content', async () => {
-      await expect(
-        chunker.chunkDocumentStream(streamFromString(''))
-      ).rejects.toThrow('Content cannot be empty');
+      await expect(chunker.chunkDocumentStream(streamFromString(''))).rejects.toThrow(
+        'Content cannot be empty'
+      );
     });
 
     it('should propagate stream errors to the caller', async () => {

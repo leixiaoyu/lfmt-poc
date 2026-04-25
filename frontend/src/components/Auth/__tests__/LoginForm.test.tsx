@@ -235,7 +235,9 @@ describe('LoginForm - Error Handling', () => {
     // `||` so the auth-glob branch coverage stays at 100% (the auth
     // threshold is 95% branches; one un-tested fallback drops it).
     const user = userEvent.setup();
-    const onSubmit = vi.fn().mockRejectedValue({ /* no message */ });
+    const onSubmit = vi.fn().mockRejectedValue({
+      /* no message */
+    });
     renderWithRouter(<LoginForm onSubmit={onSubmit} />);
 
     await user.type(screen.getByLabelText(/email/i), 'test@example.com');
@@ -243,9 +245,7 @@ describe('LoginForm - Error Handling', () => {
     await user.click(screen.getByRole('button', { name: /log in/i }));
 
     await waitFor(() => {
-      expect(
-        screen.getByText(/an error occurred during login/i)
-      ).toBeInTheDocument();
+      expect(screen.getByText(/an error occurred during login/i)).toBeInTheDocument();
     });
   });
 
