@@ -55,6 +55,14 @@ demo/CREDENTIALS.md
 demo/credentials.txt
 demo/*.credentials
 
+# Demo capture: translated/source dumps are large and reproducible from
+# the metrics JSON. Commit JSON, markdown, and quality samples; ignore the
+# raw translated/source/status payloads under per-document subdirectories.
+demo/results/*/source.txt
+demo/results/*/translation.txt
+demo/results/*/raw-status.json
+demo/results/*/translated-chunks/
+
 # AWS CDK
 cdk.out/
 cdk.context.json

@@ -144,11 +144,13 @@ See `demo/DEMO-CONTENT-PLAN.md` for the two-track demo strategy (Track A: live c
 
 ### Week 2 — Demo Data Capture (Free-Tier, Two Tracks)
 
+**🚧 BLOCKED 2026-04-25** — `lfmt-translate-chunk-LfmtPocDev` is throwing `TypeError: i.acquire is not a function` on every invocation since at least 2026-03-19 (deployed bundle is older than current `main`; last redeploy was 2026-04-05). The capture script in `demo/scripts/capture-chapter-metrics.mjs` is wired end-to-end and validated through chunking; it will resume cleanly once the backend stack is redeployed. See `demo/results/CAPTURE-REPORT.md` for full analysis. **Zero Gemini quota was consumed during the blocked attempt.**
+
 **Track A — Live demo content (fits free tier trivially)**:
 
-- Sherlock Holmes "A Scandal in Bohemia" (~12K words, ~5 chunks)
-- Pride & Prejudice Chapter 1 (~800 words, 1 chunk)
-- War & Peace Book 1 Chapter 1 (~2K words, 1 chunk)
+- Sherlock Holmes "A Scandal in Bohemia" (~8.5K words actual, ~3-4 chunks at 3500-token chunk size) — fixture: `demo/test-documents/chapters/sherlock-ch1.txt`
+- Pride & Prejudice Chapter 1 (~885 words, 1 chunk) — fixture: `demo/test-documents/chapters/pride-ch1.txt`
+- War & Peace Book 1 Chapter 1 (~2K words, 1 chunk) — fixture: `demo/test-documents/chapters/wp-bk1-ch1.txt`
 
 **Track B — Pre-recorded showcase (full books, staggered over 5-6 days each within 25 RPD)**:
 

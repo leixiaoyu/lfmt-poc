@@ -6,6 +6,8 @@
 **Date**: December 2025
 **Version**: 1.0 (POC Demo)
 
+> **🚧 Week 2 capture status (2026-04-25)**: All placeholder numbers in this deck remain unreplaced. Track B's automated capture run was blocked by a stale `lfmt-translate-chunk-LfmtPocDev` Lambda deployment (`TypeError: i.acquire is not a function` on every invocation since 2026-03-19). Auth, upload, and chunking pipelines are healthy; translation step is blocked. Capture script (`demo/scripts/capture-chapter-metrics.mjs`) and chapter fixtures (`demo/test-documents/chapters/`) are checked in and ready to re-run after the next backend redeploy. **Zero Gemini quota was burned during the failed attempt.** See `demo/results/CAPTURE-REPORT.md` for the full diagnostic.
+
 ---
 
 ## Slide 1: Title Slide
