@@ -67,9 +67,7 @@ describe('uploadRequest Lambda Function - Comprehensive Coverage', () => {
 
   const createMockEvent = (body: any, userId = 'test-user-123'): APIGatewayProxyEvent => ({
     body: JSON.stringify(
-      'legalAttestation' in (body || {})
-        ? body
-        : { ...body, legalAttestation: DEFAULT_ATTESTATION }
+      'legalAttestation' in (body || {}) ? body : { ...body, legalAttestation: DEFAULT_ATTESTATION }
     ),
     headers: {},
     multiValueHeaders: {},
@@ -826,10 +824,7 @@ describe('uploadRequest Lambda Function - Comprehensive Coverage', () => {
       // Filter to jobs PutItem calls only — attestation writes interleave.
       const jobsCalls = dynamoMock
         .calls()
-        .filter(
-          (c) =>
-            (c.args[0].input as PutItemCommandInput).TableName === 'test-jobs-table'
-        );
+        .filter((c) => (c.args[0].input as PutItemCommandInput).TableName === 'test-jobs-table');
       expect(jobsCalls).toHaveLength(2);
       const jobId1 = (jobsCalls[0].args[0].input as PutItemCommandInput).Item!.jobId!.S;
       const jobId2 = (jobsCalls[1].args[0].input as PutItemCommandInput).Item!.jobId!.S;
@@ -874,10 +869,7 @@ describe('uploadRequest Lambda Function - Comprehensive Coverage', () => {
       // Filter to jobs PutItem calls only — attestation writes interleave.
       const jobsCalls = dynamoMock
         .calls()
-        .filter(
-          (c) =>
-            (c.args[0].input as PutItemCommandInput).TableName === 'test-jobs-table'
-        );
+        .filter((c) => (c.args[0].input as PutItemCommandInput).TableName === 'test-jobs-table');
       expect(jobsCalls).toHaveLength(2);
       const s3Key1 = (jobsCalls[0].args[0].input as PutItemCommandInput).Item!.s3Key!.S;
       const s3Key2 = (jobsCalls[1].args[0].input as PutItemCommandInput).Item!.s3Key!.S;
@@ -1070,10 +1062,7 @@ describe('uploadRequest Lambda Function - Comprehensive Coverage', () => {
       expect(mockGetSignedUrl).not.toHaveBeenCalled();
       const jobsCalls = dynamoMock
         .calls()
-        .filter(
-          (c) =>
-            (c.args[0].input as PutItemCommandInput).TableName === 'test-jobs-table'
-        );
+        .filter((c) => (c.args[0].input as PutItemCommandInput).TableName === 'test-jobs-table');
       expect(jobsCalls).toHaveLength(0);
     });
 

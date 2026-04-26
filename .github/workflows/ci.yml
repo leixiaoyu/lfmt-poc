@@ -105,22 +105,60 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: |
+            backend/functions/package-lock.json
+            shared-types/package-lock.json
+            frontend/package-lock.json
 
       - name: Install shared-types dependencies
         working-directory: shared-types
         run: npm ci
 
+      - name: Build shared-types (needed for frontend type-check)
+        working-directory: shared-types
+        run: npm run build
+
       - name: Install function dependencies
         working-directory: backend/functions
         run: npm ci
 
+      # Mirror deploy.yml's lint + format:check so PRs surface deploy-blockers
+      # BEFORE merge. Previously these used --if-present || echo, which masked
+      # failures and let PRs merge green while deploy.yml silently rejected the
+      # same code (Issue #149).
       - name: Lint functions
         working-directory: backend/functions
-        run: npm run lint --if-present || echo "No lint script found"
+        run: npm run lint
+
+      - name: Check backend formatting
+        working-directory: backend/functions
+        run: npm run format:check
 
       - name: Check TypeScript compilation
         working-directory: backend/functions
-        run: npx tsc --noEmit || echo "TypeScript check completed"
+        run: npx tsc --noEmit
+
+      # Frontend lint/format/type-check — mirrors the steps deploy.yml's
+      # "Run Tests" job runs, so PRs surface deploy-blocking violations
+      # BEFORE merge instead of failing on main. Closes the historical
+      # ci.yml/deploy.yml lint-coverage gap that PR #149 / #152 partially
+      # closed (backend only) and the OMC audit flagged for completion.
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Lint frontend
+        working-directory: frontend
+        run: npm run lint
+
+      - name: Check frontend formatting
+        working-directory: frontend
+        run: npm run format:check
+
+      - name: Type-check frontend
+        working-directory: frontend
+        run: npm run type-check
 
   security-scan:
     name: Security Scan
@@ -273,7 +311,9 @@ jobs:
           echo "E2E Tests: temporarily disabled"
           echo "========================================="
 
-          if [ "${{ needs.test.result }}" != "success" ] || [ "${{ needs.build-infrastructure.result }}" != "success" ] || [ "${{ needs.test-frontend.result }}" != "success" ]; then
+          # lint-and-format is now required (Issue #149): deploy.yml fails on
+          # any lint or format violation, so PRs must surface those before merge.
+          if [ "${{ needs.test.result }}" != "success" ] || [ "${{ needs.build-infrastructure.result }}" != "success" ] || [ "${{ needs.test-frontend.result }}" != "success" ] || [ "${{ needs.lint-and-format.result }}" != "success" ]; then
             echo "❌ CI pipeline failed - required jobs did not pass"
             exit 1
           else

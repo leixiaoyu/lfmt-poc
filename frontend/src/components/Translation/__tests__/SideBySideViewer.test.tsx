@@ -43,11 +43,7 @@ vi.mock('react-virtuoso', () => {
       _ref
     ) => {
       return (
-        <div
-          ref={(el) => scrollerRef?.(el)}
-          data-testid="virtuoso-scroller"
-          style={style}
-        >
+        <div ref={(el) => scrollerRef?.(el)} data-testid="virtuoso-scroller" style={style}>
           {data.slice(0, 50).map((item, idx) => (
             <div key={idx}>{itemContent(idx, item)}</div>
           ))}
@@ -135,16 +131,12 @@ describe('SideBySideViewer', () => {
   });
 
   it('handles empty text without crashing', () => {
-    expect(() =>
-      render(<SideBySideViewer sourceText="" translatedText="" />)
-    ).not.toThrow();
+    expect(() => render(<SideBySideViewer sourceText="" translatedText="" />)).not.toThrow();
     expect(screen.getByText('Side-by-Side Comparison')).toBeInTheDocument();
   });
 
   it('cleans up scroll listeners on unmount', () => {
-    const { unmount } = render(
-      <SideBySideViewer sourceText="A\n\nB" translatedText="X\n\nY" />
-    );
+    const { unmount } = render(<SideBySideViewer sourceText="A\n\nB" translatedText="X\n\nY" />);
     expect(() => unmount()).not.toThrow();
   });
 });

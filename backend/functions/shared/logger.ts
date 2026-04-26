@@ -10,11 +10,22 @@ export enum LogLevel {
   ERROR = 'ERROR',
 }
 
+/**
+ * Type for additional structured logging fields.
+ *
+ * `unknown` is intentional — it preserves the flexible "log anything"
+ * ergonomics callers rely on (raw error objects, response bodies, IDs, etc.)
+ * while forcing the *reader* to narrow before introspecting, so an implicit
+ * `any` cannot leak out of the logger and infect downstream code.
+ *
+ * Follows the `unknown` + narrowing pattern established in PR #127 / PR #149
+ * / PR #152 — same shape as the (now-removed) `LogMetadata` type from
+ * `utils/logger.ts` before that file was deleted as dead code in PR #152.
+ */
 export interface LogContext {
   requestId?: string;
   userId?: string;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  [key: string]: any; // Allow any additional context properties for flexible logging
+  [key: string]: unknown;
 }
 
 class Logger {

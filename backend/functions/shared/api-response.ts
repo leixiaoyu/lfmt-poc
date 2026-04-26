@@ -30,19 +30,19 @@ export function getCorsHeaders(requestOrigin?: string): Record<string, string> {
   // Get allowed origins from environment variable (comma-separated list)
   const allowedOriginsEnv = process.env.ALLOWED_ORIGINS || process.env.ALLOWED_ORIGIN;
   const allowedOrigins = allowedOriginsEnv
-    ? allowedOriginsEnv.split(',').map(origin => origin.trim())
+    ? allowedOriginsEnv.split(',').map((origin) => origin.trim())
     : ['http://localhost:3000']; // Fallback to localhost
 
   // If requestOrigin matches an allowed origin, use it; otherwise use first allowed origin
-  const allowedOrigin = requestOrigin && allowedOrigins.includes(requestOrigin)
-    ? requestOrigin
-    : allowedOrigins[0];
+  const allowedOrigin =
+    requestOrigin && allowedOrigins.includes(requestOrigin) ? requestOrigin : allowedOrigins[0];
 
   return {
     'Content-Type': 'application/json',
     'Access-Control-Allow-Origin': allowedOrigin,
     'Access-Control-Allow-Credentials': 'true',
-    'Access-Control-Allow-Headers': 'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token',
+    'Access-Control-Allow-Headers':
+      'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token',
     'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS',
   };
 }

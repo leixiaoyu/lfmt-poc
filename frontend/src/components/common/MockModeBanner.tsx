@@ -40,8 +40,7 @@ export function MockModeBanner(): JSX.Element | null {
         color: '#000000',
         padding: '8px 16px',
         textAlign: 'center',
-        fontFamily:
-          '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+        fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
         fontWeight: 700,
         fontSize: '14px',
         letterSpacing: '0.5px',

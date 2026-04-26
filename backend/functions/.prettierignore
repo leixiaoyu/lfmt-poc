@@ -1,0 +1,12 @@
+# Build outputs
+dist/
+build/
+
+# Test coverage reports (auto-generated)
+coverage/
+
+# Dependencies
+node_modules/
+
+# Lock files
+package-lock.json

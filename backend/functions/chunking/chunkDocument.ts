@@ -96,10 +96,7 @@ function extractJobMetadata(s3Metadata: Record<string, string> | undefined): {
  * here, before any body bytes flow. Also extracts the user/job/file IDs from
  * S3 user-defined metadata so we can update job status before fetching the body.
  */
-async function headObjectWithSizeGuard(
-  bucket: string,
-  key: string
-): Promise<S3ObjectMetadata> {
+async function headObjectWithSizeGuard(bucket: string, key: string): Promise<S3ObjectMetadata> {
   const command = new HeadObjectCommand({ Bucket: bucket, Key: key });
   const response: HeadObjectCommandOutput = await s3Client.send(command);
 
@@ -362,8 +359,7 @@ export const handler: S3Handler = async (event: S3Event): Promise<void> => {
           logger.error('Failed to update job status after error', {
             bucket,
             key,
-            updateError:
-              updateError instanceof Error ? updateError.message : 'Unknown error',
+            updateError: updateError instanceof Error ? updateError.message : 'Unknown error',
           });
         }
       }

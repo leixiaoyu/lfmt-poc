@@ -20,10 +20,9 @@ import {
 } from '../../services/translationService';
 
 vi.mock('../../services/translationService', async () => {
-  const actual =
-    await vi.importActual<typeof import('../../services/translationService')>(
-      '../../services/translationService'
-    );
+  const actual = await vi.importActual<typeof import('../../services/translationService')>(
+    '../../services/translationService'
+  );
   return {
     ...actual,
     translationService: {
@@ -58,9 +57,7 @@ vi.mock('react-virtuoso', () => ({
 
 const mockNavigate = vi.fn();
 vi.mock('react-router-dom', async () => {
-  const actual = await vi.importActual<typeof import('react-router-dom')>(
-    'react-router-dom'
-  );
+  const actual = await vi.importActual<typeof import('react-router-dom')>('react-router-dom');
   return {
     ...actual,
     useNavigate: () => mockNavigate,
@@ -223,9 +220,7 @@ describe('TranslationCompare page', () => {
     renderAt();
 
     await waitFor(() => {
-      expect(
-        screen.getByText(/translation is not yet completed/i)
-      ).toBeInTheDocument();
+      expect(screen.getByText(/translation is not yet completed/i)).toBeInTheDocument();
     });
 
     // We should NOT have tried to download a blob for an in-progress job.

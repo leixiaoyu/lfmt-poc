@@ -64,28 +64,22 @@ describe('API Token Refresh Interceptor', () => {
       localStorage.setItem(AUTH_CONFIG.REFRESH_TOKEN_KEY, refreshToken);
 
       // First call to /auth/me → 401, then retry succeeds.
-      instanceMock
-        .onGet('/auth/me')
-        .replyOnce(401, { message: 'Token expired' });
+      instanceMock.onGet('/auth/me').replyOnce(401, { message: 'Token expired' });
 
       // The interceptor retries via `axios(originalRequest)` on the module,
       // not the instance, so the retry hits the moduleMock.
-      moduleMock
-        .onPost(/\/auth\/refresh$/)
-        .replyOnce(200, {
-          accessToken: newAccessToken,
-          refreshToken: newRefreshToken,
-        });
+      moduleMock.onPost(/\/auth\/refresh$/).replyOnce(200, {
+        accessToken: newAccessToken,
+        refreshToken: newRefreshToken,
+      });
 
-      moduleMock
-        .onGet(/\/auth\/me$/)
-        .replyOnce(200, { message: 'Success with new token' });
+      moduleMock.onGet(/\/auth\/me$/).replyOnce(200, { message: 'Success with new token' });
 
       const response = await apiClient.get('/auth/me');
 
       // Refresh was called once with the stored refresh token.
       const refreshCalls = moduleMock.history.post.filter((req) =>
-        (req.url ?? '').includes('/auth/refresh'),
+        (req.url ?? '').includes('/auth/refresh')
       );
       expect(refreshCalls).toHaveLength(1);
       expect(JSON.parse(refreshCalls[0].data)).toEqual({ refreshToken });
@@ -132,7 +126,7 @@ describe('API Token Refresh Interceptor', () => {
 
       // Single refresh, despite three concurrent 401s.
       const refreshCalls = moduleMock.history.post.filter((req) =>
-        (req.url ?? '').includes('/auth/refresh'),
+        (req.url ?? '').includes('/auth/refresh')
       );
       expect(refreshCalls).toHaveLength(1);
 
@@ -172,9 +166,7 @@ describe('API Token Refresh Interceptor', () => {
       localStorage.setItem(AUTH_CONFIG.USER_DATA_KEY, JSON.stringify({ id: 'u1' }));
 
       instanceMock.onGet('/auth/me').replyOnce(401, {});
-      moduleMock
-        .onPost(/\/auth\/refresh$/)
-        .replyOnce(401, { message: 'Refresh token expired' });
+      moduleMock.onPost(/\/auth\/refresh$/).replyOnce(401, { message: 'Refresh token expired' });
 
       await expect(apiClient.get('/auth/me')).rejects.toMatchObject({
         message: expect.stringContaining('expired'),
@@ -199,7 +191,7 @@ describe('API Token Refresh Interceptor', () => {
 
       // Refresh endpoint was never hit.
       const refreshCalls = moduleMock.history.post.filter((req) =>
-        (req.url ?? '').includes('/auth/refresh'),
+        (req.url ?? '').includes('/auth/refresh')
       );
       expect(refreshCalls).toHaveLength(0);
 
@@ -247,7 +239,7 @@ describe('API Token Refresh Interceptor', () => {
 
       // Refresh was not attempted.
       const refreshCalls = moduleMock.history.post.filter((req) =>
-        (req.url ?? '').includes('/auth/refresh'),
+        (req.url ?? '').includes('/auth/refresh')
       );
       expect(refreshCalls).toHaveLength(0);
 
@@ -263,16 +255,16 @@ describe('API Token Refresh Interceptor', () => {
       // refresh — it must immediately clear tokens and reject.
       instanceMock.onPost('/auth/refresh').replyOnce(401, {});
 
-      await expect(
-        apiClient.post('/auth/refresh', { refreshToken: 'test' }),
-      ).rejects.toMatchObject({
-        status: 401,
-      });
+      await expect(apiClient.post('/auth/refresh', { refreshToken: 'test' })).rejects.toMatchObject(
+        {
+          status: 401,
+        }
+      );
 
       // Only the one refresh post hit the instance; no fan-out via the module.
       expect(instanceMock.history.post).toHaveLength(1);
       const moduleRefreshCalls = moduleMock.history.post.filter((req) =>
-        (req.url ?? '').includes('/auth/refresh'),
+        (req.url ?? '').includes('/auth/refresh')
       );
       expect(moduleRefreshCalls).toHaveLength(0);
 
@@ -293,7 +285,7 @@ describe('API Token Refresh Interceptor', () => {
 
       // Refresh was not attempted.
       const refreshCalls = moduleMock.history.post.filter((req) =>
-        (req.url ?? '').includes('/auth/refresh'),
+        (req.url ?? '').includes('/auth/refresh')
       );
       expect(refreshCalls).toHaveLength(0);
 

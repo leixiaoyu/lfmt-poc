@@ -259,10 +259,14 @@ export class GeminiClient {
       });
 
       return result;
-    } catch (error: any) {
-      // eslint-disable-line @typescript-eslint/no-explicit-any
-      // Handle rate limit errors - error type from Gemini SDK is not strictly typed
-      if (error.status === 429 || error.message?.includes('429')) {
+    } catch (error: unknown) {
+      // Error type from the Gemini SDK is not strictly typed, so we narrow
+      // by inspecting fields on the unknown value before reading them.
+      const status = this.extractErrorStatus(error);
+      const message = error instanceof Error ? error.message : String(error);
+
+      // Handle rate limit errors
+      if (status === 429 || message.includes('429')) {
         const retryAfterMs = this.calculateRetryDelay(retryCount);
 
         if (retryCount < this.config.maxRetries) {
@@ -279,11 +283,16 @@ export class GeminiClient {
       }
 
       // Handle transient errors (500, 503)
-      if (error.status >= 500 && error.status < 600 && retryCount < this.config.maxRetries) {
+      if (
+        status !== undefined &&
+        status >= 500 &&
+        status < 600 &&
+        retryCount < this.config.maxRetries
+      ) {
         const retryDelayMs = this.calculateRetryDelay(retryCount);
 
         logger.warn('Transient error, retrying', {
-          status: error.status,
+          status,
           retryCount: retryCount + 1,
           retryDelayMs,
         });
@@ -294,6 +303,24 @@ export class GeminiClient {
 
       throw error;
     }
+  }
+
+  /**
+   * Extract numeric HTTP status from an unknown error shape.
+   * Gemini SDK errors expose `.status` (or `.statusCode`); narrow safely.
+   */
+  private extractErrorStatus(error: unknown): number | undefined {
+    if (typeof error !== 'object' || error === null) {
+      return undefined;
+    }
+    const candidate = error as { status?: unknown; statusCode?: unknown };
+    if (typeof candidate.status === 'number') {
+      return candidate.status;
+    }
+    if (typeof candidate.statusCode === 'number') {
+      return candidate.statusCode;
+    }
+    return undefined;
   }
 
   /**

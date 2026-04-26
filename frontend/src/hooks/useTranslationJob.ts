@@ -11,12 +11,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useState, useEffect } from 'react';
 import { translationService, TranslationJob } from '../services/translationService';
 
-const TERMINAL_STATES = [
-  'COMPLETED',
-  'FAILED',
-  'CHUNKING_FAILED',
-  'TRANSLATION_FAILED',
-] as const;
+const TERMINAL_STATES = ['COMPLETED', 'FAILED', 'CHUNKING_FAILED', 'TRANSLATION_FAILED'] as const;
 
 export function isTerminalState(status: string): boolean {
   return TERMINAL_STATES.includes(status as (typeof TERMINAL_STATES)[number]);

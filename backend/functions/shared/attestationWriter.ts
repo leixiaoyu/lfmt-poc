@@ -15,11 +15,7 @@
  */
 
 import { createHash, randomUUID } from 'crypto';
-import {
-  DynamoDBClient,
-  PutItemCommand,
-  PutItemCommandOutput,
-} from '@aws-sdk/client-dynamodb';
+import { DynamoDBClient, PutItemCommand, PutItemCommandOutput } from '@aws-sdk/client-dynamodb';
 import { marshall } from '@aws-sdk/util-dynamodb';
 import {
   ATTESTATION_VERSION,
@@ -88,9 +84,7 @@ export function computeDocumentHash(input: {
 }
 
 /** Build a fully-populated `LegalAttestationRecord` ready for persistence. */
-export function buildAttestationRecord(
-  input: BuildAttestationInput
-): LegalAttestationRecord {
+export function buildAttestationRecord(input: BuildAttestationInput): LegalAttestationRecord {
   const acceptedAt = input.acceptedAt ?? new Date().toISOString();
   const ttl = Math.floor(Date.parse(acceptedAt) / 1000) + SEVEN_YEARS_SECONDS;
 
@@ -189,9 +183,6 @@ export async function writeAttestation(
       userId: record.userId,
       error: err instanceof Error ? err.message : 'Unknown error',
     });
-    throw new AttestationWriteError(
-      'Failed to persist legal attestation record',
-      err
-    );
+    throw new AttestationWriteError('Failed to persist legal attestation record', err);
   }
 }

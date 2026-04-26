@@ -82,9 +82,7 @@ export const handler = async (event: APIGatewayProxyEvent): Promise<APIGatewayPr
 
     // Legal attestation is REQUIRED — silently dropping consent is the
     // OWASP A09 bug we are explicitly closing in OpenSpec task 3.8.0.
-    const attestationParse = legalAttestationPayloadSchema.safeParse(
-      body.legalAttestation
-    );
+    const attestationParse = legalAttestationPayloadSchema.safeParse(body.legalAttestation);
     if (!attestationParse.success) {
       logger.warn('Legal attestation validation failed', {
         requestId,
@@ -111,8 +109,7 @@ export const handler = async (event: APIGatewayProxyEvent): Promise<APIGatewayPr
     // or creating the job record. If this write fails, the entire upload
     // request fails — we never let a user upload without an audit-trail
     // entry. (OWASP A09 — Security Logging & Monitoring Failures.)
-    const sourceIp =
-      event.requestContext.identity?.sourceIp || 'unknown';
+    const sourceIp = event.requestContext.identity?.sourceIp || 'unknown';
     const userAgent =
       event.headers['User-Agent'] ||
       event.headers['user-agent'] ||
