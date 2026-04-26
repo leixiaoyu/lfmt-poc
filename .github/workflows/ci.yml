@@ -105,10 +105,19 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: |
+            backend/functions/package-lock.json
+            shared-types/package-lock.json
+            frontend/package-lock.json
 
       - name: Install shared-types dependencies
         working-directory: shared-types
         run: npm ci
+
+      - name: Build shared-types (needed for frontend type-check)
+        working-directory: shared-types
+        run: npm run build
 
       - name: Install function dependencies
         working-directory: backend/functions
@@ -129,6 +138,27 @@ jobs:
       - name: Check TypeScript compilation
         working-directory: backend/functions
         run: npx tsc --noEmit
+
+      # Frontend lint/format/type-check — mirrors the steps deploy.yml's
+      # "Run Tests" job runs, so PRs surface deploy-blocking violations
+      # BEFORE merge instead of failing on main. Closes the historical
+      # ci.yml/deploy.yml lint-coverage gap that PR #149 / #152 partially
+      # closed (backend only) and the OMC audit flagged for completion.
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Lint frontend
+        working-directory: frontend
+        run: npm run lint
+
+      - name: Check frontend formatting
+        working-directory: frontend
+        run: npm run format:check
+
+      - name: Type-check frontend
+        working-directory: frontend
+        run: npm run type-check
 
   security-scan:
     name: Security Scan
