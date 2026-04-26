@@ -18,8 +18,9 @@ export enum LogLevel {
  * while forcing the *reader* to narrow before introspecting, so an implicit
  * `any` cannot leak out of the logger and infect downstream code.
  *
- * Mirrors the LogMetadata type in utils/logger.ts and the `unknown` +
- * narrowing pattern from PR #127 / PR #149.
+ * Follows the `unknown` + narrowing pattern established in PR #127 / PR #149
+ * / PR #152 — same shape as the (now-removed) `LogMetadata` type from
+ * `utils/logger.ts` before that file was deleted as dead code in PR #152.
  */
 export interface LogContext {
   requestId?: string;
