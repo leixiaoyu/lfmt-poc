@@ -8,6 +8,7 @@ on:
     paths:
       - 'backend/**'
       - 'shared-types/**'
+      - 'frontend/**'
       - '.github/workflows/deploy.yml'
   workflow_dispatch:
     inputs:
