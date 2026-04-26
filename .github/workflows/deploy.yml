@@ -41,7 +41,8 @@ jobs:
     #
     # Steps that ci.yml runs but this job intentionally does NOT:
     #   - shared-types `npm test` (ci.yml `test` job)        [PR-gate only]
-    #   - backend `npx tsc --noEmit`  (ci.yml lint-and-format)[redundant w/ test]
+    #   - backend `npx tsc --noEmit`  (ci.yml lint-and-format)[PR-gate only;
+    #     checks every .ts file, not just tests — narrower than `npm test`]
     #   - frontend `npm run test:coverage` (ci.yml test-frontend)[PR-gate only]
     #   - frontend `npm run build`    (ci.yml test-frontend) [done in deploy-dev]
     #   - infrastructure build/test/cdk-synth (ci.yml build-infrastructure)
@@ -63,7 +64,16 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'npm'
-          cache-dependency-path: backend/functions/package-lock.json
+          # Cache all three lockfiles touched by this job (shared-types,
+          # backend/functions, frontend). Listing only one guarantees cache
+          # misses on the other two `npm ci` steps below — actions/setup-node
+          # accepts a multi-line list and hashes them together for a single
+          # composite cache key. Aligns with ci.yml lint-and-format which also
+          # caches all three (PR #154 audit fix).
+          cache-dependency-path: |
+            shared-types/package-lock.json
+            backend/functions/package-lock.json
+            frontend/package-lock.json
 
       - name: Install shared-types dependencies
         working-directory: shared-types
