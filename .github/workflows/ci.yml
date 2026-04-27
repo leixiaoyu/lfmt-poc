@@ -93,6 +93,66 @@ jobs:
         working-directory: backend/infrastructure
         run: npx cdk synth --context environment=dev --context skipLambdaBundling=true
 
+  workflow-lint:
+    name: Workflow Lint
+    runs-on: ubuntu-latest
+    # Catches the class of drift that caused Issues #149, #152, #154 — broken
+    # workflow files merging green because nothing parsed them for semantic
+    # correctness. Two checks:
+    #   1. actionlint: validates GitHub Actions expression syntax, needs:
+    #      references, action input names, shellcheck on run: blocks.
+    #   2. deploy.yml gated-job parity: deploy-dev and the 4 trailing test
+    #      jobs (production-smoke-tests, smoke-tests, integration-tests,
+    #      e2e-tests) MUST share an identical if: expression so they run as a
+    #      unit. Drift here would silently skip post-deploy verification on
+    #      manual dispatch (the exact bug PR #159 fixed for the inverse case).
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install actionlint (pinned)
+        run: |
+          # Pin to 1.7.12 — same version verified locally during PR #159 audit.
+          # Bump deliberately when adopting new actionlint features.
+          bash <(curl -sf https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash) 1.7.12 /usr/local/bin
+          actionlint --version
+
+      - name: Run actionlint on all workflow files
+        run: actionlint -color
+
+      - name: Verify deploy.yml gated-job condition parity
+        run: |
+          python3 <<'PYEOF'
+          import sys
+          import yaml
+
+          with open('.github/workflows/deploy.yml') as f:
+              wf = yaml.safe_load(f)
+
+          # These 5 jobs are the "deploy-dev cascade" — deploy-dev plus its
+          # 4 verification jobs that needs: deploy-dev. They must share an
+          # identical if: expression or the cascade will partially skip.
+          gated_jobs = [
+              'deploy-dev',
+              'production-smoke-tests',
+              'smoke-tests',
+              'integration-tests',
+              'e2e-tests',
+          ]
+          conditions = {job: wf['jobs'][job].get('if', '') for job in gated_jobs}
+          unique = set(conditions.values())
+
+          if len(unique) != 1:
+              print('::error file=.github/workflows/deploy.yml::deploy.yml gated jobs have divergent if: expressions — cascade will silently partial-skip')
+              for job, cond in conditions.items():
+                  print(f'  {job}: {cond}', file=sys.stderr)
+              sys.exit(1)
+
+          print(f'OK: all {len(gated_jobs)} gated jobs share an identical if: expression')
+          print(f'Condition: {next(iter(unique))}')
+          PYEOF
+
   lint-and-format:
     name: Lint and Format Check
     runs-on: ubuntu-latest
@@ -294,7 +354,7 @@ jobs:
   ci-summary:
     name: CI Summary
     runs-on: ubuntu-latest
-    needs: [test, build-infrastructure, lint-and-format, security-scan, test-frontend] # test-e2e temporarily disabled
+    needs: [test, build-infrastructure, lint-and-format, security-scan, test-frontend, workflow-lint] # test-e2e temporarily disabled
     if: always()
 
     steps:
@@ -308,12 +368,16 @@ jobs:
           echo "Lint and Format: ${{ needs.lint-and-format.result }}"
           echo "Security Scan: ${{ needs.security-scan.result }}"
           echo "Frontend Tests: ${{ needs.test-frontend.result }}"
+          echo "Workflow Lint: ${{ needs.workflow-lint.result }}"
           echo "E2E Tests: temporarily disabled"
           echo "========================================="
 
-          # lint-and-format is now required (Issue #149): deploy.yml fails on
-          # any lint or format violation, so PRs must surface those before merge.
-          if [ "${{ needs.test.result }}" != "success" ] || [ "${{ needs.build-infrastructure.result }}" != "success" ] || [ "${{ needs.test-frontend.result }}" != "success" ] || [ "${{ needs.lint-and-format.result }}" != "success" ]; then
+          # lint-and-format is required (Issue #149): deploy.yml fails on any
+          # lint or format violation, so PRs must surface those before merge.
+          # workflow-lint is required (Issue #162 / PR #159): catches GH Actions
+          # expression syntax errors and deploy.yml gated-job condition drift
+          # at PR time, before the broken workflow merges to main.
+          if [ "${{ needs.test.result }}" != "success" ] || [ "${{ needs.build-infrastructure.result }}" != "success" ] || [ "${{ needs.test-frontend.result }}" != "success" ] || [ "${{ needs.lint-and-format.result }}" != "success" ] || [ "${{ needs.workflow-lint.result }}" != "success" ]; then
             echo "❌ CI pipeline failed - required jobs did not pass"
             exit 1
           else
