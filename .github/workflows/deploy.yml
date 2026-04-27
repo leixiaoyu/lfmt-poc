@@ -329,7 +329,9 @@ jobs:
             local required="$3"
 
             if echo "$HEADERS" | grep -i "^${header_name}:" > /dev/null; then
-              local header_value=$(echo "$HEADERS" | grep -i "^${header_name}:" | cut -d: -f2- | tr -d '\r\n' | xargs)
+              # SC2155: declare and assign separately so command failure isn't masked.
+              local header_value
+              header_value=$(echo "$HEADERS" | grep -i "^${header_name}:" | cut -d: -f2- | tr -d '\r\n' | xargs)
               echo "✅ ${header_name}: ${header_value}"
 
               if [ -n "$header_pattern" ]; then

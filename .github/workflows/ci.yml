@@ -119,7 +119,15 @@ jobs:
           actionlint --version
 
       - name: Run actionlint on all workflow files
-        run: actionlint -color
+        # `-shellcheck "shellcheck -S warning"` keeps warning + error severity
+        # but suppresses info-level findings. The Ubuntu runner has shellcheck
+        # preinstalled, so actionlint invokes it on every `run:` block. Most
+        # info-level findings on these workflows are SC2086 false positives —
+        # shellcheck flags `${{ steps.X.outputs.Y }}` as un-quoted bash
+        # interpolation, but those are GH Actions expressions substituted at
+        # YAML-processing time, not bash variables. Real bash quoting bugs
+        # would still fire as warnings/errors and be caught.
+        run: actionlint -color -shellcheck "shellcheck -S warning"
 
       - name: Verify deploy.yml gated-job condition parity
         run: |
