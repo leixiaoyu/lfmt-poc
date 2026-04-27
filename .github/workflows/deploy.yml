@@ -13,7 +13,11 @@ on:
   workflow_dispatch:
     inputs:
       environment:
-        description: 'Environment to deploy'
+        # NOTE: default is 'dev' — running `gh workflow run deploy.yml --ref main`
+        # with no `-f environment=...` flag triggers a real deploy to LfmtPocDev
+        # (CDK + S3 sync + CloudFront invalidation + smoke + integration + e2e).
+        # Pick `staging` or `prod` explicitly to target those stacks instead.
+        description: 'Environment to deploy (dev triggers a real deploy to LfmtPocDev)'
         required: true
         default: 'dev'
         type: choice
@@ -136,7 +140,22 @@ jobs:
     name: Deploy to Development
     runs-on: ubuntu-latest
     needs: test
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    # Trigger conditions:
+    #   - push to main → automatic deploy
+    #   - workflow_dispatch with environment=dev → manual deploy (escape hatch)
+    # The manual path was added after Issue #158 (cdk import for
+    # TranslationApiKeySecret) when we needed to verify a hand-fix without
+    # piggy-backing on an unrelated commit. staging/prod are dispatchable via
+    # dedicated jobs below (note: those lack a main-branch guard — tracked
+    # in Issue #160 as a follow-up).
+    #
+    # Drift-prevention history: this file has had three trigger-related
+    # incidents in one quarter (Issue #149 backend lint regression, PR #152
+    # shared-types build, PR #154 frontend trigger gap). Do NOT collapse this
+    # condition back to `event_name == 'push'` without re-adding a manual
+    # dev-redeploy path elsewhere — the next person to "simplify" this away
+    # will trigger the next incident.
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'dev'))
     environment:
       name: development
       url: ${{ steps.get-frontend-url.outputs.frontend_url }}
@@ -310,7 +329,9 @@ jobs:
             local required="$3"
 
             if echo "$HEADERS" | grep -i "^${header_name}:" > /dev/null; then
-              local header_value=$(echo "$HEADERS" | grep -i "^${header_name}:" | cut -d: -f2- | tr -d '\r\n' | xargs)
+              # SC2155: declare and assign separately so command failure isn't masked.
+              local header_value
+              header_value=$(echo "$HEADERS" | grep -i "^${header_name}:" | cut -d: -f2- | tr -d '\r\n' | xargs)
               echo "✅ ${header_name}: ${header_value}"
 
               if [ -n "$header_pattern" ]; then
@@ -432,7 +453,7 @@ jobs:
     name: Run Production Smoke Tests
     runs-on: ubuntu-latest
     needs: deploy-dev
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'dev'))
 
     steps:
       - name: Checkout code
@@ -507,7 +528,7 @@ jobs:
     name: Run Smoke Tests
     runs-on: ubuntu-latest
     needs: deploy-dev
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'dev'))
 
     steps:
       - name: Checkout code
@@ -546,7 +567,7 @@ jobs:
     name: Run Backend Integration Tests
     runs-on: ubuntu-latest
     needs: deploy-dev
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'dev'))
 
     permissions:
       id-token: write
@@ -643,7 +664,7 @@ jobs:
     name: Run E2E Tests
     runs-on: ubuntu-latest
     needs: deploy-dev
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'dev'))
 
     steps:
       - name: Checkout code
