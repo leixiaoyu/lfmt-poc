@@ -8,6 +8,7 @@ on:
     paths:
       - 'backend/**'
       - 'shared-types/**'
+      - 'frontend/**'
       - '.github/workflows/deploy.yml'
   workflow_dispatch:
     inputs:
@@ -37,7 +38,11 @@ jobs:
     # security-scan, test-frontend). The contract is: any code that
     # reaches main has already passed the full ci.yml suite, so this job
     # only re-verifies the deploy-blocking subset (lint, format, type-check,
-    # backend tests + coverage) against the merged main commit.
+    # backend tests + coverage) against the merged main commit. This applies
+    # equally to backend, shared-types, AND frontend pushes — the trigger
+    # `paths` above include `frontend/**`, and the steps below cover frontend
+    # lint/format/type-check; full vitest coverage and the production build
+    # remain ci.yml-only because deploy-dev rebuilds with the live VITE_API_URL.
     #
     # Steps that ci.yml runs but this job intentionally does NOT:
     #   - shared-types `npm test` (ci.yml `test` job)        [PR-gate only]
@@ -152,7 +157,15 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'npm'
-          cache-dependency-path: backend/infrastructure/package-lock.json
+          # deploy-dev runs `npm ci` in four directories below: shared-types,
+          # backend/functions, backend/infrastructure, and frontend. List all
+          # four lockfiles so the cache key is computed across the full set
+          # (same multi-lockfile pattern as the Run Tests job above and ci.yml).
+          cache-dependency-path: |
+            shared-types/package-lock.json
+            backend/functions/package-lock.json
+            backend/infrastructure/package-lock.json
+            frontend/package-lock.json
 
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
@@ -548,7 +561,12 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'npm'
-          cache-dependency-path: backend/functions/package-lock.json
+          # integration-tests runs `npm ci` in shared-types AND backend/functions
+          # below. List both lockfiles so the cache key reflects the full set
+          # (matches the multi-lockfile pattern used in Run Tests + deploy-dev).
+          cache-dependency-path: |
+            shared-types/package-lock.json
+            backend/functions/package-lock.json
 
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
