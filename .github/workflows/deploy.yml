@@ -13,7 +13,11 @@ on:
   workflow_dispatch:
     inputs:
       environment:
-        description: 'Environment to deploy'
+        # NOTE: default is 'dev' — running `gh workflow run deploy.yml --ref main`
+        # with no `-f environment=...` flag triggers a real deploy to LfmtPocDev
+        # (CDK + S3 sync + CloudFront invalidation + smoke + integration + e2e).
+        # Pick `staging` or `prod` explicitly to target those stacks instead.
+        description: 'Environment to deploy (dev triggers a real deploy to LfmtPocDev)'
         required: true
         default: 'dev'
         type: choice
@@ -136,7 +140,15 @@ jobs:
     name: Deploy to Development
     runs-on: ubuntu-latest
     needs: test
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    # Trigger conditions:
+    #   - push to main → automatic deploy
+    #   - workflow_dispatch with environment=dev → manual deploy (escape hatch)
+    # The manual path was added after Issue #158 (cdk import for
+    # TranslationApiKeySecret) when we needed to verify a hand-fix without
+    # piggy-backing on an unrelated commit. staging/prod are dispatchable via
+    # dedicated jobs below; do NOT collapse this back to `event_name == 'push'`
+    # without re-adding a manual dev-redeploy path elsewhere.
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'dev'))
     environment:
       name: development
       url: ${{ steps.get-frontend-url.outputs.frontend_url }}
@@ -432,7 +444,7 @@ jobs:
     name: Run Production Smoke Tests
     runs-on: ubuntu-latest
     needs: deploy-dev
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'dev'))
 
     steps:
       - name: Checkout code
@@ -507,7 +519,7 @@ jobs:
     name: Run Smoke Tests
     runs-on: ubuntu-latest
     needs: deploy-dev
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'dev'))
 
     steps:
       - name: Checkout code
@@ -546,7 +558,7 @@ jobs:
     name: Run Backend Integration Tests
     runs-on: ubuntu-latest
     needs: deploy-dev
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'dev'))
 
     permissions:
       id-token: write
@@ -643,7 +655,7 @@ jobs:
     name: Run E2E Tests
     runs-on: ubuntu-latest
     needs: deploy-dev
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'dev'))
 
     steps:
       - name: Checkout code
