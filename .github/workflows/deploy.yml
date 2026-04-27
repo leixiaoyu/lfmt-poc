@@ -8,6 +8,7 @@ on:
     paths:
       - 'backend/**'
       - 'shared-types/**'
+      - 'frontend/**'
       - '.github/workflows/deploy.yml'
   workflow_dispatch:
     inputs:
@@ -29,6 +30,35 @@ jobs:
   test:
     name: Run Tests
     runs-on: ubuntu-latest
+    # ci.yml ↔ deploy.yml parity (Phase 1.1 audit, 2026-04-18):
+    #
+    # This job is the deploy-time gate for main. It is intentionally a
+    # SUBSET of ci.yml's PR-time gates. ci.yml runs on every PR and covers
+    # the full matrix (test, lint-and-format, build-infrastructure,
+    # security-scan, test-frontend). The contract is: any code that
+    # reaches main has already passed the full ci.yml suite, so this job
+    # only re-verifies the deploy-blocking subset (lint, format, type-check,
+    # backend tests + coverage) against the merged main commit. This applies
+    # equally to backend, shared-types, AND frontend pushes — the trigger
+    # `paths` above include `frontend/**`, and the steps below cover frontend
+    # lint/format/type-check; full vitest coverage and the production build
+    # remain ci.yml-only because deploy-dev rebuilds with the live VITE_API_URL.
+    #
+    # Steps that ci.yml runs but this job intentionally does NOT:
+    #   - shared-types `npm test` (ci.yml `test` job)        [PR-gate only]
+    #   - backend `npx tsc --noEmit`  (ci.yml lint-and-format)[PR-gate only;
+    #     checks every .ts file, not just tests — narrower than `npm test`]
+    #   - frontend `npm run test:coverage` (ci.yml test-frontend)[PR-gate only]
+    #   - frontend `npm run build`    (ci.yml test-frontend) [done in deploy-dev]
+    #   - infrastructure build/test/cdk-synth (ci.yml build-infrastructure)
+    #     [the `cdk deploy` below implicitly re-synths; PR gate is authoritative]
+    #   - npm audit                   (ci.yml security-scan) [PR-gate only]
+    #
+    # If you add a new deploy-blocking step to deploy.yml, also add it to
+    # ci.yml so PRs surface failures BEFORE merge. Do NOT remove the
+    # primary lint/format/type-check steps below — those are the ones
+    # that historically failed at deploy-time after merging green PRs
+    # (Issue #149 backend lint, Issue #152 follow-on shared-types build).
 
     steps:
       - name: Checkout code
@@ -39,11 +69,32 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'npm'
-          cache-dependency-path: backend/functions/package-lock.json
+          # Cache all three lockfiles touched by this job (shared-types,
+          # backend/functions, frontend). Listing only one guarantees cache
+          # misses on the other two `npm ci` steps below — actions/setup-node
+          # accepts a multi-line list and hashes them together for a single
+          # composite cache key. Aligns with ci.yml lint-and-format which also
+          # caches all three (PR #154 audit fix).
+          cache-dependency-path: |
+            shared-types/package-lock.json
+            backend/functions/package-lock.json
+            frontend/package-lock.json
 
       - name: Install shared-types dependencies
         working-directory: shared-types
         run: npm ci
+
+      # Build shared-types BEFORE the frontend type-check below. The frontend
+      # imports from '@lfmt/shared-types', which resolves through the package's
+      # main/types entry to shared-types/dist/. Without this build step, the
+      # Type-check frontend step fails with TS2307 "Cannot find module
+      # '@lfmt/shared-types'". Mirrors ci.yml lint-and-format (line ~118) and
+      # the deploy-dev/staging/prod jobs below, which already build shared-types
+      # before the frontend rebuild. Closes the parity gap that allowed PR #152
+      # to merge green while deploy.yml still failed at type-check.
+      - name: Build shared-types
+        working-directory: shared-types
+        run: npm run build
 
       - name: Install function dependencies
         working-directory: backend/functions
@@ -106,7 +157,15 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'npm'
-          cache-dependency-path: backend/infrastructure/package-lock.json
+          # deploy-dev runs `npm ci` in four directories below: shared-types,
+          # backend/functions, backend/infrastructure, and frontend. List all
+          # four lockfiles so the cache key is computed across the full set
+          # (same multi-lockfile pattern as the Run Tests job above and ci.yml).
+          cache-dependency-path: |
+            shared-types/package-lock.json
+            backend/functions/package-lock.json
+            backend/infrastructure/package-lock.json
+            frontend/package-lock.json
 
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
@@ -502,7 +561,12 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'npm'
-          cache-dependency-path: backend/functions/package-lock.json
+          # integration-tests runs `npm ci` in shared-types AND backend/functions
+          # below. List both lockfiles so the cache key reflects the full set
+          # (matches the multi-lockfile pattern used in Run Tests + deploy-dev).
+          cache-dependency-path: |
+            shared-types/package-lock.json
+            backend/functions/package-lock.json
 
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
