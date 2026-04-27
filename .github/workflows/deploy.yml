@@ -146,8 +146,15 @@ jobs:
     # The manual path was added after Issue #158 (cdk import for
     # TranslationApiKeySecret) when we needed to verify a hand-fix without
     # piggy-backing on an unrelated commit. staging/prod are dispatchable via
-    # dedicated jobs below; do NOT collapse this back to `event_name == 'push'`
-    # without re-adding a manual dev-redeploy path elsewhere.
+    # dedicated jobs below (note: those lack a main-branch guard — tracked
+    # in Issue #160 as a follow-up).
+    #
+    # Drift-prevention history: this file has had three trigger-related
+    # incidents in one quarter (Issue #149 backend lint regression, PR #152
+    # shared-types build, PR #154 frontend trigger gap). Do NOT collapse this
+    # condition back to `event_name == 'push'` without re-adding a manual
+    # dev-redeploy path elsewhere — the next person to "simplify" this away
+    # will trigger the next incident.
     if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'dev'))
     environment:
       name: development
