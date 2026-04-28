@@ -169,11 +169,12 @@ describe('TranslationHistory', () => {
       expect(screen.getByRole('columnheader', { name: /Created/i })).toBeInTheDocument();
       expect(screen.getByRole('columnheader', { name: /Actions/i })).toBeInTheDocument();
 
-      // Check job data
+      // Check job data — Issue #145: history table renders friendly
+      // labels rather than raw 'es' / 'formal' enum codes.
       expect(screen.getByText('document1.txt')).toBeInTheDocument();
       expect(screen.getByText('job-1')).toBeInTheDocument();
-      expect(screen.getByText('es')).toBeInTheDocument();
-      expect(screen.getByText('formal')).toBeInTheDocument();
+      expect(screen.getByText('Spanish (Español)')).toBeInTheDocument();
+      expect(screen.getByText('Formal')).toBeInTheDocument();
       expect(screen.getByText('COMPLETED')).toBeInTheDocument();
     });
 
@@ -620,13 +621,14 @@ describe('TranslationHistory', () => {
 
       renderComponent();
 
+      // Issue #145: friendly labels rather than raw enum codes.
       await waitFor(() => {
-        expect(screen.getByText('es')).toBeInTheDocument();
+        expect(screen.getByText('Spanish (Español)')).toBeInTheDocument();
       });
 
-      expect(screen.getByText('formal')).toBeInTheDocument();
-      expect(screen.getByText('fr')).toBeInTheDocument();
-      expect(screen.getByText('informal')).toBeInTheDocument();
+      expect(screen.getByText('Formal')).toBeInTheDocument();
+      expect(screen.getByText('French (Français)')).toBeInTheDocument();
+      expect(screen.getByText('Informal')).toBeInTheDocument();
     });
 
     it('should show "Not set" when language is missing', async () => {

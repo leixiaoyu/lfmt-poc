@@ -36,6 +36,7 @@ import {
   translationService,
   TranslationServiceError,
 } from '../services/translationService';
+import { getLanguageLabel, getToneLabel } from '../utils/translationLabels';
 
 const STATUS_COLORS: Record<string, 'default' | 'primary' | 'success' | 'error' | 'warning'> = {
   PENDING: 'default',
@@ -245,10 +246,12 @@ export const TranslationHistory: React.FC = () => {
                   <TableCell>
                     {job.targetLanguage ? (
                       <Box>
-                        <Typography variant="body2">{job.targetLanguage}</Typography>
+                        <Typography variant="body2">
+                          {getLanguageLabel(job.targetLanguage)}
+                        </Typography>
                         {job.tone && (
                           <Typography variant="caption" color="text.secondary">
-                            {job.tone}
+                            {getToneLabel(job.tone)}
                           </Typography>
                         )}
                       </Box>

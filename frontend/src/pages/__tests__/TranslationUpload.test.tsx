@@ -38,9 +38,15 @@ vi.mock('../../services/translationService', () => ({
     startTranslation: vi.fn(),
   },
   TranslationServiceError: class TranslationServiceError extends Error {
-    constructor(message: string) {
+    statusCode?: number;
+    constructor(message: string, statusCode?: number) {
       super(message);
       this.name = 'TranslationServiceError';
+      // Mirror the production constructor (translationService.ts:79-87) so
+      // tests that exercise HTTP-status-aware UX (Issue #147) get a real
+      // statusCode on the error instead of always falling through to the
+      // network-error branch of getTranslationErrorMessage.
+      this.statusCode = statusCode;
     }
   },
 }));
@@ -345,8 +351,10 @@ describe('TranslationUpload', () => {
 
       expect(screen.getByText('Review Your Submission')).toBeInTheDocument();
       expect(screen.getByText('test-document.txt')).toBeInTheDocument();
-      expect(screen.getByText('es')).toBeInTheDocument(); // language code
-      expect(screen.getByText('formal')).toBeInTheDocument();
+      // Issue #145: review step now shows friendly labels rather than
+      // raw enum codes ('es' / 'formal').
+      expect(screen.getByText('Spanish (Español)')).toBeInTheDocument();
+      expect(screen.getByText('Formal')).toBeInTheDocument();
       expect(screen.getByText(/All requirements confirmed/i)).toBeInTheDocument();
     });
 
@@ -445,11 +453,18 @@ describe('TranslationUpload', () => {
       renderComponent();
       await advanceToStep4(user);
 
-      // Mock failed service call
+      // Mock failed service call — Issue #147: errors with a known
+      // statusCode resolve to a curated user-facing phrase. With
+      // statusCode=413, the helper produces the file-too-large message;
+      // with statusCode=undefined (no response from network failure) it
+      // produces the connection-lost message. The helper falls back to
+      // the raw error.message ONLY when the status is set but unmapped,
+      // so we set statusCode=400 with a literal message to exercise the
+      // pass-through branch.
       const TranslationServiceError = (await import('../../services/translationService'))
         .TranslationServiceError;
       vi.mocked(translationService.createLegalAttestation).mockRejectedValue(
-        new TranslationServiceError('Upload failed: Network error')
+        new TranslationServiceError('Upload failed: invalid file', 400)
       );
 
       const submitButton = screen.getByRole('button', { name: /Submit & Start Translation/i });
@@ -458,16 +473,18 @@ describe('TranslationUpload', () => {
       await waitFor(() => {
         const errorAlert = screen.getByRole('alert');
         expect(errorAlert).toBeInTheDocument();
-        expect(errorAlert).toHaveTextContent(/Upload failed: Network error/i);
+        // 400 is mapped → curated phrase rather than the raw message.
+        expect(errorAlert).toHaveTextContent(/Translation could not start/i);
       });
     });
 
-    it('should display generic error message for unexpected errors', async () => {
+    it('should display network-error message for unexpected errors', async () => {
       const user = userEvent.setup();
       renderComponent();
       await advanceToStep4(user);
 
-      // Mock unexpected error
+      // Mock unexpected error — bare Error has no statusCode, which the
+      // helper treats as a network/transport failure (Issue #147).
       vi.mocked(translationService.createLegalAttestation).mockRejectedValue(
         new Error('Unexpected error')
       );
@@ -478,7 +495,7 @@ describe('TranslationUpload', () => {
       await waitFor(() => {
         const errorAlert = screen.getByRole('alert');
         expect(errorAlert).toBeInTheDocument();
-        expect(errorAlert).toHaveTextContent(/An unexpected error occurred/i);
+        expect(errorAlert).toHaveTextContent(/Connection lost/i);
       });
     });
 

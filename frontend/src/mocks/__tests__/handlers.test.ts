@@ -37,8 +37,11 @@ describe('computeProgress (simulation policy)', () => {
       completedChunks: 0,
       failedChunks: 0,
       fileName: 'doc.txt',
+      // Persisted on JobState for Issues #143 (tone) and #144 (fileSize).
+      fileSize: 0,
       sourceLang: 'auto',
       targetLang: 'es',
+      tone: 'neutral',
       createdAt: new Date(0).toISOString(),
       ...overrides,
     };
@@ -411,8 +414,10 @@ describe('Reserved filename error injection (Phase 5)', () => {
       completedChunks: 0,
       failedChunks: 0,
       fileName: '__lfmt_mock_slow__.txt',
+      fileSize: 0,
       sourceLang: 'auto',
       targetLang: 'es',
+      tone: 'neutral',
       createdAt: new Date(0).toISOString(),
       translateStartedAt: start,
     };

@@ -73,8 +73,18 @@ export type JobState = {
   completedChunks: number;
   failedChunks: number;
   fileName: string;
+  // Persisted from the upload request so the wire shape can echo back the
+  // actual size on the Translation Details / History views (Issue #144).
+  // Without this, every job rendered as "File Size: 0 Bytes".
+  fileSize: number;
   sourceLang: string;
   targetLang: string;
+  // Persisted from the translate request so all views (wizard review →
+  // job details → history) display the same tone. Defaults to 'neutral'
+  // when the request omits it, matching shared-types/src/jobs.ts default.
+  // Issue #143: previous code dropped tone on the floor and rendered
+  // 'neutral' regardless of the wizard selection.
+  tone: string;
   createdAt: string;
   completedAt?: string;
   /**
@@ -106,6 +116,19 @@ const jobs = new Map<string, JobState>();
 // Token → user lookup, populated on register/login. Mirrors the real
 // backend's "session" abstraction; cleared on resetState() / logout.
 const sessions = new Map<string, MockUser>();
+// Email (lowercased) → user lookup, populated on register and consulted
+// on login. Without this, the login handler had no way to recover the
+// firstName/lastName a user supplied at registration, so it fabricated a
+// generic 'Mock User' on every login (Issue #142). Persisted across the
+// closure lifetime; cleared on resetState() the same way `sessions` is.
+const registeredUsers = new Map<string, MockUser>();
+// Most-recently-issued user. Fallback for `GET /auth/me` when the access
+// token isn't in `sessions` — happens when the SW restarts between page
+// navigations and loses closure state, but the page still has a valid
+// access token in localStorage. Without this, /auth/me silently returned
+// `mock-user-default` ('Mock User'), breaking the perceived session
+// across direct-URL navigation (Issue #141).
+let lastIssuedUser: MockUser | null = null;
 
 /**
  * Reset the closure-scoped job store. Used by Vitest `afterEach` and
@@ -116,6 +139,8 @@ const sessions = new Map<string, MockUser>();
 export function resetState(): void {
   jobs.clear();
   sessions.clear();
+  registeredUsers.clear();
+  lastIssuedUser = null;
 }
 
 // ---------------------------------------------------------------------------
@@ -144,6 +169,10 @@ function issueTokens(user: MockUser): {
   const refreshToken = `mock-refresh-${uuid()}`;
   sessions.set(accessToken, user);
   sessions.set(refreshToken, user);
+  // Track the most-recently-issued user so /auth/me can recover identity
+  // after a Service-Worker restart wipes the `sessions` Map but the page
+  // still holds a valid access token in localStorage (Issue #141).
+  lastIssuedUser = user;
   return { accessToken, refreshToken };
 }
 
@@ -167,6 +196,10 @@ const authHandlers: HttpHandler[] = [
       firstName: typeof body.firstName === 'string' ? body.firstName : undefined,
       lastName: typeof body.lastName === 'string' ? body.lastName : undefined,
     });
+    // Persist the registered user keyed by email so a subsequent login
+    // round-trip can recover firstName/lastName instead of fabricating a
+    // generic "Mock User" (Issue #142).
+    registeredUsers.set(user.email.toLowerCase(), user);
     const tokens = issueTokens(user);
     return HttpResponse.json({ user, ...tokens }, { status: 200 });
   }),
@@ -174,9 +207,14 @@ const authHandlers: HttpHandler[] = [
   // POST /auth/login
   http.post(buildPath('/auth/login'), async ({ request }) => {
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
-    const user = buildMockUser({
-      email: typeof body.email === 'string' ? body.email : undefined,
-    });
+    const email = typeof body.email === 'string' ? body.email : undefined;
+    // Look up the previously-registered user by email before falling back
+    // to a synthesized one. Without this, every login returned a fresh
+    // 'Mock User' and the user's real firstName/lastName from registration
+    // was lost (Issue #142). Mock mode is single-tenant by design, so the
+    // password is intentionally not validated.
+    const existing = email ? registeredUsers.get(email.toLowerCase()) : undefined;
+    const user = existing ?? buildMockUser({ email });
     const tokens = issueTokens(user);
     return HttpResponse.json({ user, ...tokens }, { status: 200 });
   }),
@@ -209,19 +247,29 @@ const authHandlers: HttpHandler[] = [
 
   // GET /auth/me — authService expects { user: User } (NOT bare User).
   http.get(buildPath('/auth/me'), ({ request }) => {
-    const user = userFromAuthHeader(request.headers.get('Authorization'));
-    if (!user) {
-      // Default fallback so the dashboard renders even on a fresh
-      // page reload before the user has an active session.
-      const fallback: MockUser = {
-        id: 'mock-user-default',
-        email: 'demo@lfmt.dev',
-        firstName: 'Mock',
-        lastName: 'User',
-      };
-      return HttpResponse.json({ user: fallback }, { status: 200 });
+    const authHeader = request.headers.get('Authorization');
+    const user = userFromAuthHeader(authHeader);
+    if (user) {
+      return HttpResponse.json({ user }, { status: 200 });
     }
-    return HttpResponse.json({ user }, { status: 200 });
+    // Issue #141: when the SW restarts mid-session, the closure-scoped
+    // `sessions` Map is wiped but the page still has a valid access
+    // token in localStorage. The previous code returned a hardcoded
+    // 'Mock User' here, breaking the UI's perceived session on every
+    // direct-URL navigation. Recovery policy:
+    //   1. If the request bears SOME Bearer token AND we still remember
+    //      who we last issued tokens for, treat that as the active user.
+    //      Mock mode is single-tenant by design, so this matches the
+    //      demo scenario without leaking identity across sessions.
+    //   2. Otherwise (no Authorization header at all), respond 401 so
+    //      the AuthContext can route to /login deterministically — this
+    //      is closer to the real backend's contract than a hardcoded
+    //      fallback user.
+    const hasBearerToken = !!authHeader && /^Bearer\s+\S+/.test(authHeader);
+    if (hasBearerToken && lastIssuedUser) {
+      return HttpResponse.json({ user: lastIssuedUser }, { status: 200 });
+    }
+    return HttpResponse.json({ message: 'Unauthorized' }, { status: 401 });
   }),
 
   // POST /auth/forgot-password — mirrors real backend: success even
@@ -390,13 +438,18 @@ function toWireStatus(state: JobState): string {
 function toWireJob(state: JobState): Record<string, unknown> {
   return {
     jobId: state.jobId,
-    userId: 'mock-user-default',
+    userId: lastIssuedUser?.id ?? 'mock-user-default',
     fileName: state.fileName,
-    fileSize: 0,
+    // Issue #144: was hardcoded to 0; now echoes the value captured from
+    // the upload request body so the Job Information view shows the real
+    // size instead of "0 Bytes".
+    fileSize: state.fileSize,
     contentType: 'text/plain',
     status: toWireStatus(state),
     targetLanguage: state.targetLang,
-    tone: 'neutral',
+    // Issue #143: was hardcoded to 'neutral'; now echoes whatever the
+    // translate request supplied (or the wizard's neutral default).
+    tone: state.tone,
     totalChunks: state.totalChunks,
     completedChunks: state.completedChunks,
     failedChunks: state.failedChunks,
@@ -496,8 +549,12 @@ const translationHandlers: HttpHandler[] = [
       completedChunks: 0,
       failedChunks: 0,
       fileName,
+      fileSize,
       sourceLang: 'auto',
       targetLang: 'es',
+      // Default tone matches shared-types/src/jobs.ts; overwritten by
+      // the translate request when the wizard supplies a value.
+      tone: 'neutral',
       createdAt: now,
     });
 
@@ -566,6 +623,14 @@ const translationHandlers: HttpHandler[] = [
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
     if (typeof body.targetLanguage === 'string') {
       job.targetLang = body.targetLanguage;
+    }
+    // Issue #143: previously, `tone` from the wizard was dropped on the
+    // floor here and the job always showed 'neutral'. Persist whatever
+    // the wizard supplies; any other code path that reads back the job
+    // (status poll, history list, details page) will see the correct
+    // value via toWireJob().
+    if (typeof body.tone === 'string') {
+      job.tone = body.tone;
     }
     job.status = 'translating';
     job.translateStartedAt = Date.now();

@@ -77,11 +77,12 @@ describe('TranslationProgress Component', () => {
       // Act
       render(<TranslationProgress jobId="job-123" />);
 
-      // Assert
+      // Assert — Issue #145: progress card shows the friendly language
+      // label, not the raw 'es' code.
       await waitFor(() => {
         expect(screen.getByText('Translation Progress')).toBeInTheDocument();
         expect(screen.getByText('test-document.txt')).toBeInTheDocument();
-        expect(screen.getByText('es')).toBeInTheDocument();
+        expect(screen.getByText('Spanish (Español)')).toBeInTheDocument();
       });
     });
 
