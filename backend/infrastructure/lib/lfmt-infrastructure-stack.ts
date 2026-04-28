@@ -1152,15 +1152,17 @@ export class LfmtInfrastructureStack extends Stack {
       backoffRate: 2.0, // Exponential backoff: 2s, 4s, 8s
     });
 
-    // Add catch for non-retryable errors
-    const failState = new stepfunctions.Fail(this, 'TranslationFailed', {
-      comment: 'Translation failed - non-retryable error',
-    });
-
-    translateChunkTask.addCatch(failState, {
-      errors: ['States.ALL'],
-      resultPath: '$.error',
-    });
+    // NOTE (Issue #151): Failure handling lives on the Map state, NOT on the
+    // iterator task. The previous design attached `addCatch(failState)` to the
+    // inner `translateChunkTask` with `failState` defined OUTSIDE the iterator.
+    // CDK synthesized this with the Catch handler scoped INSIDE the iteration,
+    // which made each Lambda failure behave as a "successfully caught"
+    // iteration result. The Map state then aggregated those caught failures as
+    // if every chunk had succeeded, ran updateJobCompleted, and wrote
+    // translationStatus=COMPLETED + progress=100% to DDB even when zero chunks
+    // were translated (latent for ~30 days; surfaced by Track B demo capture).
+    // The fix below catches at the Map level and routes to a real DDB writer
+    // that records TRANSLATION_FAILED, so the UI sees the truth.
 
     // Map state to process all chunks in parallel
     // maxConcurrency can be configured per environment via CDK context:
@@ -1202,6 +1204,47 @@ export class LfmtInfrastructureStack extends Stack {
         ':updatedAt': tasks.DynamoAttributeValue.fromString(stepfunctions.JsonPath.stringAt('$$.State.EnteredTime')),
       },
       resultPath: stepfunctions.JsonPath.DISCARD,
+    });
+
+    // Failure path (Issue #151): when the Map iterator throws after retries
+    // are exhausted, persist TRANSLATION_FAILED to DDB so the UI / polling
+    // endpoints stop reporting a phantom-success. The error payload from the
+    // Map's catch is stored under $.error and serialized into the DDB row for
+    // post-mortem visibility.
+    const updateJobFailed = new tasks.DynamoUpdateItem(this, 'UpdateJobFailed', {
+      table: this.jobsTable,
+      key: {
+        jobId: tasks.DynamoAttributeValue.fromString(stepfunctions.JsonPath.stringAt('$.jobId')),
+        userId: tasks.DynamoAttributeValue.fromString(stepfunctions.JsonPath.stringAt('$.userId')),
+      },
+      updateExpression: 'SET translationStatus = :status, translationFailedAt = :failedAt, translationError = :error, updatedAt = :updatedAt',
+      expressionAttributeValues: {
+        // 'TRANSLATION_FAILED' matches shared-types/src/jobs.ts (TranslationStatus union)
+        // and the polling endpoint in backend/functions/jobs/getTranslationStatus.ts.
+        ':status': tasks.DynamoAttributeValue.fromString('TRANSLATION_FAILED'),
+        ':failedAt': tasks.DynamoAttributeValue.fromString(stepfunctions.JsonPath.stringAt('$$.State.EnteredTime')),
+        ':error': tasks.DynamoAttributeValue.fromString(stepfunctions.JsonPath.stringAt("States.JsonToString($.error)")),
+        ':updatedAt': tasks.DynamoAttributeValue.fromString(stepfunctions.JsonPath.stringAt('$$.State.EnteredTime')),
+      },
+      resultPath: stepfunctions.JsonPath.DISCARD,
+    });
+
+    // Terminal failure state — must come after the DDB write so the execution
+    // is marked FAILED in the Step Functions console / CloudWatch dashboards.
+    const failedTerminal = new stepfunctions.Fail(this, 'TranslationFailed', {
+      comment: 'Translation failed - one or more chunks failed after retries',
+      cause: 'See translationError in the jobs table for the underlying error payload',
+    });
+
+    updateJobFailed.next(failedTerminal);
+
+    // Catch on the Map state itself (NOT on the inner task — see Issue #151
+    // note above). States.ALL covers Lambda errors, retries-exhausted, and
+    // Map-internal failures; resultPath='$.error' makes the error JSON
+    // available to the updateJobFailed task.
+    processChunksMap.addCatch(updateJobFailed, {
+      errors: ['States.ALL'],
+      resultPath: '$.error',
     });
 
     // Success state

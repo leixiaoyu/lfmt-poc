@@ -594,13 +594,89 @@ describe('LFMT Infrastructure Stack', () => {
       // Verify state machine has multiple states
       const states = definition.States;
       const stateCount = Object.keys(states).length;
-      expect(stateCount).toBeGreaterThan(2); // At least: Map, DynamoDB Update, Success (Fail is inside Map iterator)
+      // Map, UpdateJobCompleted, TranslationSuccess, UpdateJobFailed, TranslationFailed
+      expect(stateCount).toBeGreaterThanOrEqual(5);
 
       // Verify there's a Succeed state for successful completion
       const successState = Object.values(states).find((state: any) => state.Type === 'Succeed');
       expect(successState).toBeDefined();
 
-      // Note: Fail state is nested inside Map iterator (TranslationFailed), not at top level
+      // Verify there's a Fail state at top level (Issue #151 — failure path
+      // must terminate the execution as FAILED, not silently succeed).
+      const failStates = Object.values(states).filter((state: any) => state.Type === 'Fail');
+      expect(failStates.length).toBeGreaterThanOrEqual(1);
+    });
+
+    test('Map state has Catch handler routing to UpdateJobFailed (Issue #151)', () => {
+      // Regression guard: the previous design attached Catch to the inner
+      // iterator task, which CDK synthesized as a per-iteration Catch that
+      // swallowed Lambda failures and made the Map state aggregate them as
+      // successful iterations. The fix moves the Catch to the Map state
+      // itself and routes it to a DDB writer that records TRANSLATION_FAILED.
+      const stateMachines = template.findResources('AWS::StepFunctions::StateMachine');
+      const stateMachine = stateMachines[Object.keys(stateMachines)[0]];
+      const definition = JSON.parse(
+        stateMachine.Properties.DefinitionString['Fn::Join'][1].join('')
+      );
+
+      const states = definition.States;
+      const mapStateEntry = Object.entries(states).find(
+        ([, state]: [string, any]) => state.Type === 'Map'
+      );
+      expect(mapStateEntry).toBeDefined();
+      const [, mapState] = mapStateEntry as [string, any];
+
+      // Map state MUST have a Catch handler at the Map-state level
+      expect(mapState.Catch).toBeDefined();
+      expect(Array.isArray(mapState.Catch)).toBe(true);
+      expect(mapState.Catch.length).toBeGreaterThanOrEqual(1);
+
+      // The Catch must cover all error types and route to UpdateJobFailed
+      const catchHandler = mapState.Catch[0];
+      expect(catchHandler.ErrorEquals).toEqual(['States.ALL']);
+      expect(catchHandler.ResultPath).toBe('$.error');
+      expect(catchHandler.Next).toMatch(/UpdateJobFailed/);
+
+      // Iterator's inner task must NOT have a Catch (would re-introduce
+      // the swallow-and-aggregate bug fixed in Issue #151).
+      const iteratorStartName = mapState.Iterator?.StartAt ?? mapState.ItemProcessor?.StartAt;
+      const iteratorStates = mapState.Iterator?.States ?? mapState.ItemProcessor?.States;
+      expect(iteratorStartName).toBeDefined();
+      expect(iteratorStates).toBeDefined();
+      const startState = iteratorStates[iteratorStartName];
+      expect(startState.Catch).toBeUndefined();
+    });
+
+    test('UpdateJobFailed task writes TRANSLATION_FAILED to DDB (Issue #151)', () => {
+      const stateMachines = template.findResources('AWS::StepFunctions::StateMachine');
+      const stateMachine = stateMachines[Object.keys(stateMachines)[0]];
+      const definition = JSON.parse(
+        stateMachine.Properties.DefinitionString['Fn::Join'][1].join('')
+      );
+
+      const states = definition.States;
+      const updateJobFailedEntry = Object.entries(states).find(([name]) =>
+        /UpdateJobFailed/.test(name)
+      );
+      expect(updateJobFailedEntry).toBeDefined();
+      const [, updateJobFailed] = updateJobFailedEntry as [string, any];
+
+      // Must be a DDB UpdateItem task
+      expect(updateJobFailed.Type).toBe('Task');
+      expect(updateJobFailed.Resource).toMatch(/dynamodb:updateItem/i);
+
+      // Status enum must match shared-types/src/jobs.ts TranslationStatus
+      // (drift here would cause the polling endpoint to misclassify the row).
+      const valuesString = JSON.stringify(
+        updateJobFailed.Parameters?.ExpressionAttributeValues ?? {}
+      );
+      expect(valuesString).toContain('TRANSLATION_FAILED');
+
+      // Must transition to a Fail terminal state (so the SF execution itself
+      // is marked FAILED, not Succeeded).
+      expect(updateJobFailed.Next).toBeDefined();
+      const nextState = states[updateJobFailed.Next];
+      expect(nextState.Type).toBe('Fail');
     });
 
     test('State machine has required IAM permissions', () => {
