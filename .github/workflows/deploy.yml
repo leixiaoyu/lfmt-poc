@@ -330,8 +330,12 @@ jobs:
 
             if echo "$HEADERS" | grep -i "^${header_name}:" > /dev/null; then
               # SC2155: declare and assign separately so command failure isn't masked.
+              # NOTE: trim with sed, NOT xargs — xargs performs shell-style
+              # tokenization that strips single quotes (e.g. `object-src 'none'`
+              # would become `object-src none`), producing false negatives in
+              # the CSP regex checks below.
               local header_value
-              header_value=$(echo "$HEADERS" | grep -i "^${header_name}:" | cut -d: -f2- | tr -d '\r\n' | xargs)
+              header_value=$(echo "$HEADERS" | grep -i "^${header_name}:" | cut -d: -f2- | tr -d '\r\n' | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//')
               echo "✅ ${header_name}: ${header_value}"
 
               if [ -n "$header_pattern" ]; then
@@ -379,7 +383,12 @@ jobs:
           # grep -i is case-insensitive.
           RAW_HEADERS=$(curl -sIL "$FRONTEND_URL")
           FINAL_HEADERS=$(printf '%s' "$RAW_HEADERS" | awk 'BEGIN{RS="\r\n\r\n"} NF{last=$0} END{print last}')
-          CSP=$(echo "$FINAL_HEADERS" | grep -i "^content-security-policy:" | cut -d: -f2- | tr -d '\r\n' | xargs)
+          # Trim with sed, NOT xargs — xargs performs shell-style tokenization
+          # that strips single quotes, so `object-src 'none'` would arrive here
+          # as `object-src none` and silently fail every quoted-directive check
+          # below. (Latent bug exposed when PR #159 first routed push-to-main
+          # into deploy-dev and the CSP step actually ran.)
+          CSP=$(echo "$FINAL_HEADERS" | grep -i "^content-security-policy:" | cut -d: -f2- | tr -d '\r\n' | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//')
 
           echo "CSP Policy: $CSP"
           echo ""
