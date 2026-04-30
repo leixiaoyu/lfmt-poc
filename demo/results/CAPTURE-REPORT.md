@@ -7,6 +7,17 @@
 
 ---
 
+## ⚠️ 2026-04-30 status update (post-rebase)
+
+This report's diagnosis on 2026-04-25 was partially wrong, and the recommended remediation (#1 below) has since been disproven. Updated state:
+
+- The deploy pipeline has since been unblocked (PRs #149, #152, #154, #159, #164, #166 — all merged). The `lfmt-translate-chunk-LfmtPocDev` Lambda **was** redeployed on 2026-04-27 at 23:26:14Z (verified via `aws lambda get-function`). **The TypeError persisted on every invocation** — most recent occurrence 2026-04-30T13:47:59Z. The "stale build" hypothesis below is therefore wrong; the bug existed in current `main` source. Root cause traced (Issue #150 → PR #167): the `translateChunk` handler signature accepted `_rateLimiter?: DistributedRateLimiter` as a second argument for test DI, but AWS Lambda passes `context` as the second runtime argument, silently overwriting the rate-limiter on every production invocation — `context.acquire(...)` then threw the observed `TypeError: i.acquire is not a function`. PR #167 removes the parameter from the handler signature and replaces the test-DI path with a dedicated `setRateLimiterForTesting()` export (regression-tested with `handler.length === 1` plus a full inject-use-teardown cycle).
+- The Step-Functions silent-COMPLETED bug noted in this report's "side-effect" section was filed as Issue #151 and **resolved by PR #165** (merged 2026-04-29). The Map state's Catch handler now routes failures to a real DDB writer that records `translationStatus = 'TRANSLATION_FAILED'`, so the script will no longer be fooled by phantom-success state.
+
+The capture script + chapter fixtures in this PR are unchanged and ready to run as soon as #150's source fix lands. The recommended-next-steps section below is preserved as-written for historical context but should be read alongside this update.
+
+---
+
 ## Free-tier compliance
 
 - **Gemini requests sent (chargeable to free tier)**: **0** of 25 RPD ceiling.
@@ -84,9 +95,11 @@ The few placeholders that CAN be honestly tightened from the prep work alone (ch
 
 ## Recommended next steps (out of scope for Track B)
 
-1. **Re-deploy the backend stack** — `cd backend/infrastructure && npx cdk deploy --context environment=dev`. This will rebuild `translate-chunk-LfmtPocDev` from current `main` and almost certainly resolve `i.acquire is not a function`.
-2. **Verify Step Functions failure propagation** — confirm that a failed `translateChunk` invocation no longer flips `translationStatus` to `COMPLETED`. If it does, that's a Step Functions / Map retry-policy bug to file separately.
-3. **Re-run** `node demo/scripts/capture-chapter-metrics.mjs` (no args) to capture all three chapters in one pass. Expected: 5-7 Gemini requests total, ~60-90s per chapter wall-clock, completes well inside 25 RPD.
+> **2026-04-30 update**: Steps 1 and 2 below are revised given the post-rebase findings at the top of this report. Strikethrough preserved for traceability — see Issue #150 / PR #165 for the actual remediation.
+
+1. ~~**Re-deploy the backend stack** — `cd backend/infrastructure && npx cdk deploy --context environment=dev`. This will rebuild `translate-chunk-LfmtPocDev` from current `main` and almost certainly resolve `i.acquire is not a function`.~~ **Disproven 2026-04-27**: redeploy executed cleanly, Lambda `LastModified` updated, but the TypeError persists. The defect lives in `main` source; awaiting Issue #150 root-cause fix (call-site + bundle inspection in flight).
+2. ~~**Verify Step Functions failure propagation** — confirm that a failed `translateChunk` invocation no longer flips `translationStatus` to `COMPLETED`. If it does, that's a Step Functions / Map retry-policy bug to file separately.~~ **Resolved 2026-04-29 by PR #165 (Issue #151)**: Map-level Catch handler added; failed iterations now write `translationStatus = 'TRANSLATION_FAILED'` to DynamoDB and terminate the execution as `Failed`.
+3. **Re-run** `node demo/scripts/capture-chapter-metrics.mjs` (no args) to capture all three chapters in one pass. Expected: 5-7 Gemini requests total, ~60-90s per chapter wall-clock, completes well inside 25 RPD. **Blocked on Issue #150's source fix.**
 4. **After capture succeeds**, edit the pitch-deck placeholders in a follow-up PR, citing the JSON files in `demo/results/`.
 
 ---
