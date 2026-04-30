@@ -25,7 +25,9 @@ import {
   TranslationConfigData,
 } from '../components/Translation/TranslationConfig';
 import { FileUpload } from '../components/Translation/FileUpload';
-import { translationService, TranslationServiceError } from '../services/translationService';
+import { translationService } from '../services/translationService';
+import { getLanguageLabel, getToneLabel } from '../utils/translationLabels';
+import { getTranslationErrorMessage } from '../utils/translationErrorMessages';
 
 const STEPS = ['Legal Attestation', 'Translation Settings', 'Upload Document', 'Review & Submit'];
 
@@ -164,11 +166,14 @@ export const TranslationUpload: React.FC = () => {
       // Navigate to translation detail page
       navigate(`/translation/${job.jobId}`);
     } catch (error) {
-      if (error instanceof TranslationServiceError) {
-        setSubmitError(error.message);
-      } else {
-        setSubmitError('An unexpected error occurred. Please try again.');
-      }
+      // Issue #147: surface a user-facing message keyed off the HTTP
+      // status (or the absence of one, for network failures) rather
+      // than passing through the raw backend message or a generic
+      // catch-all. `getTranslationErrorMessage` accepts an `unknown`
+      // and handles both `TranslationServiceError` (which carries
+      // `statusCode`) and bare `Error` shapes — the previous if/else
+      // was a refactor leftover. (R4: OMC review follow-up.)
+      setSubmitError(getTranslationErrorMessage(error));
     } finally {
       setIsSubmitting(false);
     }
@@ -188,7 +193,21 @@ export const TranslationUpload: React.FC = () => {
         return (
           <TranslationConfig
             value={formData.translationConfig}
-            onChange={(data) => setFormData((prev) => ({ ...prev, translationConfig: data }))}
+            onChange={(data) => {
+              setFormData((prev) => ({ ...prev, translationConfig: data }));
+              // Issue #148: clear stale validation alerts as soon as the
+              // user fixes the offending field, instead of waiting for
+              // the next "Next" click to revalidate. We selectively clear
+              // only the fields whose values are now non-empty so an
+              // unfilled second dropdown still surfaces its error.
+              setErrors((prev) => {
+                if (!prev.translationConfig) return prev;
+                const next = { ...prev.translationConfig };
+                if (data.targetLanguage) delete next.targetLanguage;
+                if (data.tone) delete next.tone;
+                return { ...prev, translationConfig: next };
+              });
+            }}
             errors={errors.translationConfig}
           />
         );
@@ -218,14 +237,16 @@ export const TranslationUpload: React.FC = () => {
                 Target Language:
               </Typography>
               <Typography variant="body2" sx={{ mb: 2 }}>
-                {formData.translationConfig.targetLanguage}
+                {/* Issue #145: show the friendly label, not the raw 'es' code */}
+                {getLanguageLabel(formData.translationConfig.targetLanguage)}
               </Typography>
 
               <Typography variant="subtitle2" gutterBottom>
                 Tone:
               </Typography>
               <Typography variant="body2" sx={{ mb: 2 }}>
-                {formData.translationConfig.tone}
+                {/* Issue #145: 'Formal' instead of 'formal' */}
+                {getToneLabel(formData.translationConfig.tone)}
               </Typography>
 
               <Typography variant="subtitle2" gutterBottom>

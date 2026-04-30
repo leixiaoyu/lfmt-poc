@@ -37,8 +37,13 @@ describe('computeProgress (simulation policy)', () => {
       completedChunks: 0,
       failedChunks: 0,
       fileName: 'doc.txt',
+      // Persisted on JobState for Issues #143 (tone), #144 (fileSize),
+      // and the R1 review follow-up (userId snapshotted at upload time).
+      userId: 'mock-user-default',
+      fileSize: 0,
       sourceLang: 'auto',
       targetLang: 'es',
+      tone: 'neutral',
       createdAt: new Date(0).toISOString(),
       ...overrides,
     };
@@ -191,6 +196,79 @@ describe('Auth handlers (msw/node)', () => {
       body: JSON.stringify({ token: '', newPassword: '' }),
     });
     expect(r.status).toBe(400);
+  });
+
+  // ----------------------------------------------------------------
+  // R6 (OMC review follow-up) — auth-behavior coverage for #141, #142
+  // ----------------------------------------------------------------
+
+  it('Issue #141: /auth/me falls back to lastIssuedUser when token is unknown but Bearer is present', async () => {
+    // Step 1: register so `lastIssuedUser` is populated.
+    const reg = await fetch(`${API_URL}/auth/register`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: 'sw-restart@test.dev',
+        firstName: 'SW',
+        lastName: 'Restart',
+      }),
+    }).then((r) => r.json());
+    expect(reg.user.email).toBe('sw-restart@test.dev');
+
+    // Step 2: simulate a Service-Worker restart by passing a Bearer
+    // token the closure-scoped `sessions` Map has never seen. Pre-#141
+    // this returned a hardcoded 'Mock User'; post-#141 the recovery
+    // path should resolve to whoever was last issued tokens (i.e. the
+    // user we just registered).
+    const me = await fetch(`${API_URL}/auth/me`, {
+      headers: { Authorization: 'Bearer mock-access-fake-token-the-sw-forgot' },
+    });
+    expect(me.status).toBe(200);
+    const body = await me.json();
+    expect(body.user.email).toBe('sw-restart@test.dev');
+    expect(body.user.firstName).toBe('SW');
+    expect(body.user.lastName).toBe('Restart');
+  });
+
+  it('Issue #141: /auth/me returns 401 when no Authorization header is present', async () => {
+    // Even if `lastIssuedUser` is set, a request with NO Bearer token
+    // at all must hit the 401 branch — that is the AuthContext's
+    // signal to redirect to /login.
+    await fetch(`${API_URL}/auth/register`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: 'noauth@test.dev', firstName: 'No', lastName: 'Auth' }),
+    });
+
+    const r = await fetch(`${API_URL}/auth/me`); // no headers
+    expect(r.status).toBe(401);
+  });
+
+  it('Issue #142: /auth/login looks up registeredUsers and returns the registered firstName/lastName', async () => {
+    // Step 1: register with concrete identity fields.
+    const reg = await fetch(`${API_URL}/auth/register`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: 'foo@bar.dev',
+        firstName: 'Foo',
+        lastName: 'Bar',
+      }),
+    }).then((r) => r.json());
+    expect(reg.user.firstName).toBe('Foo');
+
+    // Step 2: log in with the same email but supply NO firstName/lastName.
+    // Pre-#142 the handler fabricated a generic 'Mock User' here; post-#142
+    // it resolves the previously-registered identity by email.
+    const login = await fetch(`${API_URL}/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: 'foo@bar.dev', password: 'irrelevant-in-mock' }),
+    }).then((r) => r.json());
+
+    expect(login.user.email).toBe('foo@bar.dev');
+    expect(login.user.firstName).toBe('Foo');
+    expect(login.user.lastName).toBe('Bar');
   });
 });
 
@@ -411,8 +489,11 @@ describe('Reserved filename error injection (Phase 5)', () => {
       completedChunks: 0,
       failedChunks: 0,
       fileName: '__lfmt_mock_slow__.txt',
+      userId: 'mock-user-default',
+      fileSize: 0,
       sourceLang: 'auto',
       targetLang: 'es',
+      tone: 'neutral',
       createdAt: new Date(0).toISOString(),
       translateStartedAt: start,
     };

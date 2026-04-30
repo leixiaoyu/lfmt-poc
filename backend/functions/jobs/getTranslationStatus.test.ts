@@ -479,4 +479,63 @@ describe('getTranslationStatus endpoint', () => {
       expect(result.headers?.['Content-Type']).toBe('application/json');
     });
   });
+
+  describe('file metadata exposure (R3 OMC review follow-up)', () => {
+    // Frontend `TranslationDetail.tsx` renders userId, fileName,
+    // fileSize, and contentType — all of which were absent from this
+    // Lambda's response prior to the R3 fix. These tests lock in the
+    // wire-shape contract so the demo bug fixed for the mock side
+    // (Issue #144 — "0 Bytes") cannot reappear in production.
+
+    it('returns userId, fileName, fileSize, contentType when DDB has them', async () => {
+      dynamoMock.on(GetItemCommand).resolves({
+        Item: {
+          jobId: { S: 'job-123' },
+          userId: { S: 'user-123' },
+          filename: { S: 'doc.txt' },
+          fileSize: { N: '4096' },
+          contentType: { S: 'text/plain' },
+          status: { S: 'CHUNKED' },
+          totalChunks: { N: '5' },
+        },
+      } as any);
+
+      const event = createEvent('job-123');
+      const result = await handler(event as APIGatewayProxyEvent);
+
+      expect(result.statusCode).toBe(200);
+      const body = JSON.parse(result.body);
+      expect(body.userId).toBe('user-123');
+      // DDB stores `filename` (lowercase n); the wire contract is
+      // `fileName` (camelCase) — the handler translates at the boundary.
+      expect(body.fileName).toBe('doc.txt');
+      expect(body.fileSize).toBe(4096);
+      expect(body.contentType).toBe('text/plain');
+    });
+
+    it('omits fileSize / contentType when DDB lacks them (legacy rows)', async () => {
+      // Pre-R3 job records will not carry fileSize / contentType. The
+      // response shape MUST tolerate this without a 500 — the frontend
+      // already renders empty cells gracefully.
+      dynamoMock.on(GetItemCommand).resolves({
+        Item: {
+          jobId: { S: 'job-123' },
+          userId: { S: 'user-123' },
+          status: { S: 'UPLOADED' },
+          totalChunks: { N: '0' },
+        },
+      } as any);
+
+      const event = createEvent('job-123');
+      const result = await handler(event as APIGatewayProxyEvent);
+
+      expect(result.statusCode).toBe(200);
+      const body = JSON.parse(result.body);
+      expect(body.fileSize).toBeUndefined();
+      expect(body.contentType).toBeUndefined();
+      expect(body.fileName).toBeUndefined();
+      // userId is always present — it's the composite-key partition.
+      expect(body.userId).toBe('user-123');
+    });
+  });
 });

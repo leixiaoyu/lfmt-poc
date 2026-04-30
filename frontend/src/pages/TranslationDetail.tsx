@@ -28,6 +28,7 @@ import {
   TranslationServiceError,
 } from '../services/translationService';
 import { TranslationProgress } from '../components/Translation/TranslationProgress';
+import { getLanguageLabel, getToneLabel } from '../utils/translationLabels';
 import { FEATURE_FLAGS } from '../config/constants';
 
 export const TranslationDetail: React.FC = () => {
@@ -250,7 +251,7 @@ export const TranslationDetail: React.FC = () => {
               <Typography variant="caption" color="text.secondary">
                 Target Language
               </Typography>
-              <Typography variant="body2">{job.targetLanguage}</Typography>
+              <Typography variant="body2">{getLanguageLabel(job.targetLanguage)}</Typography>
             </Box>
           )}
 
@@ -259,7 +260,7 @@ export const TranslationDetail: React.FC = () => {
               <Typography variant="caption" color="text.secondary">
                 Tone
               </Typography>
-              <Typography variant="body2">{job.tone}</Typography>
+              <Typography variant="body2">{getToneLabel(job.tone)}</Typography>
             </Box>
           )}
 

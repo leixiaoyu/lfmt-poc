@@ -13,6 +13,7 @@ import ErrorIcon from '@mui/icons-material/Error';
 import HourglassEmptyIcon from '@mui/icons-material/HourglassEmpty';
 import { TranslationJob } from '../../services/translationService';
 import { useTranslationJob, calculateProgress } from '../../hooks/useTranslationJob';
+import { getLanguageLabel } from '../../utils/translationLabels';
 
 export interface TranslationProgressProps {
   jobId: string;
@@ -132,7 +133,7 @@ export const TranslationProgress: React.FC<TranslationProgressProps> = ({
             <Typography variant="caption" color="text.secondary">
               Target Language
             </Typography>
-            <Typography variant="body2">{job.targetLanguage}</Typography>
+            <Typography variant="body2">{getLanguageLabel(job.targetLanguage)}</Typography>
           </Box>
         )}
 

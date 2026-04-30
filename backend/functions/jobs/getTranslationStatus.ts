@@ -22,6 +22,19 @@ const JOBS_TABLE = getRequiredEnv('JOBS_TABLE');
  */
 interface TranslationStatusResponse {
   jobId: string;
+  // R3 (OMC review follow-up): the frontend's `TranslationDetail.tsx`
+  // renders `userId`, `fileSize`, and `contentType` from this response
+  // (lines 239, 246 — fileSize and contentType in particular). They
+  // were absent from the real Lambda response, so the demo bug fixed
+  // by PR #166 on the mock side (Issue #144 — "0 Bytes") would have
+  // reappeared in production once the mock was disabled. The fields
+  // are already persisted on the DDB job record at upload time
+  // (uploadRequest.ts:124-126), so surfacing them here is a pure
+  // wire-shape catch-up with no schema migration needed.
+  userId?: string;
+  fileName?: string;
+  fileSize?: number;
+  contentType?: string;
   status: string; // Overall job status (PENDING_UPLOAD, UPLOADED, CHUNKED, etc.)
   translationStatus: string;
   targetLanguage?: string;
@@ -85,6 +98,16 @@ export const handler = async (event: APIGatewayProxyEvent): Promise<APIGatewayPr
     // Build response
     const response: TranslationStatusResponse = {
       jobId,
+      // R3: surface the file/owner metadata persisted at upload time so
+      // the Translation Details view can render File Size, Content Type,
+      // and File Name without falling back to undefined-shaped UI.
+      // DDB stores `filename` (lowercase n); the frontend's wire contract
+      // is `fileName` (camelCase) — translate at the response boundary.
+      // `fileSize` / `contentType` already match the wire shape.
+      userId: job.userId,
+      fileName: job.filename,
+      fileSize: typeof job.fileSize === 'number' ? job.fileSize : undefined,
+      contentType: typeof job.contentType === 'string' ? job.contentType : undefined,
       status: job.status, // Overall job status (PENDING_UPLOAD, UPLOADED, CHUNKED, etc.)
       translationStatus: job.translationStatus || 'NOT_STARTED',
       targetLanguage: job.targetLanguage,

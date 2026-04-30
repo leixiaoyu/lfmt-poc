@@ -241,9 +241,11 @@ describe('TranslationDetail', () => {
 
       renderComponent();
 
+      // Issue #145: detail view now renders friendly labels rather than the
+      // raw 'es' / 'formal' codes.
       await waitFor(() => {
-        expect(screen.getByText('es')).toBeInTheDocument();
-        expect(screen.getByText('formal')).toBeInTheDocument();
+        expect(screen.getByText('Spanish (Español)')).toBeInTheDocument();
+        expect(screen.getByText('Formal')).toBeInTheDocument();
       });
     });
   });
