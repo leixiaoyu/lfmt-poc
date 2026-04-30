@@ -9,25 +9,56 @@
  *
  * Single source of truth here so a new language or tone added in
  * `TranslationConfig.tsx` (the dropdown source) only needs to be added
- * once for both selection and display. The selection lists themselves
- * still live next to the form so the dropdown layout stays local; we
- * mirror the labels here for read-only views.
+ * once for both selection and display.
+ *
+ * R2 (OMC review follow-up): the dropdown's option arrays live in
+ * `TranslationConfig.tsx` as `LANGUAGE_OPTIONS` / `TONE_OPTIONS` (with
+ * `as const`), and the label tables here are *derived* from those same
+ * arrays. The TypeScript types `LanguageCode` and `ToneCode` are also
+ * sourced from the option arrays, so a record keyed by those unions
+ * forces a compile error if anyone adds a language to the dropdown
+ * without picking up its label here.
  */
 
+import {
+  LANGUAGE_OPTIONS,
+  TONE_OPTIONS,
+  type LanguageCode,
+  type ToneCode,
+} from '../components/Translation/TranslationConfig';
+
+/**
+ * Derive the canonical {code → label} map directly from the dropdown's
+ * option array. Typed as `Record<LanguageCode, string>` so a missing
+ * entry would fail compilation — but because we *derive* the table from
+ * the same source the dropdown uses, drift is structurally impossible.
+ */
+const DERIVED_LANGUAGE_LABELS: Record<LanguageCode, string> = Object.fromEntries(
+  LANGUAGE_OPTIONS.map((o) => [o.value, o.label])
+) as Record<LanguageCode, string>;
+
+const DERIVED_TONE_LABELS: Record<ToneCode, string> = Object.fromEntries(
+  TONE_OPTIONS.map((o) => [o.value, o.label])
+) as Record<ToneCode, string>;
+
+/**
+ * Public label maps. Typed as `Record<string, string>` so consumers can
+ * pass a wire-derived language/tone string without a cast — the wire
+ * may carry codes outside the dropdown's enum (legacy rows, future
+ * languages), and the resolver helpers below handle that gracefully.
+ *
+ * Aliases (e.g. `en`, `casual`) extend the derived map with display
+ * fallbacks for codes that exist in stored data but are NOT present in
+ * the dropdown.
+ */
 export const LANGUAGE_LABELS: Record<string, string> = {
-  es: 'Spanish (Español)',
-  fr: 'French (Français)',
-  de: 'German (Deutsch)',
-  it: 'Italian (Italiano)',
-  zh: 'Chinese (中文)',
-  // Common aliases just in case the wire occasionally returns these.
+  ...DERIVED_LANGUAGE_LABELS,
+  // Alias: some legacy rows from before the dropdown existed used 'en'.
   en: 'English',
 };
 
 export const TONE_LABELS: Record<string, string> = {
-  formal: 'Formal',
-  neutral: 'Neutral',
-  informal: 'Informal',
+  ...DERIVED_TONE_LABELS,
   // Some legacy job rows used 'casual'; keep it readable rather than
   // stripping it (the data still exists in DDB).
   casual: 'Casual',

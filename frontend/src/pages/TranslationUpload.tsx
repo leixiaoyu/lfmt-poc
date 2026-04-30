@@ -25,7 +25,7 @@ import {
   TranslationConfigData,
 } from '../components/Translation/TranslationConfig';
 import { FileUpload } from '../components/Translation/FileUpload';
-import { translationService, TranslationServiceError } from '../services/translationService';
+import { translationService } from '../services/translationService';
 import { getLanguageLabel, getToneLabel } from '../utils/translationLabels';
 import { getTranslationErrorMessage } from '../utils/translationErrorMessages';
 
@@ -169,13 +169,11 @@ export const TranslationUpload: React.FC = () => {
       // Issue #147: surface a user-facing message keyed off the HTTP
       // status (or the absence of one, for network failures) rather
       // than passing through the raw backend message or a generic
-      // catch-all. TranslationServiceError carries `statusCode` from
-      // axios; getTranslationErrorMessage understands both shapes.
-      if (error instanceof TranslationServiceError) {
-        setSubmitError(getTranslationErrorMessage(error));
-      } else {
-        setSubmitError(getTranslationErrorMessage(error));
-      }
+      // catch-all. `getTranslationErrorMessage` accepts an `unknown`
+      // and handles both `TranslationServiceError` (which carries
+      // `statusCode`) and bare `Error` shapes — the previous if/else
+      // was a refactor leftover. (R4: OMC review follow-up.)
+      setSubmitError(getTranslationErrorMessage(error));
     } finally {
       setIsSubmitting(false);
     }

@@ -73,6 +73,14 @@ export type JobState = {
   completedChunks: number;
   failedChunks: number;
   fileName: string;
+  // Captured from the active session at upload time (R1: OMC review
+  // follow-up). Previously `toWireJob` read `lastIssuedUser?.id` directly
+  // — that broadened the `/auth/me` single-tenant escape hatch into the
+  // job-side surface AND created hidden coupling between the auth and
+  // job paths. By snapshotting the userId onto the job at creation and
+  // having `toWireJob` echo `state.userId`, `lastIssuedUser` stays
+  // strictly scoped to the `/auth/me` recovery path.
+  userId: string;
   // Persisted from the upload request so the wire shape can echo back the
   // actual size on the Translation Details / History views (Issue #144).
   // Without this, every job rendered as "File Size: 0 Bytes".
@@ -438,7 +446,10 @@ function toWireStatus(state: JobState): string {
 function toWireJob(state: JobState): Record<string, unknown> {
   return {
     jobId: state.jobId,
-    userId: lastIssuedUser?.id ?? 'mock-user-default',
+    // R1: echo the userId captured on the job at upload time. Do NOT
+    // touch `lastIssuedUser` here — it is reserved for the `/auth/me`
+    // SW-restart recovery path (Issue #141).
+    userId: state.userId,
     fileName: state.fileName,
     // Issue #144: was hardcoded to 0; now echoes the value captured from
     // the upload request body so the Job Information view shows the real
@@ -542,6 +553,18 @@ const translationHandlers: HttpHandler[] = [
     const jobId = uuid();
     const now = new Date().toISOString();
 
+    // R1: snapshot the active user's id at upload time so the job
+    // record carries its own owner. Resolution order:
+    //   1. The Bearer token on the request (real auth round-trip — the
+    //      authoritative source when the SW closure is intact).
+    //   2. `lastIssuedUser` (Issue #141 fallback — covers the SW-restart
+    //      window where `sessions` was wiped but the page still has a
+    //      valid token in localStorage).
+    //   3. A stable default — only reached when the demo is launched
+    //      without ever calling /auth/register or /auth/login first.
+    const sessionUser = userFromAuthHeader(request.headers.get('Authorization'));
+    const userId = sessionUser?.id ?? lastIssuedUser?.id ?? 'mock-user-default';
+
     jobs.set(jobId, {
       jobId,
       status: 'uploaded',
@@ -549,6 +572,7 @@ const translationHandlers: HttpHandler[] = [
       completedChunks: 0,
       failedChunks: 0,
       fileName,
+      userId,
       fileSize,
       sourceLang: 'auto',
       targetLang: 'es',

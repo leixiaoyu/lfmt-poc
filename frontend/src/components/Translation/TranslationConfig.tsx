@@ -18,9 +18,44 @@ import {
   SelectChangeEvent,
 } from '@mui/material';
 
+// LANGUAGE_OPTIONS / TONE_OPTIONS are exported as the canonical source of
+// truth for both (a) the dropdown rendered below AND (b) the read-only
+// label maps consumed by `utils/translationLabels.ts`. Keeping the option
+// arrays here (next to the form) preserves the component-local layout the
+// dropdown wants, while the label helpers derive their tables from these
+// same arrays — so adding a language requires exactly one edit, and the
+// TypeScript compiler catches drift via `LanguageCode` / `ToneCode` (R2).
+//
+// `as const` is load-bearing: it narrows the literal types so we can
+// derive `LanguageCode` / `ToneCode` unions below.
+//
+// We deliberately export non-component values from this `.tsx` file —
+// the alternative (a separate `translationOptions.ts` module) would
+// have churned 4+ test files for no functional gain. React Fast Refresh
+// will still rebuild the whole module on edit, which is fine for a
+// rarely-touched options table.
+// eslint-disable-next-line react-refresh/only-export-components
+export const LANGUAGE_OPTIONS = [
+  { value: 'es', label: 'Spanish (Español)' },
+  { value: 'fr', label: 'French (Français)' },
+  { value: 'de', label: 'German (Deutsch)' },
+  { value: 'it', label: 'Italian (Italiano)' },
+  { value: 'zh', label: 'Chinese (中文)' },
+] as const;
+
+// eslint-disable-next-line react-refresh/only-export-components
+export const TONE_OPTIONS = [
+  { value: 'formal', label: 'Formal', description: 'Professional and respectful language' },
+  { value: 'neutral', label: 'Neutral', description: 'Balanced and standard language' },
+  { value: 'informal', label: 'Informal', description: 'Casual and conversational language' },
+] as const;
+
+export type LanguageCode = (typeof LANGUAGE_OPTIONS)[number]['value'];
+export type ToneCode = (typeof TONE_OPTIONS)[number]['value'];
+
 export interface TranslationConfigData {
-  targetLanguage: 'es' | 'fr' | 'de' | 'it' | 'zh' | '';
-  tone: 'formal' | 'informal' | 'neutral' | '';
+  targetLanguage: LanguageCode | '';
+  tone: ToneCode | '';
 }
 
 export interface TranslationConfigProps {
@@ -31,20 +66,6 @@ export interface TranslationConfigProps {
     tone?: string;
   };
 }
-
-const LANGUAGES = [
-  { value: 'es', label: 'Spanish (Español)' },
-  { value: 'fr', label: 'French (Français)' },
-  { value: 'de', label: 'German (Deutsch)' },
-  { value: 'it', label: 'Italian (Italiano)' },
-  { value: 'zh', label: 'Chinese (中文)' },
-];
-
-const TONES = [
-  { value: 'formal', label: 'Formal', description: 'Professional and respectful language' },
-  { value: 'neutral', label: 'Neutral', description: 'Balanced and standard language' },
-  { value: 'informal', label: 'Informal', description: 'Casual and conversational language' },
-];
 
 export const TranslationConfig: React.FC<TranslationConfigProps> = ({
   value,
@@ -93,7 +114,7 @@ export const TranslationConfig: React.FC<TranslationConfigProps> = ({
             <MenuItem value="">
               <em>Select a language</em>
             </MenuItem>
-            {LANGUAGES.map((lang) => (
+            {LANGUAGE_OPTIONS.map((lang) => (
               <MenuItem key={lang.value} value={lang.value}>
                 {lang.label}
               </MenuItem>
@@ -123,7 +144,7 @@ export const TranslationConfig: React.FC<TranslationConfigProps> = ({
             <MenuItem value="">
               <em>Select a tone</em>
             </MenuItem>
-            {TONES.map((tone) => (
+            {TONE_OPTIONS.map((tone) => (
               <MenuItem key={tone.value} value={tone.value}>
                 <Box>
                   <Typography>{tone.label}</Typography>
