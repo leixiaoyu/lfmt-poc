@@ -4,7 +4,7 @@
  * Provides utilities for authentication flows in E2E tests.
  */
 
-import { Page } from '@playwright/test';
+import { APIRequestContext, Page } from '@playwright/test';
 
 /**
  * Generate unique test email
@@ -29,6 +29,43 @@ export function generateTestUser() {
     firstName: 'E2E',
     lastName: 'Test',
   };
+}
+
+/**
+ * Register a user via the backend API (bypassing the UI).
+ *
+ * Many E2E specs need a known authenticated user but want to skip the
+ * registration UI flow. They previously called `page.request.post` inline
+ * with a partial payload (`{firstName, lastName, email, password}`), which
+ * silently 400'd against the live API because the registerRequestSchema
+ * requires `confirmPassword`, `acceptedTerms`, and `acceptedPrivacy` (see
+ * shared-types/src/auth.ts:85). This helper centralizes the correct payload
+ * shape so the contract can't drift again.
+ *
+ * Returns the raw Playwright APIResponse so callers can choose their own
+ * assertion (most just check `response.ok()`; some treat 409 "already exists"
+ * as success on retries).
+ */
+export async function registerViaApi(
+  request: APIRequestContext,
+  user: ReturnType<typeof generateTestUser>,
+  apiBaseUrl?: string
+) {
+  const baseUrl = apiBaseUrl || process.env.API_BASE_URL || 'http://localhost:3000';
+  // Strip trailing slash to avoid `//v1/auth/register`.
+  const normalized = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
+  return request.post(`${normalized}/v1/auth/register`, {
+    data: {
+      firstName: user.firstName,
+      lastName: user.lastName,
+      email: user.email,
+      password: user.password,
+      confirmPassword: user.password,
+      acceptedTerms: true,
+      acceptedPrivacy: true,
+    },
+    failOnStatusCode: false,
+  });
 }
 
 /**

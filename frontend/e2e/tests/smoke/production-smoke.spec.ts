@@ -40,8 +40,33 @@ const SMOKE_FIXTURE_PATH = path.resolve(__dirname, '../../fixtures/smoke-test-mi
 test.describe('Production Smoke Tests @smoke', () => {
   // Test configuration from environment
   const baseURL = process.env.PLAYWRIGHT_BASE_URL || 'https://d39xcun7144jgl.cloudfront.net';
-  const testEmail = process.env.SMOKE_TEST_EMAIL || 'smoke-test@example.com';
-  const testPassword = process.env.SMOKE_TEST_PASSWORD;
+  // The frontend smoke test used to require pre-shared `SMOKE_TEST_EMAIL` /
+  // `SMOKE_TEST_PASSWORD` repo secrets to log in to a known account. Those
+  // secrets were never configured, so every post-deploy run threw
+  // "SMOKE_TEST_PASSWORD environment variable is required" before the test
+  // body executed. Mirroring the backend smoke fix from PR #177, we now
+  // register a fresh user per run — no operational dependency, no shared
+  // password rotation risk. The test still respects `SMOKE_TEST_EMAIL` /
+  // `SMOKE_TEST_PASSWORD` if they happen to be set (back-compat for anyone
+  // who ever does configure them), but does not require them.
+  const apiBaseURL =
+    process.env.API_BASE_URL ||
+    process.env.VITE_API_URL ||
+    'https://8brwlwf68h.execute-api.us-east-1.amazonaws.com/v1/';
+
+  // Generate a unique test user. Cognito policy requires upper + lower + digit
+  // + symbol and >=8 chars; this fits in one literal so the password remains
+  // deterministic per run while still satisfying the policy.
+  const generateSmokeTestUser = () => {
+    const ts = Date.now();
+    const rand = Math.random().toString(36).substring(2, 10);
+    return {
+      email: `prod-smoke-${ts}-${rand}@e2e-test.lfmt.com`,
+      password: `Smoke${ts}${rand}!Aa1`,
+      firstName: 'ProdSmoke',
+      lastName: 'Test',
+    };
+  };
 
   test.beforeEach(async ({ page }) => {
     // Navigate to the application
@@ -49,10 +74,50 @@ test.describe('Production Smoke Tests @smoke', () => {
   });
 
   test('Critical User Journey: Login → Upload → Translate → Complete', async ({ page }) => {
-    // Verify environment variables
-    if (!testPassword) {
-      throw new Error('SMOKE_TEST_PASSWORD environment variable is required');
+    // Use pre-shared credentials only if BOTH envs are set; otherwise register
+    // a fresh user. This keeps the test runnable in any environment without
+    // operational ceremony.
+    const presharedEmail = process.env.SMOKE_TEST_EMAIL;
+    const presharedPassword = process.env.SMOKE_TEST_PASSWORD;
+    const user =
+      presharedEmail && presharedPassword
+        ? {
+            email: presharedEmail,
+            password: presharedPassword,
+            firstName: 'Smoke',
+            lastName: 'Test',
+          }
+        : generateSmokeTestUser();
+
+    // If we need to register, do it via the API up front. The /v1/auth/register
+    // endpoint requires confirmPassword + acceptedTerms + acceptedPrivacy on
+    // top of the basic credential fields (see shared-types/src/auth.ts:85).
+    if (!presharedEmail || !presharedPassword) {
+      const apiUrl = apiBaseURL.endsWith('/') ? apiBaseURL.slice(0, -1) : apiBaseURL;
+      const registerResponse = await page.request.post(`${apiUrl}/auth/register`, {
+        data: {
+          email: user.email,
+          password: user.password,
+          confirmPassword: user.password,
+          firstName: user.firstName,
+          lastName: user.lastName,
+          acceptedTerms: true,
+          acceptedPrivacy: true,
+        },
+        failOnStatusCode: false,
+      });
+      // 201 = created, 409 = already exists (acceptable on retries)
+      const registerStatus = registerResponse.status();
+      if (registerStatus !== 201 && registerStatus !== 409) {
+        const body = await registerResponse.text();
+        throw new Error(
+          `Pre-test registration failed: ${registerStatus} - ${body.substring(0, 200)}`
+        );
+      }
     }
+
+    const testEmail = user.email;
+    const testPassword = user.password;
 
     // Step 1: Login
     await test.step('User can login', async () => {

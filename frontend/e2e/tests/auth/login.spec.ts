@@ -7,7 +7,7 @@
 import { test, expect } from '@playwright/test';
 import { LoginPage } from '../../pages/LoginPage';
 import { DashboardPage } from '../../pages/DashboardPage';
-import { generateTestUser } from '../../fixtures/auth';
+import { generateTestUser, registerViaApi } from '../../fixtures/auth';
 
 test.describe('Login Page', () => {
   let loginPage: LoginPage;
@@ -26,17 +26,7 @@ test.describe('Login Page', () => {
   test('should successfully login with valid credentials', async ({ page }) => {
     // Register a new user first
     const user = generateTestUser();
-    const registerResponse = await page.request.post(
-      `${process.env.API_BASE_URL || 'http://localhost:3000'}/v1/auth/register`,
-      {
-        data: {
-          firstName: user.firstName,
-          lastName: user.lastName,
-          email: user.email,
-          password: user.password,
-        },
-      }
-    );
+    const registerResponse = await registerViaApi(page.request, user);
     expect(registerResponse.ok()).toBeTruthy();
 
     // Now login with the registered user
@@ -89,17 +79,7 @@ test.describe('Login Flow Integration', () => {
 
     // Register and login
     const user = generateTestUser();
-    const registerResponse = await page.request.post(
-      `${process.env.API_BASE_URL || 'http://localhost:3000'}/v1/auth/register`,
-      {
-        data: {
-          firstName: user.firstName,
-          lastName: user.lastName,
-          email: user.email,
-          password: user.password,
-        },
-      }
-    );
+    const registerResponse = await registerViaApi(page.request, user);
     expect(registerResponse.ok()).toBeTruthy();
 
     await loginPage.goto();
@@ -118,17 +98,7 @@ test.describe('Login Flow Integration', () => {
 
     // Register and login
     const user = generateTestUser();
-    const registerResponse = await page.request.post(
-      `${process.env.API_BASE_URL || 'http://localhost:3000'}/v1/auth/register`,
-      {
-        data: {
-          firstName: user.firstName,
-          lastName: user.lastName,
-          email: user.email,
-          password: user.password,
-        },
-      }
-    );
+    const registerResponse = await registerViaApi(page.request, user);
     expect(registerResponse.ok()).toBeTruthy();
 
     await loginPage.goto();

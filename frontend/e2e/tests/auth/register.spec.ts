@@ -7,7 +7,7 @@
 import { test, expect } from '@playwright/test';
 import { RegisterPage } from '../../pages/RegisterPage';
 import { DashboardPage } from '../../pages/DashboardPage';
-import { generateTestUser } from '../../fixtures/auth';
+import { generateTestUser, registerViaApi } from '../../fixtures/auth';
 
 test.describe('Register Page', () => {
   let registerPage: RegisterPage;
@@ -37,17 +37,7 @@ test.describe('Register Page', () => {
     const user = generateTestUser();
 
     // Register first user
-    const firstRegisterResponse = await page.request.post(
-      `${process.env.API_BASE_URL || 'http://localhost:3000'}/v1/auth/register`,
-      {
-        data: {
-          firstName: user.firstName,
-          lastName: user.lastName,
-          email: user.email,
-          password: user.password,
-        },
-      }
-    );
+    const firstRegisterResponse = await registerViaApi(page.request, user);
     expect(firstRegisterResponse.ok()).toBeTruthy();
 
     // Try to register again with same email
