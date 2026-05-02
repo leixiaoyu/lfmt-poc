@@ -133,6 +133,63 @@ describe('register Lambda (dev / auto-confirm path) — issue #169', () => {
     expect(response.statusCode).toBe(500);
   });
 
+  /**
+   * OMC-followup C4 — borderline NotAuthorizedException must propagate.
+   *
+   * The swallow predicate in register.ts uses:
+   *   /already confirmed|status is CONFIRMED/i
+   *
+   * This regex matches BOTH branches of the documented Cognito message
+   * variants, but the test suite only proved that "User is disabled."
+   * propagates. There's a class of borderline cases that should NOT
+   * match — e.g., a NotAuthorizedException whose message references a
+   * different, real authorization failure mode (account lockout, MFA
+   * pending, etc.). Without an explicit test, a future regex tightening
+   * could silently drop the propagate-on-other-NotAuthorized contract.
+   *
+   * This test asserts the negative-branch contract: a NotAuthorized whose
+   * message does NOT match the swallow regex MUST surface as a failure.
+   * (The "User is disabled." case above happens to satisfy this; this
+   * test adds a second, distinct borderline message so a single-message
+   * regex tightening can't accidentally narrow the propagate set to one.)
+   */
+  it('propagates a NotAuthorizedException with an unrelated message (OMC-followup C4)', async () => {
+    cognitoMock.on(SignUpCommand).resolves({
+      UserSub: 'borderline-user-id',
+    });
+
+    // A message that intentionally does NOT contain 'already confirmed'
+    // or 'status is CONFIRMED' — must NOT be swallowed.
+    cognitoMock.on(AdminConfirmSignUpCommand).rejects(
+      new NotAuthorizedException({
+        message: 'User account is locked due to too many failed attempts.',
+        $metadata: {},
+      })
+    );
+
+    const event = createMockEvent({
+      body: JSON.stringify({
+        email: 'locked@example.com',
+        password: 'Test123!@#',
+        confirmPassword: 'Test123!@#',
+        firstName: 'Lock',
+        lastName: 'Out',
+        acceptedTerms: true,
+        acceptedPrivacy: true,
+      }),
+    });
+
+    const response = await handler(event);
+
+    // Must NOT be 201 — silently swallowing this error would hide a real
+    // auth failure mode from the client AND from CloudWatch alarms.
+    expect(response.statusCode).not.toBe(201);
+    // Generic-handler path returns 500 (the message variants the handler
+    // recognizes — UsernameExistsException, InvalidPasswordException,
+    // InvalidParameterException — are different exception classes).
+    expect(response.statusCode).toBe(500);
+  });
+
   it('returns 201 normally when AdminConfirmSignUp succeeds (control case)', async () => {
     cognitoMock.on(SignUpCommand).resolves({
       UserSub: 'happy-path-user-id',

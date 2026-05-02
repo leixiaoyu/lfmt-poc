@@ -732,6 +732,118 @@ describe('LFMT Infrastructure Stack', () => {
       expect(nextState.Type).toBe('Fail');
     });
 
+    test('UpdateJobFailed task ALSO writes outer status=TRANSLATION_FAILED (OMC-followup C2)', () => {
+      // Regression guard: PR #176 made UpdateJobCompleted dual-write both
+      // `translationStatus` AND outer `#status` (issue #170) but left
+      // UpdateJobFailed asymmetric. Same bug class applies in reverse —
+      // without this, a transient success that later fails terminally
+      // leaves the outer `status` field stuck on a stale value (e.g.,
+      // 'IN_PROGRESS' from startTranslation, or 'COMPLETED' from a
+      // hypothetical earlier write). Mirror the dual-write so Step
+      // Functions is the single source of truth on terminal lifecycle
+      // for BOTH success and failure outcomes.
+      const stateMachines = template.findResources('AWS::StepFunctions::StateMachine');
+      const stateMachine = stateMachines[Object.keys(stateMachines)[0]];
+      const definition = JSON.parse(
+        stateMachine.Properties.DefinitionString['Fn::Join'][1].join('')
+      );
+
+      const states = definition.States;
+      const updateJobFailedEntry = Object.entries(states).find(([name]) =>
+        /UpdateJobFailed/.test(name)
+      );
+      expect(updateJobFailedEntry).toBeDefined();
+      const [, updateJobFailed] = updateJobFailedEntry as [string, any];
+
+      // The UpdateExpression MUST set both `translationStatus` AND outer
+      // `status` (via #status alias because `status` is a DDB reserved word).
+      const updateExpression: string =
+        updateJobFailed.Parameters?.UpdateExpression ?? '';
+      expect(updateExpression).toMatch(/translationStatus/);
+      expect(updateExpression).toMatch(/#status/);
+
+      // ExpressionAttributeNames must alias #status to 'status'.
+      const attributeNames =
+        updateJobFailed.Parameters?.ExpressionAttributeNames ?? {};
+      expect(attributeNames['#status']).toBe('status');
+
+      // Two 'TRANSLATION_FAILED' occurrences expected: one for translationStatus,
+      // one for the outer status. Mirrors the >=2 'COMPLETED' assertion in
+      // UpdateJobCompleted.
+      const valuesString = JSON.stringify(
+        updateJobFailed.Parameters?.ExpressionAttributeValues ?? {}
+      );
+      const failedMatches = valuesString.match(/TRANSLATION_FAILED/g) ?? [];
+      expect(failedMatches.length).toBeGreaterThanOrEqual(2);
+    });
+
+    test('Choice state gates UpdateJobCompleted on per-chunk success (OMC-followup C1)', () => {
+      // Regression guard: translateChunk.ts catches every error in its
+      // outer try/catch and returns { success: false } instead of throwing.
+      // Map's addCatch only fires on THROWN errors, so without this Choice
+      // gate, UpdateJobCompleted would unconditionally run and overwrite
+      // the per-chunk Lambda's TRANSLATION_FAILED outer status with
+      // COMPLETED — the exact phantom-success bug PR #176's #170 fix was
+      // meant to prevent. The Choice state aggregates
+      // $.translationResults[*].translateResult.Payload.success via
+      // States.ArrayContains and routes to UpdateJobFailed if any chunk
+      // reported success:false.
+      const stateMachines = template.findResources('AWS::StepFunctions::StateMachine');
+      const stateMachine = stateMachines[Object.keys(stateMachines)[0]];
+      const definition = JSON.parse(
+        stateMachine.Properties.DefinitionString['Fn::Join'][1].join('')
+      );
+
+      const states = definition.States;
+
+      // 1. Map state must transition to the aggregator (Pass), NOT directly
+      //    to UpdateJobCompleted.
+      const mapEntry = Object.entries(states).find(
+        ([, state]: [string, any]) => state.Type === 'Map'
+      );
+      expect(mapEntry).toBeDefined();
+      const [, mapState] = mapEntry as [string, any];
+      expect(mapState.Next).toBeDefined();
+      const afterMap = states[mapState.Next];
+      expect(afterMap.Type).toBe('Pass');
+
+      // 2. The Pass state must compute anyChunkFailed via States.ArrayContains
+      //    on the success flag projection from each chunk's result.
+      const passParams = afterMap.Parameters ?? {};
+      const anyChunkFailedExpr = passParams['anyChunkFailed.$'];
+      expect(anyChunkFailedExpr).toBeDefined();
+      expect(anyChunkFailedExpr).toMatch(/States\.ArrayContains/);
+      // The wildcard projection must walk into translateResult.Payload.success
+      // so failures returned by translateChunk (Lambda success / app failure)
+      // are captured.
+      expect(anyChunkFailedExpr).toContain('translationResults');
+      expect(anyChunkFailedExpr).toContain('translateResult');
+      expect(anyChunkFailedExpr).toContain('Payload');
+      expect(anyChunkFailedExpr).toContain('success');
+      // ArrayContains is called against the literal `false` boolean.
+      expect(anyChunkFailedExpr).toMatch(/,\s*false\s*\)/);
+
+      // 3. The Pass state must transition to a Choice state.
+      expect(afterMap.Next).toBeDefined();
+      const choiceState = states[afterMap.Next];
+      expect(choiceState.Type).toBe('Choice');
+
+      // 4. The Choice state must have a rule that routes to UpdateJobFailed
+      //    when anyChunkFailed=true, and otherwise (Default) to UpdateJobCompleted.
+      expect(Array.isArray(choiceState.Choices)).toBe(true);
+      expect(choiceState.Choices.length).toBeGreaterThanOrEqual(1);
+      const failureBranch = choiceState.Choices.find(
+        (rule: any) =>
+          rule.Variable === '$.aggregate.anyChunkFailed' &&
+          rule.BooleanEquals === true
+      );
+      expect(failureBranch).toBeDefined();
+      expect(failureBranch.Next).toMatch(/UpdateJobFailed/);
+
+      expect(choiceState.Default).toBeDefined();
+      expect(choiceState.Default).toMatch(/UpdateJobCompleted/);
+    });
+
     test('State machine has required IAM permissions', () => {
       // State machine should have permission to invoke Lambda
       template.hasResourceProperties('AWS::IAM::Policy', {

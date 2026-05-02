@@ -1233,21 +1233,40 @@ export class LfmtInfrastructureStack extends Stack {
     });
 
     // Failure path (Issue #151): when the Map iterator throws after retries
-    // are exhausted, persist TRANSLATION_FAILED to DDB so the UI / polling
+    // are exhausted, OR when at least one chunk reports success=false (see
+    // OMC-followup C1 + the AggregateChunkResults / CheckAllChunksSucceeded
+    // states below), persist TRANSLATION_FAILED to DDB so the UI / polling
     // endpoints stop reporting a phantom-success. The error payload from the
     // Map's catch is stored under $.error and serialized into the DDB row for
     // post-mortem visibility.
+    //
+    // OMC-followup C2 — dual-write `#status` (outer) in addition to
+    // `translationStatus`. PR #176 added the dual-write to UpdateJobCompleted
+    // (issue #170) but left UpdateJobFailed asymmetric; the same bug class
+    // applies in reverse — without this, a transient success that later
+    // fails terminally leaves the outer `status` field stuck on a stale
+    // value (e.g., 'COMPLETED' from a hypothetical earlier write, or
+    // 'IN_PROGRESS' from startTranslation). Mirror the dual-write so Step
+    // Functions is the single source of truth on terminal lifecycle for
+    // BOTH success and failure outcomes.
     const updateJobFailed = new tasks.DynamoUpdateItem(this, 'UpdateJobFailed', {
       table: this.jobsTable,
       key: {
         jobId: tasks.DynamoAttributeValue.fromString(stepfunctions.JsonPath.stringAt('$.jobId')),
         userId: tasks.DynamoAttributeValue.fromString(stepfunctions.JsonPath.stringAt('$.userId')),
       },
-      updateExpression: 'SET translationStatus = :status, translationFailedAt = :failedAt, translationError = :error, updatedAt = :updatedAt',
+      updateExpression: 'SET translationStatus = :status, #status = :outerStatus, translationFailedAt = :failedAt, translationError = :error, updatedAt = :updatedAt',
+      expressionAttributeNames: {
+        // `status` is a DDB reserved word — alias matches UpdateJobCompleted.
+        '#status': 'status',
+      },
       expressionAttributeValues: {
         // 'TRANSLATION_FAILED' matches shared-types/src/jobs.ts (TranslationStatus union)
         // and the polling endpoint in backend/functions/jobs/getTranslationStatus.ts.
         ':status': tasks.DynamoAttributeValue.fromString('TRANSLATION_FAILED'),
+        // OMC-followup C2: outer status mirrors translationStatus on terminal
+        // failure (frontend TranslationDetail.tsx branches on `job.status`).
+        ':outerStatus': tasks.DynamoAttributeValue.fromString('TRANSLATION_FAILED'),
         ':failedAt': tasks.DynamoAttributeValue.fromString(stepfunctions.JsonPath.stringAt('$$.State.EnteredTime')),
         ':error': tasks.DynamoAttributeValue.fromString(stepfunctions.JsonPath.stringAt("States.JsonToString($.error)")),
         ':updatedAt': tasks.DynamoAttributeValue.fromString(stepfunctions.JsonPath.stringAt('$$.State.EnteredTime')),
@@ -1273,15 +1292,74 @@ export class LfmtInfrastructureStack extends Stack {
       resultPath: '$.error',
     });
 
+    // OMC-followup C1 — gate UpdateJobCompleted on per-chunk success.
+    //
+    // Bug class: translateChunk.ts catches every error in its outer
+    // try/catch and RETURNS { success: false } instead of throwing
+    // (translateChunk.ts:256-293). From Step Functions' perspective the
+    // Lambda invocation is successful, so Map's `addCatch(updateJobFailed,
+    // ...)` above NEVER fires for that path. Without the Choice gate
+    // below, UpdateJobCompleted would unconditionally run and overwrite
+    // the per-chunk Lambda's TRANSLATION_FAILED outer status with
+    // COMPLETED — the exact phantom-success bug PR #176's #170 fix was
+    // meant to prevent.
+    //
+    // Why a Pass + Choice (not throw-on-failure inside translateChunk):
+    // the rate-limit path also returns { success: false, retryable: true }
+    // and is intentionally kept as a soft signal so the Map state can
+    // continue iterating. Throwing in translateChunk would change retry
+    // semantics for that path AND for any future soft-failure cases.
+    // The Choice below is contained to infra and only inspects the
+    // aggregate signal; the chunk handler's contract stays unchanged.
+    //
+    // Why States.ArrayContains: it's the canonical ASL idiom for "did
+    // any iteration in this Map fail?" and is documented for exactly
+    // this use case in the AWS Step Functions intrinsic-functions docs.
+    // The JsonPath wildcard `$.translationResults[*].translateResult.Payload.success`
+    // returns a flat array of booleans (one per chunk); ArrayContains
+    // checks for the literal `false` value. Strict equality, no object
+    // matching needed (object matching is NOT supported by the operator).
+    const aggregateChunkResults = new stepfunctions.Pass(this, 'AggregateChunkResults', {
+      comment:
+        'Compute anyChunkFailed = ArrayContains(translationResults[*].translateResult.Payload.success, false). ' +
+        'Step Functions Map only catches THROWN errors; translateChunk returns success:false instead — without this aggregate, ' +
+        'a Lambda that reported success:false would still flow into UpdateJobCompleted and overwrite TRANSLATION_FAILED with COMPLETED.',
+      parameters: {
+        'anyChunkFailed.$':
+          'States.ArrayContains($.translationResults[*].translateResult.Payload.success, false)',
+      },
+      resultPath: '$.aggregate',
+    });
+
+    const checkAllChunksSucceeded = new stepfunctions.Choice(this, 'CheckAllChunksSucceeded', {
+      comment:
+        'If any chunk reported success:false, route to UpdateJobFailed. Otherwise proceed to UpdateJobCompleted. ' +
+        'See AggregateChunkResults above for the rationale.',
+    });
+
     // Success state
     const successState = new stepfunctions.Succeed(this, 'TranslationSuccess', {
       comment: 'All chunks translated successfully - hotfix v1',
     });
 
-    // Define the state machine workflow
+    // Wire the Choice rules. BooleanEquals against a Variable that holds
+    // the result of the intrinsic above. true → failure path; otherwise
+    // (default) → success path. This guarantees UpdateJobCompleted ONLY
+    // runs when every chunk actually succeeded.
+    checkAllChunksSucceeded
+      .when(
+        stepfunctions.Condition.booleanEquals('$.aggregate.anyChunkFailed', true),
+        updateJobFailed
+      )
+      .otherwise(updateJobCompleted.next(successState));
+
+    // Define the state machine workflow.
+    // Map → AggregateChunkResults → CheckAllChunksSucceeded
+    //   ├── (anyChunkFailed=true)  → UpdateJobFailed → TranslationFailed
+    //   └── (default)              → UpdateJobCompleted → TranslationSuccess
     const definition = processChunksMap
-      .next(updateJobCompleted)
-      .next(successState);
+      .next(aggregateChunkResults)
+      .next(checkAllChunksSucceeded);
 
     // Create the state machine
     (this as any).translationStateMachine = new stepfunctions.StateMachine(this, 'TranslationStateMachine', {
