@@ -613,6 +613,13 @@ describe('register Lambda Function', () => {
       expect(body.message).toContain('internal error');
     });
   });
+
+  // NOTE: Regression tests for issue #169 (auto-confirm race) live in a
+  // separate file (register.autoconfirm.test.ts) because AUTO_CONFIRM_USERS
+  // is computed at module load from `ENVIRONMENT.includes('Dev')`. Splitting
+  // the suite is the cleanest way to exercise both branches without
+  // module-isolation hacks that don't compose with aws-sdk-client-mock's
+  // middleware-level interception.
 });
 
 /**

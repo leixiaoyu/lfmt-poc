@@ -20,6 +20,9 @@ import {
 } from '../translateChunk';
 import { sdkStreamMixin } from '@smithy/util-stream';
 import { RateLimitError, RateLimitType } from '../../shared/types/rateLimiting';
+// Imported alongside the jest.mock() factory below so OMC-followup C3 can
+// override the GenAI mock for a single test (see usageMetadata-undefined case).
+import { GoogleGenAI } from '@google/genai';
 
 // Create mocks
 const dynamoMock = mockClient(DynamoDBClient);
@@ -254,6 +257,193 @@ describe('translateChunk Lambda', () => {
       expect(updateCalls.length).toBe(1);
       const updateExpression = updateCalls[0].args[0].input.UpdateExpression;
       expect(updateExpression).toContain('translationStatus');
+    });
+
+    /**
+     * Regression test for issue #168 — tokensUsed/estimatedCost lost under
+     * parallel execution.
+     *
+     * Bug: updateJobProgress used a `SET tokensUsed = :tokens` clause where
+     * `:tokens` was a pre-computed running total (job.tokensUsed + delta).
+     * Under maxConcurrency=10, multiple chunk Lambdas read the same starting
+     * value and last-writer-wins, so per-chunk metrics were lost (DDB ended
+     * up showing 0 even though CloudWatch confirmed real per-chunk usage).
+     *
+     * Fix: switch to atomic `ADD tokensUsed :tokens, estimatedCost :cost`
+     * and pass the per-chunk DELTA (not a running total). startTranslation
+     * initializes both attributes to 0 (NUMBER) so ADD is safe on first call.
+     *
+     * This test would have caught the bug because it asserts the
+     * UpdateExpression uses ADD on the metric attributes AND that the value
+     * passed is the per-chunk delta (150 from the mocked Gemini response),
+     * NOT a running total derived from the loaded job (which had 600).
+     */
+    it('should use atomic ADD (not SET) for tokensUsed/estimatedCost — issue #168', async () => {
+      dynamoMock.on(GetItemCommand).resolves({
+        Item: createMockJob({
+          jobId: 'job-168',
+          userId: 'user-168',
+          status: 'CHUNKED',
+          totalChunks: 5,
+          translatedChunks: 2,
+          // Pre-existing running total — must NOT leak into the SET value.
+          tokensUsed: 600,
+          estimatedCost: 0.000045,
+          extraFields: {
+            translationStatus: { S: 'IN_PROGRESS' },
+          },
+        }),
+      } as any);
+
+      const chunkContent = JSON.stringify({
+        primaryContent: 'Chunk for issue #168 regression test.',
+        chunkId: 'chunk-2',
+        chunkIndex: 2,
+      });
+
+      s3Mock.on(GetObjectCommand).resolves({
+        Body: createMockStream(chunkContent),
+      } as any);
+
+      s3Mock.on(PutObjectCommand).resolves({} as any);
+      dynamoMock.on(UpdateItemCommand).resolves({} as any);
+
+      const event: TranslateChunkEvent = {
+        jobId: 'job-168',
+        userId: 'user-168',
+        chunkIndex: 2,
+        targetLanguage: 'es',
+      };
+
+      const result = await handler(event);
+      expect(result.success).toBe(true);
+
+      const updateCalls = dynamoMock.commandCalls(UpdateItemCommand);
+      expect(updateCalls.length).toBe(1);
+      const updateExpression = updateCalls[0].args[0].input.UpdateExpression!;
+
+      // 1. The ADD clause MUST be present for both metric attributes AND
+      //    for translatedChunks (OMC-followup R5). The previous (broken)
+      //    implementation used SET on tokensUsed/estimatedCost; PR #176
+      //    fixed those. R5 closes the same race for translatedChunks
+      //    (parallel chunks reading the same starting value and both
+      //    writing n+1 — one chunk silently dropped from progress UI).
+      expect(updateExpression).toMatch(/ADD\s+/);
+      expect(updateExpression).toMatch(/tokensUsed\s+:tokens/);
+      expect(updateExpression).toMatch(/estimatedCost\s+:cost/);
+      expect(updateExpression).toMatch(/translatedChunks\s+:one/);
+
+      // 2. None of the counters may also appear in the SET clause (would race).
+      const setClauseMatch = updateExpression.match(/SET\s+(.+?)(?:\s+ADD|$)/);
+      const setClause = setClauseMatch ? setClauseMatch[1] : '';
+      expect(setClause).not.toMatch(/tokensUsed/);
+      expect(setClause).not.toMatch(/estimatedCost/);
+      expect(setClause).not.toMatch(/translatedChunks/);
+
+      // 3. The value passed for :tokens MUST be the per-chunk delta (150
+      //    from the mocked Gemini response), NOT the running total (600
+      //    + 150 = 750). The Gemini mock at the top of this file returns
+      //    totalTokenCount: 150.
+      const values = updateCalls[0].args[0].input.ExpressionAttributeValues!;
+      expect(values[':tokens']).toEqual({ N: '150' });
+      // estimatedCost is computed from token counts; just verify it's > 0
+      // and not the pre-existing 0.000045 running total.
+      const costN = parseFloat((values[':cost'] as { N: string }).N);
+      expect(costN).toBeGreaterThan(0);
+      expect(costN).toBeLessThan(0.000045); // smaller than the pre-existing total
+      // OMC-followup R5: translatedChunks is incremented by 1 per chunk.
+      expect(values[':one']).toEqual({ N: '1' });
+    });
+
+    /**
+     * OMC-followup C3 — `usageMetadata: undefined` regression test.
+     *
+     * Bug class: Gemini API can return responses without `usageMetadata`
+     * when an upstream error is encountered (or for partial / safety-blocked
+     * responses). The previous read-modify-write SET path never touched
+     * `result.usageMetadata.totalTokenCount` directly because it pre-computed
+     * a running total OUTSIDE the marshalled value object. The new atomic
+     * ADD path passes the raw delta — and DDB's marshall() of `undefined`
+     * would cascade into a TypeError before the UpdateItem ever fires,
+     * leaving the DDB row in an inconsistent state.
+     *
+     * geminiClient.ts:159-162 already defaults each token field to `0`
+     * via `?? 0`, so this test asserts:
+     *   1. The Lambda completes without TypeError.
+     *   2. The DDB ADD value defaults to 0 (NUMBER) — race-free with ADD
+     *      arithmetic since `ADD attr 0` is a documented no-op for NUMBERs.
+     */
+    it('handles undefined usageMetadata gracefully (Gemini API error path) — OMC-followup C3', async () => {
+      // Override the default Google GenAI mock so the next translate() call
+      // returns a payload WITHOUT usageMetadata, mirroring the real Gemini
+      // upstream-error / safety-block response shape.
+      const previousImpl = (GoogleGenAI as unknown as jest.Mock).getMockImplementation();
+      (GoogleGenAI as unknown as jest.Mock).mockImplementationOnce(() => ({
+        models: {
+          generateContent: jest.fn().mockResolvedValue({
+            text: 'Texto traducido al español',
+            // usageMetadata: intentionally absent
+          }),
+        },
+      }));
+
+      try {
+        dynamoMock.on(GetItemCommand).resolves({
+          Item: createMockJob({
+            jobId: 'job-c3',
+            userId: 'user-c3',
+            status: 'CHUNKED',
+            totalChunks: 5,
+            translatedChunks: 0,
+            tokensUsed: 0,
+            estimatedCost: 0,
+            extraFields: {
+              translationStatus: { S: 'IN_PROGRESS' },
+            },
+          }),
+        } as any);
+
+        const chunkContent = JSON.stringify({
+          primaryContent: 'Chunk for OMC-followup C3 regression test.',
+          chunkId: 'chunk-0',
+          chunkIndex: 0,
+        });
+
+        s3Mock.on(GetObjectCommand).resolves({
+          Body: createMockStream(chunkContent),
+        } as any);
+
+        s3Mock.on(PutObjectCommand).resolves({} as any);
+        dynamoMock.on(UpdateItemCommand).resolves({} as any);
+
+        const event: TranslateChunkEvent = {
+          jobId: 'job-c3',
+          userId: 'user-c3',
+          chunkIndex: 0,
+          targetLanguage: 'es',
+        };
+
+        const result = await handler(event);
+
+        // 1. Must not TypeError on undefined access.
+        expect(result.success).toBe(true);
+        // tokensUsed defaults to 0 from geminiClient.ts:162 (`?? 0`).
+        expect(result.tokensUsed).toBe(0);
+
+        // 2. The DDB ADD value MUST default to 0 (not undefined) — otherwise
+        //    marshall() throws TypeError and the row is never updated.
+        const updateCalls = dynamoMock.commandCalls(UpdateItemCommand);
+        expect(updateCalls.length).toBe(1);
+        const values = updateCalls[0].args[0].input.ExpressionAttributeValues!;
+        expect(values[':tokens']).toEqual({ N: '0' });
+        expect(values[':cost']).toEqual({ N: '0' });
+      } finally {
+        // Restore the default mock for sibling tests in this file (Jest
+        // mockImplementationOnce only consumes one call, but be explicit).
+        if (previousImpl) {
+          (GoogleGenAI as unknown as jest.Mock).mockImplementation(previousImpl);
+        }
+      }
     });
   });
 

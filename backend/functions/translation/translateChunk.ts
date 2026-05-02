@@ -229,12 +229,29 @@ export const handler = async (event: TranslateChunkEvent): Promise<TranslateChun
       }
     );
 
-    // Update job progress in DynamoDB
+    // Update job progress in DynamoDB.
+    // CRITICAL (issue #168): tokensUsed and estimatedCost MUST be passed as
+    // per-chunk DELTAS (not pre-computed running totals from the job we
+    // loaded above). With maxConcurrency=10, multiple chunk Lambdas run in
+    // parallel; if each Lambda reads the totals and writes a SET, the last
+    // writer wins and per-chunk metrics are lost. updateJobProgress now
+    // uses an atomic `ADD tokensUsed :tokens, estimatedCost :cost`, which
+    // is race-free under parallel execution and Step Functions retries.
+    //
+    // OMC-followup R5: same race applied to translatedChunks too — the
+    // previous SET-based update computed `(job.translatedChunks || 0) + 1`
+    // from a value loaded BEFORE the API call, so two parallel chunks
+    // could read the same starting value (e.g. 3) and both write 4 (one
+    // chunk silently dropped from the in-flight progress UI). Switched
+    // to an atomic ADD (per-chunk +1 delta) below; updateJobProgress no
+    // longer needs the pre-incremented value, so we don't compute it
+    // here. totalChunks is still passed because the helper uses it to
+    // derive translationStatus (IN_PROGRESS vs. COMPLETED).
     await updateJobProgress(event.jobId, event.userId, {
-      translatedChunks: (job.translatedChunks || 0) + 1,
+      currentTranslatedChunks: job.translatedChunks || 0, // for IN_PROGRESS-vs-COMPLETED hint only
       totalChunks: job.totalChunks,
-      tokensUsed: (job.tokensUsed || 0) + result.tokensUsed.total,
-      estimatedCost: (job.estimatedCost || 0) + result.estimatedCost,
+      tokensUsedDelta: result.tokensUsed.total,
+      estimatedCostDelta: result.estimatedCost,
     });
 
     return {
@@ -464,31 +481,74 @@ async function storeTranslatedChunk(
 }
 
 /**
- * Update job progress in DynamoDB
+ * Update job progress in DynamoDB.
+ *
+ * Uses an atomic `ADD translatedChunks :one, tokensUsed :tokens,
+ * estimatedCost :cost` clause so all per-chunk counters accumulate
+ * correctly under parallel execution.
+ *
+ * Issue #168 (tokensUsed / estimatedCost): the previous implementation
+ * used a pre-computed running total inside SET, which lost data under
+ * maxConcurrency > 1 (last-writer-wins). startTranslation.ts initializes
+ * all three attributes to 0 (NUMBER) so ADD is always a valid operation.
+ *
+ * OMC-followup R5 (translatedChunks): the previous SET-based update
+ * computed `(job.translatedChunks || 0) + 1` from a value loaded BEFORE
+ * the API call, so two parallel chunks could read the same starting
+ * value and both write `n+1` (one chunk silently dropped from the
+ * in-flight progress UI). Switched to atomic ADD here for the same
+ * reasons as #168.
+ *
+ * OMC-followup R7 — retry idempotency assumption (#168):
+ * Each chunk Lambda is invoked once per (jobId, chunkIndex) tuple in
+ * normal operation, so each ADD is unique. Step Functions Map retries
+ * WOULD double-count if the same chunk were retried — but the iterator
+ * task currently has NO retry policy beyond the rate-limit / service
+ * exception list (see translateChunkTask.addRetry in
+ * lfmt-infrastructure-stack.ts). For the rate-limit path the chunk
+ * Lambda returns BEFORE updateJobProgress is called, so no ADD has
+ * happened yet — re-runs are safe. For the Lambda.ServiceException
+ * path the retry happens at the SF service layer; if the Lambda
+ * actually completed (DDB ADD succeeded) but Step Functions saw the
+ * failure, the retried Lambda would re-run translation AND ADD again.
+ * This is currently accepted as best-effort. If we ever need stricter
+ * exactly-once semantics, the next step would be a per-chunk dedup
+ * key (e.g., a conditional ADD with attribute_not_exists on
+ * `chunkTokensRecorded.<chunkIndex>` or a dedicated
+ * `recordedChunks` set). NOT implemented here — documented for
+ * intentionality.
  */
 async function updateJobProgress(
   jobId: string,
   userId: string,
   progress: {
-    translatedChunks: number;
+    currentTranslatedChunks: number;
     totalChunks: number;
-    tokensUsed: number;
-    estimatedCost: number;
+    tokensUsedDelta: number;
+    estimatedCostDelta: number;
   }
 ): Promise<void> {
+  // Best-effort hint at the post-ADD count for the IN_PROGRESS-vs-COMPLETED
+  // status decision. Under concurrent chunks this can race (two parallel
+  // chunks may both write IN_PROGRESS even when this is the final chunk),
+  // but the terminal status is authoritatively re-set by the Step Functions
+  // UpdateJobCompleted task (see lfmt-infrastructure-stack.ts) which runs
+  // exactly once after every chunk has reported success — so a transient
+  // IN_PROGRESS here is corrected. Do NOT rely on this heuristic for
+  // terminal correctness.
   const translationStatus =
-    progress.translatedChunks >= progress.totalChunks ? 'COMPLETED' : 'IN_PROGRESS';
+    progress.currentTranslatedChunks + 1 >= progress.totalChunks ? 'COMPLETED' : 'IN_PROGRESS';
 
   const command = new UpdateItemCommand({
     TableName: JOBS_TABLE,
     Key: marshall({ jobId, userId }),
     UpdateExpression:
-      'SET translationStatus = :status, translatedChunks = :translated, tokensUsed = :tokens, estimatedCost = :cost, updatedAt = :updatedAt',
+      'SET translationStatus = :status, updatedAt = :updatedAt ADD translatedChunks :one, tokensUsed :tokens, estimatedCost :cost',
     ExpressionAttributeValues: marshall({
       ':status': translationStatus,
-      ':translated': progress.translatedChunks,
-      ':tokens': progress.tokensUsed,
-      ':cost': progress.estimatedCost,
+      ':one': 1,
+      ':tokens': progress.tokensUsedDelta,
+      ':cost': progress.estimatedCostDelta,
       ':updatedAt': new Date().toISOString(),
     }),
   });
@@ -498,8 +558,10 @@ async function updateJobProgress(
   logger.info('Job progress updated', {
     jobId,
     userId,
-    translatedChunks: progress.translatedChunks,
+    translatedChunksDelta: 1,
     totalChunks: progress.totalChunks,
+    tokensUsedDelta: progress.tokensUsedDelta,
+    estimatedCostDelta: progress.estimatedCostDelta,
     translationStatus,
   });
 }
