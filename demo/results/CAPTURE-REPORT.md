@@ -1,3 +1,9 @@
+<!--
+  This report documents the FIRST attempt + its remediation history.
+  Future runs should write per-run reports under
+  `demo/results/<run-timestamp>/REPORT.md` rather than appending here, so
+  this file stays a stable historical artifact instead of growing forever.
+-->
 # Track B — Real-Metrics Capture Report
 
 **Run date**: 2026-04-25
@@ -99,7 +105,7 @@ The few placeholders that CAN be honestly tightened from the prep work alone (ch
 
 1. ~~**Re-deploy the backend stack** — `cd backend/infrastructure && npx cdk deploy --context environment=dev`. This will rebuild `translate-chunk-LfmtPocDev` from current `main` and almost certainly resolve `i.acquire is not a function`.~~ **Disproven 2026-04-27**: redeploy executed cleanly, Lambda `LastModified` updated, but the TypeError persists. The defect lives in `main` source; awaiting Issue #150 root-cause fix (call-site + bundle inspection in flight).
 2. ~~**Verify Step Functions failure propagation** — confirm that a failed `translateChunk` invocation no longer flips `translationStatus` to `COMPLETED`. If it does, that's a Step Functions / Map retry-policy bug to file separately.~~ **Resolved 2026-04-29 by PR #165 (Issue #151)**: Map-level Catch handler added; failed iterations now write `translationStatus = 'TRANSLATION_FAILED'` to DynamoDB and terminate the execution as `Failed`.
-3. **Re-run** `node demo/scripts/capture-chapter-metrics.mjs` (no args) to capture all three chapters in one pass. Expected: 5-7 Gemini requests total, ~60-90s per chapter wall-clock, completes well inside 25 RPD. **Blocked on Issue #150's source fix.**
+3. **Re-run** `TEST_PASSWORD='...' node demo/scripts/capture-chapter-metrics.mjs` (no args) to capture all three chapters in one pass. Expected: **~15-17 Gemini requests total** at the deployed 3,500-token chunk size (Sherlock alone is ~12 chunks; Pride ~1; War & Peace ~3), ~60-90s per chapter wall-clock — comfortably under 25 RPD for a single run, but a same-day re-run after a partial failure WILL bust the ceiling. The script now warns at startup if a recent prior run is detected. The original projection of 5-7 requests was wrong (corrected during OMC review follow-up). **Blocked on Issue #150's source fix.**
 4. **After capture succeeds**, edit the pitch-deck placeholders in a follow-up PR, citing the JSON files in `demo/results/`.
 
 ---
@@ -114,3 +120,25 @@ The few placeholders that CAN be honestly tightened from the prep work alone (ch
 | API Gateway calls (auth/upload/status/translate combined) | ~30 | n/a |
 
 No paid-tier usage. No quota burned. Safe to re-run the script tomorrow once the deployment is fixed.
+
+---
+
+## Addendum 2026-04-28 — OMC review remediation
+
+A multi-agent (5 specialists) code review of PR #146 surfaced one Critical finding directly relevant to this report's "Recommended next steps":
+
+- **Per-run Gemini request projection corrected from 5-7 → ~15-17.** At the deployed 3,500-token chunk size, Sherlock alone produces ~12 chunks; Pride ~1; War & Peace ~3. A single full run still fits under the 20-of-25 RPD safety rail, but two same-day full runs WILL bust 25 RPD. The capture script now logs a warning at startup if `demo/results/capture-summary.json` from a recent prior run is detected (24h window).
+
+The capture script (`demo/scripts/capture-chapter-metrics.mjs`) was hardened in the same review pass:
+
+- bounded `discoverJobId` (DDB Query against UserJobsIndex GSI vs. unbounded Scan)
+- API-first metric source with DDB fallback (post PR #166 wire-shape catch-up)
+- partial-translation reporting instead of silent total discard
+- 30s timeout on every AWS CLI call
+- terminal-state short-circuit in the poll loop (post PR #165)
+- mandatory `TEST_PASSWORD` env var (burned default removed)
+- `aws s3 cp --recursive` for chunk download (1 call instead of 2N)
+- `schemaVersion: "1.0.0"` on every emitted metrics file
+- `capture-summary.json` no longer writes the test-account email to git
+
+See PR #146 commit history for line-level changes.

@@ -6,7 +6,13 @@
 **Date**: December 2025
 **Version**: 1.0 (POC Demo)
 
-> **🚧 Week 2 capture status (updated 2026-04-30)**: All placeholder numbers in this deck remain unreplaced. Track B's automated capture run was blocked on 2026-04-25 by `TypeError: i.acquire is not a function` thrown by `lfmt-translate-chunk-LfmtPocDev` on every invocation since 2026-03-19. The original "stale Lambda bundle" hypothesis was disproven: the deploy pipeline has since been unblocked (PRs #149/#152/#154/#159/#164/#166) and the Lambda was successfully redeployed on 2026-04-27, but the TypeError persisted — meaning the bug existed in current `main` source. Root cause traced (Issue #150 → PR #167): the `translateChunk` handler accepted `_rateLimiter` as a second argument for test DI, but AWS Lambda passes `context` as the second runtime argument, silently overwriting it; `context.acquire(...)` then threw. Companion issue #151 (Step-Functions silent-COMPLETED on chunk failure) was resolved by PR #165 on 2026-04-29, so once PR #167 lands and the next push redeploys the Lambda, the capture script's reported metrics will be trustworthy. The capture script (`demo/scripts/capture-chapter-metrics.mjs`) and chapter fixtures (`demo/test-documents/chapters/`) are checked in and will re-run cleanly the moment PR #167's deploy lands. **Zero Gemini quota was burned during the failed attempt.** See `demo/results/CAPTURE-REPORT.md` for the full diagnostic and the post-rebase update.
+<!--
+  Banner kept terse — `demo/results/CAPTURE-REPORT.md` is the canonical
+  source of truth for capture-pipeline status. Update CAPTURE-REPORT.md
+  first; this banner should only summarize and link.
+-->
+
+> **🚧 Week 2 capture status (updated 2026-04-30, refreshed 2026-04-28 OMC review)**: All placeholder numbers in this deck remain unreplaced. The capture-script + chapter fixtures are checked in and validated; running the capture itself is blocked on PR #167 (the `i.acquire` Lambda fix). The original "5-7 Gemini requests per run" projection was corrected to **~15-17** during the OMC multi-agent review of PR #146 — still under the 25 RPD ceiling for a single run, but a same-day re-run would bust it (the script now warns). **Zero Gemini quota was burned during the blocked attempt.** Full diagnostic, root-cause history, and remediation log: see `demo/results/CAPTURE-REPORT.md`.
 
 ---
 

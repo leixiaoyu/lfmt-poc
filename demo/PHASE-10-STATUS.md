@@ -144,7 +144,13 @@ See `demo/DEMO-CONTENT-PLAN.md` for the two-track demo strategy (Track A: live c
 
 ### Week 2 — Demo Data Capture (Free-Tier, Two Tracks)
 
-**🚧 BLOCKED 2026-04-25 → root cause identified 2026-04-30, fix in flight** — `lfmt-translate-chunk-LfmtPocDev` has been throwing `TypeError: i.acquire is not a function` on every invocation since at least 2026-03-19. The original "stale Lambda bundle" hypothesis was disproven once the deploy pipeline was unblocked (PRs #149/#152/#154/#159/#164/#166) and the Lambda was successfully redeployed on 2026-04-27 — the TypeError persisted. Root cause traced (Issue #150 → PR #167): the handler signature `handler(event, _rateLimiter?: DistributedRateLimiter)` accepted the rate-limiter as a second arg for test DI, but AWS Lambda passes `context` as the second argument at runtime, silently overwriting the rate-limiter with the Lambda runtime object on every production invocation — the live `context.acquire(...)` call then threw the observed TypeError. PR #167 removes the parameter from the signature and replaces the test-DI path with `setRateLimiterForTesting()` (regression-tested). Companion issue #151 (Step-Functions silent-COMPLETED on chunk failure) was resolved by PR #165 on 2026-04-29, so the script's reported metrics will be trustworthy once #167 lands. The capture script in `demo/scripts/capture-chapter-metrics.mjs` is wired end-to-end and validated through chunking; it will resume cleanly the moment #167's deploy lands. See `demo/results/CAPTURE-REPORT.md` for full analysis. **Zero Gemini quota was consumed during the blocked attempt.**
+<!--
+  Banner kept terse — `demo/results/CAPTURE-REPORT.md` is the canonical
+  status document for the capture pipeline. Update CAPTURE-REPORT.md
+  first; this banner should only summarize and link.
+-->
+
+**🚧 BLOCKED 2026-04-25 → root cause identified, fix in flight (PR #167)** — `lfmt-translate-chunk-LfmtPocDev` has been throwing `TypeError: i.acquire is not a function` on every invocation since 2026-03-19; root cause is the handler accepting `_rateLimiter` as a second arg that AWS Lambda silently overwrites with `context`. The capture script is wired end-to-end and validated through chunking; it resumes cleanly once #167's deploy lands. The 2026-04-28 OMC review of PR #146 corrected the per-run Gemini-request projection from 5-7 to **~15-17** (Sherlock alone is ~12 chunks at 3,500-token size); the script now warns at startup if a recent prior run is detected so a same-day re-run cannot accidentally bust 25 RPD. **Zero Gemini quota was consumed during the blocked attempt.** See `demo/results/CAPTURE-REPORT.md` for the full diagnostic, root-cause history, and post-OMC remediation log.
 
 **Track A — Live demo content (fits free tier trivially)**:
 

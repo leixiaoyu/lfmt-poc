@@ -58,10 +58,15 @@ demo/*.credentials
 # Demo capture: translated/source dumps are large and reproducible from
 # the metrics JSON. Commit JSON, markdown, and quality samples; ignore the
 # raw translated/source/status payloads under per-document subdirectories.
+# capture-summary.json IS committed (useful for run-to-run diff inspection)
+# but the test-account email is scrubbed before write — see R11 in the
+# OMC review follow-up for capture-chapter-metrics.mjs.
 demo/results/*/source.txt
 demo/results/*/translation.txt
 demo/results/*/raw-status.json
 demo/results/*/translated-chunks/
+# Per-jobId temp chunk download dir created by `aws s3 cp --recursive`
+demo/results/.tmp-chunks/
 
 # AWS CDK
 cdk.out/
