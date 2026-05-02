@@ -497,6 +497,51 @@ describe('Document Chunking Lambda Handler', () => {
     });
   });
 
+  describe('REGRESSION #172 (sibling site): chunkDocument PutObject metadata values must be strings', () => {
+    // Sibling-site regression guard for issue #172 (which manifested in
+    // translateChunk). @smithy/signature-v4 calls .trim() on every S3 metadata
+    // header value at signing time and throws "headers[headerName].trim is
+    // not a function" if any value is not a string.
+    //
+    // chunkDocument.storeChunks already coerced chunkIndex / totalChunks via
+    // .toString() before this audit, so this test was green on the day it was
+    // added. It is here as a forward-looking guard: if a future contributor
+    // adds a new numeric / boolean metadata field without updating the typed
+    // S3SourceChunkMetadata interface or its String() coercion, this test
+    // will fail before the bundle hits production again.
+
+    it('every PutObjectCommand metadata value must be typeof string', async () => {
+      const bucket = 'test-bucket';
+      const key = 'uploads/user123/file456/regression172.txt';
+      const content = 'Regression test content for issue 172 sibling site.';
+
+      s3Mock.on(HeadObjectCommand).resolves({
+        ContentLength: Buffer.byteLength(content, 'utf-8'),
+        Metadata: { userid: 'user123', jobid: 'job789', fileid: 'file456' },
+      });
+      s3Mock.on(GetObjectCommand).resolves({
+        Body: streamFromString(content) as never,
+      });
+      mockJobRecord(key, content.length);
+      s3Mock.on(PutObjectCommand).resolves({});
+      dynamoMock.on(UpdateItemCommand).resolves({});
+
+      await handler(createS3Event(bucket, key), createMockContext(), () => {});
+
+      // Inspect every PutObjectCommand Metadata payload — the exact invariant
+      // @smithy/signature-v4 enforces via its .trim() call during signing.
+      const putCalls = s3Mock.commandCalls(PutObjectCommand);
+      expect(putCalls.length).toBeGreaterThan(0);
+
+      for (const call of putCalls) {
+        const metadata =
+          (call.args[0].input as { Metadata?: Record<string, unknown> }).Metadata ?? {};
+        const nonStringEntries = Object.entries(metadata).filter(([, v]) => typeof v !== 'string');
+        expect(nonStringEntries).toEqual([]);
+      }
+    });
+  });
+
   describe('Multiple Records', () => {
     it('should process multiple S3 records', async () => {
       const event: S3Event = {

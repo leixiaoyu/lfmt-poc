@@ -1355,6 +1355,11 @@ describe('translateChunk Lambda', () => {
     // and estimatedCost (number) were spread into PutObjectCommand Metadata without
     // coercion, causing "TypeError: headers[headerName].trim is not a function"
     // on 100% of translateChunk invocations (6/6 in the 2026-05-02 capture run).
+    //
+    // Test isolation note: every test in this describe block relies on the
+    // file-level `beforeEach` (line ~82) to reset s3Mock / dynamoMock and the
+    // singleton clients. There is no nested beforeEach here — `putCalls.length`
+    // assertions therefore reflect a clean per-test mock surface.
 
     it('all S3 PutObject metadata values must be typeof string', async () => {
       dynamoMock.on(GetItemCommand).resolves({
@@ -1407,6 +1412,12 @@ describe('translateChunk Lambda', () => {
     });
 
     it('tokensUsed metadata value must be a string, not a number', async () => {
+      // Belt-and-suspenders alongside the all-values check above:
+      // the loop test catches any new numeric field added to the metadata payload,
+      // while this test pins the two historic offenders (tokensUsed, estimatedCost)
+      // by name — making intent explicit and ensuring a refactor that renames or
+      // restructures the loop assertion does not silently drop these named checks.
+      // Mock state is reset by the file-level `beforeEach` above (no nested reset).
       dynamoMock.on(GetItemCommand).resolves({
         Item: createMockJob({
           jobId: 'job-reg172-tokens',

@@ -1156,6 +1156,64 @@ describe('uploadComplete Lambda Function - Comprehensive Coverage', () => {
   });
 
   /**
+   * Sibling-site regression guard for issue #172 (which manifested in
+   * translateChunk's PutObjectCommand). @smithy/signature-v4 calls .trim()
+   * on every S3 metadata header value at signing time — including for
+   * CopyObjectCommand — and throws "headers[headerName].trim is not a
+   * function" if any value is not a string.
+   *
+   * uploadComplete.ts already passed only string-typed values prior to this
+   * audit (the spread source headResponse.Metadata is SDK-typed as
+   * Record<string, string> | undefined, and the three overrides are
+   * function-scoped strings). This test is therefore a forward-looking
+   * guard: if a future contributor adds a new numeric / boolean metadata
+   * field without coercing it, this will fail before production breaks.
+   */
+  describe('REGRESSION #172 (sibling site): CopyObject metadata values must be strings', () => {
+    it('every CopyObjectCommand metadata value must be typeof string', async () => {
+      const userId = 'user-reg172';
+      const fileId = 'file-reg172';
+      const jobId = 'job-reg172';
+      const filename = 'regression-172.txt';
+      const fileSize = 50000;
+
+      const event = createS3Event(
+        'test-bucket',
+        `uploads/${userId}/${fileId}/${filename}`,
+        fileSize
+      );
+
+      const metadata = createS3Metadata(userId, fileId, jobId, filename);
+      const jobRecord = createJobRecord(jobId, userId, fileId, filename, fileSize);
+
+      s3Mock.on(HeadObjectCommand).resolves({
+        ContentType: 'text/plain',
+        ContentLength: fileSize,
+        Metadata: metadata,
+      });
+
+      dynamoMock.on(GetItemCommand).resolves({
+        Item: marshall(jobRecord),
+      });
+
+      dynamoMock.on(UpdateItemCommand).resolves({});
+      s3Mock.on(CopyObjectCommand).resolves({});
+
+      await handler(event);
+
+      const copyCalls = s3Mock.commandCalls(CopyObjectCommand);
+      expect(copyCalls).toHaveLength(1);
+
+      const copyMetadata =
+        (copyCalls[0].args[0].input as { Metadata?: Record<string, unknown> }).Metadata ?? {};
+      const nonStringEntries = Object.entries(copyMetadata).filter(
+        ([, v]) => typeof v !== 'string'
+      );
+      expect(nonStringEntries).toEqual([]);
+    });
+  });
+
+  /**
    * S3 Copy Operation - Metadata Preservation
    */
   describe('S3 Copy Operation - Metadata Preservation', () => {
