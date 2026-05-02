@@ -1292,33 +1292,42 @@ export class LfmtInfrastructureStack extends Stack {
       resultPath: '$.error',
     });
 
-    // OMC-followup C1 — gate UpdateJobCompleted on per-chunk success.
+    // OMC-followup C1 (Issue #170 + round-2 OMC review
+    // https://github.com/leixiaoyu/lfmt-poc/pull/176#issuecomment-4364585175):
+    // gate UpdateJobCompleted so it only runs when EVERY chunk's translateChunk
+    // Lambda returned `success: true`.
     //
     // Bug class: translateChunk.ts catches every error in its outer
-    // try/catch and RETURNS { success: false } instead of throwing
-    // (translateChunk.ts:256-293). From Step Functions' perspective the
-    // Lambda invocation is successful, so Map's `addCatch(updateJobFailed,
-    // ...)` above NEVER fires for that path. Without the Choice gate
-    // below, UpdateJobCompleted would unconditionally run and overwrite
-    // the per-chunk Lambda's TRANSLATION_FAILED outer status with
-    // COMPLETED — the exact phantom-success bug PR #176's #170 fix was
-    // meant to prevent.
+    // try/catch and RETURNS `{ success: false, retryable }` instead of
+    // throwing (translateChunk.ts:256-293). From Step Functions'
+    // perspective the Lambda invocation is successful, so Map's
+    // `addCatch(updateJobFailed, ...)` above NEVER fires on chunk-level
+    // application failures — `addCatch` (and `addRetry`) only react to
+    // THROWN errors, not to `{ success: false }` return payloads.
+    // Without this Choice, any single failed chunk would still be
+    // aggregated into a "successful" Map result, UpdateJobCompleted would
+    // run, and the per-chunk Lambda's TRANSLATION_FAILED outer status
+    // would be overwritten with COMPLETED — the exact phantom-success
+    // bug PR #176's #170 fix was meant to prevent.
     //
-    // Why a Pass + Choice (not throw-on-failure inside translateChunk):
-    // the rate-limit path also returns { success: false, retryable: true }
-    // and is intentionally kept as a soft signal so the Map state can
-    // continue iterating. Throwing in translateChunk would change retry
-    // semantics for that path AND for any future soft-failure cases.
-    // The Choice below is contained to infra and only inspects the
-    // aggregate signal; the chunk handler's contract stays unchanged.
+    // Note on `retryable`: the field is currently a dead-letter signal
+    // (no Step Functions construct reads it; addRetry only catches thrown
+    // errors). Round-2 reviewer flagged the previous "rate-limit
+    // soft-signal preserved" framing as misleading — keeping the
+    // try/catch + `{ success: false }` contract avoids changing the
+    // chunk handler's surface area, and the gate stays contained to
+    // infra. If we ever want true rate-limit retries we'll need to
+    // throw a typed error from translateChunk and add a matching
+    // `addRetry` rule on the Map iterator.
     //
-    // Why States.ArrayContains: it's the canonical ASL idiom for "did
-    // any iteration in this Map fail?" and is documented for exactly
-    // this use case in the AWS Step Functions intrinsic-functions docs.
-    // The JsonPath wildcard `$.translationResults[*].translateResult.Payload.success`
-    // returns a flat array of booleans (one per chunk); ArrayContains
-    // checks for the literal `false` value. Strict equality, no object
-    // matching needed (object matching is NOT supported by the operator).
+    // Why States.ArrayContains: it's the canonical ASL idiom — JSONPath
+    // filter expressions aren't supported in Choice states. The wildcard
+    // `$.translationResults[*].translateResult.Payload.success` projects
+    // to a flat array of booleans (one per chunk) and ArrayContains
+    // checks whether the literal `false` value appears anywhere; if it
+    // does, route to UpdateJobFailed instead. Strict equality, no
+    // object matching needed (object matching is NOT supported by the
+    // operator).
     const aggregateChunkResults = new stepfunctions.Pass(this, 'AggregateChunkResults', {
       comment:
         'Compute anyChunkFailed = ArrayContains(translationResults[*].translateResult.Payload.success, false). ' +

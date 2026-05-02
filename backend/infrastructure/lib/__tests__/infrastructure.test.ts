@@ -691,13 +691,21 @@ describe('LFMT Infrastructure Stack', () => {
       // The value bound to outer status MUST be 'COMPLETED' (matching
       // shared-types/src/jobs.ts JobStatus union — a drift here would
       // re-introduce the misclassification bug fixed by issue #170).
-      const valuesString = JSON.stringify(
-        updateJobCompleted.Parameters?.ExpressionAttributeValues ?? {}
-      );
-      // Two 'COMPLETED' occurrences expected: one for translationStatus, one
-      // for the outer status.
-      const completedMatches = valuesString.match(/COMPLETED/g) ?? [];
-      expect(completedMatches.length).toBeGreaterThanOrEqual(2);
+      //
+      // Round-2 OMC review (issuecomment-4364585175) — assert by KEY
+      // (`:status` and `:outerStatus`), not by counting 'COMPLETED'
+      // substring matches in the serialized JSON. Substring counts are
+      // logically sufficient here but can false-positive on contrived
+      // serialization changes (e.g., adding any other value containing
+      // 'COMPLETED'). Keyed assertions are strictly correct,
+      // self-documenting, and survive ASL serialization changes that
+      // don't affect the contract.
+      const exprValues =
+        updateJobCompleted.Parameters?.ExpressionAttributeValues ?? {};
+      expect(updateExpression).toMatch(/translationStatus\s*=\s*:status/);
+      expect(updateExpression).toMatch(/#status\s*=\s*:outerStatus/);
+      expect(exprValues[':status']).toEqual({ S: 'COMPLETED' });
+      expect(exprValues[':outerStatus']).toEqual({ S: 'COMPLETED' });
     });
 
     test('UpdateJobFailed task writes TRANSLATION_FAILED to DDB (Issue #151)', () => {
@@ -767,14 +775,18 @@ describe('LFMT Infrastructure Stack', () => {
         updateJobFailed.Parameters?.ExpressionAttributeNames ?? {};
       expect(attributeNames['#status']).toBe('status');
 
-      // Two 'TRANSLATION_FAILED' occurrences expected: one for translationStatus,
-      // one for the outer status. Mirrors the >=2 'COMPLETED' assertion in
-      // UpdateJobCompleted.
-      const valuesString = JSON.stringify(
-        updateJobFailed.Parameters?.ExpressionAttributeValues ?? {}
-      );
-      const failedMatches = valuesString.match(/TRANSLATION_FAILED/g) ?? [];
-      expect(failedMatches.length).toBeGreaterThanOrEqual(2);
+      // Round-2 OMC review (issuecomment-4364584995) — assert by KEY
+      // (`:status` and `:outerStatus`), not by counting 'TRANSLATION_FAILED'
+      // substring matches in the serialized JSON. Mirrors the keyed
+      // assertion pattern in the UpdateJobCompleted test above for
+      // symmetry. Strictly correct, self-documenting, and survives ASL
+      // serialization changes that don't affect the contract.
+      const exprValues =
+        updateJobFailed.Parameters?.ExpressionAttributeValues ?? {};
+      expect(updateExpression).toMatch(/translationStatus\s*=\s*:status/);
+      expect(updateExpression).toMatch(/#status\s*=\s*:outerStatus/);
+      expect(exprValues[':status']).toEqual({ S: 'TRANSLATION_FAILED' });
+      expect(exprValues[':outerStatus']).toEqual({ S: 'TRANSLATION_FAILED' });
     });
 
     test('Choice state gates UpdateJobCompleted on per-chunk success (OMC-followup C1)', () => {
