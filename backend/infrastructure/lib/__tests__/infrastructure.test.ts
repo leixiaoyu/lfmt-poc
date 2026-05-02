@@ -647,6 +647,59 @@ describe('LFMT Infrastructure Stack', () => {
       expect(startState.Catch).toBeUndefined();
     });
 
+    test('UpdateJobCompleted task ALSO writes outer status=COMPLETED (Issue #170)', () => {
+      // Regression guard: prior to this fix, updateJobCompleted only wrote
+      // `translationStatus = 'COMPLETED'` and left the OUTER `status` field
+      // alone. If a chunk Lambda failed non-retryably on attempt 1
+      // (translateChunk.ts updateJobStatus writes status='TRANSLATION_FAILED')
+      // then succeeded on a Step Functions retry, the outer status was
+      // stuck on TRANSLATION_FAILED forever — the frontend's
+      // TranslationDetail.tsx branches on `job.status === 'TRANSLATION_FAILED'`
+      // and would misclassify successful jobs as failed.
+      //
+      // Fix mirrors PR #165's pattern: Step Functions becomes the single
+      // source of truth on terminal lifecycle by updating both fields.
+      const stateMachines = template.findResources('AWS::StepFunctions::StateMachine');
+      const stateMachine = stateMachines[Object.keys(stateMachines)[0]];
+      const definition = JSON.parse(
+        stateMachine.Properties.DefinitionString['Fn::Join'][1].join('')
+      );
+
+      const states = definition.States;
+      const updateJobCompletedEntry = Object.entries(states).find(([name]) =>
+        /UpdateJobCompleted/.test(name)
+      );
+      expect(updateJobCompletedEntry).toBeDefined();
+      const [, updateJobCompleted] = updateJobCompletedEntry as [string, any];
+
+      // Must be a DDB UpdateItem task.
+      expect(updateJobCompleted.Type).toBe('Task');
+      expect(updateJobCompleted.Resource).toMatch(/dynamodb:updateItem/i);
+
+      // The UpdateExpression MUST set both `translationStatus` AND outer
+      // `status` (via #status alias because `status` is a DDB reserved word).
+      const updateExpression: string =
+        updateJobCompleted.Parameters?.UpdateExpression ?? '';
+      expect(updateExpression).toMatch(/translationStatus/);
+      expect(updateExpression).toMatch(/#status/);
+
+      // ExpressionAttributeNames must alias #status to 'status'.
+      const attributeNames =
+        updateJobCompleted.Parameters?.ExpressionAttributeNames ?? {};
+      expect(attributeNames['#status']).toBe('status');
+
+      // The value bound to outer status MUST be 'COMPLETED' (matching
+      // shared-types/src/jobs.ts JobStatus union — a drift here would
+      // re-introduce the misclassification bug fixed by issue #170).
+      const valuesString = JSON.stringify(
+        updateJobCompleted.Parameters?.ExpressionAttributeValues ?? {}
+      );
+      // Two 'COMPLETED' occurrences expected: one for translationStatus, one
+      // for the outer status.
+      const completedMatches = valuesString.match(/COMPLETED/g) ?? [];
+      expect(completedMatches.length).toBeGreaterThanOrEqual(2);
+    });
+
     test('UpdateJobFailed task writes TRANSLATION_FAILED to DDB (Issue #151)', () => {
       const stateMachines = template.findResources('AWS::StepFunctions::StateMachine');
       const stateMachine = stateMachines[Object.keys(stateMachines)[0]];

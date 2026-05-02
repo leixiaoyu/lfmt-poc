@@ -255,6 +255,93 @@ describe('translateChunk Lambda', () => {
       const updateExpression = updateCalls[0].args[0].input.UpdateExpression;
       expect(updateExpression).toContain('translationStatus');
     });
+
+    /**
+     * Regression test for issue #168 — tokensUsed/estimatedCost lost under
+     * parallel execution.
+     *
+     * Bug: updateJobProgress used a `SET tokensUsed = :tokens` clause where
+     * `:tokens` was a pre-computed running total (job.tokensUsed + delta).
+     * Under maxConcurrency=10, multiple chunk Lambdas read the same starting
+     * value and last-writer-wins, so per-chunk metrics were lost (DDB ended
+     * up showing 0 even though CloudWatch confirmed real per-chunk usage).
+     *
+     * Fix: switch to atomic `ADD tokensUsed :tokens, estimatedCost :cost`
+     * and pass the per-chunk DELTA (not a running total). startTranslation
+     * initializes both attributes to 0 (NUMBER) so ADD is safe on first call.
+     *
+     * This test would have caught the bug because it asserts the
+     * UpdateExpression uses ADD on the metric attributes AND that the value
+     * passed is the per-chunk delta (150 from the mocked Gemini response),
+     * NOT a running total derived from the loaded job (which had 600).
+     */
+    it('should use atomic ADD (not SET) for tokensUsed/estimatedCost — issue #168', async () => {
+      dynamoMock.on(GetItemCommand).resolves({
+        Item: createMockJob({
+          jobId: 'job-168',
+          userId: 'user-168',
+          status: 'CHUNKED',
+          totalChunks: 5,
+          translatedChunks: 2,
+          // Pre-existing running total — must NOT leak into the SET value.
+          tokensUsed: 600,
+          estimatedCost: 0.000045,
+          extraFields: {
+            translationStatus: { S: 'IN_PROGRESS' },
+          },
+        }),
+      } as any);
+
+      const chunkContent = JSON.stringify({
+        primaryContent: 'Chunk for issue #168 regression test.',
+        chunkId: 'chunk-2',
+        chunkIndex: 2,
+      });
+
+      s3Mock.on(GetObjectCommand).resolves({
+        Body: createMockStream(chunkContent),
+      } as any);
+
+      s3Mock.on(PutObjectCommand).resolves({} as any);
+      dynamoMock.on(UpdateItemCommand).resolves({} as any);
+
+      const event: TranslateChunkEvent = {
+        jobId: 'job-168',
+        userId: 'user-168',
+        chunkIndex: 2,
+        targetLanguage: 'es',
+      };
+
+      const result = await handler(event);
+      expect(result.success).toBe(true);
+
+      const updateCalls = dynamoMock.commandCalls(UpdateItemCommand);
+      expect(updateCalls.length).toBe(1);
+      const updateExpression = updateCalls[0].args[0].input.UpdateExpression!;
+
+      // 1. The ADD clause MUST be present for both metric attributes.
+      //    The previous (broken) implementation used SET on these fields.
+      expect(updateExpression).toMatch(/ADD\s+tokensUsed\s+:tokens(?:,\s*estimatedCost\s+:cost)?/);
+      expect(updateExpression).toMatch(/estimatedCost\s+:cost/);
+
+      // 2. Neither metric may also appear in the SET clause (would race).
+      const setClauseMatch = updateExpression.match(/SET\s+(.+?)(?:\s+ADD|$)/);
+      const setClause = setClauseMatch ? setClauseMatch[1] : '';
+      expect(setClause).not.toMatch(/tokensUsed/);
+      expect(setClause).not.toMatch(/estimatedCost/);
+
+      // 3. The value passed for :tokens MUST be the per-chunk delta (150
+      //    from the mocked Gemini response), NOT the running total (600
+      //    + 150 = 750). The Gemini mock at the top of this file returns
+      //    totalTokenCount: 150.
+      const values = updateCalls[0].args[0].input.ExpressionAttributeValues!;
+      expect(values[':tokens']).toEqual({ N: '150' });
+      // estimatedCost is computed from token counts; just verify it's > 0
+      // and not the pre-existing 0.000045 running total.
+      const costN = parseFloat((values[':cost'] as { N: string }).N);
+      expect(costN).toBeGreaterThan(0);
+      expect(costN).toBeLessThan(0.000045); // smaller than the pre-existing total
+    });
   });
 
   describe('input validation', () => {

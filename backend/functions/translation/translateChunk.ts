@@ -229,12 +229,19 @@ export const handler = async (event: TranslateChunkEvent): Promise<TranslateChun
       }
     );
 
-    // Update job progress in DynamoDB
+    // Update job progress in DynamoDB.
+    // CRITICAL (issue #168): tokensUsed and estimatedCost MUST be passed as
+    // per-chunk DELTAS (not pre-computed running totals from the job we
+    // loaded above). With maxConcurrency=10, multiple chunk Lambdas run in
+    // parallel; if each Lambda reads the totals and writes a SET, the last
+    // writer wins and per-chunk metrics are lost. updateJobProgress now
+    // uses an atomic `ADD tokensUsed :tokens, estimatedCost :cost`, which
+    // is race-free under parallel execution and Step Functions retries.
     await updateJobProgress(event.jobId, event.userId, {
       translatedChunks: (job.translatedChunks || 0) + 1,
       totalChunks: job.totalChunks,
-      tokensUsed: (job.tokensUsed || 0) + result.tokensUsed.total,
-      estimatedCost: (job.estimatedCost || 0) + result.estimatedCost,
+      tokensUsedDelta: result.tokensUsed.total,
+      estimatedCostDelta: result.estimatedCost,
     });
 
     return {
@@ -464,7 +471,19 @@ async function storeTranslatedChunk(
 }
 
 /**
- * Update job progress in DynamoDB
+ * Update job progress in DynamoDB.
+ *
+ * Uses an atomic `ADD tokensUsed :tokens, ADD estimatedCost :cost` clause
+ * (issue #168) so per-chunk metrics accumulate correctly under parallel
+ * execution and Step Functions retries. The previous implementation used
+ * a pre-computed running total inside SET, which lost data under
+ * maxConcurrency > 1 (last-writer-wins). startTranslation.ts initializes
+ * both attributes to 0 (NUMBER) so ADD is always a valid operation.
+ *
+ * `translatedChunks` is still SET (not ADD) because the caller already
+ * computes the post-increment value and DDB's SET is idempotent under
+ * Step Functions retries — re-running with the same chunk index will
+ * write the same value, not double-count.
  */
 async function updateJobProgress(
   jobId: string,
@@ -472,8 +491,8 @@ async function updateJobProgress(
   progress: {
     translatedChunks: number;
     totalChunks: number;
-    tokensUsed: number;
-    estimatedCost: number;
+    tokensUsedDelta: number;
+    estimatedCostDelta: number;
   }
 ): Promise<void> {
   const translationStatus =
@@ -483,12 +502,12 @@ async function updateJobProgress(
     TableName: JOBS_TABLE,
     Key: marshall({ jobId, userId }),
     UpdateExpression:
-      'SET translationStatus = :status, translatedChunks = :translated, tokensUsed = :tokens, estimatedCost = :cost, updatedAt = :updatedAt',
+      'SET translationStatus = :status, translatedChunks = :translated, updatedAt = :updatedAt ADD tokensUsed :tokens, estimatedCost :cost',
     ExpressionAttributeValues: marshall({
       ':status': translationStatus,
       ':translated': progress.translatedChunks,
-      ':tokens': progress.tokensUsed,
-      ':cost': progress.estimatedCost,
+      ':tokens': progress.tokensUsedDelta,
+      ':cost': progress.estimatedCostDelta,
       ':updatedAt': new Date().toISOString(),
     }),
   });
@@ -500,6 +519,8 @@ async function updateJobProgress(
     userId,
     translatedChunks: progress.translatedChunks,
     totalChunks: progress.totalChunks,
+    tokensUsedDelta: progress.tokensUsedDelta,
+    estimatedCostDelta: progress.estimatedCostDelta,
     translationStatus,
   });
 }

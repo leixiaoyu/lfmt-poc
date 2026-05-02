@@ -1187,16 +1187,42 @@ export class LfmtInfrastructureStack extends Stack {
 
     processChunksMap.iterator(translateChunkTask);
 
-    // Update job status to COMPLETED (fixed translatedChunks type bug)
+    // Update job status to COMPLETED (fixed translatedChunks type bug).
+    //
+    // ISSUE #170: This task also writes the OUTER `status` field
+    // (#status = :outerStatus = 'COMPLETED'). Two attributes need the
+    // success update because they have separate lifecycles:
+    //   - `translationStatus` — driven by Step Functions; the polling
+    //     endpoint reads it for progress UI.
+    //   - `status` (outer) — initialized at upload (UPLOADED → CHUNKED)
+    //     and may be flipped to TRANSLATION_FAILED by the per-chunk
+    //     Lambda's catch-all (translateChunk.ts updateJobStatus).
+    // If a chunk Lambda fails non-retryably on attempt 1 then succeeds
+    // on a Step Functions retry, the outer status stays on
+    // TRANSLATION_FAILED forever — the frontend (TranslationDetail.tsx
+    // branches on `job.status === 'TRANSLATION_FAILED'`) then misclassifies
+    // the successful job as failed. Writing both fields here makes Step
+    // Functions the single source of truth on terminal success, mirroring
+    // PR #165's pattern for terminal failure (UpdateJobFailed below).
+    //
+    // `#status` is used because `status` is a DDB reserved word — the
+    // ExpressionAttributeNames map below aliases it.
     const updateJobCompleted = new tasks.DynamoUpdateItem(this, 'UpdateJobCompleted', {
       table: this.jobsTable,
       key: {
         jobId: tasks.DynamoAttributeValue.fromString(stepfunctions.JsonPath.stringAt('$.jobId')),
         userId: tasks.DynamoAttributeValue.fromString(stepfunctions.JsonPath.stringAt('$.userId')),
       },
-      updateExpression: 'SET translationStatus = :status, translationCompletedAt = :completedAt, translatedChunks = :totalChunks, updatedAt = :updatedAt',
+      updateExpression: 'SET translationStatus = :status, #status = :outerStatus, translationCompletedAt = :completedAt, translatedChunks = :totalChunks, updatedAt = :updatedAt',
+      expressionAttributeNames: {
+        '#status': 'status',
+      },
       expressionAttributeValues: {
         ':status': tasks.DynamoAttributeValue.fromString('COMPLETED'),
+        // 'COMPLETED' is a member of shared-types/src/jobs.ts JobStatus union
+        // and matches what frontend logic (TranslationDetail.tsx) expects on
+        // terminal success.
+        ':outerStatus': tasks.DynamoAttributeValue.fromString('COMPLETED'),
         ':completedAt': tasks.DynamoAttributeValue.fromString(stepfunctions.JsonPath.stringAt('$$.State.EnteredTime')),
         // CRITICAL FIX: DynamoDB NUMBER attributes in Step Functions MUST be provided as strings
         // Using States.Format() to convert the number result from States.ArrayLength() to a string
