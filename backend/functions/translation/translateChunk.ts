@@ -209,6 +209,10 @@ export const handler = async (event: TranslateChunkEvent): Promise<TranslateChun
     });
 
     // Store translated chunk to S3
+    // NOTE: S3 Metadata values must ALL be strings — @smithy/signature-v4 calls
+    // .trim() on every header value and throws if the value is not a string.
+    // tokensUsed and estimatedCost come from Gemini as numbers, so they are
+    // explicitly coerced here (fixes issue #172).
     const translatedKey = await storeTranslatedChunk(
       event.jobId,
       event.chunkIndex,
@@ -216,8 +220,8 @@ export const handler = async (event: TranslateChunkEvent): Promise<TranslateChun
       {
         sourceLanguage: 'en', // Assuming English source
         targetLanguage: event.targetLanguage,
-        tokensUsed: result.tokensUsed.total,
-        estimatedCost: result.estimatedCost,
+        tokensUsed: String(result.tokensUsed.total),
+        estimatedCost: String(result.estimatedCost),
         translatedAt: new Date().toISOString(),
       }
     );
@@ -389,13 +393,15 @@ function estimateTokens(content: string, context: TranslationContext): number {
 
 /**
  * Store translated chunk to S3
- * Metadata is Record<string, any> - S3 metadata supports various types
+ * Metadata values MUST be strings — AWS SDK v3 (@smithy/signature-v4) calls
+ * .trim() on every S3 metadata header value and throws a TypeError if the value
+ * is not a string (issue #172).
  */
 async function storeTranslatedChunk(
   jobId: string,
   chunkIndex: number,
   translatedText: string,
-  metadata: Record<string, any> // eslint-disable-line @typescript-eslint/no-explicit-any
+  metadata: Record<string, string>
 ): Promise<string> {
   const key = `translated/${jobId}/chunk-${chunkIndex}.txt`;
 
