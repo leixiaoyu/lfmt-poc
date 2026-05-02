@@ -38,12 +38,26 @@ const RATE_LIMIT_BUCKETS_TABLE = getRequiredEnv('RATE_LIMIT_BUCKETS_TABLE');
 let geminiClient: GeminiClient | null = null;
 let distributedRateLimiter: DistributedRateLimiter | null = null;
 
+// Test-only override: set via setRateLimiterForTesting(); cleared by resetClients()
+let _testRateLimiter: DistributedRateLimiter | null = null;
+
 /**
  * Reset singleton instances (for testing)
  */
 export function resetClients(): void {
   geminiClient = null;
   distributedRateLimiter = null;
+  _testRateLimiter = null;
+}
+
+/**
+ * Override the rate limiter singleton for unit testing.
+ * Must NOT be called from production code — the handler no longer accepts
+ * a rateLimiter parameter because Lambda passes `context` as the second
+ * argument, which would previously be treated as the limiter.
+ */
+export function setRateLimiterForTesting(rateLimiter: DistributedRateLimiter): void {
+  _testRateLimiter = rateLimiter;
 }
 
 /**
@@ -74,14 +88,18 @@ export interface TranslateChunkResponse {
 }
 
 /**
- * Lambda handler for translating a single chunk
+ * Lambda handler for translating a single chunk.
+ *
+ * IMPORTANT: This handler intentionally accepts only one parameter (event).
+ * AWS Lambda invokes handlers as handler(event, context) — if a second
+ * parameter were present, the Lambda context object would be received there
+ * and mistakenly used as the rate limiter, causing "i.acquire is not a
+ * function" (issue #150). Use setRateLimiterForTesting() to inject a mock
+ * limiter in unit tests instead.
+ *
  * @param event - Translation event
- * @param _rateLimiter - Optional rate limiter for testing (uses singleton if not provided)
  */
-export const handler = async (
-  event: TranslateChunkEvent,
-  _rateLimiter?: DistributedRateLimiter
-): Promise<TranslateChunkResponse> => {
+export const handler = async (event: TranslateChunkEvent): Promise<TranslateChunkResponse> => {
   const startTime = Date.now();
 
   logger.info('Starting chunk translation', {
@@ -101,10 +119,10 @@ export const handler = async (
       await geminiClient.initialize();
     }
 
-    // Use provided rate limiter or initialize singleton
+    // Use test-injected rate limiter (unit tests only) or initialize singleton
     let rateLimiter: DistributedRateLimiter;
-    if (_rateLimiter) {
-      rateLimiter = _rateLimiter;
+    if (_testRateLimiter) {
+      rateLimiter = _testRateLimiter;
     } else {
       if (!distributedRateLimiter) {
         distributedRateLimiter = new DistributedRateLimiter({

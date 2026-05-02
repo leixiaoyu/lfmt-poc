@@ -12,7 +12,12 @@ import { DynamoDBClient, GetItemCommand, UpdateItemCommand } from '@aws-sdk/clie
 import { S3Client, GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
 import { SecretsManagerClient, GetSecretValueCommand } from '@aws-sdk/client-secrets-manager';
 import { Readable } from 'stream';
-import { handler, TranslateChunkEvent, resetClients } from '../translateChunk';
+import {
+  handler,
+  TranslateChunkEvent,
+  resetClients,
+  setRateLimiterForTesting,
+} from '../translateChunk';
 import { sdkStreamMixin } from '@smithy/util-stream';
 import { RateLimitError, RateLimitType } from '../../shared/types/rateLimiting';
 
@@ -968,6 +973,12 @@ describe('translateChunk Lambda', () => {
         ),
       } as any;
 
+      // Inject via setRateLimiterForTesting() — NOT as a handler parameter.
+      // Passing a rate limiter as handler(event, limiter) is what caused issue #150:
+      // Lambda passes context as the second argument, which was mistakenly used as
+      // the limiter, leading to "i.acquire is not a function" on every invocation.
+      setRateLimiterForTesting(mockRateLimiter);
+
       const event: TranslateChunkEvent = {
         jobId: 'job-123',
         userId: 'user-123',
@@ -975,8 +986,7 @@ describe('translateChunk Lambda', () => {
         targetLanguage: 'es',
       };
 
-      // Pass mock rate limiter to handler
-      const result = await handler(event, mockRateLimiter);
+      const result = await handler(event);
 
       expect(result.success).toBe(false);
       expect(result.error).toContain('Rate limit exceeded');
@@ -986,6 +996,226 @@ describe('translateChunk Lambda', () => {
       expect(result.chunkIndex).toBe(0);
 
       // Verify rate limiter was called
+      expect(mockRateLimiter.acquire).toHaveBeenCalled();
+    });
+  });
+
+  describe('REGRESSION #150: handler signature must not accept a rate-limiter parameter', () => {
+    // Root cause of issue #150: the handler previously had a second optional
+    // parameter `_rateLimiter?: DistributedRateLimiter`.  AWS Lambda always
+    // calls handlers as handler(event, context), so the Lambda context object
+    // was silently assigned to `rateLimiter`.  Because context is truthy the
+    // DI branch was taken and every invocation threw
+    // "TypeError: i.acquire is not a function" (bundle line 3358 col 11660).
+
+    it('handler must accept exactly one parameter so Lambda context is never mistaken for a rate limiter', () => {
+      // handler.length is the number of *declared* parameters (not counting
+      // rest params or parameters with defaults).
+      expect(handler.length).toBe(1);
+    });
+
+    it('setRateLimiterForTesting() must be the only DI path and must be cleared by resetClients()', async () => {
+      const mockRateLimiter = {
+        acquire: jest.fn().mockRejectedValue(
+          new RateLimitError({
+            tokensNeeded: 500,
+            tokensAvailable: 0,
+            retryAfterMs: 1000,
+            limitType: RateLimitType.TPM,
+          })
+        ),
+      } as any;
+
+      dynamoMock.on(GetItemCommand).resolves({
+        Item: createMockJob({
+          jobId: 'job-reg150',
+          userId: 'user-123',
+          status: 'CHUNKED',
+          totalChunks: 1,
+        }),
+      } as any);
+
+      s3Mock.on(GetObjectCommand).resolves({
+        Body: createMockStream(
+          JSON.stringify({ primaryContent: 'Regression test', chunkId: 'chunk-0' })
+        ),
+      } as any);
+
+      // Inject the mock limiter via the dedicated setter
+      setRateLimiterForTesting(mockRateLimiter);
+
+      const event: TranslateChunkEvent = {
+        jobId: 'job-reg150',
+        userId: 'user-123',
+        chunkIndex: 0,
+        targetLanguage: 'es',
+      };
+
+      const result = await handler(event);
+
+      // Mock was used — rate-limit error propagated correctly
+      expect(mockRateLimiter.acquire).toHaveBeenCalled();
+      expect(result.success).toBe(false);
+      expect(result.retryable).toBe(true);
+
+      // Snapshot the call count *before* the reset so we can later prove
+      // that a fresh handler invocation did NOT use the injected mock.
+      const callCountBeforeReset = mockRateLimiter.acquire.mock.calls.length;
+
+      // After resetClients(), the injected mock must be cleared.  The
+      // previous version of this test asserted toHaveBeenCalledTimes(1)
+      // immediately after resetClients(), but the handler was never
+      // re-invoked, so the assertion was tautologically true regardless
+      // of whether the injection had actually been cleared.  We now
+      // re-invoke the handler post-reset and assert the mock's call
+      // count did NOT increase — proving the singleton was actually
+      // re-initialized fresh and the test injection is gone.
+      resetClients();
+
+      // Re-stub DynamoDB/S3 because resetClients() does not touch the
+      // SDK mocks and we want the second invocation to reach the rate
+      // limiter (rather than failing earlier on missing job data).
+      dynamoMock.on(GetItemCommand).resolves({
+        Item: createMockJob({
+          jobId: 'job-reg150',
+          userId: 'user-123',
+          status: 'CHUNKED',
+          totalChunks: 1,
+        }),
+      } as any);
+      s3Mock.on(GetObjectCommand).resolves({
+        Body: createMockStream(
+          JSON.stringify({ primaryContent: 'Regression test', chunkId: 'chunk-0' })
+        ),
+      } as any);
+
+      // Second invocation post-reset.  This will use the real, lazy-
+      // initialized DistributedRateLimiter (talking to the mocked
+      // DynamoDB).  We don't care whether this call succeeds or fails;
+      // we only care that (a) it does not throw "acquire is not a
+      // function" (which would mean the mock was never cleared), and
+      // (b) the injected mock's call count is unchanged.
+      let secondInvocationError: unknown = undefined;
+      try {
+        await handler(event);
+      } catch (err) {
+        secondInvocationError = err;
+      }
+
+      // (a) If anything escaped the handler, it must NOT be the
+      //     original #150 TypeError shape.
+      if (secondInvocationError instanceof TypeError) {
+        expect(secondInvocationError.message).not.toMatch(/acquire is not a function/);
+      }
+
+      // (b) The injected mock must not have been touched by the second
+      //     invocation — proving resetClients() actually cleared the
+      //     test injection rather than leaking it across invocations.
+      expect(mockRateLimiter.acquire.mock.calls.length).toBe(callCountBeforeReset);
+    });
+
+    it('handler invoked with a Lambda context object must not treat it as a rate limiter', async () => {
+      // INTEGRATION-STYLE GUARD against the original #150 failure mode.
+      //
+      // The sibling test asserts handler.length === 1, which is a useful
+      // structural invariant — but it is NOT sufficient on its own.  A
+      // future contributor who re-introduces a default-value second
+      // parameter, e.g.
+      //
+      //     export async function handler(
+      //       event: TranslateChunkEvent,
+      //       _ctx: DistributedRateLimiter | undefined = undefined,
+      //     ) { ... }
+      //
+      // would still satisfy handler.length === 1, because parameters
+      // with default values do not count toward Function.prototype.length.
+      // The structural test would silently pass while the original bug
+      // returns: AWS Lambda would pass `context` as the second argument,
+      // _ctx would be truthy, and any subsequent `_ctx.acquire(...)` call
+      // would throw "TypeError: i.acquire is not a function" — exactly
+      // the production failure that PR #167 fixes.
+      //
+      // This test directly invokes the handler the way AWS Lambda does
+      // (handler(event, context)) using a Lambda-context-shaped object
+      // that deliberately has NO `.acquire` method.  If any future
+      // regression causes the handler to treat that context as the rate
+      // limiter, the next acquire() call will throw the canonical
+      // "acquire is not a function" TypeError and this test will fail.
+
+      // Lambda-context-shaped mock.  Critically: NO `acquire` method.
+      const mockLambdaContext = {
+        awsRequestId: 'test-req-id',
+        functionName: 'lfmt-translate-chunk-LfmtPocDev',
+        functionVersion: '$LATEST',
+        invokedFunctionArn:
+          'arn:aws:lambda:us-east-1:000000000000:function:lfmt-translate-chunk-LfmtPocDev',
+        memoryLimitInMB: '512',
+        getRemainingTimeInMillis: () => 30000,
+        callbackWaitsForEmptyEventLoop: true,
+        logGroupName: '/aws/lambda/lfmt-translate-chunk-LfmtPocDev',
+        logStreamName: '2026/04/28/[$LATEST]abcdef0123456789',
+      };
+
+      // Wire up minimal DynamoDB / S3 mocks so the handler reaches the
+      // rate-limit acquire() call (which is where the original bug
+      // manifested).  We do NOT inject a test rate limiter — the goal
+      // is to verify that the handler ignores the second argument
+      // entirely and uses its singleton (real or test-overridden) path.
+      dynamoMock.on(GetItemCommand).resolves({
+        Item: createMockJob({
+          jobId: 'job-reg150-ctx',
+          userId: 'user-123',
+          status: 'CHUNKED',
+          totalChunks: 1,
+        }),
+      } as any);
+      s3Mock.on(GetObjectCommand).resolves({
+        Body: createMockStream(
+          JSON.stringify({ primaryContent: 'Lambda context regression test', chunkId: 'chunk-0' })
+        ),
+      } as any);
+      s3Mock.on(PutObjectCommand).resolves({} as any);
+      dynamoMock.on(UpdateItemCommand).resolves({} as any);
+
+      // Inject a mock limiter so the test does not depend on the real
+      // distributed rate limiter's DynamoDB behavior.  If the handler
+      // were to (incorrectly) treat the Lambda context as the limiter,
+      // it would shadow this injection and the next acquire() call
+      // would throw "acquire is not a function" on the context object.
+      const mockRateLimiter = {
+        acquire: jest.fn().mockResolvedValue({ allowed: true, tokensRemaining: 100 }),
+      } as any;
+      setRateLimiterForTesting(mockRateLimiter);
+
+      const event: TranslateChunkEvent = {
+        jobId: 'job-reg150-ctx',
+        userId: 'user-123',
+        chunkIndex: 0,
+        targetLanguage: 'es',
+      };
+
+      // Invoke the handler the way AWS Lambda does: handler(event, context).
+      // The handler must accept this without ever calling context.acquire().
+      let invocationError: unknown = undefined;
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        await (handler as any)(event, mockLambdaContext);
+      } catch (err) {
+        invocationError = err;
+      }
+
+      // Primary assertion: whatever happened, it MUST NOT be the
+      // original #150 failure shape.  This is the canonical regression
+      // signature that PR #167 was created to fix.
+      if (invocationError instanceof TypeError) {
+        expect(invocationError.message).not.toMatch(/acquire is not a function/);
+      }
+
+      // Secondary assertion: the injected mock limiter (the real DI
+      // path) was used — proving the handler did NOT mistake the
+      // Lambda context for a rate limiter.  If the bug regressed, the
+      // context object would shadow the injection and this would never
+      // be called (the handler would TypeError first).
       expect(mockRateLimiter.acquire).toHaveBeenCalled();
     });
   });
