@@ -826,8 +826,12 @@ async function discoverJobIdViaQuery(fileId, userId) {
     JSON.stringify({ ':u': { S: userId }, ':d': { S: fileId } }),
     '--projection-expression',
     'jobId',
-    '--scan-index-forward',
-    'false', // newest first
+    // AWS CLI v2 quirk: scan-index-forward is a boolean flag — pass
+    // `--no-scan-index-forward` to sort newest-first (descending on the
+    // sort key). The intuitive `--scan-index-forward false` is rejected
+    // with "Unknown options: false". Discovered during the 2026-05-02
+    // capture run.
+    '--no-scan-index-forward',
     '--limit',
     '50',
   ]);
