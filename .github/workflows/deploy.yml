@@ -556,11 +556,24 @@ jobs:
 
       - name: Run smoke tests against deployed API
         working-directory: backend/tests/smoke
-        run: npm run test:smoke
         env:
           API_URL: ${{ needs.deploy-dev.outputs.api_url }}
-          TEST_PASSWORD: ${{ secrets.SMOKE_TEST_PASSWORD }}
           USER_POOL_ID: ${{ secrets.DEV_USER_POOL_ID }}
+        # The backend smoke test (backend/tests/smoke/smoke.test.ts) registers
+        # FRESH users each run (per its docstring) and just needs a password
+        # strong enough to satisfy Cognito's policy. We previously read this
+        # from `secrets.SMOKE_TEST_PASSWORD`, but that secret was never
+        # configured in repo settings — every post-deploy run failed with
+        # `❌ TEST_PASSWORD environment variable is required` before the suite
+        # even started. Generating per-run with openssl removes the operational
+        # dependency entirely and keeps the password ephemeral. `::add-mask::`
+        # ensures the value is redacted from the workflow log if anything
+        # downstream prints it.
+        run: |
+          GENERATED_PASS="$(openssl rand -base64 24 | tr -d '/+' | head -c 20)Aa1!"
+          echo "::add-mask::$GENERATED_PASS"
+          export TEST_PASSWORD="$GENERATED_PASS"
+          npm run test:smoke
 
       - name: Smoke Test Summary
         if: always()

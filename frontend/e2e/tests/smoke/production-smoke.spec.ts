@@ -17,12 +17,20 @@
  */
 
 import * as path from 'path';
+import { fileURLToPath } from 'node:url';
 import { test, expect } from '@playwright/test';
 
 // Smoke tests use a longer timeout because they run against production.
 // 3 minutes is sufficient when we use the ~1 KB smoke-test-minimal.txt
 // fixture (one chunk, deterministic translation time).
 test.setTimeout(180000); // 3 minutes
+
+// __dirname is not defined in ES module scope (Node ESM). Compute it from
+// import.meta.url instead. Without this, the test file fails to load with
+// `ReferenceError: __dirname is not defined in ES module scope` and every
+// post-deploy verification job that imports it (Production Smoke Tests,
+// E2E Tests) crashes before running a single assertion.
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // Path to the tiny fixture we upload during the smoke test. Keeping this
 // ~1 KB guarantees the test completes inside the timeout regardless of
