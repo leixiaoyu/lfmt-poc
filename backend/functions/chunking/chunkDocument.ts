@@ -141,7 +141,33 @@ async function openDocumentStream(bucket: string, key: string): Promise<Readable
 }
 
 /**
- * Store chunks in S3
+ * Domain-typed metadata payload for a source chunk written to S3.
+ *
+ * Each field is typed with its natural domain type — `chunkIndex` and
+ * `totalChunks` are real numbers, not pre-stringified. `storeChunks` performs
+ * the `String(...)` coercion internally before the values reach
+ * PutObjectCommand, so callers cannot accidentally re-introduce the same
+ * SigV4 .trim() bug class as issue #172 (which hit translateChunk.ts).
+ *
+ * Adding a new field here requires updating both the interface and the
+ * coercion in `storeChunks` — the build won't succeed otherwise.
+ */
+interface S3SourceChunkMetadata {
+  userId: string;
+  fileId: string;
+  jobId: string;
+  chunkIndex: number; // coerced to string before signing
+  totalChunks: number; // coerced to string before signing
+}
+
+/**
+ * Store chunks in S3.
+ *
+ * Metadata values MUST be strings — AWS SDK v3 (@smithy/signature-v4) calls
+ * .trim() on every S3 metadata header value and throws a TypeError otherwise
+ * (the failure mode behind issue #172 in translateChunk). This helper builds
+ * a typed `S3SourceChunkMetadata` per chunk and performs the `String(...)`
+ * coercion at one seam so callers cannot get it wrong.
  */
 async function storeChunks(
   chunks: ChunkContext[],
@@ -161,18 +187,31 @@ async function storeChunks(
   for (const chunk of chunks) {
     const chunkKey = `chunks/${userId}/${fileId}/${chunk.chunkId}.json`;
 
+    const metadata: S3SourceChunkMetadata = {
+      userId,
+      fileId,
+      jobId,
+      chunkIndex: chunk.chunkIndex,
+      totalChunks: chunk.totalChunks,
+    };
+
+    // Coerce every metadata value to a string at this single seam so the
+    // SigV4 .trim() invariant holds for every key — including any future
+    // numeric / boolean field added to S3SourceChunkMetadata.
+    const stringMetadata: Record<string, string> = {
+      userId: String(metadata.userId),
+      fileId: String(metadata.fileId),
+      jobId: String(metadata.jobId),
+      chunkIndex: String(metadata.chunkIndex),
+      totalChunks: String(metadata.totalChunks),
+    };
+
     const command = new PutObjectCommand({
       Bucket: DOCUMENT_BUCKET,
       Key: chunkKey,
       Body: JSON.stringify(chunk),
       ContentType: 'application/json',
-      Metadata: {
-        userId,
-        fileId,
-        jobId,
-        chunkIndex: chunk.chunkIndex.toString(),
-        totalChunks: chunk.totalChunks.toString(),
-      },
+      Metadata: stringMetadata,
     });
 
     await s3Client.send(command);

@@ -1348,4 +1348,119 @@ describe('translateChunk Lambda', () => {
       expect(true).toBe(true);
     });
   });
+
+  describe('REGRESSION #172: S3 PutObject metadata values must be strings', () => {
+    // Root cause: @smithy/signature-v4 calls .trim() on every S3 metadata header
+    // value when signing the request.  tokensUsed (number from Gemini response)
+    // and estimatedCost (number) were spread into PutObjectCommand Metadata without
+    // coercion, causing "TypeError: headers[headerName].trim is not a function"
+    // on 100% of translateChunk invocations (6/6 in the 2026-05-02 capture run).
+    //
+    // Test isolation note: every test in this describe block relies on the
+    // file-level `beforeEach` (line ~82) to reset s3Mock / dynamoMock and the
+    // singleton clients. There is no nested beforeEach here — `putCalls.length`
+    // assertions therefore reflect a clean per-test mock surface.
+
+    it('all S3 PutObject metadata values must be typeof string', async () => {
+      dynamoMock.on(GetItemCommand).resolves({
+        Item: createMockJob({
+          jobId: 'job-reg172',
+          userId: 'user-123',
+          status: 'CHUNKED',
+          totalChunks: 1,
+          extraFields: {
+            translationStatus: { S: 'IN_PROGRESS' },
+          },
+        }),
+      } as any);
+
+      const chunkContent = JSON.stringify({
+        primaryContent: 'Regression test content for issue 172',
+        chunkId: 'chunk-0',
+        chunkIndex: 0,
+        totalChunks: 1,
+      });
+
+      s3Mock.on(GetObjectCommand).resolves({
+        Body: createMockStream(chunkContent),
+      } as any);
+
+      s3Mock.on(PutObjectCommand).resolves({} as any);
+      dynamoMock.on(UpdateItemCommand).resolves({} as any);
+
+      const event: TranslateChunkEvent = {
+        jobId: 'job-reg172',
+        userId: 'user-123',
+        chunkIndex: 0,
+        targetLanguage: 'es',
+      };
+
+      const result = await handler(event);
+
+      expect(result.success).toBe(true);
+
+      // Capture the actual PutObjectCommand call and assert every metadata
+      // value is a string — the exact invariant that @smithy/signature-v4
+      // requires via its .trim() call during request signing.
+      const putCalls = s3Mock.commandCalls(PutObjectCommand);
+      expect(putCalls.length).toBe(1);
+
+      const metadata = putCalls[0].args[0].input.Metadata ?? {};
+      const nonStringEntries = Object.entries(metadata).filter(([, v]) => typeof v !== 'string');
+
+      expect(nonStringEntries).toEqual([]);
+    });
+
+    it('tokensUsed metadata value must be a string, not a number', async () => {
+      // Belt-and-suspenders alongside the all-values check above:
+      // the loop test catches any new numeric field added to the metadata payload,
+      // while this test pins the two historic offenders (tokensUsed, estimatedCost)
+      // by name — making intent explicit and ensuring a refactor that renames or
+      // restructures the loop assertion does not silently drop these named checks.
+      // Mock state is reset by the file-level `beforeEach` above (no nested reset).
+      dynamoMock.on(GetItemCommand).resolves({
+        Item: createMockJob({
+          jobId: 'job-reg172-tokens',
+          userId: 'user-123',
+          status: 'CHUNKED',
+          totalChunks: 1,
+        }),
+      } as any);
+
+      const chunkContent = JSON.stringify({
+        primaryContent: 'Token type regression test',
+        chunkId: 'chunk-0',
+        chunkIndex: 0,
+        totalChunks: 1,
+      });
+
+      s3Mock.on(GetObjectCommand).resolves({
+        Body: createMockStream(chunkContent),
+      } as any);
+
+      s3Mock.on(PutObjectCommand).resolves({} as any);
+      dynamoMock.on(UpdateItemCommand).resolves({} as any);
+
+      const event: TranslateChunkEvent = {
+        jobId: 'job-reg172-tokens',
+        userId: 'user-123',
+        chunkIndex: 0,
+        targetLanguage: 'es',
+      };
+
+      await handler(event);
+
+      const putCalls = s3Mock.commandCalls(PutObjectCommand);
+      expect(putCalls.length).toBe(1);
+
+      const metadata = putCalls[0].args[0].input.Metadata ?? {};
+
+      // tokensUsed was the primary offender in issue #172 — verify it is a string
+      expect(typeof metadata['tokensUsed']).toBe('string');
+      // estimatedCost was the secondary offender — verify it too
+      expect(typeof metadata['estimatedCost']).toBe('string');
+      // chunkIndex was already coerced with .toString() — verify it remains a string
+      expect(typeof metadata['chunkIndex']).toBe('string');
+    });
+  });
 });

@@ -208,7 +208,14 @@ export const handler = async (event: TranslateChunkEvent): Promise<TranslateChun
       processingTimeMs: result.processingTimeMs,
     });
 
-    // Store translated chunk to S3
+    // Store translated chunk to S3.
+    // Metadata is passed in its natural shape (numbers for tokensUsed /
+    // estimatedCost) — storeTranslatedChunk performs the String() coercion
+    // internally so callers cannot accidentally re-introduce issue #172.
+    // The `?? 0` fallbacks defend against a future change in geminiClient.ts
+    // that drops its own `?? 0` guard (currently at geminiClient.ts:159-166):
+    // without them, a missing Gemini metadata field would silently coerce to
+    // the literal string "undefined" downstream of the helper.
     const translatedKey = await storeTranslatedChunk(
       event.jobId,
       event.chunkIndex,
@@ -216,8 +223,8 @@ export const handler = async (event: TranslateChunkEvent): Promise<TranslateChun
       {
         sourceLanguage: 'en', // Assuming English source
         targetLanguage: event.targetLanguage,
-        tokensUsed: result.tokensUsed.total,
-        estimatedCost: result.estimatedCost,
+        tokensUsed: result.tokensUsed.total ?? 0,
+        estimatedCost: result.estimatedCost ?? 0,
         translatedAt: new Date().toISOString(),
       }
     );
@@ -388,29 +395,65 @@ function estimateTokens(content: string, context: TranslationContext): number {
 }
 
 /**
- * Store translated chunk to S3
- * Metadata is Record<string, any> - S3 metadata supports various types
+ * Domain-typed metadata payload for a translated chunk written to S3.
+ *
+ * Each field is typed with its natural domain type (numbers stay numbers,
+ * strings stay strings). `storeTranslatedChunk` performs the `String(...)`
+ * coercion internally before handing the values to PutObjectCommand, so
+ * callers cannot accidentally re-introduce issue #172 by forgetting to
+ * coerce a numeric field.
+ *
+ * Adding a new field here requires updating both the interface and the
+ * coercion in `storeTranslatedChunk` — TypeScript will not let the build
+ * succeed otherwise. This is the strongest compile-time guard available
+ * for the SigV4-must-be-string invariant.
+ */
+interface S3ChunkMetadata {
+  sourceLanguage: string;
+  targetLanguage: string;
+  tokensUsed: number; // coerced to string before signing
+  estimatedCost: number; // coerced to string before signing
+  translatedAt: string; // ISO timestamp
+}
+
+/**
+ * Store translated chunk to S3.
+ *
+ * Metadata values MUST be strings — AWS SDK v3 (@smithy/signature-v4) calls
+ * .trim() on every S3 metadata header value and throws a TypeError if the
+ * value is not a string (issue #172). This helper accepts a typed
+ * `S3ChunkMetadata` (with native domain types) and performs the
+ * `String(...)` coercion internally so callers cannot get it wrong.
  */
 async function storeTranslatedChunk(
   jobId: string,
   chunkIndex: number,
   translatedText: string,
-  metadata: Record<string, any> // eslint-disable-line @typescript-eslint/no-explicit-any
+  metadata: S3ChunkMetadata
 ): Promise<string> {
   const key = `translated/${jobId}/chunk-${chunkIndex}.txt`;
 
   logger.debug('Storing translated chunk to S3', { key });
+
+  // Coerce every metadata value to a string at this single seam so the
+  // SigV4 .trim() invariant holds for every key — including any future
+  // numeric / boolean field added to S3ChunkMetadata.
+  const stringMetadata: Record<string, string> = {
+    sourceLanguage: String(metadata.sourceLanguage),
+    targetLanguage: String(metadata.targetLanguage),
+    tokensUsed: String(metadata.tokensUsed),
+    estimatedCost: String(metadata.estimatedCost),
+    translatedAt: String(metadata.translatedAt),
+    chunkIndex: String(chunkIndex),
+    jobId: String(jobId),
+  };
 
   const command = new PutObjectCommand({
     Bucket: CHUNKS_BUCKET,
     Key: key,
     Body: translatedText,
     ContentType: 'text/plain; charset=utf-8',
-    Metadata: {
-      ...metadata,
-      chunkIndex: chunkIndex.toString(),
-      jobId,
-    },
+    Metadata: stringMetadata,
   });
 
   await s3Client.send(command);

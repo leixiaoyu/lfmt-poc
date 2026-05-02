@@ -208,17 +208,32 @@ export const handler = async (event: S3Event): Promise<void> => {
         bucket,
       });
 
+      // Build copy metadata explicitly typed as Record<string, string>.
+      //
+      // S3 metadata MUST be strings — AWS SDK v3 (@smithy/signature-v4) calls
+      // .trim() on every metadata header value and throws TypeError otherwise
+      // (the failure mode behind issue #172 in translateChunk). The narrowed
+      // type below makes the SigV4 invariant a compile-time check at this
+      // seam: any future field accidentally typed as number / boolean will
+      // be rejected by the compiler before it can crash production.
+      //
+      // `metadata` here is sourced from headResponse.Metadata (SDK-typed as
+      // Record<string, string> | undefined), and our three overrides are
+      // function-scoped strings — so no runtime change today; this is a
+      // pure compile-time tightening.
+      const copyMetadata: Record<string, string> = {
+        ...metadata,
+        // Preserve all metadata for chunking Lambda
+        userid: userId,
+        fileid: fileId,
+        jobid: jobId,
+      };
+
       const copyCommand = new CopyObjectCommand({
         Bucket: bucket,
         CopySource: `${bucket}/${sourceKey}`,
         Key: destinationKey,
-        Metadata: {
-          ...metadata,
-          // Preserve all metadata for chunking Lambda
-          userid: userId,
-          fileid: fileId,
-          jobid: jobId,
-        },
+        Metadata: copyMetadata,
         MetadataDirective: 'REPLACE', // Use our metadata instead of copying from source
       });
 
