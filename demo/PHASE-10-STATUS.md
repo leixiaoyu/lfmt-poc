@@ -144,11 +144,19 @@ See `demo/DEMO-CONTENT-PLAN.md` for the two-track demo strategy (Track A: live c
 
 ### Week 2 — Demo Data Capture (Free-Tier, Two Tracks)
 
+<!--
+  Banner kept terse — `demo/results/CAPTURE-REPORT.md` is the canonical
+  status document for the capture pipeline. Update CAPTURE-REPORT.md
+  first; this banner should only summarize and link.
+-->
+
+**🚧 BLOCKED 2026-04-25 → root cause identified, fix in flight (PR #167)** — `lfmt-translate-chunk-LfmtPocDev` has been throwing `TypeError: i.acquire is not a function` on every invocation since 2026-03-19; root cause is the handler accepting `_rateLimiter` as a second arg that AWS Lambda silently overwrites with `context`. The capture script is wired end-to-end and validated through chunking; it resumes cleanly once #167's deploy lands. The 2026-04-28 OMC review of PR #146 corrected the per-run Gemini-request projection from 5-7 to **~15-17** (Sherlock alone is ~12 chunks at 3,500-token size); the script now warns at startup if a recent prior run is detected so a same-day re-run cannot accidentally bust 25 RPD. **Zero Gemini quota was consumed during the blocked attempt.** See `demo/results/CAPTURE-REPORT.md` for the full diagnostic, root-cause history, and post-OMC remediation log.
+
 **Track A — Live demo content (fits free tier trivially)**:
 
-- Sherlock Holmes "A Scandal in Bohemia" (~12K words, ~5 chunks)
-- Pride & Prejudice Chapter 1 (~800 words, 1 chunk)
-- War & Peace Book 1 Chapter 1 (~2K words, 1 chunk)
+- Sherlock Holmes "A Scandal in Bohemia" (~8.5K words actual, ~3-4 chunks at 3500-token chunk size) — fixture: `demo/test-documents/chapters/sherlock-ch1.txt`
+- Pride & Prejudice Chapter 1 (~885 words, 1 chunk) — fixture: `demo/test-documents/chapters/pride-ch1.txt`
+- War & Peace Book 1 Chapter 1 (~2K words, 1 chunk) — fixture: `demo/test-documents/chapters/wp-bk1-ch1.txt`
 
 **Track B — Pre-recorded showcase (full books, staggered over 5-6 days each within 25 RPD)**:
 

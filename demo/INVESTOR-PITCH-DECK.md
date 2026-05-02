@@ -6,6 +6,14 @@
 **Date**: December 2025
 **Version**: 1.0 (POC Demo)
 
+<!--
+  Banner kept terse — `demo/results/CAPTURE-REPORT.md` is the canonical
+  source of truth for capture-pipeline status. Update CAPTURE-REPORT.md
+  first; this banner should only summarize and link.
+-->
+
+> **🚧 Week 2 capture status (updated 2026-04-30, refreshed 2026-04-28 OMC review)**: All placeholder numbers in this deck remain unreplaced. The capture-script + chapter fixtures are checked in and validated; running the capture itself is blocked on PR #167 (the `i.acquire` Lambda fix). The original "5-7 Gemini requests per run" projection was corrected to **~15-17** during the OMC multi-agent review of PR #146 — still under the 25 RPD ceiling for a single run, but a same-day re-run would bust it (the script now warns). **Zero Gemini quota was burned during the blocked attempt.** Full diagnostic, root-cause history, and remediation log: see `demo/results/CAPTURE-REPORT.md`.
+
 ---
 
 ## Slide 1: Title Slide
