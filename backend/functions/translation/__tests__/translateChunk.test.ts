@@ -1401,9 +1401,7 @@ describe('translateChunk Lambda', () => {
       expect(putCalls.length).toBe(1);
 
       const metadata = putCalls[0].args[0].input.Metadata ?? {};
-      const nonStringEntries = Object.entries(metadata).filter(
-        ([, v]) => typeof v !== 'string'
-      );
+      const nonStringEntries = Object.entries(metadata).filter(([, v]) => typeof v !== 'string');
 
       expect(nonStringEntries).toEqual([]);
     });
