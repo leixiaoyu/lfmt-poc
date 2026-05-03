@@ -840,8 +840,9 @@ describe('LFMT Infrastructure Stack', () => {
       const choiceState = states[afterMap.Next];
       expect(choiceState.Type).toBe('Choice');
 
-      // 4. The Choice state must have a rule that routes to UpdateJobFailed
-      //    when anyChunkFailed=true, and otherwise (Default) to UpdateJobCompleted.
+      // 4. The Choice state must have a rule that routes to NormalizeFailureContext
+      //    (Bug B fix: NormalizeFailureContext then → UpdateJobFailed) when
+      //    anyChunkFailed=true, and otherwise (Default) to UpdateJobCompleted.
       expect(Array.isArray(choiceState.Choices)).toBe(true);
       expect(choiceState.Choices.length).toBeGreaterThanOrEqual(1);
       const failureBranch = choiceState.Choices.find(
@@ -850,10 +851,88 @@ describe('LFMT Infrastructure Stack', () => {
           rule.BooleanEquals === true
       );
       expect(failureBranch).toBeDefined();
-      expect(failureBranch.Next).toMatch(/UpdateJobFailed/);
+      // Bug B fix: Choice now routes through NormalizeFailureContext before UpdateJobFailed.
+      expect(failureBranch.Next).toMatch(/NormalizeFailureContext/);
 
       expect(choiceState.Default).toBeDefined();
       expect(choiceState.Default).toMatch(/UpdateJobCompleted/);
+    });
+
+    test('Choice failure branch routes through NormalizeFailureContext before UpdateJobFailed — Bug B regression', () => {
+      // Regression guard for the Bug B fix (post-PR-#176):
+      //
+      // UpdateJobFailed uses States.JsonToString($.error) to write the error
+      // detail to DDB. $.error is set by the Map Catch handler (resultPath='$.error'),
+      // but when chunks return success:false and the Choice gate fires,
+      // $.error does NOT exist — only $.translationResults does.
+      // This caused a States.Runtime JsonPath-not-found error that prevented
+      // the DDB write, leaving translationStatus stuck on IN_PROGRESS.
+      //
+      // Fix: insert NormalizeFailureContext (a Pass state) between the Choice
+      // gate and UpdateJobFailed on the success:false path. It synthesises
+      // $.error from $.translationResults, so UpdateJobFailed always has it.
+      // The Map Catch path bypasses NormalizeFailureContext (goes directly to
+      // UpdateJobFailed) because the Catch already sets $.error via resultPath.
+      const stateMachines = template.findResources('AWS::StepFunctions::StateMachine');
+      const stateMachine = stateMachines[Object.keys(stateMachines)[0]];
+      const definition = JSON.parse(
+        stateMachine.Properties.DefinitionString['Fn::Join'][1].join('')
+      );
+      const states = definition.States;
+
+      // 1. The Choice state's failure branch must point to NormalizeFailureContext,
+      //    NOT directly to UpdateJobFailed.
+      const choiceEntry = Object.entries(states).find(
+        ([, s]: [string, any]) => s.Type === 'Choice'
+      );
+      expect(choiceEntry).toBeDefined();
+      const [, choiceState] = choiceEntry as [string, any];
+
+      const failureBranch = choiceState.Choices.find(
+        (rule: any) =>
+          rule.Variable === '$.aggregate.anyChunkFailed' && rule.BooleanEquals === true
+      );
+      expect(failureBranch).toBeDefined();
+      // Must route to the normalizer, not directly to the DDB task.
+      expect(failureBranch.Next).toMatch(/NormalizeFailureContext/);
+
+      // 2. NormalizeFailureContext must be a Pass state that sets $.error
+      //    from $.translationResults (which is present in the success:false path).
+      const normEntry = Object.entries(states).find(([name]) =>
+        /NormalizeFailureContext/.test(name)
+      );
+      expect(normEntry).toBeDefined();
+      const [, normState] = normEntry as [string, any];
+
+      expect(normState.Type).toBe('Pass');
+      // Must write into $.error via ResultPath so UpdateJobFailed can read it.
+      expect(normState.ResultPath).toBe('$.error');
+      // Parameters must derive the error value from $.translationResults.
+      const errorParam: string = normState.Parameters?.['error.$'] ?? '';
+      expect(errorParam).toContain('translationResults');
+
+      // 3. NormalizeFailureContext must transition to UpdateJobFailed.
+      expect(normState.Next).toMatch(/UpdateJobFailed/);
+
+      // 4. The Map Catch handler must STILL route directly to UpdateJobFailed
+      //    (bypassing NormalizeFailureContext) so we don't clobber the real
+      //    $.error payload from the Catch.
+      const mapEntry = Object.entries(states).find(
+        ([, s]: [string, any]) => s.Type === 'Map'
+      );
+      expect(mapEntry).toBeDefined();
+      const [, mapState] = mapEntry as [string, any];
+
+      const catchHandlers: any[] = mapState.Catch ?? [];
+      expect(catchHandlers.length).toBeGreaterThanOrEqual(1);
+      const catchAll = catchHandlers.find((c: any) =>
+        Array.isArray(c.ErrorEquals) && c.ErrorEquals.includes('States.ALL')
+      );
+      expect(catchAll).toBeDefined();
+      // Catch goes DIRECTLY to UpdateJobFailed (no normalizer needed —
+      // resultPath='$.error' on the Catch already provides $.error).
+      expect(catchAll.Next).toMatch(/UpdateJobFailed/);
+      expect(catchAll.Next).not.toMatch(/NormalizeFailureContext/);
     });
 
     test('State machine has required IAM permissions', () => {

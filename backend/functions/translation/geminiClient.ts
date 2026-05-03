@@ -152,8 +152,24 @@ export class GeminiClient {
 
       const processingTimeMs = Date.now() - startTime;
 
-      // Extract translated text from response
+      // Extract translated text from response.
+      // result.text is typed string | undefined by the @google/genai SDK.
+      // It can be undefined when Gemini returns a safety-filtered or empty
+      // response (observed: chunk 0 Sherlock job 2026-05-02, after a 54s
+      // generation the response body had no text candidate). Treat this as
+      // a non-retryable GeminiApiError so translateChunk returns success:false
+      // with a clear message instead of crashing in storeTranslatedChunk with
+      // "Cannot read properties of undefined (reading 'length')".
       const translatedText = result.text;
+      if (translatedText === undefined || translatedText === null) {
+        throw new GeminiApiError(
+          'Gemini returned an empty response (no text candidate). ' +
+            'This may indicate a safety filter, content policy block, or upstream model error.',
+          200,
+          'EMPTY_RESPONSE',
+          false
+        );
+      }
 
       // Calculate token usage and cost
       const tokensUsed = {

@@ -445,6 +445,84 @@ describe('translateChunk Lambda', () => {
         }
       }
     });
+
+    /**
+     * Bug A regression test — Gemini returns response with text=undefined.
+     *
+     * Observed: Sherlock job 2026-05-02, chunk 0, after a 54-second generation
+     * the Gemini response had no text candidate. The SDK's .text getter returns
+     * string | undefined, so storeTranslatedChunk received undefined as the S3
+     * PutObjectCommand Body. AWS SDK v3 (SigV4 signer) calls .trim() on the
+     * Body when treating it as a string, causing:
+     *   "Cannot read properties of undefined (reading 'length')"
+     * The fix (geminiClient.ts) throws a GeminiApiError('EMPTY_RESPONSE') so
+     * translateChunk returns { success: false, retryable: false } instead.
+     */
+    it('returns success:false when Gemini response has undefined text — Bug A regression', async () => {
+      const previousImpl = (GoogleGenAI as unknown as jest.Mock).getMockImplementation();
+      (GoogleGenAI as unknown as jest.Mock).mockImplementationOnce(() => ({
+        models: {
+          generateContent: jest.fn().mockResolvedValue({
+            text: undefined, // safety filter / empty candidate
+            usageMetadata: {
+              promptTokenCount: 50,
+              candidatesTokenCount: 0,
+              totalTokenCount: 50,
+            },
+          }),
+        },
+      }));
+
+      try {
+        dynamoMock.on(GetItemCommand).resolves({
+          Item: createMockJob({
+            jobId: 'job-bug-a',
+            userId: 'user-bug-a',
+            status: 'CHUNKED',
+            totalChunks: 4,
+            translatedChunks: 0,
+            tokensUsed: 0,
+            estimatedCost: 0,
+            extraFields: {
+              translationStatus: { S: 'IN_PROGRESS' },
+            },
+          }),
+        } as any);
+
+        const chunkContent = JSON.stringify({
+          primaryContent: 'Sherlock Holmes text for Bug A regression.',
+          chunkId: 'chunk-0',
+          chunkIndex: 0,
+        });
+
+        s3Mock.on(GetObjectCommand).resolves({
+          Body: createMockStream(chunkContent),
+        } as any);
+        dynamoMock.on(UpdateItemCommand).resolves({} as any);
+
+        const event: TranslateChunkEvent = {
+          jobId: 'job-bug-a',
+          userId: 'user-bug-a',
+          chunkIndex: 0,
+          targetLanguage: 'es',
+        };
+
+        const result = await handler(event);
+
+        // Must return success:false without TypeError — not crash.
+        expect(result.success).toBe(false);
+        expect(result.retryable).toBe(false);
+        expect(result.error).toContain('empty response');
+
+        // S3 PutObject must NOT have been called (no translatedText to store).
+        const putCalls = s3Mock.commandCalls(PutObjectCommand);
+        expect(putCalls).toHaveLength(0);
+      } finally {
+        if (previousImpl) {
+          (GoogleGenAI as unknown as jest.Mock).mockImplementation(previousImpl);
+        }
+      }
+    });
   });
 
   describe('input validation', () => {
