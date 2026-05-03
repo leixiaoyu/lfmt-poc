@@ -8,7 +8,7 @@ on:
       - develop
   push:
     branches-ignore:
-      - main # Main branch uses deploy.yml workflow
+      - main # Main branch uses deploy-backend.yml + deploy-frontend.yml workflows (Issue #157)
 
 env:
   AWS_REGION: us-east-1
@@ -101,11 +101,13 @@ jobs:
     # correctness. Two checks:
     #   1. actionlint: validates GitHub Actions expression syntax, needs:
     #      references, action input names, shellcheck on run: blocks.
-    #   2. deploy.yml gated-job parity: deploy-dev and the 4 trailing test
-    #      jobs (production-smoke-tests, smoke-tests, integration-tests,
-    #      e2e-tests) MUST share an identical if: expression so they run as a
-    #      unit. Drift here would silently skip post-deploy verification on
-    #      manual dispatch (the exact bug PR #159 fixed for the inverse case).
+    #   2. deploy-{backend,frontend}.yml gated-job parity: in EACH deploy
+    #      workflow, the deploy-dev job and its trailing verification jobs
+    #      (the "cascade") MUST share an identical if: expression so they
+    #      run as a unit. Drift here would silently skip post-deploy
+    #      verification on manual dispatch (the exact bug PR #159 fixed for
+    #      the inverse case). Updated for Issue #157 split: previously
+    #      checked a single deploy.yml; now checks both halves separately.
 
     steps:
       - name: Checkout code
@@ -129,36 +131,51 @@ jobs:
         # would still fire as warnings/errors and be caught.
         run: actionlint -color -shellcheck "shellcheck -S warning"
 
-      - name: Verify deploy.yml gated-job condition parity
+      - name: Verify deploy workflow gated-job condition parity
         run: |
           python3 <<'PYEOF'
           import sys
           import yaml
 
-          with open('.github/workflows/deploy.yml') as f:
-              wf = yaml.safe_load(f)
+          # Issue #157 split: one parity check per deploy workflow. Each
+          # workflow's "deploy-dev cascade" (deploy job + verification jobs
+          # that need: it) must share an identical if: expression so the
+          # cascade runs as a unit. The two cascades are independent —
+          # backend and frontend can have different conditions across files,
+          # but the jobs WITHIN a file must agree.
+          DEPLOY_WORKFLOWS = {
+              '.github/workflows/deploy-backend.yml': [
+                  'deploy-dev',
+                  'smoke-tests',
+                  'integration-tests',
+              ],
+              '.github/workflows/deploy-frontend.yml': [
+                  'deploy-dev-frontend',
+                  'production-smoke-tests',
+                  'e2e-tests',
+              ],
+          }
 
-          # These 5 jobs are the "deploy-dev cascade" — deploy-dev plus its
-          # 4 verification jobs that needs: deploy-dev. They must share an
-          # identical if: expression or the cascade will partially skip.
-          gated_jobs = [
-              'deploy-dev',
-              'production-smoke-tests',
-              'smoke-tests',
-              'integration-tests',
-              'e2e-tests',
-          ]
-          conditions = {job: wf['jobs'][job].get('if', '') for job in gated_jobs}
-          unique = set(conditions.values())
+          had_error = False
+          for wf_path, gated_jobs in DEPLOY_WORKFLOWS.items():
+              with open(wf_path) as f:
+                  wf = yaml.safe_load(f)
 
-          if len(unique) != 1:
-              print('::error file=.github/workflows/deploy.yml::deploy.yml gated jobs have divergent if: expressions — cascade will silently partial-skip')
-              for job, cond in conditions.items():
-                  print(f'  {job}: {cond}', file=sys.stderr)
+              conditions = {job: wf['jobs'][job].get('if', '') for job in gated_jobs}
+              unique = set(conditions.values())
+
+              if len(unique) != 1:
+                  print(f'::error file={wf_path}::{wf_path} gated jobs have divergent if: expressions — cascade will silently partial-skip')
+                  for job, cond in conditions.items():
+                      print(f'  {job}: {cond}', file=sys.stderr)
+                  had_error = True
+                  continue
+
+              print(f'OK ({wf_path}): all {len(gated_jobs)} gated jobs share an identical if: expression')
+              print(f'  Condition: {next(iter(unique))}')
+
+          if had_error:
               sys.exit(1)
-
-          print(f'OK: all {len(gated_jobs)} gated jobs share an identical if: expression')
-          print(f'Condition: {next(iter(unique))}')
           PYEOF
 
   lint-and-format:
