@@ -2,9 +2,16 @@
  * Authentication Helpers for E2E Tests
  *
  * Provides utilities for authentication flows in E2E tests.
+ *
+ * URL normalisation is handled by the Playwright-free `resolveApiUrl` helper
+ * in `./url` so that the pure logic can be unit-tested with Vitest without
+ * pulling in the Playwright bootstrap.
+ *
+ * @see url.ts for the `resolveApiUrl` contract and env-var documentation.
  */
 
 import { APIRequestContext, Page } from '@playwright/test';
+import { resolveApiUrl } from './url';
 
 /**
  * Generate unique test email
@@ -42,19 +49,23 @@ export function generateTestUser() {
  * shared-types/src/auth.ts:85). This helper centralizes the correct payload
  * shape so the contract can't drift again.
  *
+ * `apiBaseUrl` (and `API_BASE_URL`) must be the full base URL including the
+ * version prefix. See `./url.ts` for the full contract. The helper appends
+ * only `/auth/register` — not `/v1/auth/register`.
+ *
  * Returns the raw Playwright APIResponse so callers can choose their own
  * assertion (most just check `response.ok()`; some treat 409 "already exists"
  * as success on retries).
+ *
+ * @see resolveApiUrl in url.ts for the URL normalisation contract.
  */
 export async function registerViaApi(
   request: APIRequestContext,
   user: ReturnType<typeof generateTestUser>,
   apiBaseUrl?: string
 ) {
-  const baseUrl = apiBaseUrl || process.env.API_BASE_URL || 'http://localhost:3000';
-  // Strip trailing slash to avoid `//v1/auth/register`.
-  const normalized = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
-  return request.post(`${normalized}/v1/auth/register`, {
+  const normalized = resolveApiUrl(apiBaseUrl);
+  return request.post(`${normalized}/auth/register`, {
     data: {
       firstName: user.firstName,
       lastName: user.lastName,
@@ -63,6 +74,34 @@ export async function registerViaApi(
       confirmPassword: user.password,
       acceptedTerms: true,
       acceptedPrivacy: true,
+    },
+    failOnStatusCode: false,
+  });
+}
+
+/**
+ * Fetch a translation job from the backend API by ID.
+ *
+ * Centralises the `/translation/jobs/{jobId}` GET call used across multiple
+ * E2E specs so the URL construction cannot drift. Requires the caller to
+ * supply a valid auth token (obtained from `page.evaluate(() =>
+ * localStorage.getItem('authToken'))`).
+ *
+ * Appends only `/translation/jobs/${jobId}` — not `/v1/translation/jobs/${jobId}` —
+ * because `API_BASE_URL` already includes the version prefix.
+ *
+ * @see resolveApiUrl in url.ts for the URL normalisation contract.
+ */
+export async function getJobViaApi(
+  request: APIRequestContext,
+  jobId: string,
+  authToken: string,
+  apiBaseUrl?: string
+) {
+  const normalized = resolveApiUrl(apiBaseUrl);
+  return request.get(`${normalized}/translation/jobs/${jobId}`, {
+    headers: {
+      Authorization: `Bearer ${authToken}`,
     },
     failOnStatusCode: false,
   });

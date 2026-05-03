@@ -13,7 +13,7 @@ import { test, expect } from '@playwright/test';
 import { LoginPage } from '../../pages/LoginPage';
 import { DashboardPage } from '../../pages/DashboardPage';
 import { TranslationUploadPage } from '../../pages/TranslationUploadPage';
-import { generateTestUser } from '../../fixtures/auth';
+import { generateTestUser, registerViaApi, getJobViaApi } from '../../fixtures/auth';
 import { TEST_DOCUMENTS } from '../../fixtures/test-documents';
 import { LEGAL_ATTESTATION_LABEL_PATTERNS as L } from '../../../src/components/Translation/legalAttestationLabels';
 import * as fs from 'fs';
@@ -56,17 +56,7 @@ test.describe('Legal Attestation Enforcement', () => {
 
     // Setup: Register and login
     const user = generateTestUser();
-    await page.request.post(
-      `${process.env.API_BASE_URL || 'http://localhost:3000'}/v1/auth/register`,
-      {
-        data: {
-          firstName: user.firstName,
-          lastName: user.lastName,
-          email: user.email,
-          password: user.password,
-        },
-      }
-    );
+    await registerViaApi(page.request, user);
 
     await loginPage.goto();
     await loginPage.login(user.email, user.password);
@@ -187,14 +177,7 @@ test.describe('Legal Attestation Enforcement', () => {
 
     // Fetch job via API
     const authToken = await page.evaluate(() => localStorage.getItem('authToken'));
-    const jobResponse = await page.request.get(
-      `${process.env.API_BASE_URL || 'http://localhost:3000'}/v1/translation/jobs/${jobId}`,
-      {
-        headers: {
-          Authorization: `Bearer ${authToken}`,
-        },
-      }
-    );
+    const jobResponse = await getJobViaApi(page.request, jobId, authToken!);
 
     expect(jobResponse.ok()).toBeTruthy();
     const job = await jobResponse.json();
@@ -218,14 +201,7 @@ test.describe('Legal Attestation Enforcement', () => {
 
     // Fetch job
     const authToken = await page.evaluate(() => localStorage.getItem('authToken'));
-    const jobResponse = await page.request.get(
-      `${process.env.API_BASE_URL || 'http://localhost:3000'}/v1/translation/jobs/${jobId}`,
-      {
-        headers: {
-          Authorization: `Bearer ${authToken}`,
-        },
-      }
-    );
+    const jobResponse = await getJobViaApi(page.request, jobId, authToken!);
 
     const job = await jobResponse.json();
 
@@ -254,14 +230,7 @@ test.describe('Legal Attestation Enforcement', () => {
 
     // Fetch job
     const authToken = await page.evaluate(() => localStorage.getItem('authToken'));
-    const jobResponse = await page.request.get(
-      `${process.env.API_BASE_URL || 'http://localhost:3000'}/v1/translation/jobs/${jobId}`,
-      {
-        headers: {
-          Authorization: `Bearer ${authToken}`,
-        },
-      }
-    );
+    const jobResponse = await getJobViaApi(page.request, jobId, authToken!);
 
     const job = await jobResponse.json();
 

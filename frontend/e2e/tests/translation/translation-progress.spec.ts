@@ -13,7 +13,7 @@ import { LoginPage } from '../../pages/LoginPage';
 import { DashboardPage } from '../../pages/DashboardPage';
 import { TranslationUploadPage } from '../../pages/TranslationUploadPage';
 import { TranslationDetailPage } from '../../pages/TranslationDetailPage';
-import { generateTestUser } from '../../fixtures/auth';
+import { generateTestUser, registerViaApi } from '../../fixtures/auth';
 import { TEST_DOCUMENTS } from '../../fixtures/test-documents';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -61,17 +61,7 @@ test.describe('Translation Progress Tracking', () => {
   test('should show initial PENDING status after upload', async ({ page }) => {
     // Setup: Register and login
     const user = generateTestUser();
-    await page.request.post(
-      `${process.env.API_BASE_URL || 'http://localhost:3000'}/v1/auth/register`,
-      {
-        data: {
-          firstName: user.firstName,
-          lastName: user.lastName,
-          email: user.email,
-          password: user.password,
-        },
-      }
-    );
+    await registerViaApi(page.request, user);
 
     await loginPage.goto();
     await loginPage.login(user.email, user.password);
@@ -91,17 +81,7 @@ test.describe('Translation Progress Tracking', () => {
   test('should transition from PENDING to CHUNKING', async ({ page }) => {
     // Setup: Upload document
     const user = generateTestUser();
-    await page.request.post(
-      `${process.env.API_BASE_URL || 'http://localhost:3000'}/v1/auth/register`,
-      {
-        data: {
-          firstName: user.firstName,
-          lastName: user.lastName,
-          email: user.email,
-          password: user.password,
-        },
-      }
-    );
+    await registerViaApi(page.request, user);
 
     await loginPage.goto();
     await loginPage.login(user.email, user.password);
@@ -123,17 +103,7 @@ test.describe('Translation Progress Tracking', () => {
   test('should display progress section for IN_PROGRESS jobs', async ({ page }) => {
     // Setup: Create job and start translation
     const user = generateTestUser();
-    await page.request.post(
-      `${process.env.API_BASE_URL || 'http://localhost:3000'}/v1/auth/register`,
-      {
-        data: {
-          firstName: user.firstName,
-          lastName: user.lastName,
-          email: user.email,
-          password: user.password,
-        },
-      }
-    );
+    await registerViaApi(page.request, user);
 
     await loginPage.goto();
     await loginPage.login(user.email, user.password);
@@ -160,17 +130,7 @@ test.describe('Translation Progress Tracking', () => {
   test('should update progress percentage during translation', async ({ page }) => {
     // Setup: Create and start translation
     const user = generateTestUser();
-    await page.request.post(
-      `${process.env.API_BASE_URL || 'http://localhost:3000'}/v1/auth/register`,
-      {
-        data: {
-          firstName: user.firstName,
-          lastName: user.lastName,
-          email: user.email,
-          password: user.password,
-        },
-      }
-    );
+    await registerViaApi(page.request, user);
 
     await loginPage.goto();
     await loginPage.login(user.email, user.password);
@@ -201,17 +161,7 @@ test.describe('Translation Progress Tracking', () => {
   test('should show chunk counts during translation', async ({ page }) => {
     // Setup: Create job
     const user = generateTestUser();
-    await page.request.post(
-      `${process.env.API_BASE_URL || 'http://localhost:3000'}/v1/auth/register`,
-      {
-        data: {
-          firstName: user.firstName,
-          lastName: user.lastName,
-          email: user.email,
-          password: user.password,
-        },
-      }
-    );
+    await registerViaApi(page.request, user);
 
     await loginPage.goto();
     await loginPage.login(user.email, user.password);
@@ -239,17 +189,7 @@ test.describe('Translation Progress Tracking', () => {
   test('should enable refresh button during translation', async ({ page }) => {
     // Setup: Create job
     const user = generateTestUser();
-    await page.request.post(
-      `${process.env.API_BASE_URL || 'http://localhost:3000'}/v1/auth/register`,
-      {
-        data: {
-          firstName: user.firstName,
-          lastName: user.lastName,
-          email: user.email,
-          password: user.password,
-        },
-      }
-    );
+    await registerViaApi(page.request, user);
 
     await loginPage.goto();
     await loginPage.login(user.email, user.password);
@@ -277,17 +217,7 @@ test.describe('Translation Progress Tracking', () => {
   test('should transition to COMPLETED status', async ({ page }) => {
     // Setup: Create job
     const user = generateTestUser();
-    await page.request.post(
-      `${process.env.API_BASE_URL || 'http://localhost:3000'}/v1/auth/register`,
-      {
-        data: {
-          firstName: user.firstName,
-          lastName: user.lastName,
-          email: user.email,
-          password: user.password,
-        },
-      }
-    );
+    await registerViaApi(page.request, user);
 
     await loginPage.goto();
     await loginPage.login(user.email, user.password);
@@ -313,17 +243,7 @@ test.describe('Translation Progress Tracking', () => {
   test('should enable download button when COMPLETED', async ({ page }) => {
     // Setup: Create job and wait for completion
     const user = generateTestUser();
-    await page.request.post(
-      `${process.env.API_BASE_URL || 'http://localhost:3000'}/v1/auth/register`,
-      {
-        data: {
-          firstName: user.firstName,
-          lastName: user.lastName,
-          email: user.email,
-          password: user.password,
-        },
-      }
-    );
+    await registerViaApi(page.request, user);
 
     await loginPage.goto();
     await loginPage.login(user.email, user.password);
