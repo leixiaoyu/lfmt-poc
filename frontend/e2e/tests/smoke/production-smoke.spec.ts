@@ -19,6 +19,7 @@
 import * as path from 'path';
 import { fileURLToPath } from 'node:url';
 import { test, expect } from '@playwright/test';
+import { TranslationUploadPage } from '../../pages/TranslationUploadPage';
 
 // Smoke tests use a longer timeout because they run against production.
 // 3 minutes is sufficient when we use the ~1 KB smoke-test-minimal.txt
@@ -163,36 +164,21 @@ test.describe('Production Smoke Tests @smoke', () => {
     // The file input only exists in the DOM on step 2. Calling setInputFiles
     // before the wizard advances past step 1 causes a 3-minute timeout because
     // the locator never resolves (the element isn't mounted yet).
+    //
+    // Each step is delegated to TranslationUploadPage's role-based helpers
+    // (PR #184 review follow-up) so wizard navigation lives in exactly one
+    // place. The smoke test still owns its `test.step()` framing and its
+    // post-submit translation-completion polling.
+    const uploadPage = new TranslationUploadPage(page);
 
     // Step 3a: Complete legal attestation (wizard step 0)
     await test.step('Complete legal attestation step', async () => {
-      // Tick all three required checkboxes
-      await page.getByRole('checkbox', { name: /copyright ownership/i }).check();
-      await page.getByRole('checkbox', { name: /translation rights/i }).check();
-      await page.getByRole('checkbox', { name: /liability/i }).check();
-
-      // Advance to Translation Settings step
-      await page.getByRole('button', { name: /next/i }).click();
-      await expect(page.getByLabel(/target.*language/i)).toBeVisible({ timeout: 10000 });
+      await uploadPage.completeLegalAttestationByRole();
     });
 
     // Step 3b: Configure translation settings (wizard step 1)
     await test.step('User can configure translation settings', async () => {
-      // Select source language (if not already English)
-      const sourceLanguage = page.getByLabel(/source.*language/i);
-      if (await sourceLanguage.isVisible()) {
-        await sourceLanguage.click();
-        await page.getByRole('option', { name: /english/i }).click();
-      }
-
-      // Select target language (Spanish)
-      const targetLanguage = page.getByLabel(/target.*language/i);
-      await targetLanguage.click();
-      await page.getByRole('option', { name: /spanish|español/i }).click();
-
-      // Advance to Upload Document step
-      await page.getByRole('button', { name: /next/i }).click();
-      await expect(page.locator('input[type="file"]')).toBeAttached({ timeout: 10000 });
+      await uploadPage.configureLanguagesByRole();
     });
 
     // Step 3c: Upload document (wizard step 2)
@@ -201,36 +187,17 @@ test.describe('Production Smoke Tests @smoke', () => {
       // frontend/e2e/fixtures/smoke-test-minimal.txt). Using a committed
       // ~1 KB file avoids allocating large documents inside the test and
       // keeps translation time well under the 3-minute test timeout.
-      //
-      // The file input has display:none (it is triggered by a click on the
-      // drag-drop zone). setInputFiles works on hidden inputs natively in
-      // Playwright, but we still wait for the element to be attached first.
-      const fileInput = page.locator('input[type="file"]');
-      await fileInput.setInputFiles(SMOKE_FIXTURE_PATH);
-
-      // Wait for file to be processed — the filename appears in the UI
-      await expect(page.getByText(/smoke-test-minimal\.txt/i)).toBeVisible({
-        timeout: 10000,
-      });
+      await uploadPage.uploadFileAndAwaitDisplay(SMOKE_FIXTURE_PATH, 'smoke-test-minimal.txt');
     });
 
     // Step 4 (wizard step 3): Advance to review and submit
-    // After uploading the file the wizard is on step 2. Clicking Next moves to
-    // the Review & Submit step (step 3), which shows the "Submit & Start
-    // Translation" button (not a separate translate button).
     await test.step('Advance to review step', async () => {
-      await page.getByRole('button', { name: /next/i }).click();
-      // Review step renders the file name in the summary
-      await expect(page.getByText(/smoke-test-minimal\.txt/i)).toBeVisible({ timeout: 10000 });
+      await uploadPage.advanceToReviewByRole('smoke-test-minimal.txt');
     });
 
     // Step 5: Start translation
     await test.step('User can start translation', async () => {
-      // The final step button on the wizard is "Submit & Start Translation"
-      const translateButton = page.getByRole('button', {
-        name: /submit.*translation|translate|start.*translation/i,
-      });
-      await translateButton.click();
+      await uploadPage.submitTranslationByRole();
 
       // Wait for translation to start
       await expect(

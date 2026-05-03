@@ -29,15 +29,26 @@ export type UploadProgressCallback = (progress: UploadProgress) => void;
 export interface UploadRequestResult {
   uploadUrl: string;
   fileId: string;
+  jobId: string;
   expiresIn: number;
   requiredHeaders: Record<string, string>;
 }
 
 /**
  * Upload completion result
+ *
+ * NOTE: `jobId` is the canonical identifier downstream services (status
+ * polling, deletion, translation start) key off — the backend creates it in
+ * `backend/functions/jobs/uploadRequest.ts` and returns it in
+ * `PresignedUrlResponse` (shared-types/src/documents.ts:83). PR #184's main
+ * fix added it to the type + service-layer plumbing for translationService;
+ * we propagate it here too so this service stays consistent and any future
+ * caller of `uploadDocument` can correlate the upload with its job record
+ * without a second round-trip.
  */
 export interface UploadResult {
   fileId: string;
+  jobId: string;
   success: boolean;
   error?: string;
 }
@@ -137,13 +148,14 @@ export async function uploadDocument(
 ): Promise<UploadResult> {
   try {
     // Step 1: Request presigned URL
-    const { uploadUrl, fileId, requiredHeaders } = await requestUploadUrl(file);
+    const { uploadUrl, fileId, jobId, requiredHeaders } = await requestUploadUrl(file);
 
     // Step 2: Upload to S3
     await uploadToS3(file, uploadUrl, requiredHeaders, onProgress);
 
     return {
       fileId,
+      jobId,
       success: true,
     };
   } catch (error) {
@@ -151,6 +163,7 @@ export async function uploadDocument(
 
     return {
       fileId: '',
+      jobId: '',
       success: false,
       error: errorMessage,
     };
