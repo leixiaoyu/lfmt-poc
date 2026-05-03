@@ -689,10 +689,15 @@ describe('End-to-End Translation Flow Integration Tests', () => {
         const response = await apiRequest(endpoint.path, endpoint.method);
 
         const corsOrigin = response.headers.get('access-control-allow-origin');
-        const corsCredentials = response.headers.get('access-control-allow-credentials');
 
+        // Only `access-control-allow-origin` is required on every response.
+        // `access-control-allow-credentials` is intentionally OMITTED from
+        // API Gateway error responses (they use a wildcard origin; the CORS
+        // spec forbids combining credentials with `*`). The header IS sent
+        // on preflight OPTIONS responses — see
+        // `defaultCorsPreflightOptions: { allowCredentials: true }` in
+        // lfmt-infrastructure-stack.ts.
         expect(corsOrigin).toBeTruthy();
-        expect(corsCredentials).toBeTruthy();
       }
     });
   });
