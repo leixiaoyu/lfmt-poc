@@ -156,11 +156,22 @@ export class TranslationUploadPage extends BasePage {
    * Tick the three required attestation checkboxes and advance to the
    * Translation Settings step. Returns when the target-language control
    * is visible (handshake that step 1 has rendered).
+   *
+   * Accessible names are computed from the <FormControlLabel> label text
+   * rendered by LegalAttestation.tsx — verified against the unit tests in
+   * frontend/src/components/Translation/__tests__/LegalAttestation.test.tsx.
+   * The previous patterns (/copyright ownership/, /translation rights/,
+   * /liability/) did not appear anywhere in the rendered label strings,
+   * causing locator.check to wait the full 180 s timeout on every run.
    */
   async completeLegalAttestationByRole(timeout = 10000) {
-    await this.page.getByRole('checkbox', { name: /copyright ownership/i }).check();
-    await this.page.getByRole('checkbox', { name: /translation rights/i }).check();
-    await this.page.getByRole('checkbox', { name: /liability/i }).check();
+    await this.page.getByRole('checkbox', { name: /I confirm that I own the copyright/i }).check();
+    await this.page
+      .getByRole('checkbox', { name: /I confirm that I have the right to create derivative works/i })
+      .check();
+    await this.page
+      .getByRole('checkbox', { name: /I understand that I am solely responsible/i })
+      .check();
 
     await this.page.getByRole('button', { name: /next/i }).click();
     await expect(this.page.getByLabel(/target.*language/i)).toBeVisible({ timeout });
