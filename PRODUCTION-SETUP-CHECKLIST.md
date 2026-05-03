@@ -334,8 +334,9 @@ arn:aws:iam::XXXXXXXXXXXX:role/GitHubActionsLFMTProd
 # Via GitHub Actions UI:
 # https://github.com/leixiaoyu/lfmt-poc/actions
 
-# OR via CLI:
-gh workflow run deploy.yml -f environment=prod
+# OR via CLI (run BOTH; backend first, then frontend):
+gh workflow run deploy-backend.yml -f environment=prod
+gh workflow run deploy-frontend.yml -f environment=prod
 ```
 
 ### Verify Deployment
@@ -416,7 +417,7 @@ After completing manual setup:
 - **Full Deployment Guide**: `PRODUCTION-DEPLOYMENT-GUIDE.md`
 - **Security Features**: `PRODUCTION-SECURITY-DEPLOYMENT.md`
 - **Security Policy**: `SECURITY.md`
-- **GitHub Actions Workflow**: `.github/workflows/deploy.yml`
+- **GitHub Actions Workflows**: `.github/workflows/deploy-backend.yml` and `.github/workflows/deploy-frontend.yml` (split per `docs/CI-CD-ARCHITECTURE.md`)
 
 ---
 

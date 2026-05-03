@@ -116,7 +116,7 @@ aws stepfunctions list-executions --state-machine-arn <STATE_MACHINE_ARN>
 
 ## Integration with CI/CD
 
-Add to `.github/workflows/deploy.yml` for automated performance validation:
+Add to `.github/workflows/deploy-backend.yml` for automated performance validation:
 
 ```yaml
 - name: Run Performance Benchmark

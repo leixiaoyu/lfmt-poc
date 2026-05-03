@@ -363,19 +363,26 @@ frontend/test-results/**/*.webm
    - Reason: Require live backend API
    - Status: Run manually before deployment
 
-### Deployment Workflow (`.github/workflows/deploy.yml`)
+### Deployment Workflows (`.github/workflows/deploy-backend.yml` + `deploy-frontend.yml`)
+
+The single legacy `deploy.yml` was split into two path-scoped workflows
+(see [`docs/CI-CD-ARCHITECTURE.md`](docs/CI-CD-ARCHITECTURE.md)):
+
+- `deploy-backend.yml` — triggers on `backend/**`, `shared-types/**`, or its own file.
+- `deploy-frontend.yml` — triggers on `frontend/**`, `shared-types/**`, or its own file.
 
 **Triggered On**:
 
-- Push to `main` branch (after PR merge)
+- Push to `main` branch (after PR merge), filtered by the paths above.
 
-**Steps**:
+**Combined steps (backend pipeline + frontend pipeline)**:
 
-1. Run all CI tests (same as PR workflow)
-2. Deploy backend infrastructure (CDK)
-3. Deploy Lambda functions
-4. Deploy frontend to S3/CloudFront
-5. Invalidate CloudFront cache
+1. Run all CI tests (same as PR workflow), scoped per pipeline.
+2. Deploy backend infrastructure (CDK) — `deploy-backend.yml` only.
+3. Deploy Lambda functions — `deploy-backend.yml` only.
+4. Deploy frontend to S3/CloudFront — `deploy-frontend.yml` (or
+   `deploy-backend.yml`'s post-deploy frontend rebuild after a CFN URL change).
+5. Invalidate CloudFront cache — same as above.
 
 ### ⚠️ IMPORTANT: Local vs CI Test Differences
 

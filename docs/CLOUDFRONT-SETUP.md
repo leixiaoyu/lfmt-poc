@@ -247,7 +247,9 @@ new CfnOutput(this, 'FrontendUrl', {
 
 ### GitHub Actions Workflow
 
-**Location**: `.github/workflows/deploy.yml:203-261`
+**Location**: `.github/workflows/deploy-frontend.yml` (`Deploy Frontend to Development` job).
+See [`docs/CI-CD-ARCHITECTURE.md`](CI-CD-ARCHITECTURE.md) for the rationale behind the
+backend/frontend split and path-filter triggers.
 
 **Steps**:
 

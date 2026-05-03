@@ -178,6 +178,14 @@ jobs:
               sys.exit(1)
           PYEOF
 
+      - name: Verify deploy workflow path-filter contracts
+        # OMC test-automator follow-up (PR #185 R2): asserts each deploy
+        # workflow's on.push.paths contains the EXPECTED globs (and excludes
+        # forbidden globs that would over-trigger across the split). Adding a
+        # 3rd deploy workflow in the future requires updating the EXPECTED /
+        # FORBIDDEN dicts in the script. See tracking issue for auto-discovery.
+        run: python3 tests/workflows/test_deploy_path_filters.py
+
   lint-and-format:
     name: Lint and Format Check
     runs-on: ubuntu-latest

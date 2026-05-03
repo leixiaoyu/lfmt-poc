@@ -48,6 +48,7 @@
 - **[@/docs/CLOUDFRONT-SETUP.md](docs/CLOUDFRONT-SETUP.md)** - CloudFront CDK configuration, SPA routing, security headers
 - **[@/docs/INFRASTRUCTURE-SETUP.md](docs/INFRASTRUCTURE-SETUP.md)** - AWS CDK stack, deployment workflow
 - **[@/docs/CDK-BEST-PRACTICES.md](docs/CDK-BEST-PRACTICES.md)** - CDK patterns, testing, troubleshooting
+- **[@/docs/CI-CD-ARCHITECTURE.md](docs/CI-CD-ARCHITECTURE.md)** - Split deploy pipelines (`deploy-backend.yml` + `deploy-frontend.yml`), path-filter rationale, branch-protection requirements
 
 #### Feature Implementation
 
@@ -87,8 +88,11 @@ cd frontend && npm run test:e2e
 # Deploy to dev
 cd backend/infrastructure && npx cdk deploy --context environment=dev
 
-# Manual workflow trigger
-gh workflow run deploy.yml --ref main
+# Manual workflow trigger (backend-side pipeline)
+gh workflow run deploy-backend.yml --ref main
+
+# Manual workflow trigger (frontend-side pipeline)
+gh workflow run deploy-frontend.yml --ref main
 ```
 
 ### Common Tasks

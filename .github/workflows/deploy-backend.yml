@@ -44,6 +44,25 @@ env:
   AWS_REGION: us-east-1
   NODE_VERSION: '20'
 
+# Concurrency group (OMC perf + architect review, PR #185 follow-up):
+#
+# `shared-types/**` triggers BOTH deploy-backend.yml AND deploy-frontend.yml.
+# Without coordination, the two workflows race: deploy-frontend.yml can read
+# stale CloudFormation outputs (and therefore the old API URL) and S3-sync a
+# stale bundle to CloudFront BEFORE deploy-backend.yml's own frontend rebuild
+# step finishes pushing the fresh URL.
+#
+# Both workflows share the SAME group name (`deploy-${ref}`) so GitHub Actions
+# serializes them per ref. The frontend pipeline waits for the backend pipeline
+# (or vice versa) instead of racing.
+#
+# `cancel-in-progress: false` — never abort an in-flight deploy. Aborting an
+# active CDK or S3 sync risks partial state. Trade-off: occasional short queue
+# wait when shared-types lands; acceptable.
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   test:
     name: Run Tests (Backend)

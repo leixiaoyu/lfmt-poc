@@ -133,9 +133,10 @@ For detailed deployment instructions, see:
 ```
 lfmt-poc/
 ├── .github/
-│   └── workflows/          # GitHub Actions CI/CD
-│       ├── ci.yml         # Pull request testing
-│       └── deploy.yml     # Multi-environment deployment
+│   └── workflows/                # GitHub Actions CI/CD
+│       ├── ci.yml                # Pull request testing
+│       ├── deploy-backend.yml    # Backend pipeline (path-filtered: backend/**, shared-types/**)
+│       └── deploy-frontend.yml   # Frontend pipeline (path-filtered: frontend/**, shared-types/**)
 ├── backend/
 │   ├── functions/         # Lambda functions
 │   │   ├── auth/         # Authentication functions
