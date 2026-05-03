@@ -4,7 +4,7 @@
 
 import { mockClient } from 'aws-sdk-client-mock';
 import { SecretsManagerClient, GetSecretValueCommand } from '@aws-sdk/client-secrets-manager';
-import { GeminiClient, createGeminiClient } from '../geminiClient';
+import { GeminiClient, createGeminiClient, isFinishReasonRetryable } from '../geminiClient';
 import { GeminiApiError, RateLimitError, AuthenticationError, TranslationOptions } from '../types';
 
 // Mock the Google GenAI SDK
@@ -507,6 +507,160 @@ describe('GeminiClient', () => {
 
       // Cost = (10000 / 1,000,000) * $0.075 = $0.00075
       expect(result.estimatedCost).toBeCloseTo(0.00075, 6);
+    });
+  });
+
+  /**
+   * OMC-followup R4 — EMPTY_RESPONSE retryable mapping.
+   *
+   * Background: Gemini's GenerateContentResponse exposes a per-candidate
+   * `finishReason` (FinishReason enum from @google/genai). The previous
+   * empty-text guard always set retryable=false, which was wrong: OTHER
+   * and FINISH_REASON_UNSPECIFIED outcomes are transient and SHOULD be
+   * retried by Step Functions. Conversely, deterministic outcomes
+   * (SAFETY, RECITATION, MAX_TOKENS, BLOCKLIST, PROHIBITED_CONTENT, ...)
+   * MUST NOT be retried — retrying produces the same outcome and burns
+   * the rate-limit budget.
+   *
+   * This block has two parts:
+   *   1. Direct tests of the pure helper `isFinishReasonRetryable()`
+   *      (one assertion per FinishReason enum variant).
+   *   2. End-to-end tests through `GeminiClient.translate()` that verify
+   *      the helper's output is correctly threaded into the thrown
+   *      GeminiApiError's `retryable` flag and that the message surfaces
+   *      the finishReason for triage.
+   */
+  describe('EMPTY_RESPONSE finishReason → retryable mapping (OMC-followup R4)', () => {
+    describe('isFinishReasonRetryable() pure helper', () => {
+      it.each([
+        ['SAFETY'],
+        ['RECITATION'],
+        ['BLOCKLIST'],
+        ['PROHIBITED_CONTENT'],
+        ['SPII'],
+        ['MAX_TOKENS'],
+        ['LANGUAGE'],
+        ['MALFORMED_FUNCTION_CALL'],
+        ['UNEXPECTED_TOOL_CALL'],
+        ['IMAGE_SAFETY'],
+        ['IMAGE_PROHIBITED_CONTENT'],
+        ['IMAGE_RECITATION'],
+        ['NO_IMAGE'],
+      ])('%s → NOT retryable (deterministic / content-policy outcome)', (reason) => {
+        expect(isFinishReasonRetryable(reason)).toBe(false);
+      });
+
+      it.each([
+        ['OTHER'],
+        ['IMAGE_OTHER'],
+        ['FINISH_REASON_UNSPECIFIED'],
+        ['SOMETHING_NEW_FROM_FUTURE_SDK_VERSION'],
+      ])('%s → retryable (transient / unknown — benefit of the doubt)', (reason) => {
+        expect(isFinishReasonRetryable(reason)).toBe(true);
+      });
+
+      it.each([[undefined], [null], ['']])(
+        'absent finishReason (%p) → retryable (benefit of the doubt)',
+        (reason) => {
+          expect(isFinishReasonRetryable(reason as undefined | null | string)).toBe(true);
+        }
+      );
+    });
+
+    describe('GeminiApiError.retryable threaded from finishReason', () => {
+      let client: GeminiClient;
+      let mockGenerateContent: jest.Mock;
+
+      beforeEach(async () => {
+        secretsMock.on(GetSecretValueCommand).resolves({
+          SecretString: mockApiKey,
+        } as any);
+
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        const { GoogleGenAI } = require('@google/genai');
+        mockGenerateContent = jest.fn();
+
+        (GoogleGenAI as jest.Mock).mockImplementation(() => ({
+          models: { generateContent: mockGenerateContent },
+        }));
+
+        client = new GeminiClient(mockConfig);
+        await client.initialize();
+      });
+
+      it.each([
+        ['SAFETY', false],
+        ['RECITATION', false],
+        ['MAX_TOKENS', false],
+        ['BLOCKLIST', false],
+        ['OTHER', true],
+        ['FINISH_REASON_UNSPECIFIED', true],
+      ])(
+        'empty text + finishReason=%s → throws GeminiApiError with retryable=%s and EMPTY_RESPONSE code',
+        async (finishReason, expectedRetryable) => {
+          mockGenerateContent.mockResolvedValue({
+            text: undefined,
+            candidates: [{ finishReason }],
+            usageMetadata: {
+              promptTokenCount: 50,
+              candidatesTokenCount: 0,
+              totalTokenCount: 50,
+            },
+          });
+
+          const options: TranslationOptions = { targetLanguage: 'es' };
+
+          await expect(client.translate('Text', options)).rejects.toMatchObject({
+            name: 'GeminiApiError',
+            errorCode: 'EMPTY_RESPONSE',
+            retryable: expectedRetryable,
+            // Triage-friendly: the message surfaces the finishReason verbatim.
+            message: expect.stringContaining(finishReason),
+          });
+        }
+      );
+
+      it('empty text + missing candidates array → retryable=true (benefit of the doubt)', async () => {
+        mockGenerateContent.mockResolvedValue({
+          text: '',
+          // candidates intentionally absent
+          usageMetadata: {
+            promptTokenCount: 50,
+            candidatesTokenCount: 0,
+            totalTokenCount: 50,
+          },
+        });
+
+        const options: TranslationOptions = { targetLanguage: 'es' };
+
+        await expect(client.translate('Text', options)).rejects.toMatchObject({
+          name: 'GeminiApiError',
+          errorCode: 'EMPTY_RESPONSE',
+          retryable: true,
+          message: expect.stringContaining('unknown'),
+        });
+      });
+
+      it.each([
+        ['null', null],
+        ['empty string', ''],
+      ])(
+        'empty text shape "%s" still triggers the EMPTY_RESPONSE guard',
+        async (_label, textValue) => {
+          mockGenerateContent.mockResolvedValue({
+            text: textValue,
+            candidates: [{ finishReason: 'SAFETY' }],
+          });
+
+          const options: TranslationOptions = { targetLanguage: 'es' };
+
+          await expect(client.translate('Text', options)).rejects.toMatchObject({
+            name: 'GeminiApiError',
+            errorCode: 'EMPTY_RESPONSE',
+            retryable: false,
+          });
+        }
+      );
     });
   });
 });

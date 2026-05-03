@@ -456,33 +456,118 @@ describe('translateChunk Lambda', () => {
      * Body when treating it as a string, causing:
      *   "Cannot read properties of undefined (reading 'length')"
      * The fix (geminiClient.ts) throws a GeminiApiError('EMPTY_RESPONSE') so
-     * translateChunk returns { success: false, retryable: false } instead.
+     * translateChunk returns { success: false, retryable } instead.
+     *
+     * OMC-followup R3 + R4: extended to cover three empty-response shapes
+     * (undefined / null / '') and a representative non-retryable finishReason
+     * (SAFETY) so we lock down both the defensive guard AND the retryable
+     * mapping introduced in geminiClient.isFinishReasonRetryable().
      */
-    it('returns success:false when Gemini response has undefined text — Bug A regression', async () => {
+    it.each([
+      { label: 'undefined text', text: undefined },
+      { label: 'null text', text: null },
+      { label: 'empty string text', text: '' },
+      { label: 'completely undefined result.text via missing field', text: undefined },
+    ])(
+      'returns success:false when Gemini response has $label (finishReason=SAFETY → non-retryable) — Bug A regression',
+      async ({ text }) => {
+        const previousImpl = (GoogleGenAI as unknown as jest.Mock).getMockImplementation();
+        (GoogleGenAI as unknown as jest.Mock).mockImplementationOnce(() => ({
+          models: {
+            generateContent: jest.fn().mockResolvedValue({
+              text, // undefined / null / '' — all three must hit the empty guard
+              candidates: [{ finishReason: 'SAFETY' }], // R4: non-retryable mapping
+              usageMetadata: {
+                promptTokenCount: 50,
+                candidatesTokenCount: 0,
+                totalTokenCount: 50,
+              },
+            }),
+          },
+        }));
+
+        try {
+          dynamoMock.on(GetItemCommand).resolves({
+            Item: createMockJob({
+              jobId: 'job-bug-a',
+              userId: 'user-bug-a',
+              status: 'CHUNKED',
+              totalChunks: 4,
+              translatedChunks: 0,
+              tokensUsed: 0,
+              estimatedCost: 0,
+              extraFields: {
+                translationStatus: { S: 'IN_PROGRESS' },
+              },
+            }),
+          } as any);
+
+          const chunkContent = JSON.stringify({
+            primaryContent: 'Sherlock Holmes text for Bug A regression.',
+            chunkId: 'chunk-0',
+            chunkIndex: 0,
+          });
+
+          s3Mock.on(GetObjectCommand).resolves({
+            Body: createMockStream(chunkContent),
+          } as any);
+          dynamoMock.on(UpdateItemCommand).resolves({} as any);
+
+          const event: TranslateChunkEvent = {
+            jobId: 'job-bug-a',
+            userId: 'user-bug-a',
+            chunkIndex: 0,
+            targetLanguage: 'es',
+          };
+
+          const result = await handler(event);
+
+          // Must return success:false without TypeError — not crash.
+          expect(result.success).toBe(false);
+          // SAFETY is in the non-retryable set → retryable must be false.
+          expect(result.retryable).toBe(false);
+          expect(result.error).toContain('empty response');
+          // R4: the error message MUST surface the finishReason for triage.
+          expect(result.error).toContain('SAFETY');
+
+          // S3 PutObject must NOT have been called (no translatedText to store).
+          const putCalls = s3Mock.commandCalls(PutObjectCommand);
+          expect(putCalls).toHaveLength(0);
+        } finally {
+          if (previousImpl) {
+            (GoogleGenAI as unknown as jest.Mock).mockImplementation(previousImpl);
+          }
+        }
+      }
+    );
+
+    /**
+     * OMC-followup R3 — entirely undefined `result` shape.
+     *
+     * Belt-and-suspenders: the SDK could (in principle) return undefined for
+     * the whole result object on an unexpected upstream failure. Verify the
+     * client surfaces the same EMPTY_RESPONSE GeminiApiError contract instead
+     * of throwing an uncaught TypeError on `result.text`.
+     *
+     * Note: in practice the SDK throws (rejects the promise) before this code
+     * path is reached. This test pins the contract anyway so a future SDK
+     * change that returns undefined silently still degrades gracefully.
+     */
+    it('returns success:false when Gemini result is undefined — OMC-followup R3 defensive guard', async () => {
       const previousImpl = (GoogleGenAI as unknown as jest.Mock).getMockImplementation();
       (GoogleGenAI as unknown as jest.Mock).mockImplementationOnce(() => ({
         models: {
-          generateContent: jest.fn().mockResolvedValue({
-            text: undefined, // safety filter / empty candidate
-            usageMetadata: {
-              promptTokenCount: 50,
-              candidatesTokenCount: 0,
-              totalTokenCount: 50,
-            },
-          }),
+          generateContent: jest.fn().mockResolvedValue(undefined),
         },
       }));
 
       try {
         dynamoMock.on(GetItemCommand).resolves({
           Item: createMockJob({
-            jobId: 'job-bug-a',
-            userId: 'user-bug-a',
+            jobId: 'job-r3',
+            userId: 'user-r3',
             status: 'CHUNKED',
-            totalChunks: 4,
-            translatedChunks: 0,
-            tokensUsed: 0,
-            estimatedCost: 0,
+            totalChunks: 1,
             extraFields: {
               translationStatus: { S: 'IN_PROGRESS' },
             },
@@ -490,7 +575,7 @@ describe('translateChunk Lambda', () => {
         } as any);
 
         const chunkContent = JSON.stringify({
-          primaryContent: 'Sherlock Holmes text for Bug A regression.',
+          primaryContent: 'R3 defensive test.',
           chunkId: 'chunk-0',
           chunkIndex: 0,
         });
@@ -501,20 +586,18 @@ describe('translateChunk Lambda', () => {
         dynamoMock.on(UpdateItemCommand).resolves({} as any);
 
         const event: TranslateChunkEvent = {
-          jobId: 'job-bug-a',
-          userId: 'user-bug-a',
+          jobId: 'job-r3',
+          userId: 'user-r3',
           chunkIndex: 0,
           targetLanguage: 'es',
         };
 
         const result = await handler(event);
 
-        // Must return success:false without TypeError — not crash.
+        // Must NOT throw; must return a structured failure.
         expect(result.success).toBe(false);
         expect(result.retryable).toBe(false);
-        expect(result.error).toContain('empty response');
-
-        // S3 PutObject must NOT have been called (no translatedText to store).
+        // S3 PutObject must NOT have been called.
         const putCalls = s3Mock.commandCalls(PutObjectCommand);
         expect(putCalls).toHaveLength(0);
       } finally {

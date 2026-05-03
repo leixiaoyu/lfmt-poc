@@ -324,6 +324,93 @@ Before every CDK deployment:
 
 ---
 
+## Multi-Input-Path Contract Tests (OMC-followup R1)
+
+### The Rule
+
+> **Every Step Functions task or Lambda that can be reached from MORE than one
+> upstream state MUST have a contract test for EACH upstream entry path.**
+
+A "contract test" verifies the _payload shape_ the downstream task reads from
+the state machine context — not just that the task is wired into the graph.
+
+### Why It Matters: PR #176 Bug B
+
+PR #176 went through TWO rounds of OMC review and was approved. In production,
+it still failed: when chunks returned `success: false` (instead of throwing),
+the state machine routed through the Choice gate to `UpdateJobFailed`, which
+crashed with a `States.Runtime` JsonPath-not-found error trying to read
+`$.error`. The DDB write never happened, leaving `translationStatus` stuck on
+`IN_PROGRESS` forever.
+
+Root cause:
+
+- `UpdateJobFailed` has **two upstream entry paths**:
+  1. The Map state's Catch handler (sets `$.error` via `resultPath: '$.error'`)
+  2. The Choice gate's failure branch (does NOT set `$.error`)
+- Existing tests asserted **topology** only:
+  - "Pass + Choice + UpdateJobFailed all exist" ✅
+  - "Choice routes to UpdateJobFailed" ✅
+- They did NOT assert that `$.error` was populated **on both paths**.
+
+The two reviewers (and the author) both reasoned about the graph and missed
+that the Choice path lacked the field the downstream task required.
+
+### The Reviewer Checklist
+
+When reviewing a PR that adds or modifies a Step Functions task / Lambda:
+
+1. **List every upstream state that can reach this task.** Walk the state
+   machine definition; don't just look at the most-recently-added entry.
+2. **Document the input payload contract.** What fields does this task read?
+   What types? Required vs. optional?
+3. **For each upstream entry path, verify the contract holds.** Either:
+   - The upstream state explicitly produces the required fields (assert in a
+     test), or
+   - There's a normalizer state in between that synthesizes them (assert the
+     normalizer's output shape AND that the upstream routes through it).
+4. **Add a contract test per path.** Tests must inspect the SYNTHESIZED ASL
+   JSON, not the CDK construct surface, so they survive ASL serialization
+   changes that don't affect the contract.
+
+### Example Anti-Pattern
+
+```typescript
+// ❌ Topology-only assertion (PR #176's gap)
+expect(failureBranch.Next).toMatch(/UpdateJobFailed/);
+```
+
+### Example Fix
+
+```typescript
+// ✅ Contract assertion: the failure branch MUST go through a normalizer
+//    that synthesizes $.error before reaching UpdateJobFailed.
+expect(failureBranch.Next).toMatch(/NormalizeFailureContext/);
+
+const normState = states['NormalizeFailureContext'];
+expect(normState.ResultPath).toBe('$.error');
+expect(normState.Parameters['reason']).toBe('CHUNK_FAILURE');
+expect(normState.Next).toMatch(/UpdateJobFailed/);
+
+// AND the OTHER entry path (Map Catch) sets $.error directly:
+expect(catchAll.Next).toMatch(/UpdateJobFailed/);
+expect(catchAll.ResultPath).toBe('$.error');
+```
+
+See `backend/infrastructure/lib/__tests__/infrastructure.test.ts` —
+"Choice failure branch routes through NormalizeFailureContext before
+UpdateJobFailed — Bug B regression" for the canonical example in this
+codebase.
+
+### When This Rule Applies
+
+- Step Functions tasks that have multiple `.next()` predecessors
+- Step Functions tasks reached via both a Choice rule AND a Catch handler
+- Lambdas invoked from multiple Step Functions tasks
+- Lambdas invoked from both Step Functions AND API Gateway
+
+---
+
 ## Additional Resources
 
 - [AWS CDK Best Practices](https://docs.aws.amazon.com/cdk/v2/guide/best-practices.html)
