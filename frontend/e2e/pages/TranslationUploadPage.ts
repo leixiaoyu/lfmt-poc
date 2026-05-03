@@ -16,6 +16,7 @@
 
 import { Page, expect } from '@playwright/test';
 import { BasePage } from './BasePage';
+import { LEGAL_ATTESTATION_LABEL_PATTERNS as L } from '../../src/components/Translation/legalAttestationLabels';
 
 export class TranslationUploadPage extends BasePage {
   // Locators
@@ -64,7 +65,14 @@ export class TranslationUploadPage extends BasePage {
   }
 
   /**
-   * Complete legal attestation step
+   * Complete legal attestation step using CSS `[name]` attribute selectors.
+   *
+   * The `[name="acceptCopyrightOwnership"]` etc. selectors target the HTML
+   * `name` attribute on the underlying `<input>` element — not the accessible
+   * name — so they remain correct and do not need to match the label text.
+   * For role-based (accessible-name) selection see `completeLegalAttestationByRole`.
+   *
+   * @see completeLegalAttestationByRole
    */
   async completeLegalAttestation() {
     await this.clickElement(this.copyrightCheckbox);
@@ -154,24 +162,26 @@ export class TranslationUploadPage extends BasePage {
 
   /**
    * Tick the three required attestation checkboxes and advance to the
-   * Translation Settings step. Returns when the target-language control
-   * is visible (handshake that step 1 has rendered).
+   * Translation Settings step using role-based accessible-name locators.
+   * Returns when the target-language control is visible (handshake that
+   * step 1 has rendered).
    *
-   * Accessible names are computed from the <FormControlLabel> label text
-   * rendered by LegalAttestation.tsx — verified against the unit tests in
-   * frontend/src/components/Translation/__tests__/LegalAttestation.test.tsx.
-   * The previous patterns (/copyright ownership/, /translation rights/,
-   * /liability/) did not appear anywhere in the rendered label strings,
-   * causing locator.check to wait the full 180 s timeout on every run.
+   * Patterns are imported from `legalAttestationLabels.ts` — the single
+   * source of truth for accessible-name substrings — so a label change in
+   * `LegalAttestation.tsx` surfaces as a test failure here rather than a
+   * silent 180 s timeout (see PR #189 for background).
+   *
+   * This method drives the same DOM as `completeLegalAttestation()`, which
+   * uses `[name="..."]` attribute selectors instead of accessible names.
+   * Both are correct; the `[name]` selectors target the HTML attribute on
+   * the `<input>`, not the label text, so they do not need label patterns.
+   *
+   * @see completeLegalAttestation
    */
   async completeLegalAttestationByRole(timeout = 10000) {
-    await this.page.getByRole('checkbox', { name: /I confirm that I own the copyright/i }).check();
-    await this.page
-      .getByRole('checkbox', { name: /I confirm that I have the right to create derivative works/i })
-      .check();
-    await this.page
-      .getByRole('checkbox', { name: /I understand that I am solely responsible/i })
-      .check();
+    await this.page.getByRole('checkbox', { name: L.copyright }).check();
+    await this.page.getByRole('checkbox', { name: L.translationRights }).check();
+    await this.page.getByRole('checkbox', { name: L.liability }).check();
 
     await this.page.getByRole('button', { name: /next/i }).click();
     await expect(this.page.getByLabel(/target.*language/i)).toBeVisible({ timeout });

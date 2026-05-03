@@ -12,6 +12,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { render, screen, waitFor } from '../../../test-utils';
 import userEvent from '@testing-library/user-event';
 import { LegalAttestation, LegalAttestationData } from '../LegalAttestation';
+import { LEGAL_ATTESTATION_LABEL_PATTERNS as L } from '../legalAttestationLabels';
 
 describe('LegalAttestation Component', () => {
   const defaultValue: LegalAttestationData = {
@@ -45,12 +46,12 @@ describe('LegalAttestation Component', () => {
       expect(checkboxes).toHaveLength(3);
 
       // Verify specific checkboxes by their labels
-      expect(screen.getByLabelText(/I confirm that I own the copyright/i)).toBeInTheDocument();
+      expect(screen.getByLabelText(L.copyright)).toBeInTheDocument();
       expect(
-        screen.getByLabelText(/I confirm that I have the right to create derivative works/i)
+        screen.getByLabelText(L.translationRights)
       ).toBeInTheDocument();
       expect(
-        screen.getByLabelText(/I understand that I am solely responsible/i)
+        screen.getByLabelText(L.liability)
       ).toBeInTheDocument();
     });
 
@@ -121,7 +122,7 @@ describe('LegalAttestation Component', () => {
       const mockOnChange = vi.fn();
       render(<LegalAttestation {...createProps({ onChange: mockOnChange })} />);
 
-      const checkbox = screen.getByLabelText(/I confirm that I own the copyright/i);
+      const checkbox = screen.getByLabelText(L.copyright);
 
       // Act
       await user.click(checkbox);
@@ -142,7 +143,7 @@ describe('LegalAttestation Component', () => {
       render(<LegalAttestation {...createProps({ onChange: mockOnChange })} />);
 
       const checkbox = screen.getByLabelText(
-        /I confirm that I have the right to create derivative works/i
+        L.translationRights
       );
 
       // Act
@@ -163,7 +164,7 @@ describe('LegalAttestation Component', () => {
       const mockOnChange = vi.fn();
       render(<LegalAttestation {...createProps({ onChange: mockOnChange })} />);
 
-      const checkbox = screen.getByLabelText(/I understand that I am solely responsible/i);
+      const checkbox = screen.getByLabelText(L.liability);
 
       // Act
       await user.click(checkbox);
@@ -191,7 +192,7 @@ describe('LegalAttestation Component', () => {
         <LegalAttestation {...createProps({ value: checkedValue, onChange: mockOnChange })} />
       );
 
-      const checkbox = screen.getByLabelText(/I confirm that I own the copyright/i);
+      const checkbox = screen.getByLabelText(L.copyright);
 
       // Act
       await user.click(checkbox);
@@ -406,7 +407,7 @@ describe('LegalAttestation Component', () => {
       render(<LegalAttestation {...createProps()} />);
 
       // Assert
-      const checkbox = screen.getByLabelText(/I confirm that I own the copyright/i);
+      const checkbox = screen.getByLabelText(L.copyright);
       expect(checkbox).toHaveAttribute('name', 'acceptCopyrightOwnership');
     });
 
@@ -416,7 +417,7 @@ describe('LegalAttestation Component', () => {
 
       // Assert
       const checkbox = screen.getByLabelText(
-        /I confirm that I have the right to create derivative works/i
+        L.translationRights
       );
       expect(checkbox).toHaveAttribute('name', 'acceptTranslationRights');
     });
@@ -426,7 +427,7 @@ describe('LegalAttestation Component', () => {
       render(<LegalAttestation {...createProps()} />);
 
       // Assert
-      const checkbox = screen.getByLabelText(/I understand that I am solely responsible/i);
+      const checkbox = screen.getByLabelText(L.liability);
       expect(checkbox).toHaveAttribute('name', 'acceptLiabilityTerms');
     });
   });
@@ -439,11 +440,11 @@ describe('LegalAttestation Component', () => {
       render(<LegalAttestation {...createProps({ onChange: mockOnChange })} />);
 
       // Act - Check all boxes
-      await user.click(screen.getByLabelText(/I confirm that I own the copyright/i));
+      await user.click(screen.getByLabelText(L.copyright));
       await user.click(
-        screen.getByLabelText(/I confirm that I have the right to create derivative works/i)
+        screen.getByLabelText(L.translationRights)
       );
-      await user.click(screen.getByLabelText(/I understand that I am solely responsible/i));
+      await user.click(screen.getByLabelText(L.liability));
 
       // Assert
       expect(mockOnChange).toHaveBeenCalledTimes(3);
@@ -481,9 +482,53 @@ describe('LegalAttestation Component', () => {
 
       // Assert - Checkbox state should remain
       const checkbox = screen.getByLabelText(
-        /I confirm that I own the copyright/i
+        L.copyright
       ) as HTMLInputElement;
       expect(checkbox.checked).toBe(true);
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // Label contract tests
+  //
+  // These tests are the safety net that would have caught the original
+  // production smoke timeout (PR #189) at unit-test speed.  They assert
+  // that each pattern in LEGAL_ATTESTATION_LABEL_PATTERNS resolves to
+  // exactly one visible checkbox, keeping the patterns and the rendered
+  // labels in sync.  If a label changes in LegalAttestation.tsx these
+  // tests fail immediately (milliseconds) rather than after a 180 s
+  // production smoke timeout.
+  // -----------------------------------------------------------------------
+  describe('label contract', () => {
+    it('renders exactly one checkbox matching the copyright pattern', () => {
+      render(<LegalAttestation {...createProps()} />);
+
+      const matches = screen.getAllByRole('checkbox').filter((el) =>
+        L.copyright.test(el.getAttribute('aria-label') ?? el.closest('label')?.textContent ?? '')
+      );
+      // If this assertion fails, update legalAttestationLabels.ts to match
+      // the new label text in LegalAttestation.tsx.
+      expect(matches).toHaveLength(1);
+    });
+
+    it('renders exactly one checkbox matching the translationRights pattern', () => {
+      render(<LegalAttestation {...createProps()} />);
+
+      const matches = screen.getAllByRole('checkbox').filter((el) =>
+        L.translationRights.test(
+          el.getAttribute('aria-label') ?? el.closest('label')?.textContent ?? ''
+        )
+      );
+      expect(matches).toHaveLength(1);
+    });
+
+    it('renders exactly one checkbox matching the liability pattern', () => {
+      render(<LegalAttestation {...createProps()} />);
+
+      const matches = screen.getAllByRole('checkbox').filter((el) =>
+        L.liability.test(el.getAttribute('aria-label') ?? el.closest('label')?.textContent ?? '')
+      );
+      expect(matches).toHaveLength(1);
     });
   });
 });

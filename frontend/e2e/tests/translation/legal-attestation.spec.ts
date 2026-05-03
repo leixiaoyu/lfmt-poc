@@ -15,6 +15,7 @@ import { DashboardPage } from '../../pages/DashboardPage';
 import { TranslationUploadPage } from '../../pages/TranslationUploadPage';
 import { generateTestUser } from '../../fixtures/auth';
 import { TEST_DOCUMENTS } from '../../fixtures/test-documents';
+import { LEGAL_ATTESTATION_LABEL_PATTERNS as L } from '../../src/components/Translation/legalAttestationLabels';
 import * as fs from 'fs';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
@@ -83,10 +84,10 @@ test.describe('Legal Attestation Enforcement', () => {
     await expect(rightsCheckbox).toBeVisible();
     await expect(liabilityCheckbox).toBeVisible();
 
-    // Verify labels are descriptive
-    await expect(page.locator('text=/copyright ownership/i')).toBeVisible();
-    await expect(page.locator('text=/translation rights/i')).toBeVisible();
-    await expect(page.locator('text=/liability/i')).toBeVisible();
+    // Verify labels are descriptive — patterns sourced from legalAttestationLabels.ts
+    await expect(page.getByRole('checkbox', { name: L.copyright })).toBeVisible();
+    await expect(page.getByRole('checkbox', { name: L.translationRights })).toBeVisible();
+    await expect(page.getByRole('checkbox', { name: L.liability })).toBeVisible();
   });
 
   test('should have all checkboxes unchecked by default', async ({ page }) => {
@@ -312,11 +313,11 @@ test.describe('Legal Attestation Enforcement', () => {
   });
 
   test('should display legal text with important terms highlighted', async ({ page }) => {
-    // Verify key legal terms are visible
-    await expect(page.locator('text=/I certify that I am the copyright owner/i')).toBeVisible();
-    await expect(
-      page.locator('text=/I have the legal right to create translations/i')
-    ).toBeVisible();
-    await expect(page.locator('text=/I accept full liability/i')).toBeVisible();
+    // Verify the actual rendered label text is visible for each checkbox.
+    // Patterns come from legalAttestationLabels.ts (the single source of truth)
+    // so a label change in LegalAttestation.tsx surfaces here immediately.
+    await expect(page.getByRole('checkbox', { name: L.copyright })).toBeVisible();
+    await expect(page.getByRole('checkbox', { name: L.translationRights })).toBeVisible();
+    await expect(page.getByRole('checkbox', { name: L.liability })).toBeVisible();
   });
 });

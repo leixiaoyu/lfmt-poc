@@ -19,6 +19,7 @@ import '@testing-library/jest-dom';
 import { BrowserRouter } from 'react-router-dom';
 import { TranslationUpload } from '../TranslationUpload';
 import { translationService } from '../../services/translationService';
+import { LEGAL_ATTESTATION_LABEL_PATTERNS as L } from '../../components/Translation/legalAttestationLabels';
 
 // Mock react-router-dom's useNavigate
 const mockNavigate = vi.fn();
@@ -88,7 +89,7 @@ describe('TranslationUpload', () => {
       renderComponent();
 
       // Legal attestation checkboxes should be visible
-      expect(screen.getByLabelText(/I confirm that I own the copyright/i)).toBeInTheDocument();
+      expect(screen.getByLabelText(L.copyright)).toBeInTheDocument();
     });
 
     it('should show Back button disabled on first step', () => {
@@ -131,7 +132,7 @@ describe('TranslationUpload', () => {
 
       // Should still be on step 0
       await waitFor(() => {
-        expect(screen.getByLabelText(/I confirm that I own the copyright/i)).toBeInTheDocument();
+        expect(screen.getByLabelText(L.copyright)).toBeInTheDocument();
       });
     });
 
@@ -140,11 +141,11 @@ describe('TranslationUpload', () => {
       renderComponent();
 
       // Check all three checkboxes
-      const copyrightCheckbox = screen.getByLabelText(/I confirm that I own the copyright/i);
+      const copyrightCheckbox = screen.getByLabelText(L.copyright);
       const translationRightsCheckbox = screen.getByLabelText(
-        /I confirm that I have the right to create derivative works/i
+        L.translationRights
       );
-      const liabilityCheckbox = screen.getByLabelText(/I understand that I am solely responsible/i);
+      const liabilityCheckbox = screen.getByLabelText(L.liability);
 
       await user.click(copyrightCheckbox);
       await user.click(translationRightsCheckbox);
@@ -163,11 +164,11 @@ describe('TranslationUpload', () => {
 
   describe('Step 2: Translation Settings Validation', () => {
     const advanceToStep2 = async (user: ReturnType<typeof userEvent.setup>) => {
-      const copyrightCheckbox = screen.getByLabelText(/I confirm that I own the copyright/i);
+      const copyrightCheckbox = screen.getByLabelText(L.copyright);
       const translationRightsCheckbox = screen.getByLabelText(
-        /I confirm that I have the right to create derivative works/i
+        L.translationRights
       );
-      const liabilityCheckbox = screen.getByLabelText(/I understand that I am solely responsible/i);
+      const liabilityCheckbox = screen.getByLabelText(L.liability);
 
       await user.click(copyrightCheckbox);
       await user.click(translationRightsCheckbox);
@@ -230,7 +231,7 @@ describe('TranslationUpload', () => {
       await user.click(backButton);
 
       await waitFor(() => {
-        expect(screen.getByLabelText(/I confirm that I own the copyright/i)).toBeInTheDocument();
+        expect(screen.getByLabelText(L.copyright)).toBeInTheDocument();
       });
     });
   });
@@ -238,11 +239,11 @@ describe('TranslationUpload', () => {
   describe('Step 3: File Upload Validation', () => {
     const advanceToStep3 = async (user: ReturnType<typeof userEvent.setup>) => {
       // Step 1: Legal attestation
-      const copyrightCheckbox = screen.getByLabelText(/I confirm that I own the copyright/i);
+      const copyrightCheckbox = screen.getByLabelText(L.copyright);
       const translationRightsCheckbox = screen.getByLabelText(
-        /I confirm that I have the right to create derivative works/i
+        L.translationRights
       );
-      const liabilityCheckbox = screen.getByLabelText(/I understand that I am solely responsible/i);
+      const liabilityCheckbox = screen.getByLabelText(L.liability);
 
       await user.click(copyrightCheckbox);
       await user.click(translationRightsCheckbox);
@@ -311,11 +312,11 @@ describe('TranslationUpload', () => {
   describe('Step 4: Review & Submit', () => {
     const advanceToStep4 = async (user: ReturnType<typeof userEvent.setup>) => {
       // Step 1: Legal attestation
-      await user.click(screen.getByLabelText(/I confirm that I own the copyright/i));
+      await user.click(screen.getByLabelText(L.copyright));
       await user.click(
-        screen.getByLabelText(/I confirm that I have the right to create derivative works/i)
+        screen.getByLabelText(L.translationRights)
       );
-      await user.click(screen.getByLabelText(/I understand that I am solely responsible/i));
+      await user.click(screen.getByLabelText(L.liability));
       await user.click(screen.getByRole('button', { name: /next/i }));
 
       await waitFor(() => {
@@ -534,11 +535,11 @@ describe('TranslationUpload', () => {
       renderComponent();
 
       // Step 1: Check legal attestation
-      await user.click(screen.getByLabelText(/I confirm that I own the copyright/i));
+      await user.click(screen.getByLabelText(L.copyright));
       await user.click(
-        screen.getByLabelText(/I confirm that I have the right to create derivative works/i)
+        screen.getByLabelText(L.translationRights)
       );
-      await user.click(screen.getByLabelText(/I understand that I am solely responsible/i));
+      await user.click(screen.getByLabelText(L.liability));
       await user.click(screen.getByRole('button', { name: /next/i }));
 
       await waitFor(() => {
@@ -550,7 +551,7 @@ describe('TranslationUpload', () => {
 
       await waitFor(() => {
         const copyrightCheckbox = screen.getByLabelText(
-          /I confirm that I own the copyright/i
+          L.copyright
         ) as HTMLInputElement;
         expect(copyrightCheckbox.checked).toBe(true);
       });
@@ -561,11 +562,11 @@ describe('TranslationUpload', () => {
       renderComponent();
 
       // Navigate to step 2
-      await user.click(screen.getByLabelText(/I confirm that I own the copyright/i));
+      await user.click(screen.getByLabelText(L.copyright));
       await user.click(
-        screen.getByLabelText(/I confirm that I have the right to create derivative works/i)
+        screen.getByLabelText(L.translationRights)
       );
-      await user.click(screen.getByLabelText(/I understand that I am solely responsible/i));
+      await user.click(screen.getByLabelText(L.liability));
       await user.click(screen.getByRole('button', { name: /next/i }));
 
       await waitFor(() => {
@@ -599,12 +600,12 @@ describe('TranslationUpload', () => {
       renderComponent();
 
       // LegalAttestation checkboxes should be rendered
-      expect(screen.getByLabelText(/I confirm that I own the copyright/i)).toBeInTheDocument();
+      expect(screen.getByLabelText(L.copyright)).toBeInTheDocument();
       expect(
-        screen.getByLabelText(/I confirm that I have the right to create derivative works/i)
+        screen.getByLabelText(L.translationRights)
       ).toBeInTheDocument();
       expect(
-        screen.getByLabelText(/I understand that I am solely responsible/i)
+        screen.getByLabelText(L.liability)
       ).toBeInTheDocument();
     });
 
@@ -613,11 +614,11 @@ describe('TranslationUpload', () => {
       renderComponent();
 
       // Navigate to step 2
-      await user.click(screen.getByLabelText(/I confirm that I own the copyright/i));
+      await user.click(screen.getByLabelText(L.copyright));
       await user.click(
-        screen.getByLabelText(/I confirm that I have the right to create derivative works/i)
+        screen.getByLabelText(L.translationRights)
       );
-      await user.click(screen.getByLabelText(/I understand that I am solely responsible/i));
+      await user.click(screen.getByLabelText(L.liability));
       await user.click(screen.getByRole('button', { name: /next/i }));
 
       await waitFor(() => {
@@ -631,11 +632,11 @@ describe('TranslationUpload', () => {
       renderComponent();
 
       // Navigate to step 3
-      await user.click(screen.getByLabelText(/I confirm that I own the copyright/i));
+      await user.click(screen.getByLabelText(L.copyright));
       await user.click(
-        screen.getByLabelText(/I confirm that I have the right to create derivative works/i)
+        screen.getByLabelText(L.translationRights)
       );
-      await user.click(screen.getByLabelText(/I understand that I am solely responsible/i));
+      await user.click(screen.getByLabelText(L.liability));
       await user.click(screen.getByRole('button', { name: /next/i }));
 
       await waitFor(() => {
