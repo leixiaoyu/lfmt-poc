@@ -25,6 +25,7 @@ import {
   type TranslationConfigData,
   type TranslationConfigProps,
 } from '../TranslationConfig';
+import { TRANSLATION_CONFIG_LABEL_PATTERNS as TC } from '../translationConfigLabels';
 
 describe('TranslationConfig', () => {
   // Default props for testing
@@ -549,6 +550,27 @@ describe('TranslationConfig', () => {
         targetLanguage: '',
         tone: '',
       });
+    });
+  });
+
+  describe('Label contract — E2E page-object selector parity', () => {
+    // These tests mount the real component and assert that the labels in the
+    // DOM match the regex patterns imported from translationConfigLabels.ts.
+    // If a label is renamed in TranslationConfig.tsx without updating
+    // translationConfigLabels.ts (or vice-versa), this test fails at
+    // Vitest speed rather than after a 180 s production-smoke timeout.
+    //
+    // Background: PR #192 fixed configureLanguagesByRole() which never
+    // selected a tone, causing validateStep(1) to block wizard advancement.
+    // The root cause was label/selector drift that went undetected until CI.
+    it('targetLanguage pattern matches the rendered Target Language label', () => {
+      render(<TranslationConfig {...defaultProps} />);
+      expect(screen.getByLabelText(TC.targetLanguage)).toBeInTheDocument();
+    });
+
+    it('tone pattern matches the rendered Translation Tone label', () => {
+      render(<TranslationConfig {...defaultProps} />);
+      expect(screen.getByLabelText(TC.tone)).toBeInTheDocument();
     });
   });
 });

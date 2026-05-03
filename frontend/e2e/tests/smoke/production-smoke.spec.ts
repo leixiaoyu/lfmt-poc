@@ -181,7 +181,7 @@ test.describe('Production Smoke Tests @smoke', () => {
 
     // Step 3b: Configure translation settings (wizard step 1)
     await test.step('User can configure translation settings', async () => {
-      await uploadPage.configureLanguagesByRole();
+      await uploadPage.configureTranslationSettingsByRole();
     });
 
     // Step 3c: Upload document (wizard step 2)

@@ -17,6 +17,7 @@
 import { Page, expect } from '@playwright/test';
 import { BasePage } from './BasePage';
 import { LEGAL_ATTESTATION_LABEL_PATTERNS as L } from '../../src/components/Translation/legalAttestationLabels';
+import { TRANSLATION_CONFIG_LABEL_PATTERNS as TC } from '../../src/components/Translation/translationConfigLabels';
 
 export class TranslationUploadPage extends BasePage {
   // Locators
@@ -188,24 +189,34 @@ export class TranslationUploadPage extends BasePage {
   }
 
   /**
-   * Configure source (defaults to English when present) + target language,
-   * then advance to the Upload Document step. Returns when the file input
-   * is attached to the DOM (the input has display:none — `toBeAttached` is
-   * the correct gate, not `toBeVisible`).
+   * Configure target language and translation tone on wizard step 1
+   * (Translation Settings), then advance to the Upload Document step.
+   * Returns when the file input is attached to the DOM (the input has
+   * display:none — `toBeAttached` is the correct gate, not `toBeVisible`).
+   *
+   * Root-cause note (PR #192): the previous helper (`configureLanguagesByRole`)
+   * only selected the target language but never selected the tone.
+   * `validateStep(1)` in TranslationUpload.tsx requires BOTH
+   * `targetLanguage` AND `tone` to be non-empty before advancing, so
+   * clicking Next did nothing and `input[type="file"]` never mounted.
+   *
+   * Selectors are driven by `TRANSLATION_CONFIG_LABEL_PATTERNS` — the
+   * single source of truth for MUI InputLabel accessible names — so a
+   * label change in TranslationConfig.tsx will fail the Vitest contract
+   * test in `TranslationConfig.test.tsx` before reaching this helper.
    */
-  async configureLanguagesByRole(
+  async configureTranslationSettingsByRole(
     targetLanguagePattern: RegExp = /spanish|español/i,
+    tonePattern: RegExp = /neutral/i,
     timeout = 10000
   ) {
-    const sourceLanguage = this.page.getByLabel(/source.*language/i);
-    if (await sourceLanguage.isVisible()) {
-      await sourceLanguage.click();
-      await this.page.getByRole('option', { name: /english/i }).click();
-    }
-
-    const targetLanguage = this.page.getByLabel(/target.*language/i);
+    const targetLanguage = this.page.getByLabel(TC.targetLanguage);
     await targetLanguage.click();
     await this.page.getByRole('option', { name: targetLanguagePattern }).click();
+
+    const tone = this.page.getByLabel(TC.tone);
+    await tone.click();
+    await this.page.getByRole('option', { name: tonePattern }).click();
 
     await this.page.getByRole('button', { name: /next/i }).click();
     await expect(this.page.locator('input[type="file"]')).toBeAttached({ timeout });
