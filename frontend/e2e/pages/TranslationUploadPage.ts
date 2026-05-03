@@ -7,11 +7,34 @@
  *   Step 0: Legal Attestation  → Step 1: Translation Settings
  *   Step 2: Upload Document    → Step 3: Review & Submit
  *
- * Both `completeUploadWorkflow()` (single-call convenience) and the
- * `*ByRole()` granular helpers below drive the same DOM. The granular
- * helpers exist because the production smoke test wraps each wizard
- * step in a `test.step()` block for diagnostic tracing — see
- * `frontend/e2e/tests/smoke/production-smoke.spec.ts`.
+ * ## Canonical selector strategy
+ *
+ * All wizard-step helpers use **role + label-pattern selectors** backed by
+ * `*Labels.ts` single-source-of-truth modules and Vitest contract tests.
+ * This ensures that a label change in a component surfaces as a fast
+ * Vitest failure rather than a silent 180 s production-smoke timeout
+ * (see PRs #189, #192 for background).
+ *
+ * - `LEGAL_ATTESTATION_LABEL_PATTERNS` → `legalAttestationLabels.ts`
+ * - `TRANSLATION_CONFIG_LABEL_PATTERNS` → `translationConfigLabels.ts`
+ *
+ * ## Backward-compat wrappers
+ *
+ * `completeLegalAttestation()` and `completeTranslationConfig()` are
+ * kept for existing spec-file call sites.  Both are thin wrappers that
+ * delegate to the role-based implementation:
+ *
+ * - `completeLegalAttestation()` — CSS `[name]` attribute selectors
+ *   target the HTML `name` on `<input>`, not label text, so they cannot
+ *   drift from label changes and do not need to be role-based. Kept as-is.
+ * - `completeTranslationConfig(language, tone)` — previously used CSS-id
+ *   selectors (`#target-language`, `#tone`).  Now delegates to the shared
+ *   private `selectTranslationSettingDropdowns()` so that both helpers
+ *   drive a single code path.  New call sites should use
+ *   `configureTranslationSettingsByRole()` directly.
+ *
+ * `completeUploadWorkflow()` is a single-call convenience for specs that
+ * do not need per-step `test.step()` tracing.
  */
 
 import { Page, expect } from '@playwright/test';
@@ -31,13 +54,8 @@ export class TranslationUploadPage extends BasePage {
   private readonly translationRightsCheckbox = '[name="acceptTranslationRights"]';
   private readonly liabilityCheckbox = '[name="acceptLiabilityTerms"]';
 
-  // Translation Config Step
-  private readonly languageSelect = '#target-language';
-  private readonly toneSelect = '#tone';
-
   // File Upload Step
   private readonly fileInput = 'input[type="file"]';
-  private readonly browseButton = 'button:has-text("Browse Files")';
 
   constructor(page: Page) {
     super(page);
@@ -70,7 +88,8 @@ export class TranslationUploadPage extends BasePage {
    *
    * The `[name="acceptCopyrightOwnership"]` etc. selectors target the HTML
    * `name` attribute on the underlying `<input>` element — not the accessible
-   * name — so they remain correct and do not need to match the label text.
+   * name — so they are immune to label-text changes and do not need to be
+   * backed by a label-pattern module.
    * For role-based (accessible-name) selection see `completeLegalAttestationByRole`.
    *
    * @see completeLegalAttestationByRole
@@ -82,14 +101,34 @@ export class TranslationUploadPage extends BasePage {
   }
 
   /**
-   * Complete translation config step
+   * Complete translation config step (backward-compat wrapper).
+   *
+   * Accepts string option values (e.g. `'es'`, `'neutral'`) and delegates
+   * to `selectTranslationSettingDropdowns()` — the shared role-based
+   * implementation — so both this wrapper and `configureTranslationSettingsByRole`
+   * drive exactly one code path.
+   *
+   * Pass `tone = ''` to select only the language and leave the tone dropdown
+   * unset; this is useful when testing that validation blocks Next when tone
+   * is missing (see `multi-language.spec.ts`).
+   *
+   * New call sites should prefer `configureTranslationSettingsByRole()` which
+   * accepts regex patterns directly and also advances the wizard.
+   *
+   * @param language - Option value string (e.g. `'es'`, `'fr'`). Used to
+   *   build a case-insensitive regex matched against the MUI MenuItem text.
+   * @param tone - Option value string (e.g. `'neutral'`), or `''` to skip
+   *   tone selection.
    */
   async completeTranslationConfig(language: string, tone: string) {
-    await this.page.locator(this.languageSelect).click();
-    await this.page.locator(`li[data-value="${language}"]`).click();
-
-    await this.page.locator(this.toneSelect).click();
-    await this.page.locator(`li[data-value="${tone}"]`).click();
+    // Build a regex from the value string. MUI renders the value as part
+    // of the MenuItem text (e.g. value='es' → "Spanish (Español)"), so a
+    // plain value-based regex won't match. We map known values to their
+    // label substrings. Unmapped values fall back to the raw value string,
+    // which will cause a timeout if it doesn't appear in the option text.
+    const languagePattern = languageValueToPattern(language);
+    const tonePattern = tone ? toneValueToPattern(tone) : null;
+    await this.selectTranslationSettingDropdowns(languagePattern, tonePattern);
   }
 
   /**
@@ -185,7 +224,7 @@ export class TranslationUploadPage extends BasePage {
     await this.page.getByRole('checkbox', { name: L.liability }).check();
 
     await this.page.getByRole('button', { name: /next/i }).click();
-    await expect(this.page.getByLabel(/target.*language/i)).toBeVisible({ timeout });
+    await expect(this.page.getByLabel(TC.targetLanguage)).toBeVisible({ timeout });
   }
 
   /**
@@ -193,6 +232,10 @@ export class TranslationUploadPage extends BasePage {
    * (Translation Settings), then advance to the Upload Document step.
    * Returns when the file input is attached to the DOM (the input has
    * display:none — `toBeAttached` is the correct gate, not `toBeVisible`).
+   *
+   * Delegates dropdown selection to `selectTranslationSettingDropdowns()` —
+   * the same code path used by `completeTranslationConfig()` — so there is
+   * exactly one implementation for selecting the step-1 dropdowns.
    *
    * Root-cause note (PR #192): the previous helper (`configureLanguagesByRole`)
    * only selected the target language but never selected the tone.
@@ -204,19 +247,31 @@ export class TranslationUploadPage extends BasePage {
    * single source of truth for MUI InputLabel accessible names — so a
    * label change in TranslationConfig.tsx will fail the Vitest contract
    * test in `TranslationConfig.test.tsx` before reaching this helper.
+   *
+   * @param targetLanguagePattern - Regex matched against the MUI MenuItem
+   *   accessible name for the target language. Defaults to
+   *   `/spanish|español/i` (the standard smoke-test language).  Must
+   *   correspond to an actual rendered option; a non-matching regex will
+   *   cause `getByRole('option')` to time out.
+   *
+   * @param tonePattern - Regex matched against the MUI MenuItem accessible
+   *   name for the translation tone. Defaults to `/neutral/i` ("Neutral"
+   *   tone) because Neutral is the safest choice for automated testing —
+   *   it satisfies `validateStep(1)`'s non-empty requirement without
+   *   implying a formal or informal register in smoke-test output. Must
+   *   correspond to an actual rendered option; a non-matching regex will
+   *   cause `getByRole('option')` to time out.
+   *
+   * @param timeout - Maximum milliseconds to wait for `input[type="file"]`
+   *   to be attached after clicking Next. Default is 10 000 ms; increase
+   *   for slow networks or cold-start environments.
    */
   async configureTranslationSettingsByRole(
     targetLanguagePattern: RegExp = /spanish|español/i,
     tonePattern: RegExp = /neutral/i,
     timeout = 10000
   ) {
-    const targetLanguage = this.page.getByLabel(TC.targetLanguage);
-    await targetLanguage.click();
-    await this.page.getByRole('option', { name: targetLanguagePattern }).click();
-
-    const tone = this.page.getByLabel(TC.tone);
-    await tone.click();
-    await this.page.getByRole('option', { name: tonePattern }).click();
+    await this.selectTranslationSettingDropdowns(targetLanguagePattern, tonePattern);
 
     await this.page.getByRole('button', { name: /next/i }).click();
     await expect(this.page.locator('input[type="file"]')).toBeAttached({ timeout });
@@ -258,4 +313,74 @@ export class TranslationUploadPage extends BasePage {
     });
     await translateButton.click();
   }
+
+  // ---------------------------------------------------------------------
+  // Private helpers
+  // ---------------------------------------------------------------------
+
+  /**
+   * Select dropdowns for wizard step 1 (Translation Settings) using
+   * role-based accessible-name locators backed by `TRANSLATION_CONFIG_LABEL_PATTERNS`.
+   *
+   * This is the single implementation shared by both
+   * `completeTranslationConfig()` (backward-compat, value-string API) and
+   * `configureTranslationSettingsByRole()` (canonical, regex API). Callers
+   * are responsible for clicking Next afterward.
+   *
+   * @param targetLanguagePattern - Regex matched against the MUI MenuItem
+   *   accessible name. Must match an actual rendered option.
+   * @param tonePattern - Regex matched against the tone MenuItem accessible
+   *   name, or `null` to skip tone selection (used when testing that the
+   *   tone-required validation error fires).
+   */
+  private async selectTranslationSettingDropdowns(
+    targetLanguagePattern: RegExp,
+    tonePattern: RegExp | null
+  ) {
+    await this.page.getByLabel(TC.targetLanguage).click();
+    await this.page.getByRole('option', { name: targetLanguagePattern }).click();
+
+    if (tonePattern !== null) {
+      await this.page.getByLabel(TC.tone).click();
+      await this.page.getByRole('option', { name: tonePattern }).click();
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Value-to-pattern helpers (module-level, not exported)
+//
+// MUI Select stores the raw option value (e.g. 'es') but renders the
+// MenuItem text (e.g. 'Spanish (Español)'). `getByRole('option', { name })`
+// matches the rendered text, so we map value → label substring.
+// ---------------------------------------------------------------------------
+
+/**
+ * Map a LANGUAGE_OPTIONS value string to a case-insensitive regex that
+ * matches the corresponding MUI MenuItem rendered text.
+ * Unknown values fall back to a regex on the raw value string.
+ */
+function languageValueToPattern(value: string): RegExp {
+  const map: Record<string, RegExp> = {
+    es: /Spanish.*Español/i,
+    fr: /French.*Français/i,
+    de: /German.*Deutsch/i,
+    it: /Italian.*Italiano/i,
+    zh: /Chinese.*中文/i,
+  };
+  return map[value] ?? new RegExp(value, 'i');
+}
+
+/**
+ * Map a TONE_OPTIONS value string to a case-insensitive regex that
+ * matches the corresponding MUI MenuItem rendered text.
+ * Unknown values fall back to a regex on the raw value string.
+ */
+function toneValueToPattern(value: string): RegExp {
+  const map: Record<string, RegExp> = {
+    formal: /formal/i,
+    neutral: /neutral/i,
+    informal: /informal/i,
+  };
+  return map[value] ?? new RegExp(value, 'i');
 }
