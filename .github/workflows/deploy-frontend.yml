@@ -1,0 +1,578 @@
+name: Deploy LFMT Frontend
+
+# Frontend deployment pipeline (Issue #157 split):
+#
+# This workflow handles the FRONTEND half of what used to be the monolithic
+# deploy.yml. It triggers on frontend or shared-types changes and runs a
+# fast S3-sync + CloudFront-invalidation flow WITHOUT executing `cdk deploy`.
+# The backend half lives in `.github/workflows/deploy-backend.yml`.
+#
+# Why the split? Pre-split, every frontend-only commit (CSS tweak, copy
+# change) ran the full ~15-20 min backend pipeline including a noop CDK
+# deploy and backend integration tests against an unchanged API. After the
+# split, frontend commits run only this pipeline (~5-7 min) and backend
+# commits run only deploy-backend.yml. shared-types/** triggers BOTH, since
+# both halves depend on the shared types package.
+#
+# Critical contract: this workflow does NOT run `cdk deploy`. It reads the
+# already-deployed API URL and frontend bucket name from CloudFormation
+# outputs (set by the most recent backend deploy) and pushes a freshly-built
+# bundle. If a backend change is required, the developer must merge a
+# backend commit (which triggers deploy-backend.yml) — that workflow handles
+# both backend infra AND a fresh frontend rebuild against the new API URL.
+#
+# See `docs/CI-CD-ARCHITECTURE.md` for the full rationale and operational
+# coordination requirements (branch-protection rule names, parity checks).
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'frontend/**'
+      - 'shared-types/**'
+      - '.github/workflows/deploy-frontend.yml'
+  workflow_dispatch:
+    inputs:
+      environment:
+        # NOTE: default is 'dev' — running `gh workflow run deploy-frontend.yml --ref main`
+        # with no `-f environment=...` flag triggers a real frontend deploy
+        # to LfmtPocDev (S3 sync + CloudFront invalidation, no CDK).
+        description: 'Environment to deploy (dev triggers a real frontend deploy to LfmtPocDev)'
+        required: true
+        default: 'dev'
+        type: choice
+        options:
+          - dev
+          - staging
+          - prod
+
+env:
+  AWS_REGION: us-east-1
+  NODE_VERSION: '20'
+
+# Concurrency group (OMC perf + architect review, PR #185 follow-up):
+#
+# `shared-types/**` triggers BOTH deploy-backend.yml AND deploy-frontend.yml.
+# Without coordination, the two workflows race: this frontend pipeline can
+# read stale CloudFormation outputs (old API URL) and S3-sync a stale bundle
+# BEFORE deploy-backend.yml has finished pushing the new API.
+#
+# Both workflows share the SAME group name (`deploy-${ref}`) so GitHub Actions
+# serializes them per ref. The frontend pipeline waits for the backend
+# pipeline (or vice versa) instead of racing.
+#
+# `cancel-in-progress: false` — never abort an in-flight deploy. Aborting an
+# active S3 sync or CloudFront invalidation risks partial state. Trade-off:
+# occasional short queue wait when shared-types lands; acceptable.
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  test:
+    name: Run Tests (Frontend)
+    runs-on: ubuntu-latest
+    # ci.yml ↔ deploy-frontend.yml parity (split out of monolithic deploy.yml
+    # in Issue #157):
+    #
+    # This job is the deploy-time gate for frontend changes on main. It is
+    # intentionally a SUBSET of ci.yml's PR-time gates. ci.yml runs on every
+    # PR and covers the full frontend matrix (lint, format, type-check, full
+    # test:coverage, production build). The contract is: any code that
+    # reaches main has already passed the full ci.yml suite, so this job
+    # only re-verifies the deploy-blocking subset (lint, format, type-check)
+    # against the merged main commit. Backend lint/format/test is handled
+    # by the parallel `Run Tests (Backend)` job in deploy-backend.yml.
+    #
+    # Steps that ci.yml runs but this job intentionally does NOT:
+    #   - frontend `npm run test:coverage` (ci.yml test-frontend) [PR-gate only]
+    #   - frontend `npm run build`         (ci.yml test-frontend) [done in
+    #     deploy-dev-frontend below with the live VITE_API_URL]
+    #   - shared-types `npm test`          (ci.yml `test` job)    [PR-gate only]
+    #
+    # If you add a new frontend deploy-blocking step to deploy-frontend.yml,
+    # also add it to ci.yml so PRs surface failures BEFORE merge. The lint /
+    # format / type-check steps below are the historical deploy-blockers and
+    # MUST NOT be removed (Issue #149 / #152 / #154 lineage).
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          # Cache both lockfiles touched by this job (shared-types, frontend).
+          cache-dependency-path: |
+            shared-types/package-lock.json
+            frontend/package-lock.json
+
+      - name: Install shared-types dependencies
+        working-directory: shared-types
+        run: npm ci
+
+      # Build shared-types BEFORE the frontend type-check below. The frontend
+      # imports from '@lfmt/shared-types', which resolves through the package's
+      # main/types entry to shared-types/dist/. Without this build step, the
+      # Type-check frontend step fails with TS2307 "Cannot find module
+      # '@lfmt/shared-types'" — the exact failure mode that bit deploy.yml in
+      # PR #152 before parity was added.
+      - name: Build shared-types
+        working-directory: shared-types
+        run: npm run build
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Lint frontend
+        working-directory: frontend
+        run: npm run lint
+
+      - name: Check frontend formatting
+        working-directory: frontend
+        run: npm run format:check
+
+      - name: Type-check frontend
+        working-directory: frontend
+        run: npm run type-check
+
+  deploy-dev-frontend:
+    name: Deploy Frontend to Development
+    runs-on: ubuntu-latest
+    needs: test
+    # Trigger conditions:
+    #   - push to main → automatic deploy
+    #   - workflow_dispatch with environment=dev → manual deploy (escape hatch)
+    #
+    # This job INTENTIONALLY does NOT run `cdk deploy`. It assumes the backend
+    # stack already exists (created/updated by deploy-backend.yml) and reads
+    # the live ApiUrl, FrontendBucketName, FrontendUrl, and CloudFrontDistributionId
+    # from CloudFormation outputs. The frontend bundle is rebuilt with the
+    # current API URL baked in via VITE_API_URL, then pushed to S3, then
+    # the CloudFront distribution is invalidated.
+    #
+    # If the backend stack does NOT exist (first-ever deploy on a new
+    # environment), this job will fail at `Get API URL` because the CFN
+    # describe-stacks call returns no matching stack. Bootstrap the
+    # environment by running deploy-backend.yml first. Tracked as a
+    # known-limitation in docs/CI-CD-ARCHITECTURE.md.
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'dev'))
+    environment:
+      name: development
+      url: ${{ steps.get-frontend-url.outputs.frontend_url }}
+    outputs:
+      api_url: ${{ steps.get-url.outputs.api_url }}
+      frontend_url: ${{ steps.get-frontend-url.outputs.frontend_url }}
+
+    permissions:
+      id-token: write # Required for OIDC authentication
+      contents: read # Required to checkout code
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: |
+            shared-types/package-lock.json
+            frontend/package-lock.json
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          role-session-name: GitHubActions-LFMT-Deploy-Frontend
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Verify AWS identity
+        run: aws sts get-caller-identity
+
+      - name: Get API URL from existing stack
+        id: get-url
+        run: |
+          API_URL=$(aws cloudformation describe-stacks \
+            --stack-name LfmtPocDev \
+            --query "Stacks[0].Outputs[?OutputKey=='ApiUrl'].OutputValue" \
+            --output text \
+            --region ${{ env.AWS_REGION }})
+          if [ -z "$API_URL" ] || [ "$API_URL" = "None" ]; then
+            echo "::error::API URL not found in LfmtPocDev stack outputs. The backend stack must be deployed first via deploy-backend.yml."
+            exit 1
+          fi
+          echo "api_url=$API_URL" >> $GITHUB_OUTPUT
+          echo "API URL (from existing stack): $API_URL"
+
+      - name: Install shared-types dependencies
+        working-directory: shared-types
+        run: npm ci
+
+      - name: Build shared-types
+        working-directory: shared-types
+        run: npm run build
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Build frontend with current API URL
+        working-directory: frontend
+        run: npm run build
+        env:
+          NODE_ENV: production
+          VITE_API_URL: ${{ steps.get-url.outputs.api_url }}
+
+      - name: Get Frontend Bucket Name from CDK
+        id: get-bucket-name
+        run: |
+          FRONTEND_BUCKET=$(aws cloudformation describe-stacks \
+            --stack-name LfmtPocDev \
+            --query "Stacks[0].Outputs[?OutputKey=='FrontendBucketName'].OutputValue" \
+            --output text \
+            --region ${{ env.AWS_REGION }})
+          echo "bucket_name=$FRONTEND_BUCKET" >> $GITHUB_OUTPUT
+          echo "Frontend Bucket: $FRONTEND_BUCKET"
+
+      - name: Deploy frontend to S3
+        run: |
+          aws s3 sync frontend/dist/ s3://${{ steps.get-bucket-name.outputs.bucket_name }}/ --delete --cache-control "public, max-age=31536000, immutable" --exclude "index.html"
+          aws s3 cp frontend/dist/index.html s3://${{ steps.get-bucket-name.outputs.bucket_name }}/index.html --cache-control "public, max-age=0, must-revalidate"
+
+      - name: Get CloudFront Distribution ID
+        id: get-cf-dist
+        run: |
+          DIST_ID=$(aws cloudformation describe-stacks \
+            --stack-name LfmtPocDev \
+            --query "Stacks[0].Outputs[?OutputKey=='CloudFrontDistributionId'].OutputValue" \
+            --output text \
+            --region ${{ env.AWS_REGION }})
+          echo "distribution_id=$DIST_ID" >> $GITHUB_OUTPUT
+          echo "CloudFront Distribution ID: $DIST_ID"
+
+      - name: Get CloudFront URL
+        id: get-frontend-url
+        run: |
+          FRONTEND_URL=$(aws cloudformation describe-stacks \
+            --stack-name LfmtPocDev \
+            --query "Stacks[0].Outputs[?OutputKey=='FrontendUrl'].OutputValue" \
+            --output text \
+            --region ${{ env.AWS_REGION }})
+          echo "frontend_url=$FRONTEND_URL" >> $GITHUB_OUTPUT
+          echo "Frontend URL: $FRONTEND_URL"
+
+      - name: Invalidate CloudFront cache
+        run: |
+          aws cloudfront create-invalidation --distribution-id ${{ steps.get-cf-dist.outputs.distribution_id }} --paths "/*"
+          echo "CloudFront cache invalidation initiated"
+
+      - name: Wait for CloudFront cache invalidation
+        run: |
+          echo "Waiting for CloudFront invalidation to complete..."
+          sleep 30
+
+      - name: Validate Security Headers (Issue #62)
+        run: |
+          echo "========================================="
+          echo "Live Security Header Validation"
+          echo "========================================="
+          FRONTEND_URL="${{ steps.get-frontend-url.outputs.frontend_url }}"
+          echo "Testing URL: $FRONTEND_URL"
+          echo ""
+
+          # Fetch headers using -L to follow redirects. curl -sIL prints headers
+          # for every hop; keep only the FINAL response block (the one a browser
+          # actually sees). Splitting on blank lines (\r\n\r\n) with awk keeps
+          # the last non-empty block.
+          RAW_HEADERS=$(curl -sIL "$FRONTEND_URL")
+          HEADERS=$(printf '%s' "$RAW_HEADERS" | awk 'BEGIN{RS="\r\n\r\n"} NF{last=$0} END{print last}')
+
+          # Function to check header (case-insensitive grep so 301/302 variants
+          # and differently-cased servers don't produce false negatives).
+          check_header() {
+            local header_name="$1"
+            local header_pattern="$2"
+            local required="$3"
+
+            if echo "$HEADERS" | grep -i "^${header_name}:" > /dev/null; then
+              # SC2155: declare and assign separately so command failure isn't masked.
+              # NOTE: trim with sed, NOT xargs — xargs performs shell-style
+              # tokenization that strips single quotes (e.g. `object-src 'none'`
+              # would become `object-src none`), producing false negatives in
+              # the CSP regex checks below.
+              local header_value
+              header_value=$(echo "$HEADERS" | grep -i "^${header_name}:" | cut -d: -f2- | tr -d '\r\n' | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//')
+              echo "✅ ${header_name}: ${header_value}"
+
+              if [ -n "$header_pattern" ]; then
+                if echo "$header_value" | grep -iE "$header_pattern" > /dev/null; then
+                  echo "   ✓ Pattern match: $header_pattern"
+                else
+                  echo "   ❌ Pattern mismatch: expected pattern '$header_pattern'"
+                  if [ "$required" = "true" ]; then
+                    exit 1
+                  fi
+                fi
+              fi
+            else
+              echo "❌ ${header_name}: NOT FOUND"
+              if [ "$required" = "true" ]; then
+                exit 1
+              fi
+            fi
+            echo ""
+          }
+
+          # Validate critical security headers
+          echo "Checking Security Headers:"
+          echo "─────────────────────────────────────────"
+          check_header "strict-transport-security" "max-age=" true
+          check_header "x-content-type-options" "nosniff" true
+          check_header "x-frame-options" "(DENY|SAMEORIGIN)" true
+          check_header "content-security-policy" "default-src" true
+          check_header "referrer-policy" "" false
+          check_header "x-xss-protection" "" false
+
+          echo "========================================="
+          echo "✅ All required security headers validated"
+          echo "========================================="
+
+      - name: Validate CSP Hardening (Issue #63)
+        run: |
+          echo "========================================="
+          echo "CSP Hardening Validation"
+          echo "========================================="
+          FRONTEND_URL="${{ steps.get-frontend-url.outputs.frontend_url }}"
+
+          # Fetch CSP header. -L follows redirects (final response is what a
+          # browser enforces); awk extracts the final response-headers block;
+          # grep -i is case-insensitive.
+          RAW_HEADERS=$(curl -sIL "$FRONTEND_URL")
+          FINAL_HEADERS=$(printf '%s' "$RAW_HEADERS" | awk 'BEGIN{RS="\r\n\r\n"} NF{last=$0} END{print last}')
+          # Trim with sed, NOT xargs — xargs performs shell-style tokenization
+          # that strips single quotes, so `object-src 'none'` would arrive here
+          # as `object-src none` and silently fail every quoted-directive check
+          # below. (Latent bug exposed when PR #159 first routed push-to-main
+          # into deploy-dev and the CSP step actually ran.)
+          CSP=$(echo "$FINAL_HEADERS" | grep -i "^content-security-policy:" | cut -d: -f2- | tr -d '\r\n' | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//')
+
+          echo "CSP Policy: $CSP"
+          echo ""
+
+          # CSP hardening status (Issue #133):
+          #   - 'unsafe-eval' has been REMOVED from script-src (Part 2). The
+          #     production bundle was inspected and contains no eval()/Function()
+          #     calls; standard Vite + MUI/Emotion do not require it.
+          #   - 'unsafe-inline' is still permitted (style-src + script-src) and
+          #     will be removed when the nonce-injection pipeline lands
+          #     (Lambda@Edge + Emotion CacheProvider). Tracked in the Part 1
+          #     follow-up issue.
+          # We therefore validate the non-unsafe hardening directives plus the
+          # absence of 'unsafe-eval' as a regression guard.
+
+          # Check that CSP contains baseline directives
+          required_directives=("default-src" "script-src" "style-src" "connect-src")
+          for directive in "${required_directives[@]}"; do
+            if echo "$CSP" | grep -i "$directive" > /dev/null; then
+              echo "✅ PASS: CSP contains '$directive' directive"
+            else
+              echo "❌ FAIL: CSP missing '$directive' directive"
+              exit 1
+            fi
+          done
+
+          # Check that CSP contains additional hardening directives (retained
+          # from the Issue #63 pass even though 'unsafe-inline' remains).
+          hardening_directives=(
+            "object-src 'none'"
+            "base-uri 'self'"
+            "form-action 'self'"
+            "frame-ancestors 'none'"
+            "upgrade-insecure-requests"
+          )
+          for directive in "${hardening_directives[@]}"; do
+            if echo "$CSP" | grep -iF "$directive" > /dev/null; then
+              echo "✅ PASS: CSP contains hardening directive: $directive"
+            else
+              echo "❌ FAIL: CSP missing hardening directive: $directive"
+              exit 1
+            fi
+          done
+
+          # Regression guard (Issue #133 Part 2): 'unsafe-eval' must NOT appear
+          # in the script-src directive of the deployed CSP.
+          if echo "$CSP" | grep -iF "'unsafe-eval'" > /dev/null; then
+            echo "❌ FAIL: CSP contains 'unsafe-eval' (regression — Issue #133 Part 2)"
+            exit 1
+          else
+            echo "✅ PASS: CSP does not contain 'unsafe-eval' (Issue #133 Part 2)"
+          fi
+
+          echo ""
+          echo "========================================="
+          echo "✅ CSP hardening requirements met"
+          echo "========================================="
+
+      - name: Frontend Deployment Summary
+        run: |
+          echo "========================================="
+          echo "Frontend Deployment Summary"
+          echo "========================================="
+          echo "S3 Bucket: ${{ steps.get-bucket-name.outputs.bucket_name }}"
+          echo "CloudFront Distribution: ${{ steps.get-cf-dist.outputs.distribution_id }}"
+          echo "Frontend URL: ${{ steps.get-frontend-url.outputs.frontend_url }}"
+          echo "API URL (read from CFN, not deployed): ${{ steps.get-url.outputs.api_url }}"
+          echo "========================================="
+
+  production-smoke-tests:
+    name: Run Production Smoke Tests
+    runs-on: ubuntu-latest
+    needs: deploy-dev-frontend
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'dev'))
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Install Playwright browsers
+        working-directory: frontend
+        run: npx playwright install --with-deps chromium
+
+      - name: Wait for frontend to be ready
+        run: |
+          echo "Waiting for frontend to be ready..."
+          for i in {1..30}; do
+            if curl -sf ${{ needs.deploy-dev-frontend.outputs.frontend_url }}/ > /dev/null 2>&1; then
+              echo "Frontend is ready!"
+              exit 0
+            fi
+            echo "Attempt $i/30: Frontend not ready yet, waiting 10 seconds..."
+            sleep 10
+          done
+          echo "Proceeding with tests..."
+
+      - name: Run production smoke tests
+        working-directory: frontend
+        run: npx playwright test --grep @smoke
+        env:
+          PLAYWRIGHT_BASE_URL: ${{ needs.deploy-dev-frontend.outputs.frontend_url }}
+          API_BASE_URL: ${{ needs.deploy-dev-frontend.outputs.api_url }}
+          SMOKE_TEST_EMAIL: ${{ secrets.SMOKE_TEST_EMAIL }}
+          SMOKE_TEST_PASSWORD: ${{ secrets.SMOKE_TEST_PASSWORD }}
+          CI: true
+
+      - name: Upload smoke test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-test-report
+          path: frontend/playwright-report/
+          retention-days: 30
+
+      - name: Upload smoke test videos
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-test-videos
+          path: frontend/test-results/
+          retention-days: 7
+
+      - name: Production Smoke Test Summary
+        if: always()
+        run: |
+          echo "========================================="
+          echo "Production Smoke Test Summary"
+          echo "========================================="
+          echo "Frontend URL: ${{ needs.deploy-dev-frontend.outputs.frontend_url }}"
+          echo "API URL: ${{ needs.deploy-dev-frontend.outputs.api_url }}"
+          echo "Tests completed at: $(date -u +"%Y-%m-%d %H:%M:%S UTC")"
+          echo "========================================="
+
+  e2e-tests:
+    name: Run E2E Tests
+    runs-on: ubuntu-latest
+    needs: deploy-dev-frontend
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'dev'))
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Install Playwright browsers
+        working-directory: frontend
+        run: npx playwright install --with-deps chromium
+
+      - name: Wait for frontend to be ready
+        run: |
+          echo "Waiting for frontend to be ready..."
+          for i in {1..30}; do
+            if curl -sf ${{ needs.deploy-dev-frontend.outputs.frontend_url }}/ > /dev/null 2>&1; then
+              echo "Frontend is ready!"
+              exit 0
+            fi
+            echo "Attempt $i/30: Frontend not ready yet, waiting 10 seconds..."
+            sleep 10
+          done
+          echo "Proceeding with tests..."
+
+      - name: Run E2E tests
+        working-directory: frontend
+        run: npm run test:e2e
+        env:
+          PLAYWRIGHT_BASE_URL: ${{ needs.deploy-dev-frontend.outputs.frontend_url }}
+          API_BASE_URL: ${{ needs.deploy-dev-frontend.outputs.api_url }}
+          CI: true
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: frontend/playwright-report/
+          retention-days: 30
+
+      - name: Upload test videos
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-videos
+          path: frontend/test-results/
+          retention-days: 7
+
+      - name: E2E Test Summary
+        if: always()
+        run: |
+          echo "========================================="
+          echo "E2E Test Summary"
+          echo "========================================="
+          echo "Frontend URL: ${{ needs.deploy-dev-frontend.outputs.frontend_url }}"
+          echo "API URL: ${{ needs.deploy-dev-frontend.outputs.api_url }}"
+          echo "Tests completed at: $(date -u +"%Y-%m-%d %H:%M:%S UTC")"
+          echo "========================================="

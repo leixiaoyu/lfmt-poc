@@ -166,7 +166,7 @@ npm run test:integration
 - Performance Analysis: `PERFORMANCE_ANALYSIS.md`
 - Test Helpers: `backend/functions/__tests__/integration/helpers/test-helpers.ts`
 - Translation Flow Tests: `backend/functions/__tests__/integration/translation-flow.integration.test.ts`
-- GitHub Actions: `.github/workflows/deploy.yml`
+- GitHub Actions: `.github/workflows/deploy-backend.yml`
 
 ---
 

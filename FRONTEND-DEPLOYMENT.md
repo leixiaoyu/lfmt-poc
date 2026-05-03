@@ -478,7 +478,9 @@ aws cloudfront create-invalidation \
 
 ## Automated Deployment (GitHub Actions)
 
-For CI/CD integration, see `.github/workflows/deploy.yml` lines 203-261 for the automated deployment workflow.
+For CI/CD integration, see `.github/workflows/deploy-frontend.yml` (the
+`Deploy Frontend to Development` job) for the automated deployment workflow.
+Architectural overview: [`docs/CI-CD-ARCHITECTURE.md`](docs/CI-CD-ARCHITECTURE.md).
 
 **Workflow Trigger**: Manual dispatch or push to main branch (configurable)
 

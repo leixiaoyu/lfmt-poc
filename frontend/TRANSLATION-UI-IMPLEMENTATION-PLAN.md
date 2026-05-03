@@ -389,7 +389,7 @@ All routes configured with lazy loading and protected routes:
 **Implementation Details**:
 
 - **CI Workflow** (`.github/workflows/ci.yml:200-252`): E2E tests run on PRs with local dev server
-- **Deploy Workflow** (`.github/workflows/deploy.yml:347-418`): E2E tests run post-deployment
+- **Deploy Workflow** (`.github/workflows/deploy-frontend.yml`, `Run E2E Tests` job): E2E tests run post-deployment
 - **Playwright Config** (`playwright.config.ts:84-89`): Auto-detects environment (local vs deployed)
 - **Test Execution**:
   - PR: `npm run test:e2e` → starts dev server on `localhost:5173`

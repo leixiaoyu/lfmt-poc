@@ -315,7 +315,7 @@ Integration tests run automatically in GitHub Actions after every deployment to 
 
 ### Workflow Configuration
 
-See `.github/workflows/deploy.yml`:
+See `.github/workflows/deploy-backend.yml`:
 
 ```yaml
 integration-tests:

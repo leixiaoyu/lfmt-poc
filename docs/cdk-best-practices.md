@@ -9,6 +9,12 @@ This document outlines best practices for working with AWS CDK in the LFMT proje
 - [Resource Naming](#resource-naming)
 - [Testing and Validation](#testing-and-validation)
 
+> **CI/CD pipeline architecture** (deploy workflow split, branch-protection
+> coordination, shared-types contract): see
+> [docs/CI-CD-ARCHITECTURE.md](CI-CD-ARCHITECTURE.md). The deploy pipeline
+> is split into `deploy-backend.yml` and `deploy-frontend.yml` so
+> frontend-only commits don't pay the cost of a full backend pipeline.
+
 ---
 
 ## CDK Tokens vs CloudFormation Intrinsic Functions

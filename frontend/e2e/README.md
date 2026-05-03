@@ -346,7 +346,7 @@ E2E tests are fully integrated into CI/CD pipeline:
 
 **Behavior**: Tests run against local dev server (`http://localhost:3000`) automatically started by Playwright.
 
-### Post-Deployment Testing (`.github/workflows/deploy.yml`)
+### Post-Deployment Testing (`.github/workflows/deploy-frontend.yml`)
 
 ```yaml
 - name: Run E2E tests
