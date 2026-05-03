@@ -4,6 +4,16 @@
  */
 
 import { GoogleGenAI } from '@google/genai';
+// FinishReason is intentionally imported as a TYPE-ONLY symbol below (see
+// `geminiClient.test.ts` jest.mock at file top — that factory replaces the
+// `@google/genai` module wholesale and does NOT re-export the FinishReason
+// enum, so `import { FinishReason }` (value-form) would crash any test
+// suite that mocks the module). Using `import type` keeps the type
+// information at compile time and emits no JS reference at runtime, while
+// the constants below use plain string literals (which are exactly the
+// FinishReason enum's runtime values per @google/genai/dist/node/node.d.ts).
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+import type { FinishReason } from '@google/genai';
 import {
   SecretsManagerClient,
   GetSecretValueCommand,
@@ -152,8 +162,37 @@ export class GeminiClient {
 
       const processingTimeMs = Date.now() - startTime;
 
-      // Extract translated text from response
+      // Extract translated text from response.
+      // result.text is typed string | undefined by the @google/genai SDK.
+      // It can be undefined / null / '' when Gemini returns a safety-filtered
+      // or empty response (observed: chunk 0 Sherlock job 2026-05-02, after a
+      // 54s generation the response body had no text candidate). Treat this
+      // as a GeminiApiError so translateChunk returns success:false with a
+      // clear message instead of crashing in storeTranslatedChunk with
+      // "Cannot read properties of undefined (reading 'length')".
+      //
+      // OMC-followup R4: branch `retryable` on candidates[0].finishReason.
+      // Gemini's GenerateContentResponse exposes a per-candidate finishReason
+      // (FinishReason enum from @google/genai). Some reasons are deterministic
+      // and MUST NOT be retried (SAFETY / RECITATION / BLOCKLIST / PROHIBITED_CONTENT
+      // / SPII / IMAGE_SAFETY / IMAGE_PROHIBITED_CONTENT / IMAGE_RECITATION are all
+      // content-policy outcomes; MAX_TOKENS / LANGUAGE / MALFORMED_FUNCTION_CALL /
+      // UNEXPECTED_TOOL_CALL / NO_IMAGE are structural mismatches a retry can't
+      // fix). OTHER and FINISH_REASON_UNSPECIFIED (or any unknown / undefined
+      // value) are treated as transient and retryable so Step Functions can
+      // schedule a retry.
       const translatedText = result.text;
+      if (translatedText === undefined || translatedText === null || translatedText === '') {
+        const finishReason = result.candidates?.[0]?.finishReason;
+        const retryable = isFinishReasonRetryable(finishReason);
+        throw new GeminiApiError(
+          `Gemini returned an empty response (finishReason: ${finishReason ?? 'unknown'}). ` +
+            'This may indicate a safety filter, content policy block, or upstream model error.',
+          200,
+          'EMPTY_RESPONSE',
+          retryable
+        );
+      }
 
       // Calculate token usage and cost
       const tokensUsed = {
@@ -375,6 +414,59 @@ export class GeminiClient {
     // Unknown errors
     return new GeminiApiError(`Translation failed: ${message}`, status, 'UNKNOWN_ERROR', false);
   }
+}
+
+/**
+ * OMC-followup R4 — finishReason → retryable mapping.
+ *
+ * Determines whether an EMPTY_RESPONSE from Gemini should be retried by
+ * Step Functions, based on the candidate's finishReason. Deterministic
+ * outcomes (content-policy blocks, structural mismatches) are NOT retryable;
+ * unknown / OTHER / unspecified are treated as transient.
+ *
+ * Exported for testability.
+ *
+ * Mapping rationale:
+ *   - SAFETY, RECITATION, BLOCKLIST, PROHIBITED_CONTENT, SPII,
+ *     IMAGE_SAFETY, IMAGE_PROHIBITED_CONTENT, IMAGE_RECITATION
+ *       → content-policy block, retry will produce the same outcome
+ *   - MAX_TOKENS → chunk too big; retrying with the same input is futile
+ *   - LANGUAGE → unsupported language; deterministic
+ *   - MALFORMED_FUNCTION_CALL, UNEXPECTED_TOOL_CALL, NO_IMAGE
+ *       → structural mismatch with the request; deterministic
+ *   - OTHER, IMAGE_OTHER → unspecified upstream issue, likely transient
+ *   - FINISH_REASON_UNSPECIFIED, undefined, unknown enum value
+ *       → benefit of the doubt — assume transient
+ */
+// String literals match the FinishReason enum values declared in
+// node_modules/@google/genai/dist/node/node.d.ts (e.g. SAFETY = "SAFETY").
+// Using literals (instead of importing the enum as a value) avoids runtime
+// crashes in test suites that mock the entire @google/genai module — see
+// the type-only import note at the top of this file.
+const NON_RETRYABLE_FINISH_REASONS: ReadonlySet<string> = new Set<string>([
+  'SAFETY',
+  'RECITATION',
+  'BLOCKLIST',
+  'PROHIBITED_CONTENT',
+  'SPII',
+  'MAX_TOKENS',
+  'LANGUAGE',
+  'MALFORMED_FUNCTION_CALL',
+  'UNEXPECTED_TOOL_CALL',
+  'IMAGE_SAFETY',
+  'IMAGE_PROHIBITED_CONTENT',
+  'IMAGE_RECITATION',
+  'NO_IMAGE',
+]);
+
+export function isFinishReasonRetryable(
+  finishReason: FinishReason | string | undefined | null
+): boolean {
+  if (finishReason === undefined || finishReason === null || finishReason === '') {
+    // Unknown / unspecified → benefit of the doubt → retryable
+    return true;
+  }
+  return !NON_RETRYABLE_FINISH_REASONS.has(finishReason);
 }
 
 /**

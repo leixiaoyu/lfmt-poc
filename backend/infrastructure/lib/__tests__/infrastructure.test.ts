@@ -435,9 +435,7 @@ describe('LFMT Infrastructure Stack', () => {
               Resource: Match.arrayWith([
                 // The attestations table ARN appears as a Fn::GetAtt reference.
                 Match.objectLike({
-                  'Fn::GetAtt': Match.arrayWith([
-                    Match.stringLikeRegexp('^AttestationsTable'),
-                  ]),
+                  'Fn::GetAtt': Match.arrayWith([Match.stringLikeRegexp('^AttestationsTable')]),
                 }),
               ]),
             }),
@@ -496,7 +494,9 @@ describe('LFMT Infrastructure Stack', () => {
         if (policyDoc?.Statement) {
           policyDoc.Statement.forEach((statement: any) => {
             if (statement.Action) {
-              const actions = Array.isArray(statement.Action) ? statement.Action : [statement.Action];
+              const actions = Array.isArray(statement.Action)
+                ? statement.Action
+                : [statement.Action];
               actions.forEach((action: any) => {
                 // Fail if we find dynamodb:* wildcard
                 expect(action).not.toBe('dynamodb:*');
@@ -540,7 +540,9 @@ describe('LFMT Infrastructure Stack', () => {
         if (policyDoc?.Statement) {
           policyDoc.Statement.forEach((statement: any) => {
             if (statement.Action) {
-              const actions = Array.isArray(statement.Action) ? statement.Action : [statement.Action];
+              const actions = Array.isArray(statement.Action)
+                ? statement.Action
+                : [statement.Action];
               actions.forEach((action: any) => {
                 // Fail if we find global wildcard '*'
                 expect(action).not.toBe('*');
@@ -678,14 +680,12 @@ describe('LFMT Infrastructure Stack', () => {
 
       // The UpdateExpression MUST set both `translationStatus` AND outer
       // `status` (via #status alias because `status` is a DDB reserved word).
-      const updateExpression: string =
-        updateJobCompleted.Parameters?.UpdateExpression ?? '';
+      const updateExpression: string = updateJobCompleted.Parameters?.UpdateExpression ?? '';
       expect(updateExpression).toMatch(/translationStatus/);
       expect(updateExpression).toMatch(/#status/);
 
       // ExpressionAttributeNames must alias #status to 'status'.
-      const attributeNames =
-        updateJobCompleted.Parameters?.ExpressionAttributeNames ?? {};
+      const attributeNames = updateJobCompleted.Parameters?.ExpressionAttributeNames ?? {};
       expect(attributeNames['#status']).toBe('status');
 
       // The value bound to outer status MUST be 'COMPLETED' (matching
@@ -700,8 +700,7 @@ describe('LFMT Infrastructure Stack', () => {
       // 'COMPLETED'). Keyed assertions are strictly correct,
       // self-documenting, and survive ASL serialization changes that
       // don't affect the contract.
-      const exprValues =
-        updateJobCompleted.Parameters?.ExpressionAttributeValues ?? {};
+      const exprValues = updateJobCompleted.Parameters?.ExpressionAttributeValues ?? {};
       expect(updateExpression).toMatch(/translationStatus\s*=\s*:status/);
       expect(updateExpression).toMatch(/#status\s*=\s*:outerStatus/);
       expect(exprValues[':status']).toEqual({ S: 'COMPLETED' });
@@ -765,14 +764,12 @@ describe('LFMT Infrastructure Stack', () => {
 
       // The UpdateExpression MUST set both `translationStatus` AND outer
       // `status` (via #status alias because `status` is a DDB reserved word).
-      const updateExpression: string =
-        updateJobFailed.Parameters?.UpdateExpression ?? '';
+      const updateExpression: string = updateJobFailed.Parameters?.UpdateExpression ?? '';
       expect(updateExpression).toMatch(/translationStatus/);
       expect(updateExpression).toMatch(/#status/);
 
       // ExpressionAttributeNames must alias #status to 'status'.
-      const attributeNames =
-        updateJobFailed.Parameters?.ExpressionAttributeNames ?? {};
+      const attributeNames = updateJobFailed.Parameters?.ExpressionAttributeNames ?? {};
       expect(attributeNames['#status']).toBe('status');
 
       // Round-2 OMC review (issuecomment-4364584995) — assert by KEY
@@ -781,8 +778,7 @@ describe('LFMT Infrastructure Stack', () => {
       // assertion pattern in the UpdateJobCompleted test above for
       // symmetry. Strictly correct, self-documenting, and survives ASL
       // serialization changes that don't affect the contract.
-      const exprValues =
-        updateJobFailed.Parameters?.ExpressionAttributeValues ?? {};
+      const exprValues = updateJobFailed.Parameters?.ExpressionAttributeValues ?? {};
       expect(updateExpression).toMatch(/translationStatus\s*=\s*:status/);
       expect(updateExpression).toMatch(/#status\s*=\s*:outerStatus/);
       expect(exprValues[':status']).toEqual({ S: 'TRANSLATION_FAILED' });
@@ -840,20 +836,129 @@ describe('LFMT Infrastructure Stack', () => {
       const choiceState = states[afterMap.Next];
       expect(choiceState.Type).toBe('Choice');
 
-      // 4. The Choice state must have a rule that routes to UpdateJobFailed
-      //    when anyChunkFailed=true, and otherwise (Default) to UpdateJobCompleted.
+      // 4. The Choice state must have a rule that routes to NormalizeFailureContext
+      //    (Bug B fix: NormalizeFailureContext then → UpdateJobFailed) when
+      //    anyChunkFailed=true, and otherwise (Default) to UpdateJobCompleted.
       expect(Array.isArray(choiceState.Choices)).toBe(true);
       expect(choiceState.Choices.length).toBeGreaterThanOrEqual(1);
       const failureBranch = choiceState.Choices.find(
-        (rule: any) =>
-          rule.Variable === '$.aggregate.anyChunkFailed' &&
-          rule.BooleanEquals === true
+        (rule: any) => rule.Variable === '$.aggregate.anyChunkFailed' && rule.BooleanEquals === true
       );
       expect(failureBranch).toBeDefined();
-      expect(failureBranch.Next).toMatch(/UpdateJobFailed/);
+      // Bug B fix: Choice now routes through NormalizeFailureContext before UpdateJobFailed.
+      expect(failureBranch.Next).toMatch(/NormalizeFailureContext/);
 
       expect(choiceState.Default).toBeDefined();
       expect(choiceState.Default).toMatch(/UpdateJobCompleted/);
+    });
+
+    test('Choice failure branch routes through NormalizeFailureContext before UpdateJobFailed — Bug B regression', () => {
+      // Regression guard for the Bug B fix (post-PR-#176):
+      //
+      // UpdateJobFailed uses States.JsonToString($.error) to write the error
+      // detail to DDB. $.error is set by the Map Catch handler (resultPath='$.error'),
+      // but when chunks return success:false and the Choice gate fires,
+      // $.error does NOT exist — only $.translationResults does.
+      // This caused a States.Runtime JsonPath-not-found error that prevented
+      // the DDB write, leaving translationStatus stuck on IN_PROGRESS.
+      //
+      // Fix: insert NormalizeFailureContext (a Pass state) between the Choice
+      // gate and UpdateJobFailed on the success:false path. It synthesises
+      // $.error from $.translationResults, so UpdateJobFailed always has it.
+      // The Map Catch path bypasses NormalizeFailureContext (goes directly to
+      // UpdateJobFailed) because the Catch already sets $.error via resultPath.
+      const stateMachines = template.findResources('AWS::StepFunctions::StateMachine');
+      const stateMachine = stateMachines[Object.keys(stateMachines)[0]];
+      const definition = JSON.parse(
+        stateMachine.Properties.DefinitionString['Fn::Join'][1].join('')
+      );
+      const states = definition.States;
+
+      // 1. The Choice state's failure branch must point to NormalizeFailureContext,
+      //    NOT directly to UpdateJobFailed.
+      const choiceEntry = Object.entries(states).find(
+        ([, s]: [string, any]) => s.Type === 'Choice'
+      );
+      expect(choiceEntry).toBeDefined();
+      const [, choiceState] = choiceEntry as [string, any];
+
+      const failureBranch = choiceState.Choices.find(
+        (rule: any) => rule.Variable === '$.aggregate.anyChunkFailed' && rule.BooleanEquals === true
+      );
+      expect(failureBranch).toBeDefined();
+      // Must route to the normalizer, not directly to the DDB task.
+      expect(failureBranch.Next).toMatch(/NormalizeFailureContext/);
+
+      // 2. NormalizeFailureContext must be a Pass state that sets $.error
+      //    from $.translationResults (which is present in the success:false path).
+      //
+      // OMC-followup R2 + R5: the payload was originally a single
+      //   error.$ = States.JsonToString($.translationResults)
+      // (a stringified raw dump of every chunk's result). It is now a
+      // STRUCTURED envelope:
+      //   {
+      //     reason: 'CHUNK_FAILURE',         // stable discriminator
+      //     failedCountUpperBound.$: ArrayLength,
+      //     totalChunks.$: ArrayLength,
+      //     translationResults.$: <raw forensic detail>
+      //   }
+      // Tighten the assertions to the new shape so a future refactor that
+      // accidentally drops `reason` or reverts to the unstructured dump
+      // fails this test loudly.
+      const normEntry = Object.entries(states).find(([name]) =>
+        /NormalizeFailureContext/.test(name)
+      );
+      expect(normEntry).toBeDefined();
+      const [, normState] = normEntry as [string, any];
+
+      expect(normState.Type).toBe('Pass');
+      // Must write into $.error via ResultPath so UpdateJobFailed can read it.
+      expect(normState.ResultPath).toBe('$.error');
+
+      // R5: assert structured payload shape (NOT the legacy `error.$` raw dump).
+      const params = normState.Parameters ?? {};
+
+      // Discriminator: stable `reason` literal so downstream alerting can
+      // branch on the failure mode without parsing the array.
+      expect(params['reason']).toBe('CHUNK_FAILURE');
+
+      // Counts: ASL has no native filter intrinsic, so we surface the upper
+      // bound (== totalChunks). Both fields are derived via States.ArrayLength
+      // on $.translationResults.
+      expect(params['failedCountUpperBound.$']).toMatch(/States\.ArrayLength/);
+      expect(params['failedCountUpperBound.$']).toContain('translationResults');
+      expect(params['totalChunks.$']).toMatch(/States\.ArrayLength/);
+      expect(params['totalChunks.$']).toContain('translationResults');
+
+      // Forensic detail preserved verbatim under a NAMED key (NOT the legacy
+      // `error.$` raw dump — that would be a regression to the unstructured
+      // payload).
+      expect(params['translationResults.$']).toBe('$.translationResults');
+
+      // Negative guard: the legacy raw-dump shape (single `error.$` key
+      // pointing at States.JsonToString of the whole array) MUST be gone.
+      expect(params['error.$']).toBeUndefined();
+
+      // 3. NormalizeFailureContext must transition to UpdateJobFailed.
+      expect(normState.Next).toMatch(/UpdateJobFailed/);
+
+      // 4. The Map Catch handler must STILL route directly to UpdateJobFailed
+      //    (bypassing NormalizeFailureContext) so we don't clobber the real
+      //    $.error payload from the Catch.
+      const mapEntry = Object.entries(states).find(([, s]: [string, any]) => s.Type === 'Map');
+      expect(mapEntry).toBeDefined();
+      const [, mapState] = mapEntry as [string, any];
+
+      const catchHandlers: any[] = mapState.Catch ?? [];
+      expect(catchHandlers.length).toBeGreaterThanOrEqual(1);
+      const catchAll = catchHandlers.find(
+        (c: any) => Array.isArray(c.ErrorEquals) && c.ErrorEquals.includes('States.ALL')
+      );
+      expect(catchAll).toBeDefined();
+      // Catch goes DIRECTLY to UpdateJobFailed (no normalizer needed —
+      // resultPath='$.error' on the Catch already provides $.error).
+      expect(catchAll.Next).toMatch(/UpdateJobFailed/);
+      expect(catchAll.Next).not.toMatch(/NormalizeFailureContext/);
     });
 
     test('State machine has required IAM permissions', () => {
@@ -1098,9 +1203,7 @@ describe('LFMT Infrastructure Stack', () => {
         if (csp && typeof csp === 'object' && 'Fn::Join' in (csp as object)) {
           const join = (csp as { 'Fn::Join': [string, unknown[]] })['Fn::Join'];
           const parts = join[1];
-          return parts
-            .map((p) => (typeof p === 'string' ? p : JSON.stringify(p)))
-            .join('');
+          return parts.map((p) => (typeof p === 'string' ? p : JSON.stringify(p))).join('');
         }
         return JSON.stringify(csp);
       };
@@ -1119,8 +1222,9 @@ describe('LFMT Infrastructure Stack', () => {
       expect(cspCarryingPolicies.length).toBeGreaterThanOrEqual(2);
 
       cspCarryingPolicies.forEach((policy: any) => {
-        const csp = policy.Properties.ResponseHeadersPolicyConfig.SecurityHeadersConfig
-          .ContentSecurityPolicy.ContentSecurityPolicy;
+        const csp =
+          policy.Properties.ResponseHeadersPolicyConfig.SecurityHeadersConfig.ContentSecurityPolicy
+            .ContentSecurityPolicy;
         const flat = flattenCsp(csp);
         requiredDirectives.forEach((directive) => {
           expect(flat).toContain(directive);
@@ -1141,9 +1245,7 @@ describe('LFMT Infrastructure Stack', () => {
         if (csp && typeof csp === 'object' && 'Fn::Join' in (csp as object)) {
           const join = (csp as { 'Fn::Join': [string, unknown[]] })['Fn::Join'];
           const parts = join[1];
-          return parts
-            .map((p) => (typeof p === 'string' ? p : JSON.stringify(p)))
-            .join('');
+          return parts.map((p) => (typeof p === 'string' ? p : JSON.stringify(p))).join('');
         }
         return JSON.stringify(csp);
       };
@@ -1156,8 +1258,9 @@ describe('LFMT Infrastructure Stack', () => {
       expect(cspCarryingPolicies.length).toBeGreaterThanOrEqual(2);
 
       cspCarryingPolicies.forEach((policy: any) => {
-        const csp = policy.Properties.ResponseHeadersPolicyConfig.SecurityHeadersConfig
-          .ContentSecurityPolicy.ContentSecurityPolicy;
+        const csp =
+          policy.Properties.ResponseHeadersPolicyConfig.SecurityHeadersConfig.ContentSecurityPolicy
+            .ContentSecurityPolicy;
         const flat = flattenCsp(csp);
         expect(flat).not.toContain("'unsafe-eval'");
       });

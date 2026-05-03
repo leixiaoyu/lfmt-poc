@@ -1236,9 +1236,17 @@ export class LfmtInfrastructureStack extends Stack {
     // are exhausted, OR when at least one chunk reports success=false (see
     // OMC-followup C1 + the AggregateChunkResults / CheckAllChunksSucceeded
     // states below), persist TRANSLATION_FAILED to DDB so the UI / polling
-    // endpoints stop reporting a phantom-success. The error payload from the
-    // Map's catch is stored under $.error and serialized into the DDB row for
-    // post-mortem visibility.
+    // endpoints stop reporting a phantom-success.
+    //
+    // Bug B fix (post-PR-#176): UpdateJobFailed previously read $.error via
+    // States.JsonToString($.error). That field only exists when the Map Catch
+    // fires (resultPath='$.error'). When chunks return success:false and the
+    // Choice gate routes here, $.error is absent — causing a States.Runtime
+    // JsonPath-not-found error that prevents the DDB write entirely and leaves
+    // translationStatus stuck on IN_PROGRESS in DDB. Fix: insert a
+    // NormalizeFailureContext Pass state on the Choice path that synthesises
+    // $.error from $.translationResults so UpdateJobFailed always has it.
+    // The Map Catch path bypasses NormalizeFailureContext and already has $.error.
     //
     // OMC-followup C2 — dual-write `#status` (outer) in addition to
     // `translationStatus`. PR #176 added the dual-write to UpdateJobCompleted
@@ -1268,10 +1276,75 @@ export class LfmtInfrastructureStack extends Stack {
         // failure (frontend TranslationDetail.tsx branches on `job.status`).
         ':outerStatus': tasks.DynamoAttributeValue.fromString('TRANSLATION_FAILED'),
         ':failedAt': tasks.DynamoAttributeValue.fromString(stepfunctions.JsonPath.stringAt('$$.State.EnteredTime')),
+        // $.error is guaranteed to exist here — both entry paths set it:
+        // 1. Map Catch path: resultPath='$.error' on processChunksMap.addCatch().
+        // 2. Choice path (success:false): NormalizeFailureContext Pass state below
+        //    synthesises $.error from $.translationResults before entering this task.
         ':error': tasks.DynamoAttributeValue.fromString(stepfunctions.JsonPath.stringAt("States.JsonToString($.error)")),
         ':updatedAt': tasks.DynamoAttributeValue.fromString(stepfunctions.JsonPath.stringAt('$$.State.EnteredTime')),
       },
       resultPath: stepfunctions.JsonPath.DISCARD,
+    });
+
+    // NormalizeFailureContext: inserted between the Choice gate and UpdateJobFailed
+    // on the success:false path. Synthesises $.error from $.translationResults
+    // so UpdateJobFailed's States.JsonToString($.error) always resolves.
+    // The Map Catch path goes DIRECTLY to updateJobFailed (bypassing this state)
+    // because the Catch already sets $.error via resultPath.
+    //
+    // OMC-followup R2 — structured payload (was: raw translationResults dump).
+    //
+    // Previously this state set `error.$` = States.JsonToString($.translationResults),
+    // which produced a stringified array of every chunk's full result as the
+    // DDB `translationError` column value. That is semantically wrong: the
+    // column is supposed to hold a *description of the failure*, not the
+    // success/failure data of every chunk. It also bloats DDB rows
+    // unnecessarily (each result includes tokensUsed, estimatedCost,
+    // processingTimeMs, etc. — KB per chunk × N chunks).
+    //
+    // Step Functions ASL has NO native filter intrinsic
+    // (States.ArrayFilter does not exist; only ArrayContains/ArrayLength/
+    // ArrayPartition/ArrayUnique/ArrayGetItem/ArrayRange/Array are available).
+    // To filter to "only failed chunks" we would need a Map substate, which
+    // is too heavy for a normalizer that only runs once on the failure path.
+    //
+    // Pragmatic fix: produce a structured envelope with a `reason` discriminator,
+    // a count, and the full `translationResults` (preserving forensic detail).
+    // The DDB column type is now `{reason: string, failedCountUpperBound: number,
+    // totalChunks: number, translationResults: Array<...>}` — readable,
+    // queryable by reason, and explicit about the failure mode.
+    //
+    // Why keep `translationResults` rather than slim it down: ASL filtering
+    // would require a substate (rejected as too heavy per the OMC review).
+    // The forensic value of the per-chunk results outweighs the DDB row size
+    // for the failure path (failures are rare; this is dead-letter queue
+    // territory). Future work: if/when ASL adds States.ArrayFilter, replace
+    // `translationResults.$` with a filtered subset (only failed chunks).
+    const normalizeFailureContext = new stepfunctions.Pass(this, 'NormalizeFailureContext', {
+      comment:
+        'Bug B fix (R2 structured payload): when Choice gate routes here (success:false path), ' +
+        '$.error is absent. Synthesise a structured failure envelope so UpdateJobFailed can always ' +
+        'read $.error AND so the DDB translationError column holds a typed payload (reason + counts + ' +
+        'forensic detail) rather than a raw dump of translationResults. Map Catch path bypasses ' +
+        'this state because resultPath="$.error" already sets $.error.',
+      parameters: {
+        // R2: structured envelope.
+        // - `reason`: stable discriminator (CHUNK_FAILURE) for downstream
+        //   alerting / dashboards.
+        // - `failedCountUpperBound` / `totalChunks`: counts derived via
+        //   States.ArrayLength (the only quantitative ASL intrinsic we have
+        //   without filter support). The exact failed count cannot be
+        //   computed without filter support; we surface the upper bound and
+        //   annotate intent in the field name so future readers don't
+        //   misinterpret it as the exact failure count.
+        // - `translationResults.$`: raw forensic detail, preserved verbatim
+        //   so we don't lose information for triage.
+        'reason': 'CHUNK_FAILURE',
+        'failedCountUpperBound.$': 'States.ArrayLength($.translationResults)',
+        'totalChunks.$': 'States.ArrayLength($.translationResults)',
+        'translationResults.$': '$.translationResults',
+      },
+      resultPath: '$.error',
     });
 
     // Terminal failure state — must come after the DDB write so the execution
@@ -1355,17 +1428,22 @@ export class LfmtInfrastructureStack extends Stack {
     // the result of the intrinsic above. true → failure path; otherwise
     // (default) → success path. This guarantees UpdateJobCompleted ONLY
     // runs when every chunk actually succeeded.
+    //
+    // Bug B fix: route anyChunkFailed=true through NormalizeFailureContext
+    // BEFORE UpdateJobFailed so $.error is always populated (see comment above).
+    normalizeFailureContext.next(updateJobFailed);
     checkAllChunksSucceeded
       .when(
         stepfunctions.Condition.booleanEquals('$.aggregate.anyChunkFailed', true),
-        updateJobFailed
+        normalizeFailureContext
       )
       .otherwise(updateJobCompleted.next(successState));
 
     // Define the state machine workflow.
     // Map → AggregateChunkResults → CheckAllChunksSucceeded
-    //   ├── (anyChunkFailed=true)  → UpdateJobFailed → TranslationFailed
+    //   ├── (anyChunkFailed=true)  → NormalizeFailureContext → UpdateJobFailed → TranslationFailed
     //   └── (default)              → UpdateJobCompleted → TranslationSuccess
+    // Map Catch (States.ALL) → UpdateJobFailed (directly; $.error set by Catch resultPath)
     const definition = processChunksMap
       .next(aggregateChunkResults)
       .next(checkAllChunksSucceeded);
