@@ -154,22 +154,29 @@ test.describe('Production Smoke Tests @smoke', () => {
       });
     });
 
-    // Step 3: Upload document
-    await test.step('User can upload a document', async () => {
-      // Upload the shared minimal smoke-test fixture (see
-      // frontend/e2e/fixtures/smoke-test-minimal.txt). Using a committed
-      // ~1 KB file avoids allocating large documents inside the test and
-      // keeps translation time well under the 3-minute test timeout.
-      const fileInput = page.locator('input[type="file"]');
-      await fileInput.setInputFiles(SMOKE_FIXTURE_PATH);
+    // Step 3: Complete the multi-step wizard to reach the file upload step.
+    //
+    // The upload page is a 4-step wizard:
+    //   Step 0: Legal Attestation  → Step 1: Translation Settings
+    //   Step 2: Upload Document    → Step 3: Review & Submit
+    //
+    // The file input only exists in the DOM on step 2. Calling setInputFiles
+    // before the wizard advances past step 1 causes a 3-minute timeout because
+    // the locator never resolves (the element isn't mounted yet).
 
-      // Wait for file to be processed
-      await expect(page.getByText(/smoke-test-minimal\.txt/i)).toBeVisible({
-        timeout: 10000,
-      });
+    // Step 3a: Complete legal attestation (wizard step 0)
+    await test.step('Complete legal attestation step', async () => {
+      // Tick all three required checkboxes
+      await page.getByRole('checkbox', { name: /copyright ownership/i }).check();
+      await page.getByRole('checkbox', { name: /translation rights/i }).check();
+      await page.getByRole('checkbox', { name: /liability/i }).check();
+
+      // Advance to Translation Settings step
+      await page.getByRole('button', { name: /next/i }).click();
+      await expect(page.getByLabel(/target.*language/i)).toBeVisible({ timeout: 10000 });
     });
 
-    // Step 4: Configure translation settings
+    // Step 3b: Configure translation settings (wizard step 1)
     await test.step('User can configure translation settings', async () => {
       // Select source language (if not already English)
       const sourceLanguage = page.getByLabel(/source.*language/i);
@@ -182,12 +189,47 @@ test.describe('Production Smoke Tests @smoke', () => {
       const targetLanguage = page.getByLabel(/target.*language/i);
       await targetLanguage.click();
       await page.getByRole('option', { name: /spanish|español/i }).click();
+
+      // Advance to Upload Document step
+      await page.getByRole('button', { name: /next/i }).click();
+      await expect(page.locator('input[type="file"]')).toBeAttached({ timeout: 10000 });
+    });
+
+    // Step 3c: Upload document (wizard step 2)
+    await test.step('User can upload a document', async () => {
+      // Upload the shared minimal smoke-test fixture (see
+      // frontend/e2e/fixtures/smoke-test-minimal.txt). Using a committed
+      // ~1 KB file avoids allocating large documents inside the test and
+      // keeps translation time well under the 3-minute test timeout.
+      //
+      // The file input has display:none (it is triggered by a click on the
+      // drag-drop zone). setInputFiles works on hidden inputs natively in
+      // Playwright, but we still wait for the element to be attached first.
+      const fileInput = page.locator('input[type="file"]');
+      await fileInput.setInputFiles(SMOKE_FIXTURE_PATH);
+
+      // Wait for file to be processed — the filename appears in the UI
+      await expect(page.getByText(/smoke-test-minimal\.txt/i)).toBeVisible({
+        timeout: 10000,
+      });
+    });
+
+    // Step 4 (wizard step 3): Advance to review and submit
+    // After uploading the file the wizard is on step 2. Clicking Next moves to
+    // the Review & Submit step (step 3), which shows the "Submit & Start
+    // Translation" button (not a separate translate button).
+    await test.step('Advance to review step', async () => {
+      await page.getByRole('button', { name: /next/i }).click();
+      // Review step renders the file name in the summary
+      await expect(page.getByText(/smoke-test-minimal\.txt/i)).toBeVisible({ timeout: 10000 });
     });
 
     // Step 5: Start translation
     await test.step('User can start translation', async () => {
-      // Click translate button
-      const translateButton = page.getByRole('button', { name: /translate|start.*translation/i });
+      // The final step button on the wizard is "Submit & Start Translation"
+      const translateButton = page.getByRole('button', {
+        name: /submit.*translation|translate|start.*translation/i,
+      });
       await translateButton.click();
 
       // Wait for translation to start

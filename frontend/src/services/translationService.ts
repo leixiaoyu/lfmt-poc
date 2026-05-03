@@ -120,6 +120,7 @@ export const uploadDocument = async (request: UploadDocumentRequest): Promise<Tr
       data: {
         uploadUrl: string;
         fileId: string;
+        jobId: string;
         expiresIn: number;
         requiredHeaders: Record<string, string>;
       };
@@ -130,7 +131,7 @@ export const uploadDocument = async (request: UploadDocumentRequest): Promise<Tr
       legalAttestation: request.legalAttestation,
     });
 
-    const { uploadUrl, fileId, requiredHeaders } = presignedResponse.data.data;
+    const { uploadUrl, jobId, requiredHeaders } = presignedResponse.data.data;
 
     // Step 2: Upload file directly to S3 using presigned URL
     // Note: We use axios directly here because S3 doesn't need our API interceptors/auth headers
@@ -145,7 +146,7 @@ export const uploadDocument = async (request: UploadDocumentRequest): Promise<Tr
     // Note: The backend creates the job record but doesn't return it immediately
     // The job will be retrieved later when starting translation
     return {
-      jobId: fileId,
+      jobId,
       userId: '', // Will be populated by backend
       fileName: request.file.name,
       fileSize: request.file.size,

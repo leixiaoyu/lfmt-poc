@@ -86,12 +86,15 @@ describe('TranslationService - uploadDocument', () => {
         timestamp: '2024-10-31T12:00:00Z',
       };
 
-      // Mock presigned URL response from backend
+      // Mock presigned URL response from backend.
+      // The backend now includes both `fileId` (the S3 object key component)
+      // and `jobId` (the DynamoDB record key) in the response envelope.
       const mockPresignedResponse = {
         data: {
           data: {
             uploadUrl: 'https://s3.amazonaws.com/bucket/presigned-url',
-            fileId: 'job-123',
+            fileId: 'file-abc',
+            jobId: 'job-123',
             requiredHeaders: {
               'x-amz-server-side-encryption': 'AES256',
             },

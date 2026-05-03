@@ -605,6 +605,7 @@ const translationHandlers: HttpHandler[] = [
         data: {
           uploadUrl,
           fileId: jobId,
+          jobId,
           expiresIn: 900,
           requiredHeaders: {
             'Content-Type': 'text/plain',

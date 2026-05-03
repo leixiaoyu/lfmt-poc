@@ -219,6 +219,7 @@ export const handler = async (event: APIGatewayProxyEvent): Promise<APIGatewayPr
     const response: PresignedUrlResponse = {
       uploadUrl,
       fileId,
+      jobId,
       expiresIn: PRESIGNED_URL_EXPIRATION,
       requiredHeaders: {
         'Content-Type': contentType,

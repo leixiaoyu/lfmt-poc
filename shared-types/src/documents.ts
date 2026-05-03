@@ -83,6 +83,7 @@ export interface PresignedUrlRequest {
 export interface PresignedUrlResponse {
   uploadUrl: string;
   fileId: string;
+  jobId: string;
   expiresIn: number;
   requiredHeaders: Record<string, string>;
 }
