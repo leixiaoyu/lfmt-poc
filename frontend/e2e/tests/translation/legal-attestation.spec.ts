@@ -15,7 +15,7 @@ import { DashboardPage } from '../../pages/DashboardPage';
 import { TranslationUploadPage } from '../../pages/TranslationUploadPage';
 import { generateTestUser } from '../../fixtures/auth';
 import { TEST_DOCUMENTS } from '../../fixtures/test-documents';
-import { LEGAL_ATTESTATION_LABEL_PATTERNS as L } from '../../src/components/Translation/legalAttestationLabels';
+import { LEGAL_ATTESTATION_LABEL_PATTERNS as L } from '../../../src/components/Translation/legalAttestationLabels';
 import * as fs from 'fs';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
