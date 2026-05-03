@@ -142,9 +142,7 @@ describe('TranslationUpload', () => {
 
       // Check all three checkboxes
       const copyrightCheckbox = screen.getByLabelText(L.copyright);
-      const translationRightsCheckbox = screen.getByLabelText(
-        L.translationRights
-      );
+      const translationRightsCheckbox = screen.getByLabelText(L.translationRights);
       const liabilityCheckbox = screen.getByLabelText(L.liability);
 
       await user.click(copyrightCheckbox);
@@ -165,9 +163,7 @@ describe('TranslationUpload', () => {
   describe('Step 2: Translation Settings Validation', () => {
     const advanceToStep2 = async (user: ReturnType<typeof userEvent.setup>) => {
       const copyrightCheckbox = screen.getByLabelText(L.copyright);
-      const translationRightsCheckbox = screen.getByLabelText(
-        L.translationRights
-      );
+      const translationRightsCheckbox = screen.getByLabelText(L.translationRights);
       const liabilityCheckbox = screen.getByLabelText(L.liability);
 
       await user.click(copyrightCheckbox);
@@ -240,9 +236,7 @@ describe('TranslationUpload', () => {
     const advanceToStep3 = async (user: ReturnType<typeof userEvent.setup>) => {
       // Step 1: Legal attestation
       const copyrightCheckbox = screen.getByLabelText(L.copyright);
-      const translationRightsCheckbox = screen.getByLabelText(
-        L.translationRights
-      );
+      const translationRightsCheckbox = screen.getByLabelText(L.translationRights);
       const liabilityCheckbox = screen.getByLabelText(L.liability);
 
       await user.click(copyrightCheckbox);
@@ -313,9 +307,7 @@ describe('TranslationUpload', () => {
     const advanceToStep4 = async (user: ReturnType<typeof userEvent.setup>) => {
       // Step 1: Legal attestation
       await user.click(screen.getByLabelText(L.copyright));
-      await user.click(
-        screen.getByLabelText(L.translationRights)
-      );
+      await user.click(screen.getByLabelText(L.translationRights));
       await user.click(screen.getByLabelText(L.liability));
       await user.click(screen.getByRole('button', { name: /next/i }));
 
@@ -536,9 +528,7 @@ describe('TranslationUpload', () => {
 
       // Step 1: Check legal attestation
       await user.click(screen.getByLabelText(L.copyright));
-      await user.click(
-        screen.getByLabelText(L.translationRights)
-      );
+      await user.click(screen.getByLabelText(L.translationRights));
       await user.click(screen.getByLabelText(L.liability));
       await user.click(screen.getByRole('button', { name: /next/i }));
 
@@ -550,9 +540,7 @@ describe('TranslationUpload', () => {
       await user.click(screen.getByRole('button', { name: /back/i }));
 
       await waitFor(() => {
-        const copyrightCheckbox = screen.getByLabelText(
-          L.copyright
-        ) as HTMLInputElement;
+        const copyrightCheckbox = screen.getByLabelText(L.copyright) as HTMLInputElement;
         expect(copyrightCheckbox.checked).toBe(true);
       });
     });
@@ -563,9 +551,7 @@ describe('TranslationUpload', () => {
 
       // Navigate to step 2
       await user.click(screen.getByLabelText(L.copyright));
-      await user.click(
-        screen.getByLabelText(L.translationRights)
-      );
+      await user.click(screen.getByLabelText(L.translationRights));
       await user.click(screen.getByLabelText(L.liability));
       await user.click(screen.getByRole('button', { name: /next/i }));
 
@@ -601,12 +587,8 @@ describe('TranslationUpload', () => {
 
       // LegalAttestation checkboxes should be rendered
       expect(screen.getByLabelText(L.copyright)).toBeInTheDocument();
-      expect(
-        screen.getByLabelText(L.translationRights)
-      ).toBeInTheDocument();
-      expect(
-        screen.getByLabelText(L.liability)
-      ).toBeInTheDocument();
+      expect(screen.getByLabelText(L.translationRights)).toBeInTheDocument();
+      expect(screen.getByLabelText(L.liability)).toBeInTheDocument();
     });
 
     it('should pass correct props to TranslationConfig component', async () => {
@@ -615,9 +597,7 @@ describe('TranslationUpload', () => {
 
       // Navigate to step 2
       await user.click(screen.getByLabelText(L.copyright));
-      await user.click(
-        screen.getByLabelText(L.translationRights)
-      );
+      await user.click(screen.getByLabelText(L.translationRights));
       await user.click(screen.getByLabelText(L.liability));
       await user.click(screen.getByRole('button', { name: /next/i }));
 
@@ -633,9 +613,7 @@ describe('TranslationUpload', () => {
 
       // Navigate to step 3
       await user.click(screen.getByLabelText(L.copyright));
-      await user.click(
-        screen.getByLabelText(L.translationRights)
-      );
+      await user.click(screen.getByLabelText(L.translationRights));
       await user.click(screen.getByLabelText(L.liability));
       await user.click(screen.getByRole('button', { name: /next/i }));
 

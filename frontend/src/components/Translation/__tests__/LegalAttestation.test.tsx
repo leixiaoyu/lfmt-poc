@@ -47,12 +47,8 @@ describe('LegalAttestation Component', () => {
 
       // Verify specific checkboxes by their labels
       expect(screen.getByLabelText(L.copyright)).toBeInTheDocument();
-      expect(
-        screen.getByLabelText(L.translationRights)
-      ).toBeInTheDocument();
-      expect(
-        screen.getByLabelText(L.liability)
-      ).toBeInTheDocument();
+      expect(screen.getByLabelText(L.translationRights)).toBeInTheDocument();
+      expect(screen.getByLabelText(L.liability)).toBeInTheDocument();
     });
 
     it('should render info alert message', () => {
@@ -142,9 +138,7 @@ describe('LegalAttestation Component', () => {
       const mockOnChange = vi.fn();
       render(<LegalAttestation {...createProps({ onChange: mockOnChange })} />);
 
-      const checkbox = screen.getByLabelText(
-        L.translationRights
-      );
+      const checkbox = screen.getByLabelText(L.translationRights);
 
       // Act
       await user.click(checkbox);
@@ -416,9 +410,7 @@ describe('LegalAttestation Component', () => {
       render(<LegalAttestation {...createProps()} />);
 
       // Assert
-      const checkbox = screen.getByLabelText(
-        L.translationRights
-      );
+      const checkbox = screen.getByLabelText(L.translationRights);
       expect(checkbox).toHaveAttribute('name', 'acceptTranslationRights');
     });
 
@@ -441,9 +433,7 @@ describe('LegalAttestation Component', () => {
 
       // Act - Check all boxes
       await user.click(screen.getByLabelText(L.copyright));
-      await user.click(
-        screen.getByLabelText(L.translationRights)
-      );
+      await user.click(screen.getByLabelText(L.translationRights));
       await user.click(screen.getByLabelText(L.liability));
 
       // Assert
@@ -481,9 +471,7 @@ describe('LegalAttestation Component', () => {
       expect(mockOnChange).not.toHaveBeenCalled();
 
       // Assert - Checkbox state should remain
-      const checkbox = screen.getByLabelText(
-        L.copyright
-      ) as HTMLInputElement;
+      const checkbox = screen.getByLabelText(L.copyright) as HTMLInputElement;
       expect(checkbox.checked).toBe(true);
     });
   });
@@ -503,9 +491,11 @@ describe('LegalAttestation Component', () => {
     it('renders exactly one checkbox matching the copyright pattern', () => {
       render(<LegalAttestation {...createProps()} />);
 
-      const matches = screen.getAllByRole('checkbox').filter((el) =>
-        L.copyright.test(el.getAttribute('aria-label') ?? el.closest('label')?.textContent ?? '')
-      );
+      const matches = screen
+        .getAllByRole('checkbox')
+        .filter((el) =>
+          L.copyright.test(el.getAttribute('aria-label') ?? el.closest('label')?.textContent ?? '')
+        );
       // If this assertion fails, update legalAttestationLabels.ts to match
       // the new label text in LegalAttestation.tsx.
       expect(matches).toHaveLength(1);
@@ -514,20 +504,24 @@ describe('LegalAttestation Component', () => {
     it('renders exactly one checkbox matching the translationRights pattern', () => {
       render(<LegalAttestation {...createProps()} />);
 
-      const matches = screen.getAllByRole('checkbox').filter((el) =>
-        L.translationRights.test(
-          el.getAttribute('aria-label') ?? el.closest('label')?.textContent ?? ''
-        )
-      );
+      const matches = screen
+        .getAllByRole('checkbox')
+        .filter((el) =>
+          L.translationRights.test(
+            el.getAttribute('aria-label') ?? el.closest('label')?.textContent ?? ''
+          )
+        );
       expect(matches).toHaveLength(1);
     });
 
     it('renders exactly one checkbox matching the liability pattern', () => {
       render(<LegalAttestation {...createProps()} />);
 
-      const matches = screen.getAllByRole('checkbox').filter((el) =>
-        L.liability.test(el.getAttribute('aria-label') ?? el.closest('label')?.textContent ?? '')
-      );
+      const matches = screen
+        .getAllByRole('checkbox')
+        .filter((el) =>
+          L.liability.test(el.getAttribute('aria-label') ?? el.closest('label')?.textContent ?? '')
+        );
       expect(matches).toHaveLength(1);
     });
   });
