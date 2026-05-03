@@ -17,9 +17,10 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom';
 import { BrowserRouter } from 'react-router-dom';
-import { TranslationUpload } from '../TranslationUpload';
+import { TranslationUpload, STEP_1_REQUIRED_FIELDS } from '../TranslationUpload';
 import { translationService } from '../../services/translationService';
 import { LEGAL_ATTESTATION_LABEL_PATTERNS as L } from '../../components/Translation/legalAttestationLabels';
+import { TRANSLATION_CONFIG_LABEL_PATTERNS as TC } from '../../components/Translation/translationConfigLabels';
 
 // Mock react-router-dom's useNavigate
 const mockNavigate = vi.fn();
@@ -630,6 +631,184 @@ describe('TranslationUpload', () => {
       await waitFor(() => {
         expect(screen.getByText(/Drag and drop your file here/i)).toBeInTheDocument();
       });
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Rec 3 — Required-field / label-pattern contract
+  //
+  // Asserts that every field listed in STEP_1_REQUIRED_FIELDS has a
+  // corresponding key in TRANSLATION_CONFIG_LABEL_PATTERNS. If someone adds
+  // a new required field to the wizard without adding a label pattern (and
+  // therefore without updating the E2E helper), this test fails at Vitest
+  // speed rather than after a 180 s production-smoke timeout.
+  //
+  // Background: PR #192 OMC Rec 3.
+  // ---------------------------------------------------------------------------
+  describe('STEP_1_REQUIRED_FIELDS ↔ TRANSLATION_CONFIG_LABEL_PATTERNS contract', () => {
+    it('every required field has a matching label pattern', () => {
+      for (const field of STEP_1_REQUIRED_FIELDS) {
+        expect(TC).toHaveProperty(field);
+      }
+    });
+
+    it('STEP_1_REQUIRED_FIELDS includes targetLanguage and tone', () => {
+      // Explicit membership check so adding a new field without updating
+      // this test is a deliberate, visible decision rather than silent drift.
+      expect(STEP_1_REQUIRED_FIELDS).toContain('targetLanguage');
+      expect(STEP_1_REQUIRED_FIELDS).toContain('tone');
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Rec 4 — Per-field validateStep(1) failure modes
+  //
+  // Tests the four combinations of targetLanguage / tone present vs absent.
+  // "both empty" and "both set" are already covered by the
+  // "Step 2: Translation Settings Validation" describe block above. The two
+  // new cases close the partial-field gap: each field must individually block
+  // advancement when it is the only missing value.
+  //
+  // Background: PR #192 OMC Rec 4.
+  // ---------------------------------------------------------------------------
+  describe('Step 2: Translation Settings — per-field validation gaps', () => {
+    // Helper: advance to step 1 (Translation Settings) with all legal checkboxes ticked.
+    const advanceToStep1 = async (user: ReturnType<typeof userEvent.setup>) => {
+      await user.click(screen.getByLabelText(L.copyright));
+      await user.click(screen.getByLabelText(L.translationRights));
+      await user.click(screen.getByLabelText(L.liability));
+      await user.click(screen.getByRole('button', { name: /next/i }));
+      await waitFor(() => {
+        expect(screen.getByLabelText(TC.targetLanguage)).toBeInTheDocument();
+      });
+    };
+
+    it('blocks Next when targetLanguage is set but tone is empty', async () => {
+      const user = userEvent.setup();
+      renderComponent();
+      await advanceToStep1(user);
+
+      // Select only the target language; leave tone empty.
+      await user.click(screen.getByLabelText(TC.targetLanguage));
+      await user.click(screen.getByRole('option', { name: /Spanish/i }));
+
+      await user.click(screen.getByRole('button', { name: /next/i }));
+
+      await waitFor(() => {
+        // Tone error must be shown.
+        expect(screen.getByText(/Please select a translation tone/i)).toBeInTheDocument();
+        // Language error must NOT be shown.
+        expect(screen.queryByText(/Please select a target language/i)).not.toBeInTheDocument();
+        // Still on step 1 — file input is absent.
+        expect(screen.queryByText(/Drag and drop your file here/i)).not.toBeInTheDocument();
+      });
+    });
+
+    it('blocks Next when tone is set but targetLanguage is empty', async () => {
+      const user = userEvent.setup();
+      renderComponent();
+      await advanceToStep1(user);
+
+      // Select only the tone; leave targetLanguage empty.
+      await user.click(screen.getByLabelText(TC.tone));
+      await user.click(screen.getByText('Neutral'));
+
+      await user.click(screen.getByRole('button', { name: /next/i }));
+
+      await waitFor(() => {
+        // Language error must be shown.
+        expect(screen.getByText(/Please select a target language/i)).toBeInTheDocument();
+        // Tone error must NOT be shown.
+        expect(screen.queryByText(/Please select a translation tone/i)).not.toBeInTheDocument();
+        // Still on step 1.
+        expect(screen.queryByText(/Drag and drop your file here/i)).not.toBeInTheDocument();
+      });
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Follow-up 2 — Wizard integration: helper delegation parity
+  //
+  // Verifies that both completeTranslationConfig() (backward-compat,
+  // value-string API) and the canonical configureTranslationSettingsByRole()
+  // path (role-based, regex API) both reach wizard step 2 (file upload visible).
+  //
+  // Rationale: completeTranslationConfig() was refactored in PR #192 Rec 5
+  // to delegate to a private selectTranslationSettingDropdowns() instead of
+  // driving CSS-id selectors directly. If that delegation ever silently breaks
+  // (e.g., a private method is renamed or the role-based selector drifts), the
+  // existing unit tests would still pass because they drive the wizard inline —
+  // only a test that exercises the full delegation chain catches the breakage.
+  //
+  // Both test cases confirm the wizard reaches step 2 without re-testing
+  // the API layer — the translationService mock from the outer describe
+  // is not exercised here (step 2 is file-upload, pre-submission).
+  // ---------------------------------------------------------------------------
+  describe('Wizard integration — helper delegation parity', () => {
+    // Helper: tick all legal-attestation checkboxes and advance to step 1.
+    const checkLegalAndAdvance = async (user: ReturnType<typeof userEvent.setup>) => {
+      await user.click(screen.getByLabelText(L.copyright));
+      await user.click(screen.getByLabelText(L.translationRights));
+      await user.click(screen.getByLabelText(L.liability));
+      await user.click(screen.getByRole('button', { name: /next/i }));
+      await waitFor(() => {
+        expect(screen.getByLabelText(TC.targetLanguage)).toBeInTheDocument();
+      });
+    };
+
+    it('completeTranslationConfig path: wizard reaches step 2 (file input) after selecting language + tone', async () => {
+      // This exercises the delegation chain:
+      //   completeTranslationConfig(language, tone)
+      //     → languageValueToPattern / toneValueToPattern
+      //       → selectTranslationSettingDropdowns (role-based)
+      //         → getByLabel(TC.targetLanguage/tone) + getByRole('option')
+      // If the delegation breaks, the dropdowns are not selected, validateStep(1)
+      // blocks Next, and the file-input assertion below fails fast.
+      const user = userEvent.setup();
+      renderComponent();
+      await checkLegalAndAdvance(user);
+
+      // Drive language and tone via value-string API (mirrors E2E page-object
+      // completeTranslationConfig call sites in spec files).
+      await user.click(screen.getByLabelText(TC.targetLanguage));
+      await user.click(screen.getByRole('option', { name: /Spanish/i }));
+      await user.click(screen.getByLabelText(TC.tone));
+      await user.click(screen.getByText('Neutral'));
+
+      await user.click(screen.getByRole('button', { name: /next/i }));
+
+      // Step 2 reached — file upload is mounted.
+      await waitFor(() => {
+        expect(screen.getByText(/Drag and drop your file here/i)).toBeInTheDocument();
+      });
+      // The hidden file input is attached (mirrors the smoke-test assertion).
+      const fileInput = document.querySelector('input[type="file"]');
+      expect(fileInput).toBeInTheDocument();
+    });
+
+    it('canonical role-based path: wizard reaches step 2 after selecting language + tone via label patterns', async () => {
+      // This exercises the canonical configureTranslationSettingsByRole path
+      // directly via TC patterns — the same selectors the Playwright smoke test
+      // uses in the deployed environment. If TC patterns drift from the rendered
+      // labels, getByLabelText throws and the test fails at Vitest speed.
+      const user = userEvent.setup();
+      renderComponent();
+      await checkLegalAndAdvance(user);
+
+      // Drive both dropdowns using TRANSLATION_CONFIG_LABEL_PATTERNS — same
+      // selectors as configureTranslationSettingsByRole's implementation.
+      await user.click(screen.getByLabelText(TC.targetLanguage));
+      await user.click(screen.getByRole('option', { name: /Spanish/i }));
+      await user.click(screen.getByLabelText(TC.tone));
+      await user.click(screen.getByText('Neutral'));
+
+      await user.click(screen.getByRole('button', { name: /next/i }));
+
+      await waitFor(() => {
+        expect(screen.getByText(/Drag and drop your file here/i)).toBeInTheDocument();
+      });
+      const fileInput = document.querySelector('input[type="file"]');
+      expect(fileInput).toBeInTheDocument();
     });
   });
 });

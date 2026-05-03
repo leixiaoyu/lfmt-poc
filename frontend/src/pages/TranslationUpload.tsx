@@ -31,6 +31,28 @@ import { getTranslationErrorMessage } from '../utils/translationErrorMessages';
 
 const STEPS = ['Legal Attestation', 'Translation Settings', 'Upload Document', 'Review & Submit'];
 
+/**
+ * Canonical list of fields that must be non-empty for wizard step 1
+ * (Translation Settings) to pass validation.
+ *
+ * Exported as the single source of truth so that:
+ *   1. `validateStep(1)` derives its required-field check from this list —
+ *      adding a field here automatically gates the Next button.
+ *   2. The Vitest contract test in `TranslationUpload.test.tsx` asserts
+ *      that each field name has a corresponding entry in
+ *      `TRANSLATION_CONFIG_LABEL_PATTERNS` — so a new required field
+ *      forces an update to the label module and therefore to the E2E
+ *      helper, rather than silently causing a 180 s smoke-test timeout.
+ *
+ * Background: PR #192 (OMC Rec 3) — the original bug was that the E2E
+ * helper omitted tone selection because nothing mechanically linked the
+ * required-field list to the helper's selector list.
+ */
+// eslint-disable-next-line react-refresh/only-export-components
+export const STEP_1_REQUIRED_FIELDS = ['targetLanguage', 'tone'] as const;
+
+type Step1Field = (typeof STEP_1_REQUIRED_FIELDS)[number];
+
 interface FormData {
   legalAttestation: LegalAttestationData;
   translationConfig: TranslationConfigData;
@@ -93,18 +115,19 @@ export const TranslationUpload: React.FC = () => {
         };
       }
     } else if (step === 1) {
-      // Validate translation config
-      if (!formData.translationConfig.targetLanguage) {
-        newErrors.translationConfig = {
-          ...newErrors.translationConfig,
-          targetLanguage: 'Please select a target language',
-        };
-      }
-      if (!formData.translationConfig.tone) {
-        newErrors.translationConfig = {
-          ...newErrors.translationConfig,
-          tone: 'Please select a translation tone',
-        };
+      // Validate translation config — derived from STEP_1_REQUIRED_FIELDS so
+      // that adding a new required field updates the gate automatically.
+      const fieldMessages: Record<Step1Field, string> = {
+        targetLanguage: 'Please select a target language',
+        tone: 'Please select a translation tone',
+      };
+      for (const field of STEP_1_REQUIRED_FIELDS) {
+        if (!formData.translationConfig[field]) {
+          newErrors.translationConfig = {
+            ...newErrors.translationConfig,
+            [field]: fieldMessages[field],
+          };
+        }
       }
     } else if (step === 2) {
       // Validate file

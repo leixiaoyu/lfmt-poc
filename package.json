@@ -7,7 +7,7 @@
     "setup": "npm run setup:hooks && npm run install:all",
     "setup:hooks": "./scripts/setup-git-hooks.sh",
     "install:all": "npm run install:shared && npm run install:infra",
-    "install:shared": "cd shared-types && npm install --cache=/tmp/npm-cache",
+    "install:shared": "cd shared-types && npm install --cache=/tmp/npm-cache && npm run build",
     "install:infra": "cd backend/infrastructure && npm install --cache=/tmp/npm-cache",
     "test:all": "npm run test:shared && npm run test:infra",
     "test:shared": "cd shared-types && npm test",
