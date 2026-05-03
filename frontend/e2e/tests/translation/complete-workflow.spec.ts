@@ -12,7 +12,7 @@ import { LoginPage } from '../../pages/LoginPage';
 import { DashboardPage } from '../../pages/DashboardPage';
 import { TranslationUploadPage } from '../../pages/TranslationUploadPage';
 import { TranslationDetailPage } from '../../pages/TranslationDetailPage';
-import { generateTestUser } from '../../fixtures/auth';
+import { generateTestUser, registerViaApi, getJobViaApi } from '../../fixtures/auth';
 import { TEST_DOCUMENTS } from '../../fixtures/test-documents';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -60,17 +60,7 @@ test.describe('Complete Translation Workflow - Full E2E', () => {
   }) => {
     // ===== STEP 1: User Registration =====
     const user = generateTestUser();
-    const registerResponse = await page.request.post(
-      `${process.env.API_BASE_URL || 'http://localhost:3000'}/v1/auth/register`,
-      {
-        data: {
-          firstName: user.firstName,
-          lastName: user.lastName,
-          email: user.email,
-          password: user.password,
-        },
-      }
-    );
+    const registerResponse = await registerViaApi(page.request, user);
     expect(registerResponse.ok()).toBeTruthy();
 
     // ===== STEP 2: Login =====
@@ -155,14 +145,7 @@ test.describe('Complete Translation Workflow - Full E2E', () => {
     const authToken = await page.evaluate(() => localStorage.getItem('authToken'));
     expect(authToken).toBeTruthy();
 
-    const jobResponse = await page.request.get(
-      `${process.env.API_BASE_URL || 'http://localhost:3000'}/v1/translation/jobs/${jobId}`,
-      {
-        headers: {
-          Authorization: `Bearer ${authToken}`,
-        },
-      }
-    );
+    const jobResponse = await getJobViaApi(page.request, jobId, authToken!);
     expect(jobResponse.ok()).toBeTruthy();
 
     const job = await jobResponse.json();
@@ -216,17 +199,7 @@ test.describe('Complete Translation Workflow - Full E2E', () => {
   test('should persist data across page refreshes', async ({ page }) => {
     // Setup: Create job
     const user = generateTestUser();
-    await page.request.post(
-      `${process.env.API_BASE_URL || 'http://localhost:3000'}/v1/auth/register`,
-      {
-        data: {
-          firstName: user.firstName,
-          lastName: user.lastName,
-          email: user.email,
-          password: user.password,
-        },
-      }
-    );
+    await registerViaApi(page.request, user);
 
     await loginPage.goto();
     await loginPage.login(user.email, user.password);
@@ -259,17 +232,7 @@ test.describe('Complete Translation Workflow - Full E2E', () => {
   test('should maintain authentication across workflow', async ({ page }) => {
     // Register and login
     const user = generateTestUser();
-    await page.request.post(
-      `${process.env.API_BASE_URL || 'http://localhost:3000'}/v1/auth/register`,
-      {
-        data: {
-          firstName: user.firstName,
-          lastName: user.lastName,
-          email: user.email,
-          password: user.password,
-        },
-      }
-    );
+    await registerViaApi(page.request, user);
 
     await loginPage.goto();
     await loginPage.login(user.email, user.password);
@@ -296,17 +259,7 @@ test.describe('Complete Translation Workflow - Full E2E', () => {
   test('should handle browser back button correctly', async ({ page }) => {
     // Setup
     const user = generateTestUser();
-    await page.request.post(
-      `${process.env.API_BASE_URL || 'http://localhost:3000'}/v1/auth/register`,
-      {
-        data: {
-          firstName: user.firstName,
-          lastName: user.lastName,
-          email: user.email,
-          password: user.password,
-        },
-      }
-    );
+    await registerViaApi(page.request, user);
 
     await loginPage.goto();
     await loginPage.login(user.email, user.password);

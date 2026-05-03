@@ -12,7 +12,7 @@ import { LoginPage } from '../../pages/LoginPage';
 import { DashboardPage } from '../../pages/DashboardPage';
 import { TranslationUploadPage } from '../../pages/TranslationUploadPage';
 import { TranslationDetailPage } from '../../pages/TranslationDetailPage';
-import { generateTestUser } from '../../fixtures/auth';
+import { generateTestUser, registerViaApi, getJobViaApi } from '../../fixtures/auth';
 import { TEST_DOCUMENTS } from '../../fixtures/test-documents';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -71,17 +71,7 @@ test.describe('Multi-Language Translation Support', () => {
 
     // Register and login once per test
     const user = generateTestUser();
-    await page.request.post(
-      `${process.env.API_BASE_URL || 'http://localhost:3000'}/v1/auth/register`,
-      {
-        data: {
-          firstName: user.firstName,
-          lastName: user.lastName,
-          email: user.email,
-          password: user.password,
-        },
-      }
-    );
+    await registerViaApi(page.request, user);
 
     await loginPage.goto();
     await loginPage.login(user.email, user.password);
@@ -106,14 +96,7 @@ test.describe('Multi-Language Translation Support', () => {
       const jobId = jobIdMatch![1];
 
       const authToken = await page.evaluate(() => localStorage.getItem('authToken'));
-      const jobResponse = await page.request.get(
-        `${process.env.API_BASE_URL || 'http://localhost:3000'}/v1/translation/jobs/${jobId}`,
-        {
-          headers: {
-            Authorization: `Bearer ${authToken}`,
-          },
-        }
-      );
+      const jobResponse = await getJobViaApi(page.request, jobId, authToken!);
 
       expect(jobResponse.ok()).toBeTruthy();
       const job = await jobResponse.json();
@@ -130,15 +113,11 @@ test.describe('Multi-Language Translation Support', () => {
       await detailPage.waitForPageLoad();
 
       // Verify tone was set correctly via API
+      const toneUrl = page.url();
+      const toneJobIdMatch = toneUrl.match(/\/translation\/([a-f0-9-]+)/);
+      const toneJobId = toneJobIdMatch![1];
       const authToken = await page.evaluate(() => localStorage.getItem('authToken'));
-      const jobResponse = await page.request.get(
-        `${process.env.API_BASE_URL || 'http://localhost:3000'}/v1/auth/register`,
-        {
-          headers: {
-            Authorization: `Bearer ${authToken}`,
-          },
-        }
-      );
+      const jobResponse = await getJobViaApi(page.request, toneJobId, authToken!);
 
       expect(jobResponse.ok()).toBeTruthy();
       const job = await jobResponse.json();
@@ -203,14 +182,7 @@ test.describe('Multi-Language Translation Support', () => {
     const authToken = await page.evaluate(() => localStorage.getItem('authToken'));
 
     for (let i = 0; i < 3; i++) {
-      const jobResponse = await page.request.get(
-        `${process.env.API_BASE_URL || 'http://localhost:3000'}/v1/translation/jobs/${jobIds[i]}`,
-        {
-          headers: {
-            Authorization: `Bearer ${authToken}`,
-          },
-        }
-      );
+      const jobResponse = await getJobViaApi(page.request, jobIds[i], authToken!);
 
       expect(jobResponse.ok()).toBeTruthy();
       const job = await jobResponse.json();

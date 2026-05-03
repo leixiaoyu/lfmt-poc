@@ -10,7 +10,7 @@ import { LoginPage } from '../../pages/LoginPage';
 import { DashboardPage } from '../../pages/DashboardPage';
 import { TranslationUploadPage } from '../../pages/TranslationUploadPage';
 import { TranslationDetailPage } from '../../pages/TranslationDetailPage';
-import { generateTestUser } from '../../fixtures/auth';
+import { generateTestUser, registerViaApi, getJobViaApi } from '../../fixtures/auth';
 import { TEST_DOCUMENTS } from '../../fixtures/test-documents';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -65,17 +65,7 @@ test.describe('Translation Upload Workflow - Happy Path', () => {
     const user = generateTestUser();
 
     // Register user via API
-    const registerResponse = await page.request.post(
-      `${process.env.API_BASE_URL || 'http://localhost:3000'}/v1/auth/register`,
-      {
-        data: {
-          firstName: user.firstName,
-          lastName: user.lastName,
-          email: user.email,
-          password: user.password,
-        },
-      }
-    );
+    const registerResponse = await registerViaApi(page.request, user);
     expect(registerResponse.ok()).toBeTruthy();
 
     // Login via UI
@@ -127,14 +117,7 @@ test.describe('Translation Upload Workflow - Happy Path', () => {
     const authToken = await page.evaluate(() => localStorage.getItem('authToken'));
     expect(authToken).toBeTruthy();
 
-    const jobResponse = await page.request.get(
-      `${process.env.API_BASE_URL || 'http://localhost:3000'}/v1/translation/jobs/${jobId}`,
-      {
-        headers: {
-          Authorization: `Bearer ${authToken}`,
-        },
-      }
-    );
+    const jobResponse = await getJobViaApi(page.request, jobId, authToken!);
     expect(jobResponse.ok()).toBeTruthy();
 
     const job = await jobResponse.json();
@@ -153,17 +136,7 @@ test.describe('Translation Upload Workflow - Happy Path', () => {
   test('should display legal attestation checkboxes correctly', async ({ page }) => {
     // Setup: Login
     const user = generateTestUser();
-    const registerResponse = await page.request.post(
-      `${process.env.API_BASE_URL || 'http://localhost:3000'}/v1/auth/register`,
-      {
-        data: {
-          firstName: user.firstName,
-          lastName: user.lastName,
-          email: user.email,
-          password: user.password,
-        },
-      }
-    );
+    const registerResponse = await registerViaApi(page.request, user);
     expect(registerResponse.ok()).toBeTruthy();
 
     await loginPage.goto();
@@ -203,17 +176,7 @@ test.describe('Translation Upload Workflow - Happy Path', () => {
   test('should validate file upload requirements', async ({ page }) => {
     // Setup: Login and navigate to upload
     const user = generateTestUser();
-    const registerResponse = await page.request.post(
-      `${process.env.API_BASE_URL || 'http://localhost:3000'}/v1/auth/register`,
-      {
-        data: {
-          firstName: user.firstName,
-          lastName: user.lastName,
-          email: user.email,
-          password: user.password,
-        },
-      }
-    );
+    const registerResponse = await registerViaApi(page.request, user);
     expect(registerResponse.ok()).toBeTruthy();
 
     await loginPage.goto();

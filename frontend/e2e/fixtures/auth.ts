@@ -2,9 +2,16 @@
  * Authentication Helpers for E2E Tests
  *
  * Provides utilities for authentication flows in E2E tests.
+ *
+ * URL normalisation is handled by the Playwright-free `resolveApiUrl` helper
+ * in `./url` so that the pure logic can be unit-tested with Vitest without
+ * pulling in the Playwright bootstrap.
+ *
+ * @see url.ts for the `resolveApiUrl` contract and env-var documentation.
  */
 
 import { APIRequestContext, Page } from '@playwright/test';
+import { resolveApiUrl } from './url';
 
 /**
  * Generate unique test email
@@ -32,28 +39,6 @@ export function generateTestUser() {
 }
 
 /**
- * Resolve the API base URL from an optional override or the `API_BASE_URL`
- * environment variable, normalising it so callers can safely append a path
- * segment with a single leading slash.
- *
- * Contract (matches production-smoke.spec.ts and all backend integration
- * tests): `API_BASE_URL` already includes the version prefix, e.g.
- * `https://8brwlwf68h.execute-api.us-east-1.amazonaws.com/v1` (or the same
- * URL with a trailing slash as emitted by CloudFormation's `ApiUrl` output).
- * Callers must therefore append only the resource path (e.g. `/auth/register`)
- * — NOT `/v1/auth/register` — to avoid the double-prefix
- * `.../v1/v1/auth/register` bug that produced 404s in CI.
- *
- * Exported as a pure function so it can be unit-tested independently of any
- * network calls (see `src/__tests__/resolveApiUrl.test.ts`).
- */
-export function resolveApiUrl(apiBaseUrl?: string): string {
-  const raw = apiBaseUrl ?? process.env.API_BASE_URL ?? 'http://localhost:3000';
-  // Strip a single trailing slash to avoid double-slash in composed URLs.
-  return raw.endsWith('/') ? raw.slice(0, -1) : raw;
-}
-
-/**
  * Register a user via the backend API (bypassing the UI).
  *
  * Many E2E specs need a known authenticated user but want to skip the
@@ -65,14 +50,14 @@ export function resolveApiUrl(apiBaseUrl?: string): string {
  * shape so the contract can't drift again.
  *
  * `apiBaseUrl` (and `API_BASE_URL`) must be the full base URL including the
- * version prefix, e.g. `https://<id>.execute-api.us-east-1.amazonaws.com/v1`.
- * This is the value CloudFormation emits as `ApiUrl` and what CI passes as
- * `API_BASE_URL`. The helper appends only `/auth/register` — not
- * `/v1/auth/register` — to avoid a double version prefix.
+ * version prefix. See `./url.ts` for the full contract. The helper appends
+ * only `/auth/register` — not `/v1/auth/register`.
  *
  * Returns the raw Playwright APIResponse so callers can choose their own
  * assertion (most just check `response.ok()`; some treat 409 "already exists"
  * as success on retries).
+ *
+ * @see resolveApiUrl in url.ts for the URL normalisation contract.
  */
 export async function registerViaApi(
   request: APIRequestContext,
@@ -89,6 +74,34 @@ export async function registerViaApi(
       confirmPassword: user.password,
       acceptedTerms: true,
       acceptedPrivacy: true,
+    },
+    failOnStatusCode: false,
+  });
+}
+
+/**
+ * Fetch a translation job from the backend API by ID.
+ *
+ * Centralises the `/translation/jobs/{jobId}` GET call used across multiple
+ * E2E specs so the URL construction cannot drift. Requires the caller to
+ * supply a valid auth token (obtained from `page.evaluate(() =>
+ * localStorage.getItem('authToken'))`).
+ *
+ * Appends only `/translation/jobs/${jobId}` — not `/v1/translation/jobs/${jobId}` —
+ * because `API_BASE_URL` already includes the version prefix.
+ *
+ * @see resolveApiUrl in url.ts for the URL normalisation contract.
+ */
+export async function getJobViaApi(
+  request: APIRequestContext,
+  jobId: string,
+  authToken: string,
+  apiBaseUrl?: string
+) {
+  const normalized = resolveApiUrl(apiBaseUrl);
+  return request.get(`${normalized}/translation/jobs/${jobId}`, {
+    headers: {
+      Authorization: `Bearer ${authToken}`,
     },
     failOnStatusCode: false,
   });

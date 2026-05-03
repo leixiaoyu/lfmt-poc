@@ -20,6 +20,7 @@ import * as path from 'path';
 import { fileURLToPath } from 'node:url';
 import { test, expect } from '@playwright/test';
 import { TranslationUploadPage } from '../../pages/TranslationUploadPage';
+import { resolveApiUrl } from '../../fixtures/url';
 
 // Smoke tests use a longer timeout because they run against production.
 // 3 minutes is sufficient when we use the ~1 KB smoke-test-minimal.txt
@@ -94,19 +95,21 @@ test.describe('Production Smoke Tests @smoke', () => {
     // endpoint requires confirmPassword + acceptedTerms + acceptedPrivacy on
     // top of the basic credential fields (see shared-types/src/auth.ts:85).
     if (!presharedEmail || !presharedPassword) {
-      const apiUrl = apiBaseURL.endsWith('/') ? apiBaseURL.slice(0, -1) : apiBaseURL;
-      const registerResponse = await page.request.post(`${apiUrl}/auth/register`, {
-        data: {
-          email: user.email,
-          password: user.password,
-          confirmPassword: user.password,
-          firstName: user.firstName,
-          lastName: user.lastName,
-          acceptedTerms: true,
-          acceptedPrivacy: true,
-        },
-        failOnStatusCode: false,
-      });
+      const registerResponse = await page.request.post(
+        `${resolveApiUrl(apiBaseURL)}/auth/register`,
+        {
+          data: {
+            email: user.email,
+            password: user.password,
+            confirmPassword: user.password,
+            firstName: user.firstName,
+            lastName: user.lastName,
+            acceptedTerms: true,
+            acceptedPrivacy: true,
+          },
+          failOnStatusCode: false,
+        }
+      );
       // 201 = created, 409 = already exists (acceptable on retries)
       const registerStatus = registerResponse.status();
       if (registerStatus !== 201 && registerStatus !== 409) {
