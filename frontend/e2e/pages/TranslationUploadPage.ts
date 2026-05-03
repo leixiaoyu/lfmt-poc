@@ -2,9 +2,19 @@
  * Translation Upload Page Object Model
  *
  * Represents the multi-step translation upload page.
+ *
+ * The page is a 4-step wizard:
+ *   Step 0: Legal Attestation  → Step 1: Translation Settings
+ *   Step 2: Upload Document    → Step 3: Review & Submit
+ *
+ * Both `completeUploadWorkflow()` (single-call convenience) and the
+ * `*ByRole()` granular helpers below drive the same DOM. The granular
+ * helpers exist because the production smoke test wraps each wizard
+ * step in a `test.step()` block for diagnostic tracing — see
+ * `frontend/e2e/tests/smoke/production-smoke.spec.ts`.
  */
 
-import { Page } from '@playwright/test';
+import { Page, expect } from '@playwright/test';
 import { BasePage } from './BasePage';
 
 export class TranslationUploadPage extends BasePage {
@@ -130,5 +140,90 @@ export class TranslationUploadPage extends BasePage {
    */
   async waitForNavigationToDetail() {
     await this.page.waitForURL(/\/translation\/[a-f0-9-]+/, { timeout: 10000 });
+  }
+
+  // ---------------------------------------------------------------------
+  // Role-based wizard helpers (used by production-smoke.spec.ts)
+  //
+  // These mirror the steps performed by `completeUploadWorkflow()` but use
+  // role-based locators (more resilient against CSS-class churn in deployed
+  // environments) and accept timeouts so callers can tune for prod latency.
+  // The smoke test calls each helper inside its own `test.step()` block to
+  // get per-step traces in CI.
+  // ---------------------------------------------------------------------
+
+  /**
+   * Tick the three required attestation checkboxes and advance to the
+   * Translation Settings step. Returns when the target-language control
+   * is visible (handshake that step 1 has rendered).
+   */
+  async completeLegalAttestationByRole(timeout = 10000) {
+    await this.page.getByRole('checkbox', { name: /copyright ownership/i }).check();
+    await this.page.getByRole('checkbox', { name: /translation rights/i }).check();
+    await this.page.getByRole('checkbox', { name: /liability/i }).check();
+
+    await this.page.getByRole('button', { name: /next/i }).click();
+    await expect(this.page.getByLabel(/target.*language/i)).toBeVisible({ timeout });
+  }
+
+  /**
+   * Configure source (defaults to English when present) + target language,
+   * then advance to the Upload Document step. Returns when the file input
+   * is attached to the DOM (the input has display:none — `toBeAttached` is
+   * the correct gate, not `toBeVisible`).
+   */
+  async configureLanguagesByRole(
+    targetLanguagePattern: RegExp = /spanish|español/i,
+    timeout = 10000
+  ) {
+    const sourceLanguage = this.page.getByLabel(/source.*language/i);
+    if (await sourceLanguage.isVisible()) {
+      await sourceLanguage.click();
+      await this.page.getByRole('option', { name: /english/i }).click();
+    }
+
+    const targetLanguage = this.page.getByLabel(/target.*language/i);
+    await targetLanguage.click();
+    await this.page.getByRole('option', { name: targetLanguagePattern }).click();
+
+    await this.page.getByRole('button', { name: /next/i }).click();
+    await expect(this.page.locator('input[type="file"]')).toBeAttached({ timeout });
+  }
+
+  /**
+   * Upload a file via the hidden `<input type="file">`. Asserts the file
+   * name surfaces in the UI (handshake that the wizard accepted the file).
+   */
+  async uploadFileAndAwaitDisplay(filePath: string, displayName: string, timeout = 10000) {
+    const fileInput = this.page.locator('input[type="file"]');
+    await fileInput.setInputFiles(filePath);
+
+    // Filename appears in the upload-step UI once the file is processed.
+    await expect(
+      this.page.getByText(new RegExp(displayName.replace(/\./g, '\\.'), 'i'))
+    ).toBeVisible({ timeout });
+  }
+
+  /**
+   * Advance from Upload Document to Review & Submit. The review screen
+   * re-renders the chosen filename in its summary — assert it shows up
+   * before continuing.
+   */
+  async advanceToReviewByRole(displayName: string, timeout = 10000) {
+    await this.page.getByRole('button', { name: /next/i }).click();
+    await expect(
+      this.page.getByText(new RegExp(displayName.replace(/\./g, '\\.'), 'i'))
+    ).toBeVisible({ timeout });
+  }
+
+  /**
+   * Click the final "Submit & Start Translation" button on the Review step.
+   * The regex tolerates copy variants observed in different environments.
+   */
+  async submitTranslationByRole() {
+    const translateButton = this.page.getByRole('button', {
+      name: /submit.*translation|translate|start.*translation/i,
+    });
+    await translateButton.click();
   }
 }

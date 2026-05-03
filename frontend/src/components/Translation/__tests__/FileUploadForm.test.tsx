@@ -275,6 +275,7 @@ describe('FileUploadForm', () => {
 
       vi.spyOn(uploadService.uploadService, 'uploadDocument').mockResolvedValue({
         fileId: 'test-file-id-123',
+        jobId: 'test-job-id-123',
         success: true,
       });
 
@@ -312,7 +313,7 @@ describe('FileUploadForm', () => {
             onProgress({ loaded: 50, total: 100, percentage: 50 });
             onProgress({ loaded: 100, total: 100, percentage: 100 });
           }
-          return { fileId: 'test-id', success: true };
+          return { fileId: 'test-id', jobId: 'test-job-id', success: true };
         }
       );
 
@@ -336,6 +337,7 @@ describe('FileUploadForm', () => {
 
       vi.spyOn(uploadService.uploadService, 'uploadDocument').mockResolvedValue({
         fileId: '',
+        jobId: '',
         success: false,
         error: 'Network error during upload',
       });
@@ -365,6 +367,7 @@ describe('FileUploadForm', () => {
 
       vi.spyOn(uploadService.uploadService, 'uploadDocument').mockResolvedValue({
         fileId: 'test-id',
+        jobId: 'test-job-id',
         success: true,
       });
 

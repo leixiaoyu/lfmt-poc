@@ -409,18 +409,21 @@ describe('Production Smoke Tests', () => {
       );
 
       // Should succeed
+      // The backend wraps the presigned-URL payload in a `data` envelope:
+      // { message, data: { uploadUrl, fileId, jobId, ... }, requestId }
       expect(response.status).toBe(200);
-      expect(response.data).toHaveProperty('jobId');
-      expect(response.data).toHaveProperty('uploadUrl');
-      expect(response.data).toHaveProperty('uploadFields');
+      expect(response.data).toHaveProperty('data');
+      expect(response.data.data).toHaveProperty('jobId');
+      expect(response.data.data).toHaveProperty('uploadUrl');
+      expect(response.data.data).toHaveProperty('fileId');
 
       // Validate response structure
-      expect(typeof response.data.jobId).toBe('string');
-      expect(typeof response.data.uploadUrl).toBe('string');
-      expect(typeof response.data.uploadFields).toBe('object');
+      expect(typeof response.data.data.jobId).toBe('string');
+      expect(typeof response.data.data.uploadUrl).toBe('string');
+      expect(typeof response.data.data.fileId).toBe('string');
 
       console.log('✓ Upload presigned URL request successful');
-      console.log(`  Job ID: ${response.data.jobId}`);
+      console.log(`  Job ID: ${response.data.data.jobId}`);
     });
 
     it('should reject upload request without authentication', async () => {
@@ -512,7 +515,8 @@ describe('Production Smoke Tests', () => {
         authToken
       );
 
-      jobId = uploadResponse.data.jobId;
+      // Backend wraps the presigned-URL payload: { message, data: { jobId, ... } }
+      jobId = uploadResponse.data.data.jobId;
     });
 
     it('should poll job status', async () => {
@@ -646,7 +650,8 @@ describe('Production Smoke Tests', () => {
         authToken
       );
 
-      jobId = uploadResponse.data.jobId;
+      // Backend wraps the presigned-URL payload: { message, data: { jobId, ... } }
+      jobId = uploadResponse.data.data.jobId;
     });
 
     it('should delete a job', async () => {
@@ -688,7 +693,8 @@ describe('Production Smoke Tests', () => {
         authToken
       );
 
-      const testJobId = uploadResponse.data.jobId;
+      // Backend wraps the presigned-URL payload: { message, data: { jobId, ... } }
+      const testJobId = uploadResponse.data.data.jobId;
 
       const response = await makeRequest(`/jobs/${testJobId}`, 'DELETE');
 

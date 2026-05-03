@@ -38,6 +38,7 @@ describe('uploadService', () => {
           data: {
             uploadUrl: 'https://s3.amazonaws.com/bucket/key?signature',
             fileId: 'test-file-id-123',
+            jobId: 'test-job-id-456',
             expiresIn: 900,
             requiredHeaders: {
               'Content-Type': 'text/plain',
@@ -62,6 +63,7 @@ describe('uploadService', () => {
       expect(result).toEqual({
         uploadUrl: 'https://s3.amazonaws.com/bucket/key?signature',
         fileId: 'test-file-id-123',
+        jobId: 'test-job-id-456',
         expiresIn: 900,
         requiredHeaders: {
           'Content-Type': 'text/plain',
@@ -93,6 +95,7 @@ describe('uploadService', () => {
           data: {
             uploadUrl: 'https://s3.amazonaws.com/bucket/key',
             fileId: 'large-file-id',
+            jobId: 'large-job-id',
             expiresIn: 900,
             requiredHeaders: {
               'Content-Type': 'text/plain',
@@ -328,6 +331,7 @@ describe('uploadService', () => {
           data: {
             uploadUrl: 'https://s3.amazonaws.com/bucket/key',
             fileId: 'test-file-id',
+            jobId: 'test-job-id',
             expiresIn: 900,
             requiredHeaders: {
               'Content-Type': 'text/plain',
@@ -347,9 +351,11 @@ describe('uploadService', () => {
       // Act
       const result = await uploadService.uploadDocument(mockFile);
 
-      // Assert
+      // Assert — both fileId and jobId must be propagated end-to-end
+      // (PR #184 follow-up: jobId previously dropped silently in this seam).
       expect(result).toEqual({
         fileId: 'test-file-id',
+        jobId: 'test-job-id',
         success: true,
       });
 
@@ -372,6 +378,7 @@ describe('uploadService', () => {
           data: {
             uploadUrl: 'https://s3.amazonaws.com/bucket/key',
             fileId: 'test-file-id',
+            jobId: 'test-job-id',
             expiresIn: 900,
             requiredHeaders: {},
           },
@@ -418,6 +425,7 @@ describe('uploadService', () => {
       // Assert
       expect(result).toEqual({
         fileId: '',
+        jobId: '',
         success: false,
         error: 'Failed to get presigned URL',
       });
@@ -432,6 +440,7 @@ describe('uploadService', () => {
           data: {
             uploadUrl: 'https://s3.amazonaws.com/bucket/key',
             fileId: 'test-file-id',
+            jobId: 'test-job-id',
             expiresIn: 900,
             requiredHeaders: {},
           },
@@ -452,6 +461,7 @@ describe('uploadService', () => {
       // Assert
       expect(result).toEqual({
         fileId: '',
+        jobId: '',
         success: false,
         error: 'Network error during file upload',
       });
