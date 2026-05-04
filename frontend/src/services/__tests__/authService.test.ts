@@ -24,12 +24,7 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { authService } from '../authService';
-import {
-  apiClient,
-  getStoredSession,
-  setStoredSession,
-  clearAuthToken,
-} from '../../utils/api';
+import { apiClient, getStoredSession, setStoredSession, clearAuthToken } from '../../utils/api';
 import type { AxiosResponse } from 'axios';
 
 // Mock ONLY the apiClient — storage helpers run against real jsdom
