@@ -557,8 +557,11 @@ describe('API Client - legacy-cleanup short-circuit (Round 2 item 16)', () => {
 
     // Filter to legacy-key removeItem calls only — getItem on
     // SESSION_KEY returns null without calling removeItem on it.
+    // Widen the LEGACY tuple to readonly string[] so .includes accepts
+    // the spy's string arg (otherwise TS rejects the literal-union narrowing).
+    const legacyKeys: readonly string[] = Object.values(AUTH_CONFIG.LEGACY);
     const legacyRemovals = removeSpy.mock.calls.filter((args) =>
-      Object.values(AUTH_CONFIG.LEGACY).includes(args[0] as string)
+      legacyKeys.includes(args[0] as string)
     );
     expect(legacyRemovals).toHaveLength(0);
 
