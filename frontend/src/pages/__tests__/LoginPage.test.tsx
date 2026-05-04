@@ -69,7 +69,13 @@ describe('LoginPage - Integration Tests', () => {
   });
 
   describe('Login Flow with Mock API', () => {
-    it.skip('should successfully login and redirect to dashboard', async () => {
+    // Round 2 item 5: re-enabled. These were skipped pre-PR-#198 (commit
+    // a6d92815 marked 19 tests as ".skip" with TODO to revisit) — they
+    // were never re-evaluated. The MSW handler infrastructure is now
+    // mature enough to drive this end-to-end. Each test verifies that
+    // submitting the form lands the user on the dashboard route AND
+    // (when applicable) writes the one-blob session.
+    it('should successfully login and redirect to dashboard', async () => {
       const user = userEvent.setup();
       renderWithAppContext();
 
@@ -89,7 +95,7 @@ describe('LoginPage - Integration Tests', () => {
       );
     });
 
-    it.skip('should store auth tokens after login', async () => {
+    it('should store auth tokens after login', async () => {
       const user = userEvent.setup();
       renderWithAppContext();
 
@@ -116,7 +122,7 @@ describe('LoginPage - Integration Tests', () => {
       expect(session.refreshToken).toBeTruthy();
     });
 
-    it.skip('should accept any valid email/password combination (mock mode)', async () => {
+    it('should accept any valid email/password combination (mock mode)', async () => {
       const user = userEvent.setup();
       renderWithAppContext();
 
@@ -201,7 +207,9 @@ describe('LoginPage - Integration Tests', () => {
   });
 
   describe('Data Handling - Regression Tests', () => {
-    it.skip('should not throw JSON parsing errors during login', async () => {
+    // Round 2 item 5: re-enabled (see "Login Flow with Mock API" above
+    // for the full rationale).
+    it('should not throw JSON parsing errors during login', async () => {
       const user = userEvent.setup();
       const consoleError = vi.spyOn(console, 'error');
 
@@ -224,7 +232,7 @@ describe('LoginPage - Integration Tests', () => {
       consoleError.mockRestore();
     });
 
-    it.skip('should handle special characters in credentials', async () => {
+    it('should handle special characters in credentials', async () => {
       const user = userEvent.setup();
       renderWithAppContext();
 
