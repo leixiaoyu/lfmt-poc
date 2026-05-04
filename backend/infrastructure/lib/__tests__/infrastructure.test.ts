@@ -1311,6 +1311,13 @@ describe('LFMT Infrastructure Stack', () => {
           throw new Error(`script-src directive missing from CSP: ${flat}`);
         }
         expect(scriptSrcMatch[0]).not.toContain("'unsafe-inline'");
+        // Round 2 item 4: positive assertion. A test that only checks
+        // for absence is fragile against a future regression that
+        // accidentally drops the directive entirely (e.g.,
+        // `script-src` missing → browser defaults to `default-src`,
+        // which IS `'self'`, so the SPA still loads but the contract
+        // is now implicit). Assert `'self'` is the explicit value.
+        expect(scriptSrcMatch[0]).toMatch(/^script-src\s+'self'\s*$/);
       });
     });
 
