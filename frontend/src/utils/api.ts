@@ -232,12 +232,22 @@ export function getAuthToken(): string | null {
 /**
  * Persist the Cognito ID token that API Gateway expects as the Bearer
  * credential. Kept for backward compatibility with call sites that
- * already write tokens individually; internally it merges into the
- * blob via `updateStoredSession()` so the access token is never
- * accidentally cleared.
+ * already write tokens individually.
+ *
+ * If a session already exists, the idToken field is merged in (the
+ * existing accessToken survives). If no session exists, the
+ * accessToken is mirrored from the idToken so the resulting blob
+ * satisfies the `StoredSession` shape — without this mirror, an
+ * `updateStoredSession` partial with only one required field would
+ * refuse to write (by design, to prevent half-blob corruption).
  */
 export function setAuthToken(idToken: string): void {
-  updateStoredSession({ idToken });
+  const current = getStoredSession();
+  if (current) {
+    setStoredSession({ ...current, idToken });
+  } else {
+    setStoredSession({ idToken, accessToken: idToken });
+  }
 }
 
 /**
@@ -246,7 +256,12 @@ export function setAuthToken(idToken: string): void {
  * the ID token survives.
  */
 export function setAccessToken(accessToken: string): void {
-  updateStoredSession({ accessToken });
+  const current = getStoredSession();
+  if (current) {
+    setStoredSession({ ...current, accessToken });
+  } else {
+    setStoredSession({ idToken: accessToken, accessToken });
+  }
 }
 
 /**
