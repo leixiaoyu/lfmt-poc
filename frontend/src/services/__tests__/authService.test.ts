@@ -12,7 +12,7 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { authService } from '../authService';
-import { apiClient, setAuthToken, clearAuthToken } from '../../utils/api';
+import { apiClient, setAuthToken, setAccessToken, clearAuthToken } from '../../utils/api';
 import type { AxiosResponse } from 'axios';
 
 // Mock the API client
@@ -25,6 +25,7 @@ vi.mock('../../utils/api', async () => {
       get: vi.fn(),
     },
     setAuthToken: vi.fn(),
+    setAccessToken: vi.fn(),
     clearAuthToken: vi.fn(),
   };
 });
@@ -77,8 +78,10 @@ describe('AuthService - Registration', () => {
       acceptedPrivacy: true,
     });
 
-    // Verify tokens are stored
+    // Without an idToken in the mock response, setAuthToken falls back to
+    // the accessToken so existing behaviour is preserved.
     expect(setAuthToken).toHaveBeenCalledWith('mock-access-token');
+    expect(setAccessToken).toHaveBeenCalledWith('mock-access-token');
 
     // Verify user data is returned
     expect(result.user).toEqual({
@@ -89,6 +92,34 @@ describe('AuthService - Registration', () => {
     });
 
     expect(result.accessToken).toBe('mock-access-token');
+  });
+
+  it('should use idToken as Bearer credential when present in register response', async () => {
+    const mockResponse: Partial<AxiosResponse> = {
+      data: {
+        user: { id: 'user-123', email: 'test@example.com', firstName: 'John', lastName: 'Doe' },
+        accessToken: 'mock-access-token',
+        idToken: 'mock-id-token',
+        refreshToken: 'mock-refresh-token',
+      },
+      status: 201,
+    };
+
+    vi.mocked(apiClient.post).mockResolvedValueOnce(mockResponse);
+
+    await authService.register({
+      email: 'test@example.com',
+      password: 'SecurePass123!',
+      confirmPassword: 'SecurePass123!',
+      firstName: 'John',
+      lastName: 'Doe',
+      acceptedTerms: true,
+      acceptedPrivacy: true,
+    });
+
+    // API Gateway CognitoUserPoolsAuthorizer requires the ID token.
+    expect(setAuthToken).toHaveBeenCalledWith('mock-id-token');
+    expect(setAccessToken).toHaveBeenCalledWith('mock-access-token');
   });
 
   it('should handle registration errors', async () => {
@@ -151,12 +182,34 @@ describe('AuthService - Login', () => {
       password: 'MyPassword123!',
     });
 
-    // Verify tokens are stored
+    // Without an idToken in the mock response, setAuthToken falls back to
+    // the accessToken so existing behaviour is preserved.
     expect(setAuthToken).toHaveBeenCalledWith('login-access-token');
+    expect(setAccessToken).toHaveBeenCalledWith('login-access-token');
 
     // Verify user data is returned
     expect(result.user.email).toBe('login@example.com');
     expect(result.accessToken).toBe('login-access-token');
+  });
+
+  it('should use idToken as Bearer credential when present in login response', async () => {
+    const mockResponse: Partial<AxiosResponse> = {
+      data: {
+        user: { id: 'user-456', email: 'login@example.com', firstName: 'Jane', lastName: 'Smith' },
+        accessToken: 'login-access-token',
+        idToken: 'login-id-token',
+        refreshToken: 'login-refresh-token',
+      },
+      status: 200,
+    };
+
+    vi.mocked(apiClient.post).mockResolvedValueOnce(mockResponse);
+
+    await authService.login({ email: 'login@example.com', password: 'MyPassword123!' });
+
+    // API Gateway CognitoUserPoolsAuthorizer requires the ID token.
+    expect(setAuthToken).toHaveBeenCalledWith('login-id-token');
+    expect(setAccessToken).toHaveBeenCalledWith('login-access-token');
   });
 
   it('should handle invalid credentials', async () => {
@@ -200,7 +253,7 @@ describe('AuthService - Token Refresh', () => {
     localStorage.clear();
   });
 
-  it('should refresh access token successfully', async () => {
+  it('should refresh access token successfully (mock without idToken)', async () => {
     // Set up initial refresh token
     localStorage.setItem('lfmt_refresh_token', 'old-refresh-token');
 
@@ -221,11 +274,33 @@ describe('AuthService - Token Refresh', () => {
       refreshToken: 'old-refresh-token',
     });
 
-    // Verify new tokens are stored
+    // Without idToken in the mock, setAuthToken falls back to accessToken.
     expect(setAuthToken).toHaveBeenCalledWith('new-access-token');
+    expect(setAccessToken).toHaveBeenCalledWith('new-access-token');
 
     // Verify new access token is returned
     expect(result.accessToken).toBe('new-access-token');
+  });
+
+  it('should use idToken as Bearer credential when present in refresh response', async () => {
+    localStorage.setItem('lfmt_refresh_token', 'old-refresh-token');
+
+    const mockResponse: Partial<AxiosResponse> = {
+      data: {
+        accessToken: 'new-access-token',
+        idToken: 'new-id-token',
+        // Cognito REFRESH_TOKEN_AUTH does not rotate the refresh token — omitted.
+      },
+      status: 200,
+    };
+
+    vi.mocked(apiClient.post).mockResolvedValueOnce(mockResponse);
+
+    await authService.refreshToken();
+
+    // ID token is the correct Bearer credential for API Gateway.
+    expect(setAuthToken).toHaveBeenCalledWith('new-id-token');
+    expect(setAccessToken).toHaveBeenCalledWith('new-access-token');
   });
 
   it('should handle missing refresh token', async () => {

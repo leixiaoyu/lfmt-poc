@@ -124,12 +124,19 @@ test.describe('Production Smoke Tests @smoke', () => {
     const testPassword = user.password;
 
     // Step 1: Login
+    //
+    // Previous approach: `if (await loginButton.isVisible())` to decide
+    // whether to click the "Log In" button before filling the form. This
+    // is the same racy `isVisible()` anti-pattern that caused Bug #1 in
+    // Step 2 (see PR #193).  If the home page hasn't finished mounting
+    // the button isn't visible yet, so the click is silently skipped and
+    // the subsequent `getByLabel(/email/i)` targets the wrong page.
+    //
+    // Fix: navigate directly to /login (deterministic, no race), then
+    // fill and submit the form. This mirrors how the auth E2E tests in
+    // `e2e/tests/auth/login.spec.ts` approach the login flow.
     await test.step('User can login', async () => {
-      // Click login button if on home page
-      const loginButton = page.getByRole('button', { name: /log in|sign in/i });
-      if (await loginButton.isVisible()) {
-        await loginButton.click();
-      }
+      await page.goto(`${baseURL}/login`);
 
       // Fill in login form
       await page.getByLabel(/email/i).fill(testEmail);
@@ -141,19 +148,29 @@ test.describe('Production Smoke Tests @smoke', () => {
     });
 
     // Step 2: Navigate to upload page
+    //
+    // Previous approach: click a button/link whose label matched
+    // /upload|new translation/i. Two failure modes were observed in CI
+    // (Playwright run 25293703129):
+    //
+    //   a) Race condition — `isVisible()` returned false before the dashboard
+    //      finished mounting, so neither branch fired and the page stayed on
+    //      the dashboard.
+    //
+    //   b) False-positive assertion — the dashboard itself contains the text
+    //      "Upload" (the "Upload Document" card button), so the post-step
+    //      `getByText(/upload|.../i)` check passed even though the wizard
+    //      never opened, causing the next step's `getByRole('checkbox', ...)`
+    //      to time out 180 s later.
+    //
+    // Fix: navigate directly to /translation/upload (the same deterministic
+    // approach used by every other E2E spec — see complete-workflow.spec.ts,
+    // translation-progress.spec.ts).  We then assert the URL and wait for the
+    // wizard heading ("New Translation") which is unique to that route.
     await test.step('User can navigate to upload page', async () => {
-      // Look for upload button or link
-      const uploadButton = page.getByRole('button', { name: /upload|new translation/i });
-      const uploadLink = page.getByRole('link', { name: /upload|new translation/i });
-
-      if (await uploadButton.isVisible()) {
-        await uploadButton.click();
-      } else if (await uploadLink.isVisible()) {
-        await uploadLink.click();
-      }
-
-      // Verify we're on the upload page
-      await expect(page.getByText(/upload|select.*file|drag.*drop/i).first()).toBeVisible({
+      await uploadPage.goto();
+      await expect(page).toHaveURL(/translation\/upload/i, { timeout: 10000 });
+      await expect(page.getByRole('heading', { name: /new translation/i })).toBeVisible({
         timeout: 10000,
       });
     });

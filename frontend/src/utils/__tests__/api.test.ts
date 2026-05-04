@@ -21,38 +21,44 @@ describe('API Client - Token Management', () => {
   });
 
   describe('setAuthToken', () => {
-    it('should store token in localStorage', () => {
-      const token = 'test-jwt-token-123';
+    it('should store token in localStorage under ID_TOKEN_KEY', () => {
+      const token = 'test-id-token-123';
 
       setAuthToken(token);
 
-      const stored = localStorage.getItem(AUTH_CONFIG.ACCESS_TOKEN_KEY);
-      expect(stored).toBe(token);
+      // setAuthToken now stores the ID token (Bearer credential for API Gateway).
+      expect(localStorage.getItem(AUTH_CONFIG.ID_TOKEN_KEY)).toBe(token);
     });
 
-    it('should overwrite existing token', () => {
-      const oldToken = 'old-token';
-      const newToken = 'new-token';
+    it('should overwrite existing id token', () => {
+      const oldToken = 'old-id-token';
+      const newToken = 'new-id-token';
 
       setAuthToken(oldToken);
       setAuthToken(newToken);
 
-      const stored = localStorage.getItem(AUTH_CONFIG.ACCESS_TOKEN_KEY);
-      expect(stored).toBe(newToken);
+      expect(localStorage.getItem(AUTH_CONFIG.ID_TOKEN_KEY)).toBe(newToken);
     });
   });
 
   describe('getAuthToken', () => {
-    it('should retrieve stored token', () => {
-      const token = 'test-token-456';
-
-      localStorage.setItem(AUTH_CONFIG.ACCESS_TOKEN_KEY, token);
+    it('should return idToken when present (preferred over accessToken)', () => {
+      localStorage.setItem(AUTH_CONFIG.ID_TOKEN_KEY, 'id-token-value');
+      localStorage.setItem(AUTH_CONFIG.ACCESS_TOKEN_KEY, 'access-token-value');
 
       const retrieved = getAuthToken();
-      expect(retrieved).toBe(token);
+      expect(retrieved).toBe('id-token-value');
     });
 
-    it('should return null when no token exists', () => {
+    it('should fall back to accessToken when idToken is absent', () => {
+      // Pre-existing session where only accessToken was stored (backward compat).
+      localStorage.setItem(AUTH_CONFIG.ACCESS_TOKEN_KEY, 'legacy-access-token');
+
+      const retrieved = getAuthToken();
+      expect(retrieved).toBe('legacy-access-token');
+    });
+
+    it('should return null when neither idToken nor accessToken exists', () => {
       const retrieved = getAuthToken();
       expect(retrieved).toBeNull();
     });
@@ -86,13 +92,23 @@ describe('API Client - Token Management', () => {
       expect(stored).toBeNull();
     });
 
+    it('should remove id token from localStorage', () => {
+      localStorage.setItem(AUTH_CONFIG.ID_TOKEN_KEY, 'id-token');
+
+      clearAuthToken();
+
+      expect(localStorage.getItem(AUTH_CONFIG.ID_TOKEN_KEY)).toBeNull();
+    });
+
     it('should clear all auth data at once', () => {
+      localStorage.setItem(AUTH_CONFIG.ID_TOKEN_KEY, 'id-token');
       localStorage.setItem(AUTH_CONFIG.ACCESS_TOKEN_KEY, 'access');
       localStorage.setItem(AUTH_CONFIG.REFRESH_TOKEN_KEY, 'refresh');
       localStorage.setItem(AUTH_CONFIG.USER_DATA_KEY, '{}');
 
       clearAuthToken();
 
+      expect(localStorage.getItem(AUTH_CONFIG.ID_TOKEN_KEY)).toBeNull();
       expect(localStorage.getItem(AUTH_CONFIG.ACCESS_TOKEN_KEY)).toBeNull();
       expect(localStorage.getItem(AUTH_CONFIG.REFRESH_TOKEN_KEY)).toBeNull();
       expect(localStorage.getItem(AUTH_CONFIG.USER_DATA_KEY)).toBeNull();

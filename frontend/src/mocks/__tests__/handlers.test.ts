@@ -150,7 +150,7 @@ describe('resetState()', () => {
 });
 
 describe('Auth handlers (msw/node)', () => {
-  it('register returns user + tokens; /auth/me round-trip resolves the same email', async () => {
+  it('register returns user + tokens including idToken; /auth/me round-trip resolves the same email', async () => {
     const reg = await fetch(`${API_URL}/auth/register`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -162,9 +162,14 @@ describe('Auth handlers (msw/node)', () => {
     }).then((r) => r.json());
     expect(reg.user.email).toBe('roundtrip@test.dev');
     expect(typeof reg.accessToken).toBe('string');
+    // idToken must be distinct from accessToken so the frontend's
+    // `idToken ?? accessToken` preference is exercised on the production path.
+    expect(typeof reg.idToken).toBe('string');
+    expect(reg.idToken).not.toBe(reg.accessToken);
 
+    // /auth/me using the idToken as Bearer (production code path).
     const me = await fetch(`${API_URL}/auth/me`, {
-      headers: { Authorization: `Bearer ${reg.accessToken}` },
+      headers: { Authorization: `Bearer ${reg.idToken}` },
     }).then((r) => r.json());
     // /auth/me MUST wrap the user in { user } per
     // services/authService.ts:185 — NOT a bare User object.

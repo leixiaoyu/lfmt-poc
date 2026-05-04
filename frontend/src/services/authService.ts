@@ -12,7 +12,7 @@
  * Uses the centralized API client with automatic token injection.
  */
 
-import { apiClient, setAuthToken, clearAuthToken } from '../utils/api';
+import { apiClient, setAuthToken, setAccessToken, clearAuthToken } from '../utils/api';
 import { AUTH_CONFIG } from '../config/constants';
 
 /**
@@ -29,10 +29,19 @@ export interface User {
 
 /**
  * Authentication response structure
+ *
+ * Both `accessToken` and `idToken` come from Cognito via the backend login /
+ * register handlers.  API Gateway CognitoUserPoolsAuthorizer validates the
+ * **ID token** (it carries the user's identity claims).  The access token is
+ * for OAuth2 resource servers and is NOT accepted by the authorizer.
+ *
+ * The `idToken` field may be absent in older mock responses; callers fall
+ * back to `accessToken` in that case.
  */
 export interface AuthResponse {
   user: User;
   accessToken: string;
+  idToken?: string;
   refreshToken: string;
 }
 
@@ -61,10 +70,15 @@ export interface LoginRequest {
 
 /**
  * Token refresh response
+ *
+ * Cognito REFRESH_TOKEN_AUTH returns a new AccessToken and IdToken but does
+ * NOT return a new RefreshToken (the original refresh token remains valid
+ * until its own expiry, which is 30 days by default).
  */
 export interface RefreshTokenResponse {
   accessToken: string;
-  refreshToken: string;
+  idToken?: string;
+  refreshToken?: string;
 }
 
 /**
@@ -83,6 +97,41 @@ export interface MessageResponse {
 }
 
 /**
+ * Persist Cognito tokens and user data returned by login / register.
+ *
+ * Centralises the "store ID token as Bearer" protocol so that the three
+ * callers (register, login, refreshToken) cannot drift from each other.
+ * Eliminates the copy-paste risk flagged in OMC review (Rec 4).
+ *
+ * Storage protocol:
+ *   - `ID_TOKEN_KEY`      ← idToken ?? accessToken  (API Gateway Bearer)
+ *   - `ACCESS_TOKEN_KEY`  ← accessToken             (OAuth2 resource servers)
+ *   - `REFRESH_TOKEN_KEY` ← refreshToken (only when present — Cognito
+ *     REFRESH_TOKEN_AUTH does not rotate the refresh token)
+ *   - `USER_DATA_KEY`     ← user (only when present — refresh responses
+ *     do not re-send the user object)
+ */
+function storeAuthTokens(tokens: {
+  accessToken: string;
+  idToken?: string;
+  refreshToken?: string;
+  user?: User;
+}): void {
+  // ID token is what API Gateway CognitoUserPoolsAuthorizer validates.
+  // `??` (nullish coalescing) is intentional: only fall through to
+  // accessToken when idToken is null/undefined, not when it is empty.
+  setAuthToken(tokens.idToken ?? tokens.accessToken);
+  setAccessToken(tokens.accessToken);
+
+  if (tokens.refreshToken) {
+    localStorage.setItem(AUTH_CONFIG.REFRESH_TOKEN_KEY, tokens.refreshToken);
+  }
+  if (tokens.user) {
+    localStorage.setItem(AUTH_CONFIG.USER_DATA_KEY, JSON.stringify(tokens.user));
+  }
+}
+
+/**
  * Register a new user
  *
  * @param data - Registration details (email, password, name)
@@ -91,16 +140,7 @@ export interface MessageResponse {
  */
 async function register(data: RegisterRequest): Promise<AuthResponse> {
   const response = await apiClient.post<AuthResponse>('/auth/register', data);
-
-  // Store access token
-  setAuthToken(response.data.accessToken);
-
-  // Store refresh token
-  localStorage.setItem(AUTH_CONFIG.REFRESH_TOKEN_KEY, response.data.refreshToken);
-
-  // Store user data
-  localStorage.setItem(AUTH_CONFIG.USER_DATA_KEY, JSON.stringify(response.data.user));
-
+  storeAuthTokens(response.data);
   return response.data;
 }
 
@@ -113,16 +153,7 @@ async function register(data: RegisterRequest): Promise<AuthResponse> {
  */
 async function login(credentials: LoginRequest): Promise<AuthResponse> {
   const response = await apiClient.post<AuthResponse>('/auth/login', credentials);
-
-  // Store access token
-  setAuthToken(response.data.accessToken);
-
-  // Store refresh token
-  localStorage.setItem(AUTH_CONFIG.REFRESH_TOKEN_KEY, response.data.refreshToken);
-
-  // Store user data
-  localStorage.setItem(AUTH_CONFIG.USER_DATA_KEY, JSON.stringify(response.data.user));
-
+  storeAuthTokens(response.data);
   return response.data;
 }
 
@@ -150,11 +181,9 @@ async function refreshToken(): Promise<RefreshTokenResponse> {
       refreshToken,
     });
 
-    // Store new access token
-    setAuthToken(response.data.accessToken);
-
-    // Store new refresh token
-    localStorage.setItem(AUTH_CONFIG.REFRESH_TOKEN_KEY, response.data.refreshToken);
+    // storeAuthTokens handles ID-token preference, access-token storage,
+    // and conditional refresh-token update (all in one place — Rec 4).
+    storeAuthTokens(response.data);
 
     return response.data;
   } catch (error) {
