@@ -11,6 +11,7 @@
  */
 
 import axios, { AxiosInstance, AxiosError, InternalAxiosRequestConfig, AxiosResponse } from 'axios';
+import type { StoredSession } from '@lfmt/shared-types';
 import { API_CONFIG, AUTH_CONFIG, ERROR_MESSAGES } from '../config/constants';
 
 /**
@@ -30,55 +31,258 @@ function generateRequestId(): string {
   return `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
 }
 
+// ---------------------------------------------------------------------------
+// Session storage (Issue #196 — one-blob model)
+// ---------------------------------------------------------------------------
+//
+// The entire authenticated session lives under a SINGLE localStorage key
+// (`AUTH_CONFIG.SESSION_KEY`). Every write replaces the blob in full so
+// the fields cannot drift out of sync — the failure mode the OMC reviewer
+// flagged on PR #193 (two browser tabs racing a refresh; one setItem
+// succeeding while another hits a quota error).
+//
+// The previous "two-keys" model is preserved ONLY through a one-time,
+// idempotent migration in `getStoredSession()`. Once a session is read
+// in the new format, the legacy keys are deleted and never written
+// again. New code MUST NOT touch the legacy keys directly — call the
+// session helpers exported below.
+
+/**
+ * Local-storage keys we DELETE during migration. Keep this list
+ * synchronized with `AUTH_CONFIG.LEGACY` — it is duplicated here so
+ * the migration code reads naturally without extra indirection.
+ */
+const LEGACY_KEYS = [
+  AUTH_CONFIG.LEGACY.ID_TOKEN_KEY,
+  AUTH_CONFIG.LEGACY.ACCESS_TOKEN_KEY,
+  AUTH_CONFIG.LEGACY.REFRESH_TOKEN_KEY,
+  AUTH_CONFIG.LEGACY.USER_DATA_KEY,
+] as const;
+
+/**
+ * Read the legacy two-key session and synthesize a StoredSession from
+ * whatever fields are present. Returns `null` if no legacy keys exist
+ * OR if neither `idToken` nor `accessToken` is set (the only two values
+ * that could possibly serve as the Bearer credential — without one,
+ * there is nothing meaningful to migrate).
+ *
+ * Pure function: no side effects. The caller decides whether to commit
+ * the synthesized blob and delete the legacy keys.
+ */
+function readLegacySession(): StoredSession | null {
+  const idToken = localStorage.getItem(AUTH_CONFIG.LEGACY.ID_TOKEN_KEY);
+  const accessToken = localStorage.getItem(AUTH_CONFIG.LEGACY.ACCESS_TOKEN_KEY);
+  const refreshToken = localStorage.getItem(AUTH_CONFIG.LEGACY.REFRESH_TOKEN_KEY);
+  const rawUser = localStorage.getItem(AUTH_CONFIG.LEGACY.USER_DATA_KEY);
+
+  // Nothing legacy stored — nothing to migrate.
+  if (!idToken && !accessToken && !refreshToken && !rawUser) {
+    return null;
+  }
+
+  // No bearer-eligible token — the legacy session is effectively dead;
+  // signal "nothing to migrate" so the caller can clean up the orphan
+  // keys without writing a useless blob.
+  if (!idToken && !accessToken) {
+    return null;
+  }
+
+  let user: unknown;
+  if (rawUser) {
+    try {
+      user = JSON.parse(rawUser);
+    } catch {
+      // Corrupted user JSON — discard rather than fail the whole
+      // migration. The user will be re-fetched via `/auth/me`.
+      user = undefined;
+    }
+  }
+
+  return {
+    // Prefer idToken (the API Gateway Bearer); fall back to accessToken
+    // ONLY for legacy sessions that pre-date PR #193 — those sessions
+    // will hit a 401, the refresh interceptor will fire, and the new
+    // session blob will replace this synthetic one. This fallback is
+    // strictly migration-scoped; the runtime fallback in `getAuthToken()`
+    // was removed in Issue #195.
+    idToken: (idToken ?? accessToken) as string,
+    accessToken: (accessToken ?? idToken) as string,
+    refreshToken: refreshToken ?? undefined,
+    user,
+  };
+}
+
+/**
+ * Remove every legacy auth key from localStorage. Idempotent — safe to
+ * call repeatedly. Used both by the migration path AND by the explicit
+ * `clearStoredSession()` to ensure we never leave half-deleted state.
+ */
+function deleteLegacyKeys(): void {
+  for (const key of LEGACY_KEYS) {
+    localStorage.removeItem(key);
+  }
+}
+
+/**
+ * Read the current session from localStorage.
+ *
+ * Resolution order:
+ *   1. Modern path: parse the blob under `AUTH_CONFIG.SESSION_KEY`.
+ *   2. Legacy migration: if the blob is absent BUT legacy keys exist,
+ *      synthesize a blob, persist it, delete the legacy keys, and
+ *      return the synthesized session. Idempotent — the second call
+ *      hits step 1 and returns immediately.
+ *   3. Otherwise return `null` (no session).
+ *
+ * A corrupted blob (invalid JSON, missing required fields) is treated
+ * as "no session" — we DO NOT throw because callers thread this
+ * function through render paths and a thrown error would crash the
+ * mount. The corrupted value is also cleared so the next call has a
+ * clean slate.
+ */
+export function getStoredSession(): StoredSession | null {
+  const raw = localStorage.getItem(AUTH_CONFIG.SESSION_KEY);
+
+  if (raw) {
+    try {
+      const parsed = JSON.parse(raw) as Partial<StoredSession>;
+      // The two non-optional fields on StoredSession are idToken and
+      // accessToken. If either is absent the blob is unusable.
+      if (typeof parsed.idToken === 'string' && typeof parsed.accessToken === 'string') {
+        return parsed as StoredSession;
+      }
+      // Malformed — fall through to clear it.
+      localStorage.removeItem(AUTH_CONFIG.SESSION_KEY);
+    } catch {
+      localStorage.removeItem(AUTH_CONFIG.SESSION_KEY);
+    }
+  }
+
+  // Step 2: migration.
+  const legacy = readLegacySession();
+  if (legacy) {
+    // Persist the synthesized blob FIRST, then delete legacy keys.
+    // If the setItem somehow throws (quota), the legacy keys remain
+    // intact and the next call will retry the migration.
+    localStorage.setItem(AUTH_CONFIG.SESSION_KEY, JSON.stringify(legacy));
+    deleteLegacyKeys();
+    return legacy;
+  }
+
+  // Step 3: still nothing. Best-effort cleanup of any orphan legacy
+  // keys that don't yield a bearer-eligible session (e.g., only
+  // `lfmt_user` or only `lfmt_refresh_token` left over). Keeps
+  // localStorage tidy without affecting behavior.
+  deleteLegacyKeys();
+  return null;
+}
+
+/**
+ * Persist a StoredSession atomically under the single session key.
+ * Replaces any prior blob in full.
+ */
+export function setStoredSession(session: StoredSession): void {
+  localStorage.setItem(AUTH_CONFIG.SESSION_KEY, JSON.stringify(session));
+}
+
+/**
+ * Update specific fields on the stored session, preserving the rest.
+ *
+ * Designed for the token-refresh path where the response carries
+ * `accessToken` + `idToken` (and sometimes `refreshToken`) but not the
+ * user object. Atomicity comes for free because the merge runs in a
+ * single setItem call.
+ *
+ * If no session exists, the partial is treated as a full session — but
+ * only when it carries both required fields. Otherwise the call is a
+ * no-op (we refuse to write an incomplete blob, since a malformed
+ * blob would cascade into corrupted reads).
+ */
+export function updateStoredSession(partial: Partial<StoredSession>): void {
+  const current = getStoredSession();
+  if (current) {
+    setStoredSession({ ...current, ...partial });
+    return;
+  }
+  if (typeof partial.idToken === 'string' && typeof partial.accessToken === 'string') {
+    // Cast is safe — the type guard above proved both required fields are present.
+    setStoredSession(partial as StoredSession);
+  }
+  // Otherwise: no current session AND no complete partial → nothing
+  // to persist; intentionally silent so the refresh interceptor's
+  // "empty bearer" guard remains the single decision point on
+  // session lifecycle.
+}
+
 /**
  * Get the Bearer token used for API Gateway authorization.
  *
- * API Gateway CognitoUserPoolsAuthorizer validates ID tokens, not access
- * tokens.  We therefore prefer the stored ID token and fall back to the
- * access token only for backward-compatibility with sessions that pre-date
- * the idToken storage (i.e., sessions created before this change was
- * deployed — those users will get a 401 on the next authenticated request
- * and be prompted to log in again, which is the correct safe behaviour).
- *
- * `??` (nullish coalescing) is intentional: an empty-string token is
- * treated as absent so we don't send `Authorization: Bearer ` on a
- * corrupted/truncated stored value.
+ * Reads `idToken` from the one-blob session (Issue #196). Per Issue
+ * #195 there is NO runtime fallback to `accessToken` — API Gateway's
+ * CognitoUserPoolsAuthorizer accepts ID tokens only, so an access
+ * token would 401 anyway. The migration path in `getStoredSession()`
+ * already handles legacy sessions that pre-date the blob (those are
+ * upgraded once and never seen again).
  */
 export function getAuthToken(): string | null {
-  return (
-    localStorage.getItem(AUTH_CONFIG.ID_TOKEN_KEY) ??
-    localStorage.getItem(AUTH_CONFIG.ACCESS_TOKEN_KEY)
-  );
+  const session = getStoredSession();
+  return session?.idToken ?? null;
 }
 
 /**
- * Store the Cognito ID token that API Gateway expects as the Bearer credential.
- *
- * Keeping the function name `setAuthToken` preserves backward compatibility
- * with all existing call sites.  Internally we write to `ID_TOKEN_KEY` so
- * that `getAuthToken()` returns the correct token for authenticated requests.
+ * Persist the Cognito ID token that API Gateway expects as the Bearer
+ * credential. Kept for backward compatibility with call sites that
+ * already write tokens individually; internally it merges into the
+ * blob via `updateStoredSession()` so the access token is never
+ * accidentally cleared.
  */
 export function setAuthToken(idToken: string): void {
-  localStorage.setItem(AUTH_CONFIG.ID_TOKEN_KEY, idToken);
+  updateStoredSession({ idToken });
 }
 
 /**
- * Store the raw Cognito AccessToken separately (kept for reference / future
- * OAuth resource-server use). Call sites that receive both tokens from the
- * backend can persist the access token without overwriting the id token.
+ * Persist the raw Cognito AccessToken (kept for OAuth resource-server
+ * use). Same rationale as `setAuthToken` — merges into the blob so
+ * the ID token survives.
  */
 export function setAccessToken(accessToken: string): void {
-  localStorage.setItem(AUTH_CONFIG.ACCESS_TOKEN_KEY, accessToken);
+  updateStoredSession({ accessToken });
 }
 
 /**
- * Clear all authentication tokens from localStorage, including the ID token.
+ * Clear the entire authentication session.
+ *
+ * Removes the blob AND any straggling legacy keys, so an upgraded
+ * session left over from a previous deploy cannot reincarnate after
+ * a logout.
  */
 export function clearAuthToken(): void {
-  localStorage.removeItem(AUTH_CONFIG.ID_TOKEN_KEY);
-  localStorage.removeItem(AUTH_CONFIG.ACCESS_TOKEN_KEY);
-  localStorage.removeItem(AUTH_CONFIG.REFRESH_TOKEN_KEY);
-  localStorage.removeItem(AUTH_CONFIG.USER_DATA_KEY);
+  localStorage.removeItem(AUTH_CONFIG.SESSION_KEY);
+  deleteLegacyKeys();
+}
+
+/**
+ * Convenience reader for the refresh token. Returns `null` if no
+ * session is stored OR the session has no refresh token (Cognito
+ * REFRESH_TOKEN_AUTH does not rotate it, so this is normal after the
+ * first refresh).
+ */
+export function getStoredRefreshToken(): string | null {
+  return getStoredSession()?.refreshToken ?? null;
+}
+
+/**
+ * Convenience reader for the persisted user object. Returns `null`
+ * when no session is stored or the session was created without a
+ * user object (e.g., a refresh-only response).
+ *
+ * The return type is `unknown` because the SPA stores a narrower
+ * shape than the canonical `UserProfile` (see the JSDoc on
+ * `StoredSession.user`). Callers should narrow it with their own
+ * type guard or cast.
+ */
+export function getStoredUser(): unknown {
+  return getStoredSession()?.user ?? null;
 }
 
 /**
@@ -187,7 +391,7 @@ async function responseErrorInterceptor(error: unknown): Promise<unknown> {
     isRefreshing = true;
 
     // Try to refresh the token
-    const refreshToken = localStorage.getItem(AUTH_CONFIG.REFRESH_TOKEN_KEY);
+    const refreshToken = getStoredRefreshToken();
 
     if (!refreshToken) {
       clearAuthToken();
@@ -225,17 +429,20 @@ async function responseErrorInterceptor(error: unknown): Promise<unknown> {
       // Cognito REFRESH_TOKEN_AUTH does not rotate the refresh token, so
       // `refreshToken` may be absent in the backend response. Fall back to
       // the existing value so we don't accidentally store an empty string.
-      const newRefreshToken =
-        payload.refreshToken ?? localStorage.getItem(AUTH_CONFIG.REFRESH_TOKEN_KEY) ?? '';
+      const newRefreshToken = payload.refreshToken ?? refreshToken;
 
-      // Prefer the ID token as the Bearer credential.  `??` keeps the
-      // logic consistent with `getAuthToken()` and `authService.ts`.
       // Treat an empty/missing bearer as a refresh FAILURE rather than
       // silently storing an empty string — a blank Bearer header would
       // cause every subsequent request to 401 immediately, creating an
       // infinite loop that is worse than logging out cleanly.
-      const bearerToken = newIdToken || newAccessToken;
-      if (!bearerToken) {
+      //
+      // The new bearer MUST be the idToken (API Gateway requires it).
+      // The previous code allowed `accessToken` as a fallback here; we
+      // now reject that path because (a) Cognito always returns idToken
+      // when it returns accessToken, so an idToken-less response is a
+      // backend bug worth surfacing, and (b) issue #195 removed all
+      // runtime fallbacks between the two token types.
+      if (!newIdToken) {
         clearAuthToken();
         isRefreshing = false;
         const apiError: ApiError = {
@@ -247,21 +454,22 @@ async function responseErrorInterceptor(error: unknown): Promise<unknown> {
         return Promise.reject(apiError);
       }
 
-      setAuthToken(bearerToken);
-      if (newAccessToken) {
-        setAccessToken(newAccessToken);
-      }
-      if (newRefreshToken) {
-        localStorage.setItem(AUTH_CONFIG.REFRESH_TOKEN_KEY, newRefreshToken);
-      }
+      // Atomic: one setItem rewrites the entire blob — id, access,
+      // and refresh fields stay consistent regardless of whether the
+      // backend rotated the refresh token or not.
+      updateStoredSession({
+        idToken: newIdToken,
+        accessToken: newAccessToken || newIdToken,
+        refreshToken: newRefreshToken,
+      });
 
       // Update authorization header for original request
       if (originalRequest.headers) {
-        originalRequest.headers.Authorization = `Bearer ${bearerToken}`;
+        originalRequest.headers.Authorization = `Bearer ${newIdToken}`;
       }
 
       // Process queued requests with the new bearer token
-      processQueue(null, bearerToken);
+      processQueue(null, newIdToken);
       isRefreshing = false;
 
       // Retry original request with new token

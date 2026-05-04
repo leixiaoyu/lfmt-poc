@@ -14,6 +14,7 @@ import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { AuthProvider } from '../contexts/AuthContext';
 import { ProtectedRoute } from '../components/Auth/ProtectedRoute';
 import * as api from '../utils/api';
+import { setStoredSession } from '../utils/api';
 import { AUTH_CONFIG } from '../config/constants';
 
 // Mock API client
@@ -119,9 +120,12 @@ describe('Authentication Integration Tests', () => {
     const mockToken = 'valid-jwt-token';
 
     beforeEach(() => {
-      // Setup: Valid token and user in localStorage
-      localStorage.setItem(AUTH_CONFIG.ACCESS_TOKEN_KEY, mockToken);
-      localStorage.setItem(AUTH_CONFIG.USER_DATA_KEY, JSON.stringify(mockUser));
+      // Setup: Valid session blob (Issue #196 — one-blob storage).
+      setStoredSession({
+        idToken: mockToken,
+        accessToken: mockToken,
+        user: mockUser,
+      });
 
       // Mock successful API call to verify token
       vi.spyOn(api.apiClient, 'get').mockResolvedValue({
@@ -196,8 +200,8 @@ describe('Authentication Integration Tests', () => {
     const invalidToken = 'expired-jwt-token';
 
     beforeEach(() => {
-      // Setup: Invalid/expired token in localStorage
-      localStorage.setItem(AUTH_CONFIG.ACCESS_TOKEN_KEY, invalidToken);
+      // Setup: invalid/expired session blob.
+      setStoredSession({ idToken: invalidToken, accessToken: invalidToken });
 
       // Mock 401 response for expired token
       vi.spyOn(api.apiClient, 'get').mockRejectedValue({
@@ -224,9 +228,9 @@ describe('Authentication Integration Tests', () => {
       window.history.pushState({}, '', '/protected');
       renderApp();
 
-      // Assert: Should clear localStorage
+      // Assert: Should clear the session blob (and any legacy keys).
       await waitFor(() => {
-        expect(localStorage.getItem(AUTH_CONFIG.ACCESS_TOKEN_KEY)).toBeNull();
+        expect(localStorage.getItem(AUTH_CONFIG.SESSION_KEY)).toBeNull();
       });
     });
   });
@@ -242,7 +246,7 @@ describe('Authentication Integration Tests', () => {
     it.skip('should restore session on page reload with valid token', async () => {
       // Setup: Simulate existing session from previous page load
       const token = 'persisted-token';
-      localStorage.setItem(AUTH_CONFIG.ACCESS_TOKEN_KEY, token);
+      setStoredSession({ idToken: token, accessToken: token });
 
       vi.spyOn(api.apiClient, 'get').mockResolvedValue({
         data: { user: mockUser },

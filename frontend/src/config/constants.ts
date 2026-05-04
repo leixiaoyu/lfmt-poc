@@ -44,35 +44,46 @@ export const API_CONFIG = {
  */
 export const AUTH_CONFIG = {
   /**
-   * Local storage key for access token (Cognito AccessToken — for OAuth resource
-   * servers only; NOT accepted by API Gateway CognitoUserPoolsAuthorizer).
-   * Kept for reference but the ID token is used as the Bearer credential.
-   * Note: In production, consider httpOnly cookies for better security.
-   */
-  ACCESS_TOKEN_KEY: 'lfmt_access_token',
-
-  /**
-   * Local storage key for the Cognito ID token.
+   * Local storage key for the one-blob session document (Issue #196).
    *
-   * API Gateway CognitoUserPoolsAuthorizer validates ID tokens (they carry the
-   * user's identity claims — sub, email, given_name, etc.). Access tokens are
-   * designed for OAuth2 resource servers and are NOT accepted by the Cognito
-   * authorizer.  See PR #76 for the backend-side discovery and fix.
+   * The entire authenticated session — `idToken`, `accessToken`,
+   * optional `refreshToken`, optional `expiresAt`, optional `user` —
+   * is serialized to JSON and stored under THIS single key. See the
+   * `StoredSession` type in `@lfmt/shared-types`.
    *
-   * This token is set during login/register and is what `getAuthToken()` returns
-   * for the Authorization: Bearer header.
+   * Atomicity: every session write replaces the blob in full, so the
+   * fields cannot drift out of sync (the failure mode that motivated
+   * this change in OMC review of PR #193).
+   *
+   * Migration: a one-time, idempotent migration runs lazily in
+   * `getStoredSession()` to convert any pre-existing session that
+   * still uses the legacy per-field keys (`lfmt_id_token`,
+   * `lfmt_access_token`, `lfmt_refresh_token`, `lfmt_user`) into
+   * the blob and then deletes those legacy keys.
    */
-  ID_TOKEN_KEY: 'lfmt_id_token',
+  SESSION_KEY: 'lfmt_session',
 
   /**
-   * Local storage key for refresh token
+   * Legacy local-storage keys preserved ONLY for the migration path
+   * in `getStoredSession()`. New code MUST NOT read or write these
+   * keys directly — go through the session helpers in `utils/api.ts`
+   * instead.
+   *
+   * See JSDoc on `LEGACY_KEYS` in `utils/api.ts` for the migration
+   * contract, idempotency guarantees, and the rationale for keeping
+   * these literals in one place.
+   *
+   * Removal plan: once telemetry confirms no in-the-wild sessions
+   * pre-date the blob (one release cycle is sufficient — the worst
+   * outcome is one 401 → refresh → re-login), this object can be
+   * deleted along with the migration code.
    */
-  REFRESH_TOKEN_KEY: 'lfmt_refresh_token',
-
-  /**
-   * Local storage key for user data
-   */
-  USER_DATA_KEY: 'lfmt_user',
+  LEGACY: {
+    ID_TOKEN_KEY: 'lfmt_id_token',
+    ACCESS_TOKEN_KEY: 'lfmt_access_token',
+    REFRESH_TOKEN_KEY: 'lfmt_refresh_token',
+    USER_DATA_KEY: 'lfmt_user',
+  },
 
   /**
    * Token refresh threshold (refresh when token has less than 5 minutes left)

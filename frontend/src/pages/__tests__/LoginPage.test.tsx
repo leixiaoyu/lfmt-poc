@@ -105,9 +105,15 @@ describe('LoginPage - Integration Tests', () => {
         { timeout: 3000 }
       );
 
-      // Check tokens
-      expect(localStorage.getItem('lfmt_access_token')).toBeTruthy();
-      expect(localStorage.getItem('lfmt_refresh_token')).toBeTruthy();
+      // Check the one-blob session (Issue #196). Both tokens and the
+      // refresh token live under a single key now; reading the blob
+      // tests the full ingest path end-to-end.
+      const raw = localStorage.getItem('lfmt_session');
+      expect(raw).toBeTruthy();
+      const session = JSON.parse(raw as string);
+      expect(session.idToken).toBeTruthy();
+      expect(session.accessToken).toBeTruthy();
+      expect(session.refreshToken).toBeTruthy();
     });
 
     it.skip('should accept any valid email/password combination (mock mode)', async () => {

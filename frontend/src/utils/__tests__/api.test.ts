@@ -4,15 +4,36 @@
  *
  * Following TDD approach with pragmatic TypeScript-friendly tests.
  * Tests core functionality without over-mocking complex Axios internals.
+ *
+ * Storage model: Issue #196 introduced the one-blob session under
+ * `AUTH_CONFIG.SESSION_KEY` and removed the runtime fallback to
+ * `accessToken` in `getAuthToken()` (Issue #195). The legacy keys live
+ * on only as inputs to a one-time, idempotent migration covered in the
+ * dedicated migration block below.
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { setAuthToken, clearAuthToken, getAuthToken } from '../api';
+import {
+  setAuthToken,
+  setAccessToken,
+  clearAuthToken,
+  getAuthToken,
+  getStoredSession,
+  setStoredSession,
+  updateStoredSession,
+  getStoredRefreshToken,
+  getStoredUser,
+} from '../api';
 import { AUTH_CONFIG } from '../../config/constants';
+import type { StoredSession } from '@lfmt/shared-types';
 
-describe('API Client - Token Management', () => {
+function readBlob(): StoredSession | null {
+  const raw = localStorage.getItem(AUTH_CONFIG.SESSION_KEY);
+  return raw ? (JSON.parse(raw) as StoredSession) : null;
+}
+
+describe('API Client - Token Management (one-blob model)', () => {
   beforeEach(() => {
-    // Clear localStorage before each test
     localStorage.clear();
   });
 
@@ -21,98 +42,275 @@ describe('API Client - Token Management', () => {
   });
 
   describe('setAuthToken', () => {
-    it('should store token in localStorage under ID_TOKEN_KEY', () => {
-      const token = 'test-id-token-123';
+    it('should write idToken into the session blob', () => {
+      const idToken = 'test-id-token-123';
 
-      setAuthToken(token);
+      setAuthToken(idToken);
 
-      // setAuthToken now stores the ID token (Bearer credential for API Gateway).
-      expect(localStorage.getItem(AUTH_CONFIG.ID_TOKEN_KEY)).toBe(token);
+      const blob = readBlob();
+      expect(blob?.idToken).toBe(idToken);
+      // accessToken is mirrored from idToken when no prior session exists,
+      // so updateStoredSession can persist a complete blob (both required
+      // fields present).
+      expect(blob?.accessToken).toBe(idToken);
     });
 
-    it('should overwrite existing id token', () => {
-      const oldToken = 'old-id-token';
-      const newToken = 'new-id-token';
+    it('should overwrite an existing idToken without clobbering accessToken', () => {
+      // Pre-existing session with both fields distinct.
+      setStoredSession({
+        idToken: 'old-id',
+        accessToken: 'old-access',
+        refreshToken: 'rt',
+      });
 
-      setAuthToken(oldToken);
-      setAuthToken(newToken);
+      setAuthToken('new-id');
 
-      expect(localStorage.getItem(AUTH_CONFIG.ID_TOKEN_KEY)).toBe(newToken);
+      const blob = readBlob();
+      expect(blob?.idToken).toBe('new-id');
+      expect(blob?.accessToken).toBe('old-access');
+      expect(blob?.refreshToken).toBe('rt');
+    });
+  });
+
+  describe('setAccessToken', () => {
+    it('should merge accessToken into the session without disturbing idToken', () => {
+      setStoredSession({
+        idToken: 'id-123',
+        accessToken: 'old-access',
+      });
+
+      setAccessToken('new-access');
+
+      const blob = readBlob();
+      expect(blob?.idToken).toBe('id-123');
+      expect(blob?.accessToken).toBe('new-access');
     });
   });
 
   describe('getAuthToken', () => {
-    it('should return idToken when present (preferred over accessToken)', () => {
-      localStorage.setItem(AUTH_CONFIG.ID_TOKEN_KEY, 'id-token-value');
-      localStorage.setItem(AUTH_CONFIG.ACCESS_TOKEN_KEY, 'access-token-value');
+    it('should return idToken from the blob when present', () => {
+      setStoredSession({ idToken: 'id-xyz', accessToken: 'access-xyz' });
 
-      const retrieved = getAuthToken();
-      expect(retrieved).toBe('id-token-value');
+      expect(getAuthToken()).toBe('id-xyz');
     });
 
-    it('should fall back to accessToken when idToken is absent', () => {
-      // Pre-existing session where only accessToken was stored (backward compat).
-      localStorage.setItem(AUTH_CONFIG.ACCESS_TOKEN_KEY, 'legacy-access-token');
+    it('should NOT fall back to accessToken at runtime (Issue #195)', () => {
+      // Hand-construct a malformed blob with idToken empty — getAuthToken
+      // must NOT silently substitute the accessToken. The previous
+      // `?? accessToken` fallback was removed; legacy sessions are now
+      // handled exclusively by the migration path tested below.
+      setStoredSession({ idToken: '', accessToken: 'access-only' });
 
-      const retrieved = getAuthToken();
-      expect(retrieved).toBe('legacy-access-token');
+      // Empty string is a valid string per JSON, so the type guard in
+      // getStoredSession passes; getAuthToken returns the empty string
+      // (which the request interceptor will then refuse to send as a
+      // Bearer header). This is the documented behavior — Issue #195
+      // explicitly chose "fail fast" over "silent fallback".
+      expect(getAuthToken()).toBe('');
     });
 
-    it('should return null when neither idToken nor accessToken exists', () => {
-      const retrieved = getAuthToken();
-      expect(retrieved).toBeNull();
+    it('should return null when no session exists', () => {
+      expect(getAuthToken()).toBeNull();
     });
   });
 
   describe('clearAuthToken', () => {
-    it('should remove access token from localStorage', () => {
-      localStorage.setItem(AUTH_CONFIG.ACCESS_TOKEN_KEY, 'test-token');
+    it('should remove the session blob', () => {
+      setStoredSession({
+        idToken: 'id',
+        accessToken: 'access',
+        refreshToken: 'rt',
+        user: { id: 'u1' },
+      });
 
       clearAuthToken();
 
-      const stored = localStorage.getItem(AUTH_CONFIG.ACCESS_TOKEN_KEY);
-      expect(stored).toBeNull();
+      expect(localStorage.getItem(AUTH_CONFIG.SESSION_KEY)).toBeNull();
+      expect(getAuthToken()).toBeNull();
+      expect(getStoredSession()).toBeNull();
     });
 
-    it('should remove refresh token from localStorage', () => {
-      localStorage.setItem(AUTH_CONFIG.REFRESH_TOKEN_KEY, 'refresh-token');
+    it('should also remove every legacy key (defensive — covers post-deploy cleanup)', () => {
+      // Simulate a deploy where a stray legacy key survived alongside a new blob.
+      localStorage.setItem(AUTH_CONFIG.LEGACY.ID_TOKEN_KEY, 'legacy-id');
+      localStorage.setItem(AUTH_CONFIG.LEGACY.ACCESS_TOKEN_KEY, 'legacy-access');
+      localStorage.setItem(AUTH_CONFIG.LEGACY.REFRESH_TOKEN_KEY, 'legacy-refresh');
+      localStorage.setItem(AUTH_CONFIG.LEGACY.USER_DATA_KEY, '{}');
+      setStoredSession({ idToken: 'id', accessToken: 'access' });
 
       clearAuthToken();
 
-      const stored = localStorage.getItem(AUTH_CONFIG.REFRESH_TOKEN_KEY);
-      expect(stored).toBeNull();
+      expect(localStorage.getItem(AUTH_CONFIG.SESSION_KEY)).toBeNull();
+      expect(localStorage.getItem(AUTH_CONFIG.LEGACY.ID_TOKEN_KEY)).toBeNull();
+      expect(localStorage.getItem(AUTH_CONFIG.LEGACY.ACCESS_TOKEN_KEY)).toBeNull();
+      expect(localStorage.getItem(AUTH_CONFIG.LEGACY.REFRESH_TOKEN_KEY)).toBeNull();
+      expect(localStorage.getItem(AUTH_CONFIG.LEGACY.USER_DATA_KEY)).toBeNull();
+    });
+  });
+
+  describe('updateStoredSession', () => {
+    it('should merge into an existing session, preserving non-mentioned fields', () => {
+      setStoredSession({
+        idToken: 'id-1',
+        accessToken: 'access-1',
+        refreshToken: 'refresh-1',
+        user: { id: 'u1' },
+      });
+
+      updateStoredSession({ idToken: 'id-2', accessToken: 'access-2' });
+
+      const blob = readBlob();
+      expect(blob?.idToken).toBe('id-2');
+      expect(blob?.accessToken).toBe('access-2');
+      expect(blob?.refreshToken).toBe('refresh-1');
+      expect(blob?.user).toEqual({ id: 'u1' });
     });
 
-    it('should remove user data from localStorage', () => {
-      localStorage.setItem(AUTH_CONFIG.USER_DATA_KEY, JSON.stringify({ id: '123' }));
+    it('should treat a complete partial as a full session when nothing is stored', () => {
+      updateStoredSession({ idToken: 'id', accessToken: 'access' });
 
-      clearAuthToken();
-
-      const stored = localStorage.getItem(AUTH_CONFIG.USER_DATA_KEY);
-      expect(stored).toBeNull();
+      const blob = readBlob();
+      expect(blob).toEqual({ idToken: 'id', accessToken: 'access' });
     });
 
-    it('should remove id token from localStorage', () => {
-      localStorage.setItem(AUTH_CONFIG.ID_TOKEN_KEY, 'id-token');
+    it('should refuse to write an incomplete blob when no session exists', () => {
+      // Only one of the two required fields — must NOT create a malformed blob.
+      updateStoredSession({ idToken: 'orphan' });
 
-      clearAuthToken();
+      expect(localStorage.getItem(AUTH_CONFIG.SESSION_KEY)).toBeNull();
+    });
+  });
 
-      expect(localStorage.getItem(AUTH_CONFIG.ID_TOKEN_KEY)).toBeNull();
+  describe('getStoredRefreshToken / getStoredUser', () => {
+    it('should return the refresh token from the session', () => {
+      setStoredSession({ idToken: 'id', accessToken: 'a', refreshToken: 'rt' });
+      expect(getStoredRefreshToken()).toBe('rt');
     });
 
-    it('should clear all auth data at once', () => {
-      localStorage.setItem(AUTH_CONFIG.ID_TOKEN_KEY, 'id-token');
-      localStorage.setItem(AUTH_CONFIG.ACCESS_TOKEN_KEY, 'access');
-      localStorage.setItem(AUTH_CONFIG.REFRESH_TOKEN_KEY, 'refresh');
-      localStorage.setItem(AUTH_CONFIG.USER_DATA_KEY, '{}');
-
-      clearAuthToken();
-
-      expect(localStorage.getItem(AUTH_CONFIG.ID_TOKEN_KEY)).toBeNull();
-      expect(localStorage.getItem(AUTH_CONFIG.ACCESS_TOKEN_KEY)).toBeNull();
-      expect(localStorage.getItem(AUTH_CONFIG.REFRESH_TOKEN_KEY)).toBeNull();
-      expect(localStorage.getItem(AUTH_CONFIG.USER_DATA_KEY)).toBeNull();
+    it('should return null when no refresh token is present', () => {
+      setStoredSession({ idToken: 'id', accessToken: 'a' });
+      expect(getStoredRefreshToken()).toBeNull();
     });
+
+    it('should return the persisted user object', () => {
+      const user = { id: 'u1', email: 'test@example.com' };
+      setStoredSession({ idToken: 'id', accessToken: 'a', user });
+      expect(getStoredUser()).toEqual(user);
+    });
+  });
+});
+
+describe('API Client - Legacy Session Migration (Issue #196)', () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  afterEach(() => {
+    localStorage.clear();
+  });
+
+  it('should synthesize a blob from legacy keys and remove them on first read', () => {
+    // Pre-populate localStorage in the legacy two-keys shape.
+    localStorage.setItem(AUTH_CONFIG.LEGACY.ID_TOKEN_KEY, 'legacy-id-token');
+    localStorage.setItem(AUTH_CONFIG.LEGACY.ACCESS_TOKEN_KEY, 'legacy-access-token');
+    localStorage.setItem(AUTH_CONFIG.LEGACY.REFRESH_TOKEN_KEY, 'legacy-refresh-token');
+    localStorage.setItem(
+      AUTH_CONFIG.LEGACY.USER_DATA_KEY,
+      JSON.stringify({ id: 'legacy-u1', email: 'legacy@example.com' })
+    );
+
+    // First read triggers migration.
+    const session = getStoredSession();
+
+    expect(session).toEqual({
+      idToken: 'legacy-id-token',
+      accessToken: 'legacy-access-token',
+      refreshToken: 'legacy-refresh-token',
+      user: { id: 'legacy-u1', email: 'legacy@example.com' },
+    });
+
+    // Blob is now persisted under the new key.
+    const blob = readBlob();
+    expect(blob).toEqual(session);
+
+    // All legacy keys are gone.
+    expect(localStorage.getItem(AUTH_CONFIG.LEGACY.ID_TOKEN_KEY)).toBeNull();
+    expect(localStorage.getItem(AUTH_CONFIG.LEGACY.ACCESS_TOKEN_KEY)).toBeNull();
+    expect(localStorage.getItem(AUTH_CONFIG.LEGACY.REFRESH_TOKEN_KEY)).toBeNull();
+    expect(localStorage.getItem(AUTH_CONFIG.LEGACY.USER_DATA_KEY)).toBeNull();
+  });
+
+  it('should be idempotent — second call is a no-op', () => {
+    localStorage.setItem(AUTH_CONFIG.LEGACY.ID_TOKEN_KEY, 'legacy-id');
+    localStorage.setItem(AUTH_CONFIG.LEGACY.ACCESS_TOKEN_KEY, 'legacy-access');
+
+    const first = getStoredSession();
+    const blobAfterFirst = readBlob();
+
+    // Legacy keys gone after the first read.
+    expect(localStorage.getItem(AUTH_CONFIG.LEGACY.ID_TOKEN_KEY)).toBeNull();
+    expect(localStorage.getItem(AUTH_CONFIG.LEGACY.ACCESS_TOKEN_KEY)).toBeNull();
+
+    const second = getStoredSession();
+
+    expect(second).toEqual(first);
+    expect(readBlob()).toEqual(blobAfterFirst);
+  });
+
+  it('should fall back to accessToken when only the legacy access key exists', () => {
+    // Sessions created BEFORE PR #193 only had accessToken stored (no idToken).
+    // The migration must still extract a usable Bearer credential rather than
+    // log the user out; the upgraded session will then 401 on the next
+    // authenticated call and the refresh interceptor takes over.
+    localStorage.setItem(AUTH_CONFIG.LEGACY.ACCESS_TOKEN_KEY, 'pre-pr-193-access-token');
+
+    const session = getStoredSession();
+
+    expect(session?.idToken).toBe('pre-pr-193-access-token');
+    expect(session?.accessToken).toBe('pre-pr-193-access-token');
+    expect(localStorage.getItem(AUTH_CONFIG.LEGACY.ACCESS_TOKEN_KEY)).toBeNull();
+  });
+
+  it('should return null and clean orphan keys when no bearer-eligible token exists', () => {
+    // Only refresh token + user, no id/access — nothing meaningful to migrate.
+    localStorage.setItem(AUTH_CONFIG.LEGACY.REFRESH_TOKEN_KEY, 'orphan-refresh');
+    localStorage.setItem(AUTH_CONFIG.LEGACY.USER_DATA_KEY, '{}');
+
+    expect(getStoredSession()).toBeNull();
+    expect(localStorage.getItem(AUTH_CONFIG.SESSION_KEY)).toBeNull();
+    // Orphan keys cleaned up.
+    expect(localStorage.getItem(AUTH_CONFIG.LEGACY.REFRESH_TOKEN_KEY)).toBeNull();
+    expect(localStorage.getItem(AUTH_CONFIG.LEGACY.USER_DATA_KEY)).toBeNull();
+  });
+
+  it('should treat a corrupted blob as no session and clear it', () => {
+    localStorage.setItem(AUTH_CONFIG.SESSION_KEY, '{not valid json');
+
+    expect(getStoredSession()).toBeNull();
+    expect(localStorage.getItem(AUTH_CONFIG.SESSION_KEY)).toBeNull();
+  });
+
+  it('should treat a structurally-incomplete blob as no session and clear it', () => {
+    // Missing idToken (required).
+    localStorage.setItem(
+      AUTH_CONFIG.SESSION_KEY,
+      JSON.stringify({ accessToken: 'a', refreshToken: 'rt' })
+    );
+
+    expect(getStoredSession()).toBeNull();
+    expect(localStorage.getItem(AUTH_CONFIG.SESSION_KEY)).toBeNull();
+  });
+
+  it('should tolerate corrupted user JSON in legacy storage', () => {
+    localStorage.setItem(AUTH_CONFIG.LEGACY.ID_TOKEN_KEY, 'id');
+    localStorage.setItem(AUTH_CONFIG.LEGACY.ACCESS_TOKEN_KEY, 'access');
+    localStorage.setItem(AUTH_CONFIG.LEGACY.USER_DATA_KEY, '{not valid');
+
+    const session = getStoredSession();
+
+    expect(session?.idToken).toBe('id');
+    expect(session?.accessToken).toBe('access');
+    expect(session?.user).toBeUndefined();
   });
 });
 
@@ -252,9 +450,12 @@ describe('API Client - Response Error Interceptor', () => {
 
   it.skip('should handle 401 Unauthorized and clear auth tokens', async () => {
     // Set up tokens
-    localStorage.setItem(AUTH_CONFIG.ACCESS_TOKEN_KEY, 'test-token');
-    localStorage.setItem(AUTH_CONFIG.REFRESH_TOKEN_KEY, 'refresh-token');
-    localStorage.setItem(AUTH_CONFIG.USER_DATA_KEY, '{"id": "123"}');
+    setStoredSession({
+      idToken: 'id',
+      accessToken: 'test-token',
+      refreshToken: 'refresh-token',
+      user: { id: '123' },
+    });
 
     const { createApiClient } = await import('../api');
     const client = createApiClient();
@@ -282,10 +483,8 @@ describe('API Client - Response Error Interceptor', () => {
       expect(error.status).toBe(401);
       expect(error.message).toBe('Unauthorized');
 
-      // Verify tokens were cleared
-      expect(localStorage.getItem(AUTH_CONFIG.ACCESS_TOKEN_KEY)).toBeNull();
-      expect(localStorage.getItem(AUTH_CONFIG.REFRESH_TOKEN_KEY)).toBeNull();
-      expect(localStorage.getItem(AUTH_CONFIG.USER_DATA_KEY)).toBeNull();
+      // Verify session was cleared
+      expect(localStorage.getItem(AUTH_CONFIG.SESSION_KEY)).toBeNull();
     }
   });
 

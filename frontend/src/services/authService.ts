@@ -12,8 +12,14 @@
  * Uses the centralized API client with automatic token injection.
  */
 
-import { apiClient, setAuthToken, setAccessToken, clearAuthToken } from '../utils/api';
-import { AUTH_CONFIG } from '../config/constants';
+import {
+  apiClient,
+  clearAuthToken,
+  getStoredRefreshToken,
+  setStoredSession,
+  updateStoredSession,
+} from '../utils/api';
+import type { StoredSession } from '@lfmt/shared-types';
 
 /**
  * User data returned from authentication endpoints
@@ -99,17 +105,24 @@ export interface MessageResponse {
 /**
  * Persist Cognito tokens and user data returned by login / register.
  *
- * Centralises the "store ID token as Bearer" protocol so that the three
- * callers (register, login, refreshToken) cannot drift from each other.
- * Eliminates the copy-paste risk flagged in OMC review (Rec 4).
+ * Writes a single `StoredSession` blob (Issue #196). Eliminates the
+ * "two-keys" drift hazard the OMC reviewer flagged AND removes the
+ * `idToken ?? accessToken` runtime fallback (Issue #195) — every code
+ * path that reads `idToken` now reads it from the canonical blob, and
+ * the migration in `getStoredSession()` handles legacy sessions.
  *
- * Storage protocol:
- *   - `ID_TOKEN_KEY`      ← idToken ?? accessToken  (API Gateway Bearer)
- *   - `ACCESS_TOKEN_KEY`  ← accessToken             (OAuth2 resource servers)
- *   - `REFRESH_TOKEN_KEY` ← refreshToken (only when present — Cognito
- *     REFRESH_TOKEN_AUTH does not rotate the refresh token)
- *   - `USER_DATA_KEY`     ← user (only when present — refresh responses
- *     do not re-send the user object)
+ * Why we still write `accessToken` (mirrored from `idToken` if absent):
+ *   - The `StoredSession` shape requires both fields so a malformed
+ *     blob can be detected unambiguously by the migration.
+ *   - Callers (e.g., a future OAuth2 resource server integration) can
+ *     read `accessToken` directly via `getStoredSession()` without
+ *     coordinating a second migration.
+ *
+ * The user-shape coercion is safe: the backend's `User` and
+ * `UserProfile` are wire-compatible for the fields the SPA renders
+ * (id/email/firstName/lastName); the additional `UserProfile` fields
+ * (`mfaEnabled`, `preferences`, ...) are optional from the SPA's
+ * perspective and surface lazily when the user updates their profile.
  */
 function storeAuthTokens(tokens: {
   accessToken: string;
@@ -118,17 +131,23 @@ function storeAuthTokens(tokens: {
   user?: User;
 }): void {
   // ID token is what API Gateway CognitoUserPoolsAuthorizer validates.
-  // `??` (nullish coalescing) is intentional: only fall through to
-  // accessToken when idToken is null/undefined, not when it is empty.
-  setAuthToken(tokens.idToken ?? tokens.accessToken);
-  setAccessToken(tokens.accessToken);
-
-  if (tokens.refreshToken) {
-    localStorage.setItem(AUTH_CONFIG.REFRESH_TOKEN_KEY, tokens.refreshToken);
-  }
-  if (tokens.user) {
-    localStorage.setItem(AUTH_CONFIG.USER_DATA_KEY, JSON.stringify(tokens.user));
-  }
+  // The legacy `idToken ?? accessToken` fallback survives ONLY at this
+  // ingest boundary, because mock harnesses (and pre-rollout backends)
+  // can return responses without an idToken. New responses from the
+  // current backend always include both tokens — this nullish
+  // coalescing is the last remaining compat seam and can be deleted
+  // once the mock fixtures all carry idToken.
+  const idToken = tokens.idToken ?? tokens.accessToken;
+  const session: StoredSession = {
+    idToken,
+    accessToken: tokens.accessToken,
+    refreshToken: tokens.refreshToken,
+    // `user` on StoredSession is `unknown` — the SPA persists its
+    // narrower `User` shape and reads it back through `getStoredUser`,
+    // which returns `unknown` and forces callers to narrow.
+    user: tokens.user,
+  };
+  setStoredSession(session);
 }
 
 /**
@@ -164,7 +183,7 @@ async function login(credentials: LoginRequest): Promise<AuthResponse> {
  * @throws ApiError if refresh fails or no refresh token available
  */
 async function refreshToken(): Promise<RefreshTokenResponse> {
-  const refreshToken = localStorage.getItem(AUTH_CONFIG.REFRESH_TOKEN_KEY);
+  const refreshToken = getStoredRefreshToken();
 
   if (!refreshToken) {
     // Clear any stale auth data
@@ -181,9 +200,21 @@ async function refreshToken(): Promise<RefreshTokenResponse> {
       refreshToken,
     });
 
-    // storeAuthTokens handles ID-token preference, access-token storage,
-    // and conditional refresh-token update (all in one place — Rec 4).
-    storeAuthTokens(response.data);
+    // updateStoredSession is the partial-update sibling of
+    // setStoredSession — it preserves the existing user profile when
+    // the refresh response does not re-send it (Cognito doesn't).
+    // We synthesize idToken with the same nullish-coalescing rule used
+    // by storeAuthTokens above for the ingest boundary.
+    const data = response.data;
+    updateStoredSession({
+      accessToken: data.accessToken,
+      idToken: data.idToken ?? data.accessToken,
+      // Cognito REFRESH_TOKEN_AUTH does not rotate the refresh token —
+      // when absent, leave the existing value untouched (don't write
+      // undefined; updateStoredSession would otherwise erase the
+      // previous refresh token via spread semantics).
+      ...(data.refreshToken ? { refreshToken: data.refreshToken } : {}),
+    });
 
     return response.data;
   } catch (error) {

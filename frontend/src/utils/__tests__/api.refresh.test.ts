@@ -15,6 +15,11 @@
  *   for the retry — to keep these on the same mocked transport we also
  *   attach a MockAdapter to the default `axios` module.
  *
+ * Storage model: Issue #196 introduced the one-blob session under
+ * `AUTH_CONFIG.SESSION_KEY`. All assertions read the blob through the
+ * canonical helpers (`getStoredSession`) so that any future change to
+ * the blob shape only needs to touch this file in one place.
+ *
  * Key scenarios tested:
  * - Successful token refresh and request retry (flat mock shape)
  * - Successful token refresh with the REAL backend wrapped shape
@@ -31,7 +36,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import axios from 'axios';
 import MockAdapter from 'axios-mock-adapter';
-import { createApiClient, setAuthToken, setAccessToken } from '../api';
+import { createApiClient, getStoredSession, setStoredSession } from '../api';
 import { AUTH_CONFIG } from '../../config/constants';
 
 describe('API Token Refresh Interceptor', () => {
@@ -59,7 +64,7 @@ describe('API Token Refresh Interceptor', () => {
 
   describe('Successful Token Refresh', () => {
     it('should refresh token on 401 and retry original request (flat mock shape)', async () => {
-      const expiredToken = 'expired-token';
+      const expiredIdToken = 'expired-id-token';
       const refreshToken = 'valid-refresh-token';
       const newAccessToken = 'new-access-token';
       // Deliberately different from newAccessToken so the assertion
@@ -67,8 +72,11 @@ describe('API Token Refresh Interceptor', () => {
       const newIdToken = 'new-id-token';
       const newRefreshToken = 'new-refresh-token';
 
-      setAuthToken(expiredToken);
-      localStorage.setItem(AUTH_CONFIG.REFRESH_TOKEN_KEY, refreshToken);
+      setStoredSession({
+        idToken: expiredIdToken,
+        accessToken: 'old-access',
+        refreshToken,
+      });
 
       // First call to /auth/me → 401, then retry succeeds.
       instanceMock.onGet('/auth/me').replyOnce(401, { message: 'Token expired' });
@@ -91,11 +99,11 @@ describe('API Token Refresh Interceptor', () => {
       expect(refreshCalls).toHaveLength(1);
       expect(JSON.parse(refreshCalls[0].data)).toEqual({ refreshToken });
 
-      // ID token is the Bearer credential (API Gateway requires it).
-      expect(localStorage.getItem(AUTH_CONFIG.ID_TOKEN_KEY)).toBe(newIdToken);
-      // Access token is stored separately for reference.
-      expect(localStorage.getItem(AUTH_CONFIG.ACCESS_TOKEN_KEY)).toBe(newAccessToken);
-      expect(localStorage.getItem(AUTH_CONFIG.REFRESH_TOKEN_KEY)).toBe(newRefreshToken);
+      // Blob now holds the rotated tokens, atomically.
+      const session = getStoredSession();
+      expect(session?.idToken).toBe(newIdToken);
+      expect(session?.accessToken).toBe(newAccessToken);
+      expect(session?.refreshToken).toBe(newRefreshToken);
 
       // Retry succeeded.
       expect(response.data).toEqual({ message: 'Success with new token' });
@@ -110,12 +118,14 @@ describe('API Token Refresh Interceptor', () => {
       // This test ensures the interceptor extracts tokens from the nested
       // `data` field — the absence of this test was the root cause that
       // allowed the original wrong-token bug to ship undetected.
-      const expiredToken = 'expired-id-token';
       const newAccessToken = 'wrapped-access-token';
       const newIdToken = 'wrapped-id-token'; // distinct value — must end up as Bearer
 
-      setAuthToken(expiredToken);
-      localStorage.setItem(AUTH_CONFIG.REFRESH_TOKEN_KEY, 'some-refresh-token');
+      setStoredSession({
+        idToken: 'expired-id-token',
+        accessToken: 'expired-access',
+        refreshToken: 'some-refresh-token',
+      });
 
       instanceMock.onGet('/protected').replyOnce(401, {});
 
@@ -135,8 +145,9 @@ describe('API Token Refresh Interceptor', () => {
       await apiClient.get('/protected');
 
       // ID token extracted from response.data.data.idToken — the nested field.
-      expect(localStorage.getItem(AUTH_CONFIG.ID_TOKEN_KEY)).toBe(newIdToken);
-      expect(localStorage.getItem(AUTH_CONFIG.ACCESS_TOKEN_KEY)).toBe(newAccessToken);
+      const session = getStoredSession();
+      expect(session?.idToken).toBe(newIdToken);
+      expect(session?.accessToken).toBe(newAccessToken);
     });
 
     it('should send the new idToken (not accessToken) as Authorization Bearer on the retried request', async () => {
@@ -146,8 +157,11 @@ describe('API Token Refresh Interceptor', () => {
       const newAccessToken = 'retry-access-token';
       const newIdToken = 'retry-id-token';
 
-      setAuthToken('old-id-token');
-      localStorage.setItem(AUTH_CONFIG.REFRESH_TOKEN_KEY, 'some-refresh-token');
+      setStoredSession({
+        idToken: 'old-id-token',
+        accessToken: 'old-access',
+        refreshToken: 'some-refresh-token',
+      });
 
       instanceMock.onGet('/auth/me').replyOnce(401, {});
 
@@ -174,10 +188,14 @@ describe('API Token Refresh Interceptor', () => {
     it('should queue concurrent requests during token refresh (single refresh fan-out)', async () => {
       const refreshToken = 'valid-refresh-token';
       const newAccessToken = 'new-access-token';
+      const newIdToken = 'new-id-token';
       const newRefreshToken = 'new-refresh-token';
 
-      setAuthToken('expired-token');
-      localStorage.setItem(AUTH_CONFIG.REFRESH_TOKEN_KEY, refreshToken);
+      setStoredSession({
+        idToken: 'expired-id',
+        accessToken: 'expired-access',
+        refreshToken,
+      });
 
       // Each in-flight request gets its own 401.
       instanceMock.onGet('/endpoint1').replyOnce(401, {});
@@ -189,6 +207,7 @@ describe('API Token Refresh Interceptor', () => {
       // "no handler" and reject.
       moduleMock.onPost(/\/auth\/refresh$/).replyOnce(200, {
         accessToken: newAccessToken,
+        idToken: newIdToken,
         refreshToken: newRefreshToken,
       });
 
@@ -219,8 +238,11 @@ describe('API Token Refresh Interceptor', () => {
       const newAccessToken = 'new-access-token';
       const newIdToken = 'new-id-token';
 
-      setAuthToken('expired-token');
-      localStorage.setItem(AUTH_CONFIG.REFRESH_TOKEN_KEY, initialRefreshToken);
+      setStoredSession({
+        idToken: 'expired-id',
+        accessToken: 'expired-access',
+        refreshToken: initialRefreshToken,
+      });
 
       instanceMock.onGet('/auth/me').replyOnce(401, {});
 
@@ -234,19 +256,23 @@ describe('API Token Refresh Interceptor', () => {
       await apiClient.get('/auth/me');
 
       // Rotation: refresh token in storage replaced with the rotated value.
-      expect(localStorage.getItem(AUTH_CONFIG.REFRESH_TOKEN_KEY)).toBe(rotatedRefreshToken);
-      expect(localStorage.getItem(AUTH_CONFIG.REFRESH_TOKEN_KEY)).not.toBe(initialRefreshToken);
+      const session = getStoredSession();
+      expect(session?.refreshToken).toBe(rotatedRefreshToken);
+      expect(session?.refreshToken).not.toBe(initialRefreshToken);
       // ID token is the Bearer credential; access token stored separately.
-      expect(localStorage.getItem(AUTH_CONFIG.ID_TOKEN_KEY)).toBe(newIdToken);
-      expect(localStorage.getItem(AUTH_CONFIG.ACCESS_TOKEN_KEY)).toBe(newAccessToken);
+      expect(session?.idToken).toBe(newIdToken);
+      expect(session?.accessToken).toBe(newAccessToken);
     });
   });
 
   describe('Refresh Failures', () => {
     it('should clear tokens and reject if refresh fails', async () => {
-      setAuthToken('expired-token');
-      localStorage.setItem(AUTH_CONFIG.REFRESH_TOKEN_KEY, 'valid-refresh-token');
-      localStorage.setItem(AUTH_CONFIG.USER_DATA_KEY, JSON.stringify({ id: 'u1' }));
+      setStoredSession({
+        idToken: 'expired-id',
+        accessToken: 'expired-access',
+        refreshToken: 'valid-refresh-token',
+        user: { id: 'u1' },
+      });
 
       instanceMock.onGet('/auth/me').replyOnce(401, {});
       moduleMock.onPost(/\/auth\/refresh$/).replyOnce(401, { message: 'Refresh token expired' });
@@ -256,15 +282,17 @@ describe('API Token Refresh Interceptor', () => {
         status: 401,
       });
 
-      // All three auth keys cleared by clearAuthToken().
-      expect(localStorage.getItem(AUTH_CONFIG.ACCESS_TOKEN_KEY)).toBeNull();
-      expect(localStorage.getItem(AUTH_CONFIG.REFRESH_TOKEN_KEY)).toBeNull();
-      expect(localStorage.getItem(AUTH_CONFIG.USER_DATA_KEY)).toBeNull();
+      // Session blob cleared.
+      expect(getStoredSession()).toBeNull();
+      expect(localStorage.getItem(AUTH_CONFIG.SESSION_KEY)).toBeNull();
     });
 
     it('should clear tokens immediately if no refresh token exists', async () => {
-      setAuthToken('expired-token');
-      // No refresh token stored.
+      setStoredSession({
+        idToken: 'expired-id',
+        accessToken: 'expired-access',
+        // No refresh token stored.
+      });
 
       instanceMock.onGet('/auth/me').replyOnce(401, {});
 
@@ -278,12 +306,15 @@ describe('API Token Refresh Interceptor', () => {
       );
       expect(refreshCalls).toHaveLength(0);
 
-      expect(localStorage.getItem(AUTH_CONFIG.ACCESS_TOKEN_KEY)).toBeNull();
+      expect(getStoredSession()).toBeNull();
     });
 
     it('should reject when refresh succeeds but the retried request fails', async () => {
-      setAuthToken('expired-token');
-      localStorage.setItem(AUTH_CONFIG.REFRESH_TOKEN_KEY, 'valid-refresh-token');
+      setStoredSession({
+        idToken: 'expired-id',
+        accessToken: 'expired-access',
+        refreshToken: 'valid-refresh-token',
+      });
 
       instanceMock.onGet('/auth/me').replyOnce(401, {});
 
@@ -300,16 +331,20 @@ describe('API Token Refresh Interceptor', () => {
 
       // Even though the retried request failed, refresh succeeded so the
       // new tokens MUST be persisted (no spurious logout).
-      expect(localStorage.getItem(AUTH_CONFIG.ID_TOKEN_KEY)).toBe('new-id-token');
-      expect(localStorage.getItem(AUTH_CONFIG.ACCESS_TOKEN_KEY)).toBe('new-access-token');
-      expect(localStorage.getItem(AUTH_CONFIG.REFRESH_TOKEN_KEY)).toBe('new-refresh-token');
+      const session = getStoredSession();
+      expect(session?.idToken).toBe('new-id-token');
+      expect(session?.accessToken).toBe('new-access-token');
+      expect(session?.refreshToken).toBe('new-refresh-token');
     });
   });
 
   describe('Edge Cases', () => {
     it('should not retry if request was already retried (_retry flag)', async () => {
-      setAuthToken('expired-token');
-      localStorage.setItem(AUTH_CONFIG.REFRESH_TOKEN_KEY, 'refresh-token');
+      setStoredSession({
+        idToken: 'expired-id',
+        accessToken: 'expired-access',
+        refreshToken: 'refresh-token',
+      });
 
       // Inject _retry=true into the outgoing config so the interceptor
       // treats the 401 as a hard failure (no further refresh attempts).
@@ -329,12 +364,15 @@ describe('API Token Refresh Interceptor', () => {
       expect(refreshCalls).toHaveLength(0);
 
       // Tokens cleared as fallback.
-      expect(localStorage.getItem(AUTH_CONFIG.ACCESS_TOKEN_KEY)).toBeNull();
+      expect(getStoredSession()).toBeNull();
     });
 
     it('should not refresh for /auth/refresh endpoint itself (no infinite loop)', async () => {
-      setAuthToken('some-token');
-      localStorage.setItem(AUTH_CONFIG.REFRESH_TOKEN_KEY, 'refresh-token');
+      setStoredSession({
+        idToken: 'some-id',
+        accessToken: 'some-access',
+        refreshToken: 'refresh-token',
+      });
 
       // A 401 returned BY the refresh endpoint must not trigger another
       // refresh — it must immediately clear tokens and reject.
@@ -354,12 +392,15 @@ describe('API Token Refresh Interceptor', () => {
       expect(moduleRefreshCalls).toHaveLength(0);
 
       // Tokens cleared.
-      expect(localStorage.getItem(AUTH_CONFIG.ACCESS_TOKEN_KEY)).toBeNull();
+      expect(getStoredSession()).toBeNull();
     });
 
     it('should handle non-401 errors normally without refresh', async () => {
-      setAuthToken('valid-token');
-      localStorage.setItem(AUTH_CONFIG.REFRESH_TOKEN_KEY, 'refresh-token');
+      setStoredSession({
+        idToken: 'valid-id',
+        accessToken: 'valid-access',
+        refreshToken: 'refresh-token',
+      });
 
       instanceMock.onGet('/some/endpoint').replyOnce(500, { message: 'Server error' });
 
@@ -375,9 +416,9 @@ describe('API Token Refresh Interceptor', () => {
       expect(refreshCalls).toHaveLength(0);
 
       // Tokens preserved on non-auth errors.
-      // setAuthToken() writes to ID_TOKEN_KEY (the API Gateway Bearer credential).
-      expect(localStorage.getItem(AUTH_CONFIG.ID_TOKEN_KEY)).toBe('valid-token');
-      expect(localStorage.getItem(AUTH_CONFIG.REFRESH_TOKEN_KEY)).toBe('refresh-token');
+      const session = getStoredSession();
+      expect(session?.idToken).toBe('valid-id');
+      expect(session?.refreshToken).toBe('refresh-token');
     });
 
     it('should treat an empty bearer from the refresh response as a failure and clear tokens', async () => {
@@ -385,8 +426,11 @@ describe('API Token Refresh Interceptor', () => {
       // store an empty string as the Bearer token. An empty Bearer header
       // would cause every subsequent request to 401 immediately — the
       // interceptor must treat this the same as a refresh failure.
-      setAuthToken('old-id-token');
-      localStorage.setItem(AUTH_CONFIG.REFRESH_TOKEN_KEY, 'valid-refresh');
+      setStoredSession({
+        idToken: 'old-id-token',
+        accessToken: 'old-access',
+        refreshToken: 'valid-refresh',
+      });
 
       instanceMock.onGet('/protected').replyOnce(401, {});
 
@@ -401,10 +445,8 @@ describe('API Token Refresh Interceptor', () => {
         message: expect.stringMatching(/expired/i),
       });
 
-      // All tokens cleared — not an empty-string bearer.
-      expect(localStorage.getItem(AUTH_CONFIG.ID_TOKEN_KEY)).toBeNull();
-      expect(localStorage.getItem(AUTH_CONFIG.ACCESS_TOKEN_KEY)).toBeNull();
-      expect(localStorage.getItem(AUTH_CONFIG.REFRESH_TOKEN_KEY)).toBeNull();
+      // Session cleared — not an empty-string bearer.
+      expect(getStoredSession()).toBeNull();
     });
 
     it('should preserve the existing refresh token when Cognito omits it from the refresh response', async () => {
@@ -413,8 +455,11 @@ describe('API Token Refresh Interceptor', () => {
       // overwriting it with an empty/undefined string.
       const originalRefreshToken = 'cognito-original-refresh-token';
 
-      setAuthToken('old-id-token');
-      localStorage.setItem(AUTH_CONFIG.REFRESH_TOKEN_KEY, originalRefreshToken);
+      setStoredSession({
+        idToken: 'old-id-token',
+        accessToken: 'old-access',
+        refreshToken: originalRefreshToken,
+      });
 
       instanceMock.onGet('/protected').replyOnce(401, {});
 
@@ -430,7 +475,7 @@ describe('API Token Refresh Interceptor', () => {
       await apiClient.get('/protected');
 
       // Original refresh token MUST survive.
-      expect(localStorage.getItem(AUTH_CONFIG.REFRESH_TOKEN_KEY)).toBe(originalRefreshToken);
+      expect(getStoredSession()?.refreshToken).toBe(originalRefreshToken);
     });
   });
 
@@ -440,7 +485,7 @@ describe('API Token Refresh Interceptor', () => {
       // cycle to catch token-type bugs at Vitest speed.
       //
       // Sequence:
-      //   1. Simulate "just logged in" — store idToken + accessToken.
+      //   1. Simulate "just logged in" — store idToken + accessToken in the blob.
       //   2. Make an authenticated API call → 401 (id token expired).
       //   3. Interceptor refreshes — backend returns new idToken + accessToken.
       //   4. Interceptor retries with new idToken.
@@ -452,9 +497,11 @@ describe('API Token Refresh Interceptor', () => {
       const newAccessToken = 'refreshed-access-token';
 
       // Step 1: simulate post-login state.
-      setAuthToken(loginIdToken);
-      setAccessToken(loginAccessToken);
-      localStorage.setItem(AUTH_CONFIG.REFRESH_TOKEN_KEY, 'user-refresh-token');
+      setStoredSession({
+        idToken: loginIdToken,
+        accessToken: loginAccessToken,
+        refreshToken: 'user-refresh-token',
+      });
 
       // Step 2: API call → 401.
       instanceMock.onPost('/jobs/translate').replyOnce(401, { message: 'Token expired' });
@@ -476,8 +523,9 @@ describe('API Token Refresh Interceptor', () => {
       const result = await apiClient.post('/jobs/translate', { language: 'es' });
 
       // Step 5a: tokens in storage.
-      expect(localStorage.getItem(AUTH_CONFIG.ID_TOKEN_KEY)).toBe(newIdToken);
-      expect(localStorage.getItem(AUTH_CONFIG.ACCESS_TOKEN_KEY)).toBe(newAccessToken);
+      const session = getStoredSession();
+      expect(session?.idToken).toBe(newIdToken);
+      expect(session?.accessToken).toBe(newAccessToken);
 
       // Step 5b: retry used idToken, not accessToken.
       expect(authHeaderOnRetry).toBe(`Bearer ${newIdToken}`);
@@ -490,8 +538,11 @@ describe('API Token Refresh Interceptor', () => {
 
   describe('Error Message Formatting', () => {
     it('should preserve SESSION_EXPIRED message in refresh failures', async () => {
-      setAuthToken('expired-token');
-      localStorage.setItem(AUTH_CONFIG.REFRESH_TOKEN_KEY, 'refresh-token');
+      setStoredSession({
+        idToken: 'expired-id',
+        accessToken: 'expired-access',
+        refreshToken: 'refresh-token',
+      });
 
       instanceMock.onGet('/auth/me').replyOnce(401, {});
       moduleMock
