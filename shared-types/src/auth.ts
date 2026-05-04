@@ -107,18 +107,20 @@ export interface RefreshTokenResponse {
  * `JSON.parse`/`stringify` round-trip costs microseconds and eliminates
  * the consistency hazard the OMC reviewer flagged.
  *
- * Migration: a one-time, idempotent migration in `getAuthToken()` (and
- * any other entry point that reads the session) reconstructs the blob
- * from the legacy keys (`lfmt_id_token`, `lfmt_access_token`,
- * `lfmt_refresh_token`, `lfmt_user`) and removes the legacy keys.
+ * Migration: a one-time, idempotent migration in `getStoredSession()`
+ * reconstructs the blob from the legacy keys (`lfmt_id_token`,
+ * `lfmt_access_token`, `lfmt_refresh_token`, `lfmt_user`) and removes
+ * the legacy keys. Every other read path (`getAuthToken`,
+ * `getStoredRefreshToken`, `getStoredUser`) goes through
+ * `getStoredSession`, so the migration is hit on first read regardless
+ * of which helper the caller invokes. Removal plan: see issue #199.
  *
  * SECURITY NOTE: storing the ID token in `localStorage` keeps the
  * Bearer credential reachable from any executed JavaScript.
- * `unsafe-inline` was removed from `script-src` in the same PR (#194)
- * so an XSS payload can no longer inject an inline `<script>` to
- * exfiltrate this value. A future hardening initiative may move the
- * tokens to httpOnly cookies — see the follow-up issue filed alongside
- * the PR that introduced this type.
+ * `unsafe-inline` was removed from `script-src` in the same PR (#194,
+ * #198) so an XSS payload can no longer inject an inline `<script>`
+ * to exfiltrate this value. A future hardening initiative may move
+ * the tokens to httpOnly cookies — see follow-up issue #197.
  */
 export interface StoredSession {
   /** Cognito ID token — the API Gateway Bearer credential. */

@@ -69,14 +69,15 @@ export const AUTH_CONFIG = {
    * keys directly — go through the session helpers in `utils/api.ts`
    * instead.
    *
-   * See JSDoc on `LEGACY_KEYS` in `utils/api.ts` for the migration
-   * contract, idempotency guarantees, and the rationale for keeping
-   * these literals in one place.
+   * `utils/api.ts` derives its `LEGACY_KEYS` array from
+   * `Object.values(AUTH_CONFIG.LEGACY)` so this object is the single
+   * source of truth — addition or rename here automatically
+   * propagates to the migration code (Round 2 item 13).
    *
-   * Removal plan: once telemetry confirms no in-the-wild sessions
-   * pre-date the blob (one release cycle is sufficient — the worst
-   * outcome is one 401 → refresh → re-login), this object can be
-   * deleted along with the migration code.
+   * Removal plan: tracked in issue #199. Once telemetry confirms no
+   * in-the-wild sessions pre-date the blob (one release cycle is
+   * sufficient — worst case is one 401 → refresh → re-login), this
+   * object can be deleted along with the migration code.
    */
   LEGACY: {
     ID_TOKEN_KEY: 'lfmt_id_token',
