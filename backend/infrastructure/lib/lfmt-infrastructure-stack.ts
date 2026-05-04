@@ -1788,21 +1788,31 @@ export class LfmtInfrastructureStack extends Stack {
         contentSecurityPolicy: {
           // NOTE: This CSP will be updated after API Gateway is created to include the actual API URL.
           //
-          // CSP hardening status (Issue #133):
-          //   - 'unsafe-eval' REMOVED from script-src (Part 2 — verified safe via
-          //     bundle inspection; standard Vite + MUI/Emotion do not require eval).
-          //   - 'unsafe-inline' RETAINED on style-src — MUI/Emotion emit runtime
-          //     inline styles. Removal blocked on a nonce-injection pipeline
-          //     (Lambda@Edge + Emotion CacheProvider integration). Tracked in
-          //     follow-up issue (Part 1 of #133).
-          //   - 'unsafe-inline' RETAINED on script-src — kept until the same
-          //     nonce pipeline lands (so the script-src tightening rolls out
-          //     atomically with style-src).
+          // CSP hardening status (Issues #133, #194):
+          //   - 'unsafe-eval' REMOVED from script-src (Part 2 — verified safe
+          //     via bundle inspection; standard Vite + MUI/Emotion do not
+          //     require eval).
+          //   - 'unsafe-inline' REMOVED from script-src (Issue #194 — verified
+          //     safe by inspecting the built `frontend/dist/index.html`:
+          //     Vite emits ONLY external `<script type="module"
+          //     src="/assets/...">` tags, no inline `<script>` blocks. With
+          //     this directive gone, an XSS payload can no longer inject an
+          //     inline `<script>` to read `localStorage` and exfiltrate the
+          //     Bearer credential — closes the specific risk OMC review
+          //     flagged on PR #193.
+          //   - 'unsafe-inline' RETAINED on style-src — MUI/Emotion emit
+          //     runtime inline styles via `document.head.appendChild('<style>')`.
+          //     Removal blocked on a nonce-injection pipeline (Lambda@Edge
+          //     for the response + Emotion CacheProvider with `nonce` for
+          //     the runtime). Deferred to a follow-up tracking issue; the
+          //     script-src tightening above already addresses the OMC
+          //     reviewer's primary concern (token exfiltration via inline
+          //     script).
           //
           // Other hardening directives retained: object-src 'none', base-uri 'self',
           // form-action 'self', frame-ancestors 'none', upgrade-insecure-requests.
           // See: https://github.com/leixiaoyu/lfmt-poc/issues/63
-          contentSecurityPolicy: "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self' https://*.execute-api.us-east-1.amazonaws.com; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; upgrade-insecure-requests;",
+          contentSecurityPolicy: "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self' https://*.execute-api.us-east-1.amazonaws.com; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; upgrade-insecure-requests;",
           override: true,
         },
       },
@@ -1908,20 +1918,27 @@ export class LfmtInfrastructureStack extends Stack {
         contentSecurityPolicy: {
           // CSP with specific API Gateway domain (Issue #63).
           //
-          // CSP hardening status (Issue #133):
-          //   - 'unsafe-eval' REMOVED from script-src (Part 2 — verified safe via
-          //     bundle inspection; standard Vite + MUI/Emotion do not require eval).
-          //   - 'unsafe-inline' RETAINED on style-src — MUI/Emotion emit runtime
-          //     inline styles. Removal blocked on a nonce-injection pipeline
-          //     (Lambda@Edge + Emotion CacheProvider integration). Tracked in
-          //     follow-up issue (Part 1 of #133).
-          //   - 'unsafe-inline' RETAINED on script-src — kept until the same
-          //     nonce pipeline lands (so the script-src tightening rolls out
-          //     atomically with style-src).
+          // CSP hardening status (Issues #133, #194):
+          //   - 'unsafe-eval' REMOVED from script-src (Part 2 — verified safe
+          //     via bundle inspection; standard Vite + MUI/Emotion do not
+          //     require eval).
+          //   - 'unsafe-inline' REMOVED from script-src (Issue #194 — verified
+          //     safe by inspecting the built `frontend/dist/index.html`:
+          //     Vite emits ONLY external `<script type="module"
+          //     src="/assets/...">` tags, no inline `<script>` blocks. With
+          //     this directive gone, an XSS payload can no longer inject an
+          //     inline `<script>` to read `localStorage` and exfiltrate the
+          //     Bearer credential — closes the specific risk OMC review
+          //     flagged on PR #193.
+          //   - 'unsafe-inline' RETAINED on style-src — MUI/Emotion emit
+          //     runtime inline styles via `document.head.appendChild('<style>')`.
+          //     Removal blocked on a nonce-injection pipeline (Lambda@Edge
+          //     for the response + Emotion CacheProvider with `nonce` for
+          //     the runtime). Deferred to a follow-up tracking issue.
           //
           // Other hardening directives retained: object-src 'none', base-uri 'self',
           // form-action 'self', frame-ancestors 'none', upgrade-insecure-requests.
-          contentSecurityPolicy: `default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self' https://${apiDomain}; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; upgrade-insecure-requests;`,
+          contentSecurityPolicy: `default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self' https://${apiDomain}; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; upgrade-insecure-requests;`,
           override: true,
         },
       },
