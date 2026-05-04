@@ -31,23 +31,47 @@ function generateRequestId(): string {
 }
 
 /**
- * Get authentication token from localStorage
+ * Get the Bearer token used for API Gateway authorization.
+ *
+ * API Gateway CognitoUserPoolsAuthorizer validates ID tokens, not access
+ * tokens.  We therefore prefer the stored ID token and fall back to the
+ * access token only for backward-compatibility with sessions that pre-date
+ * the idToken storage (i.e., sessions created before this change was
+ * deployed — those users will get a 401 on the next authenticated request
+ * and be prompted to log in again, which is the correct safe behaviour).
  */
 export function getAuthToken(): string | null {
-  return localStorage.getItem(AUTH_CONFIG.ACCESS_TOKEN_KEY);
+  return (
+    localStorage.getItem(AUTH_CONFIG.ID_TOKEN_KEY) ||
+    localStorage.getItem(AUTH_CONFIG.ACCESS_TOKEN_KEY)
+  );
 }
 
 /**
- * Set authentication token in localStorage
+ * Store the Cognito ID token that API Gateway expects as the Bearer credential.
+ *
+ * Keeping the function name `setAuthToken` preserves backward compatibility
+ * with all existing call sites.  Internally we write to `ID_TOKEN_KEY` so
+ * that `getAuthToken()` returns the correct token for authenticated requests.
  */
-export function setAuthToken(token: string): void {
-  localStorage.setItem(AUTH_CONFIG.ACCESS_TOKEN_KEY, token);
+export function setAuthToken(idToken: string): void {
+  localStorage.setItem(AUTH_CONFIG.ID_TOKEN_KEY, idToken);
 }
 
 /**
- * Clear authentication token from localStorage
+ * Store the raw Cognito AccessToken separately (kept for reference / future
+ * OAuth resource-server use). Call sites that receive both tokens from the
+ * backend can persist the access token without overwriting the id token.
+ */
+export function setAccessToken(accessToken: string): void {
+  localStorage.setItem(AUTH_CONFIG.ACCESS_TOKEN_KEY, accessToken);
+}
+
+/**
+ * Clear all authentication tokens from localStorage, including the ID token.
  */
 export function clearAuthToken(): void {
+  localStorage.removeItem(AUTH_CONFIG.ID_TOKEN_KEY);
   localStorage.removeItem(AUTH_CONFIG.ACCESS_TOKEN_KEY);
   localStorage.removeItem(AUTH_CONFIG.REFRESH_TOKEN_KEY);
   localStorage.removeItem(AUTH_CONFIG.USER_DATA_KEY);
@@ -175,25 +199,50 @@ async function responseErrorInterceptor(error: unknown): Promise<unknown> {
     }
 
     try {
-      // Call refresh endpoint
-      const response = await axios.post<{ accessToken: string; refreshToken: string }>(
-        `${API_CONFIG.BASE_URL}/auth/refresh`,
-        { refreshToken }
-      );
+      // Call refresh endpoint.
+      //
+      // The backend `/auth/refresh` response is shaped by `createSuccessResponse`:
+      //   { message, data: { accessToken, idToken, expiresIn }, requestId }
+      //
+      // We also tolerate a flat shape `{ accessToken, idToken, refreshToken }`
+      // so that unit tests can mock a simpler payload without breaking.
+      const response = await axios.post<{
+        // Flat shape (unit-test mocks / forward-compat)
+        accessToken?: string;
+        idToken?: string;
+        refreshToken?: string;
+        // Nested shape (actual backend via createSuccessResponse)
+        data?: { accessToken?: string; idToken?: string; expiresIn?: number };
+      }>(`${API_CONFIG.BASE_URL}/auth/refresh`, { refreshToken });
 
-      const { accessToken, refreshToken: newRefreshToken } = response.data;
+      const payload = response.data;
+      const newAccessToken = payload.data?.accessToken ?? payload.accessToken ?? '';
+      const newIdToken = payload.data?.idToken ?? payload.idToken ?? '';
+      // Cognito REFRESH_TOKEN_AUTH does not rotate the refresh token, so
+      // `refreshToken` may be absent in the backend response. Fall back to
+      // the existing value so we don't accidentally store `undefined`.
+      const newRefreshToken =
+        payload.refreshToken ?? localStorage.getItem(AUTH_CONFIG.REFRESH_TOKEN_KEY) ?? '';
 
-      // Update stored tokens
-      setAuthToken(accessToken);
-      localStorage.setItem(AUTH_CONFIG.REFRESH_TOKEN_KEY, newRefreshToken);
+      // Store the id token as the primary Bearer credential.
+      // If the backend did not return one (e.g. a test mock) fall back to
+      // the access token so existing behavior is preserved.
+      const bearerToken = newIdToken || newAccessToken;
+      setAuthToken(bearerToken);
+      if (newAccessToken) {
+        setAccessToken(newAccessToken);
+      }
+      if (newRefreshToken) {
+        localStorage.setItem(AUTH_CONFIG.REFRESH_TOKEN_KEY, newRefreshToken);
+      }
 
       // Update authorization header for original request
       if (originalRequest.headers) {
-        originalRequest.headers.Authorization = `Bearer ${accessToken}`;
+        originalRequest.headers.Authorization = `Bearer ${bearerToken}`;
       }
 
-      // Process queued requests
-      processQueue(null, accessToken);
+      // Process queued requests with the new bearer token
+      processQueue(null, bearerToken);
       isRefreshing = false;
 
       // Retry original request with new token

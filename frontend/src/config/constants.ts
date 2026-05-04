@@ -44,10 +44,25 @@ export const API_CONFIG = {
  */
 export const AUTH_CONFIG = {
   /**
-   * Local storage key for access token
-   * Note: In production, consider httpOnly cookies for better security
+   * Local storage key for access token (Cognito AccessToken — for OAuth resource
+   * servers only; NOT accepted by API Gateway CognitoUserPoolsAuthorizer).
+   * Kept for reference but the ID token is used as the Bearer credential.
+   * Note: In production, consider httpOnly cookies for better security.
    */
   ACCESS_TOKEN_KEY: 'lfmt_access_token',
+
+  /**
+   * Local storage key for the Cognito ID token.
+   *
+   * API Gateway CognitoUserPoolsAuthorizer validates ID tokens (they carry the
+   * user's identity claims — sub, email, given_name, etc.). Access tokens are
+   * designed for OAuth2 resource servers and are NOT accepted by the Cognito
+   * authorizer.  See PR #76 for the backend-side discovery and fix.
+   *
+   * This token is set during login/register and is what `getAuthToken()` returns
+   * for the Authorization: Bearer header.
+   */
+  ID_TOKEN_KEY: 'lfmt_id_token',
 
   /**
    * Local storage key for refresh token

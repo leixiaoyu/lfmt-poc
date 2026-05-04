@@ -290,7 +290,8 @@ describe('API Token Refresh Interceptor', () => {
       expect(refreshCalls).toHaveLength(0);
 
       // Tokens preserved on non-auth errors.
-      expect(localStorage.getItem(AUTH_CONFIG.ACCESS_TOKEN_KEY)).toBe('valid-token');
+      // setAuthToken() writes to ID_TOKEN_KEY (the API Gateway Bearer credential).
+      expect(localStorage.getItem(AUTH_CONFIG.ID_TOKEN_KEY)).toBe('valid-token');
       expect(localStorage.getItem(AUTH_CONFIG.REFRESH_TOKEN_KEY)).toBe('refresh-token');
     });
   });
