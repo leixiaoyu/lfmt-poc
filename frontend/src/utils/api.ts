@@ -39,10 +39,14 @@ function generateRequestId(): string {
  * the idToken storage (i.e., sessions created before this change was
  * deployed — those users will get a 401 on the next authenticated request
  * and be prompted to log in again, which is the correct safe behaviour).
+ *
+ * `??` (nullish coalescing) is intentional: an empty-string token is
+ * treated as absent so we don't send `Authorization: Bearer ` on a
+ * corrupted/truncated stored value.
  */
 export function getAuthToken(): string | null {
   return (
-    localStorage.getItem(AUTH_CONFIG.ID_TOKEN_KEY) ||
+    localStorage.getItem(AUTH_CONFIG.ID_TOKEN_KEY) ??
     localStorage.getItem(AUTH_CONFIG.ACCESS_TOKEN_KEY)
   );
 }
@@ -220,14 +224,29 @@ async function responseErrorInterceptor(error: unknown): Promise<unknown> {
       const newIdToken = payload.data?.idToken ?? payload.idToken ?? '';
       // Cognito REFRESH_TOKEN_AUTH does not rotate the refresh token, so
       // `refreshToken` may be absent in the backend response. Fall back to
-      // the existing value so we don't accidentally store `undefined`.
+      // the existing value so we don't accidentally store an empty string.
       const newRefreshToken =
         payload.refreshToken ?? localStorage.getItem(AUTH_CONFIG.REFRESH_TOKEN_KEY) ?? '';
 
-      // Store the id token as the primary Bearer credential.
-      // If the backend did not return one (e.g. a test mock) fall back to
-      // the access token so existing behavior is preserved.
+      // Prefer the ID token as the Bearer credential.  `??` keeps the
+      // logic consistent with `getAuthToken()` and `authService.ts`.
+      // Treat an empty/missing bearer as a refresh FAILURE rather than
+      // silently storing an empty string — a blank Bearer header would
+      // cause every subsequent request to 401 immediately, creating an
+      // infinite loop that is worse than logging out cleanly.
       const bearerToken = newIdToken || newAccessToken;
+      if (!bearerToken) {
+        clearAuthToken();
+        isRefreshing = false;
+        const apiError: ApiError = {
+          message: ERROR_MESSAGES.SESSION_EXPIRED,
+          status: 401,
+          data: axiosError.response.data,
+        };
+        processQueue(apiError, null);
+        return Promise.reject(apiError);
+      }
+
       setAuthToken(bearerToken);
       if (newAccessToken) {
         setAccessToken(newAccessToken);

@@ -124,12 +124,19 @@ test.describe('Production Smoke Tests @smoke', () => {
     const testPassword = user.password;
 
     // Step 1: Login
+    //
+    // Previous approach: `if (await loginButton.isVisible())` to decide
+    // whether to click the "Log In" button before filling the form. This
+    // is the same racy `isVisible()` anti-pattern that caused Bug #1 in
+    // Step 2 (see PR #193).  If the home page hasn't finished mounting
+    // the button isn't visible yet, so the click is silently skipped and
+    // the subsequent `getByLabel(/email/i)` targets the wrong page.
+    //
+    // Fix: navigate directly to /login (deterministic, no race), then
+    // fill and submit the form. This mirrors how the auth E2E tests in
+    // `e2e/tests/auth/login.spec.ts` approach the login flow.
     await test.step('User can login', async () => {
-      // Click login button if on home page
-      const loginButton = page.getByRole('button', { name: /log in|sign in/i });
-      if (await loginButton.isVisible()) {
-        await loginButton.click();
-      }
+      await page.goto(`${baseURL}/login`);
 
       // Fill in login form
       await page.getByLabel(/email/i).fill(testEmail);

@@ -54,6 +54,15 @@ export interface LoginRequest {
 
 export interface LoginResponse {
   accessToken: string;
+  /**
+   * Cognito ID token.
+   *
+   * API Gateway CognitoUserPoolsAuthorizer validates the **ID token**,
+   * not the access token. Access tokens are for OAuth2 resource servers.
+   * Clients MUST use this field as the `Authorization: Bearer` credential
+   * for all protected API calls. See backend PR #76 for full context.
+   */
+  idToken: string;
   refreshToken: string;
   expiresIn: number;
   user: UserProfile;
@@ -66,8 +75,22 @@ export interface RefreshTokenRequest {
 
 export interface RefreshTokenResponse {
   accessToken: string;
-  refreshToken: string;
-  expiresIn: number;
+  /**
+   * Cognito ID token returned by REFRESH_TOKEN_AUTH flow.
+   *
+   * Cognito does NOT issue a new refresh token on refresh — the original
+   * remains valid until its own expiry (30 days by default). Clients
+   * MUST use this field as the `Authorization: Bearer` credential on
+   * subsequent requests, replacing the previous ID token.
+   */
+  idToken: string;
+  /**
+   * Cognito does not rotate the refresh token on REFRESH_TOKEN_AUTH.
+   * This field is absent in the actual Cognito response; it may be
+   * present in mock environments that simulate token rotation.
+   */
+  refreshToken?: string;
+  expiresIn?: number;
 }
 
 export interface ForgotPasswordRequest {

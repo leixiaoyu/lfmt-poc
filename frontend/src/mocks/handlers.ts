@@ -171,17 +171,25 @@ function buildMockUser(input: { email?: string; firstName?: string; lastName?: s
 
 function issueTokens(user: MockUser): {
   accessToken: string;
+  idToken: string;
   refreshToken: string;
 } {
   const accessToken = `mock-access-${uuid()}`;
+  // The ID token is what API Gateway CognitoUserPoolsAuthorizer validates.
+  // Using a distinct value (not equal to accessToken) ensures the frontend's
+  // `idToken ?? accessToken` fallback is exercised on the production code
+  // path rather than the legacy-compat path, keeping the mock honest.
+  const idToken = `mock-id-${uuid()}`;
   const refreshToken = `mock-refresh-${uuid()}`;
+  // Register the ID token in the session map so /auth/me can resolve it.
+  sessions.set(idToken, user);
   sessions.set(accessToken, user);
   sessions.set(refreshToken, user);
   // Track the most-recently-issued user so /auth/me can recover identity
   // after a Service-Worker restart wipes the `sessions` Map but the page
-  // still holds a valid access token in localStorage (Issue #141).
+  // still holds a valid token in localStorage (Issue #141).
   lastIssuedUser = user;
-  return { accessToken, refreshToken };
+  return { accessToken, idToken, refreshToken };
 }
 
 function userFromAuthHeader(authHeader: string | null): MockUser | null {
