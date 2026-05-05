@@ -4,7 +4,7 @@
 // Core interfaces (order matters to avoid conflicts)
 export * from './auth';
 export * from './errors'; // Export ValidationError from here
-export * from './jobs'; // Export JobStatus from here
+export * from './jobs'; // Export JobStatus + TranslationJobStatus + TRANSLATION_TERMINAL_STATUSES + CHUNKING_ERROR_STATUSES from here
 export * from './documents'; // Export ValidationResult from here (primary)
 export * from './legal';
 export * from './workflows';
