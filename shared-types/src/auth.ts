@@ -93,6 +93,69 @@ export interface RefreshTokenResponse {
   expiresIn?: number;
 }
 
+/**
+ * One-blob session storage model (Issue #196).
+ *
+ * The frontend persists the entire authenticated session under a SINGLE
+ * `localStorage` key (`lfmt_session`) as a JSON document of this shape.
+ * This replaces the previous "two-keys" model in which `idToken`,
+ * `accessToken`, `refreshToken` and `user` lived under independent keys
+ * and could drift out of sync if any individual `setItem` call failed
+ * (e.g., quota error) or two browser tabs raced a token refresh.
+ *
+ * Atomicity guarantee: every write replaces the entire blob. A single
+ * `JSON.parse`/`stringify` round-trip costs microseconds and eliminates
+ * the consistency hazard the OMC reviewer flagged.
+ *
+ * Migration: a one-time, idempotent migration in `getStoredSession()`
+ * reconstructs the blob from the legacy keys (`lfmt_id_token`,
+ * `lfmt_access_token`, `lfmt_refresh_token`, `lfmt_user`) and removes
+ * the legacy keys. Every other read path (`getAuthToken`,
+ * `getStoredRefreshToken`, `getStoredUser`) goes through
+ * `getStoredSession`, so the migration is hit on first read regardless
+ * of which helper the caller invokes. Removal plan: see issue #199.
+ *
+ * SECURITY NOTE: storing the ID token in `localStorage` keeps the
+ * Bearer credential reachable from any executed JavaScript.
+ * `unsafe-inline` was removed from `script-src` in the same PR (#194,
+ * #198) so an XSS payload can no longer inject an inline `<script>`
+ * to exfiltrate this value. A future hardening initiative may move
+ * the tokens to httpOnly cookies — see follow-up issue #197.
+ */
+export interface StoredSession {
+  /** Cognito ID token — the API Gateway Bearer credential. */
+  idToken: string;
+  /** Cognito Access token — kept for OAuth2 resource-server use. */
+  accessToken: string;
+  /**
+   * Cognito Refresh token. Optional because the in-memory session
+   * may be created without a refresh token in degraded paths (e.g.,
+   * a mock harness that hands out single-use tokens).
+   */
+  refreshToken?: string;
+  /**
+   * Epoch milliseconds at which the ID token expires. Optional
+   * because the backend currently surfaces `expiresIn` (seconds)
+   * not an absolute timestamp; consumers compute `expiresAt =
+   * Date.now() + expiresIn * 1000` when persisting.
+   */
+  expiresAt?: number;
+  /**
+   * The authenticated user object. Optional because token-only
+   * refresh responses do not re-send the user object.
+   *
+   * Typed as `unknown` (rather than `UserProfile`) intentionally:
+   * the frontend SPA persists a NARROWER shape than the canonical
+   * `UserProfile` (it stores only the fields it renders — id,
+   * email, firstName, lastName). Consumers that read this field
+   * are responsible for narrowing it to whatever shape they
+   * actually need; this keeps the `StoredSession` contract honest
+   * and avoids forcing every future caller to satisfy every
+   * required field on `UserProfile`.
+   */
+  user?: unknown;
+}
+
 export interface ForgotPasswordRequest {
   email: string;
 }

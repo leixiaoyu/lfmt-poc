@@ -1786,23 +1786,12 @@ export class LfmtInfrastructureStack extends Stack {
           override: true,
         },
         contentSecurityPolicy: {
-          // NOTE: This CSP will be updated after API Gateway is created to include the actual API URL.
-          //
-          // CSP hardening status (Issue #133):
-          //   - 'unsafe-eval' REMOVED from script-src (Part 2 — verified safe via
-          //     bundle inspection; standard Vite + MUI/Emotion do not require eval).
-          //   - 'unsafe-inline' RETAINED on style-src — MUI/Emotion emit runtime
-          //     inline styles. Removal blocked on a nonce-injection pipeline
-          //     (Lambda@Edge + Emotion CacheProvider integration). Tracked in
-          //     follow-up issue (Part 1 of #133).
-          //   - 'unsafe-inline' RETAINED on script-src — kept until the same
-          //     nonce pipeline lands (so the script-src tightening rolls out
-          //     atomically with style-src).
-          //
-          // Other hardening directives retained: object-src 'none', base-uri 'self',
-          // form-action 'self', frame-ancestors 'none', upgrade-insecure-requests.
-          // See: https://github.com/leixiaoyu/lfmt-poc/issues/63
-          contentSecurityPolicy: "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self' https://*.execute-api.us-east-1.amazonaws.com; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; upgrade-insecure-requests;",
+          // CSP body sourced from `buildCsp()` (Round 2 item 10).
+          // The `connect-src` argument is a region-wide wildcard at
+          // initial deploy time — `updateCloudFrontCSP()` swaps it for
+          // the concrete API Gateway domain once that resource exists.
+          // See `buildCsp()` JSDoc for the full hardening status.
+          contentSecurityPolicy: this.buildCsp('https://*.execute-api.us-east-1.amazonaws.com'),
           override: true,
         },
       },
@@ -1863,6 +1852,65 @@ export class LfmtInfrastructureStack extends Stack {
     }));
   }
 
+  /**
+   * Build the Content-Security-Policy header string (Round 2 item 10).
+   *
+   * Single source of truth for the CSP — previously the policy string
+   * was duplicated between the initial response-headers policy (line
+   * ~1815) and the post-API-Gateway "Updated" policy (line ~1941).
+   * Drift between the two would have been a real risk; future hardening
+   * (e.g., Issue #197's `style-src` nonce work) now only edits ONE
+   * place.
+   *
+   * The only per-call variable is `connectSrc` — the wildcard
+   * `https://*.execute-api.us-east-1.amazonaws.com` is used at initial
+   * deploy time (before API Gateway exists), then replaced with the
+   * concrete `https://<apiId>.execute-api.<region>.amazonaws.com` once
+   * the API is provisioned.
+   *
+   * Hardening status (Issues #133, #194):
+   *   - 'unsafe-eval' REMOVED from script-src.
+   *   - 'unsafe-inline' REMOVED from script-src — Vite's built
+   *     `dist/index.html` has no inline `<script>` blocks.
+   *   - 'unsafe-inline' RETAINED on style-src — MUI/Emotion injects
+   *     runtime styles via `document.head.appendChild('<style>')`,
+   *     removal blocked on the Lambda@Edge nonce pipeline tracked in
+   *     issue #197.
+   *
+   * Telemetry (Round 2 item 9 — DEFERRED to issue #201):
+   *
+   *   The `report-uri` directive is INTENTIONALLY OMITTED from this
+   *   build. Implementing it correctly requires (1) a new Lambda
+   *   function to receive POST /csp-report; (2) a new API Gateway
+   *   route with no auth and request-size limits; (3) CORS
+   *   configuration since browsers send violation reports
+   *   cross-origin. That is a meaningful infrastructure change which
+   *   the OMC reviewer's "out of scope" guard for this PR specifically
+   *   excluded.
+   *
+   *   Issue #201 has the full implementation plan and acceptance
+   *   criteria; when it lands, the activation here is a one-line
+   *   edit: append `report-uri ${reportUri}` to the directive list
+   *   below and pass the new endpoint URL through `updateCloudFrontCSP`.
+   *   Until then, every reviewer who looks at this code will see this
+   *   block and know exactly what to do (and why we didn't do it now).
+   */
+  private buildCsp(connectSrc: string): string {
+    return [
+      `default-src 'self'`,
+      `script-src 'self'`,
+      `style-src 'self' 'unsafe-inline'`,
+      `img-src 'self' data: https:`,
+      `font-src 'self' data:`,
+      `connect-src 'self' ${connectSrc}`,
+      `object-src 'none'`,
+      `base-uri 'self'`,
+      `form-action 'self'`,
+      `frame-ancestors 'none'`,
+      `upgrade-insecure-requests`,
+    ].join('; ') + ';';
+  }
+
   private updateCloudFrontCSP() {
     /**
      * Update CloudFront CSP with API Gateway URL
@@ -1906,22 +1954,11 @@ export class LfmtInfrastructureStack extends Stack {
           override: true,
         },
         contentSecurityPolicy: {
-          // CSP with specific API Gateway domain (Issue #63).
-          //
-          // CSP hardening status (Issue #133):
-          //   - 'unsafe-eval' REMOVED from script-src (Part 2 — verified safe via
-          //     bundle inspection; standard Vite + MUI/Emotion do not require eval).
-          //   - 'unsafe-inline' RETAINED on style-src — MUI/Emotion emit runtime
-          //     inline styles. Removal blocked on a nonce-injection pipeline
-          //     (Lambda@Edge + Emotion CacheProvider integration). Tracked in
-          //     follow-up issue (Part 1 of #133).
-          //   - 'unsafe-inline' RETAINED on script-src — kept until the same
-          //     nonce pipeline lands (so the script-src tightening rolls out
-          //     atomically with style-src).
-          //
-          // Other hardening directives retained: object-src 'none', base-uri 'self',
-          // form-action 'self', frame-ancestors 'none', upgrade-insecure-requests.
-          contentSecurityPolicy: `default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self' https://${apiDomain}; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; upgrade-insecure-requests;`,
+          // CSP body sourced from `buildCsp()` (Round 2 item 10) so the
+          // initial and updated policies cannot drift. `connect-src` is
+          // now the concrete API Gateway domain — see `buildCsp()`
+          // JSDoc for the full hardening status (#133, #194, #197).
+          contentSecurityPolicy: this.buildCsp(`https://${apiDomain}`),
           override: true,
         },
       },

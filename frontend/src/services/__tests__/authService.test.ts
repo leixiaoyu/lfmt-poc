@@ -8,14 +8,27 @@
  * - Token refresh
  * - Logout
  * - Error handling
+ *
+ * Storage model: Issue #196 collapsed the per-token localStorage keys
+ * into a single `StoredSession` blob. Assertions read the blob through
+ * the canonical `getStoredSession` helper rather than poking at raw
+ * localStorage keys, so the test layer survives any future change to
+ * the blob's internal shape.
+ *
+ * Mock policy: only `apiClient` is mocked here — the storage helpers
+ * run for real against jsdom's `localStorage`. This means a single
+ * end-to-end assertion (read the blob, check the fields) replaces the
+ * old "spy on every setter" pattern, and the tests would catch a real
+ * regression in the helpers themselves rather than just contract drift.
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { authService } from '../authService';
-import { apiClient, setAuthToken, setAccessToken, clearAuthToken } from '../../utils/api';
+import { apiClient, getStoredSession, setStoredSession, clearAuthToken } from '../../utils/api';
 import type { AxiosResponse } from 'axios';
 
-// Mock the API client
+// Mock ONLY the apiClient — storage helpers run against real jsdom
+// localStorage so the test exercises the same code paths the SPA uses.
 vi.mock('../../utils/api', async () => {
   const actual = await vi.importActual<typeof import('../../utils/api')>('../../utils/api');
   return {
@@ -24,9 +37,6 @@ vi.mock('../../utils/api', async () => {
       post: vi.fn(),
       get: vi.fn(),
     },
-    setAuthToken: vi.fn(),
-    setAccessToken: vi.fn(),
-    clearAuthToken: vi.fn(),
   };
 });
 
@@ -78,10 +88,21 @@ describe('AuthService - Registration', () => {
       acceptedPrivacy: true,
     });
 
-    // Without an idToken in the mock response, setAuthToken falls back to
-    // the accessToken so existing behaviour is preserved.
-    expect(setAuthToken).toHaveBeenCalledWith('mock-access-token');
-    expect(setAccessToken).toHaveBeenCalledWith('mock-access-token');
+    // Without an idToken in the mock response, storeAuthTokens falls back
+    // to the accessToken at the ingest seam so existing behaviour is
+    // preserved. The blob persists both fields atomically.
+    const session = getStoredSession();
+    expect(session).toEqual({
+      idToken: 'mock-access-token',
+      accessToken: 'mock-access-token',
+      refreshToken: 'mock-refresh-token',
+      user: {
+        id: 'user-123',
+        email: 'test@example.com',
+        firstName: 'John',
+        lastName: 'Doe',
+      },
+    });
 
     // Verify user data is returned
     expect(result.user).toEqual({
@@ -118,8 +139,11 @@ describe('AuthService - Registration', () => {
     });
 
     // API Gateway CognitoUserPoolsAuthorizer requires the ID token.
-    expect(setAuthToken).toHaveBeenCalledWith('mock-id-token');
-    expect(setAccessToken).toHaveBeenCalledWith('mock-access-token');
+    // The session blob preserves both tokens distinctly.
+    const session = getStoredSession();
+    expect(session?.idToken).toBe('mock-id-token');
+    expect(session?.accessToken).toBe('mock-access-token');
+    expect(session?.refreshToken).toBe('mock-refresh-token');
   });
 
   it('should handle registration errors', async () => {
@@ -143,8 +167,8 @@ describe('AuthService - Registration', () => {
       status: 400,
     });
 
-    // Verify no tokens are stored on error
-    expect(setAuthToken).not.toHaveBeenCalled();
+    // Verify no session is created on error
+    expect(getStoredSession()).toBeNull();
   });
 });
 
@@ -182,10 +206,20 @@ describe('AuthService - Login', () => {
       password: 'MyPassword123!',
     });
 
-    // Without an idToken in the mock response, setAuthToken falls back to
+    // Without an idToken in the mock response, storeAuthTokens falls back to
     // the accessToken so existing behaviour is preserved.
-    expect(setAuthToken).toHaveBeenCalledWith('login-access-token');
-    expect(setAccessToken).toHaveBeenCalledWith('login-access-token');
+    const session = getStoredSession();
+    expect(session).toEqual({
+      idToken: 'login-access-token',
+      accessToken: 'login-access-token',
+      refreshToken: 'login-refresh-token',
+      user: {
+        id: 'user-456',
+        email: 'login@example.com',
+        firstName: 'Jane',
+        lastName: 'Smith',
+      },
+    });
 
     // Verify user data is returned
     expect(result.user.email).toBe('login@example.com');
@@ -208,8 +242,9 @@ describe('AuthService - Login', () => {
     await authService.login({ email: 'login@example.com', password: 'MyPassword123!' });
 
     // API Gateway CognitoUserPoolsAuthorizer requires the ID token.
-    expect(setAuthToken).toHaveBeenCalledWith('login-id-token');
-    expect(setAccessToken).toHaveBeenCalledWith('login-access-token');
+    const session = getStoredSession();
+    expect(session?.idToken).toBe('login-id-token');
+    expect(session?.accessToken).toBe('login-access-token');
   });
 
   it('should handle invalid credentials', async () => {
@@ -228,7 +263,7 @@ describe('AuthService - Login', () => {
       status: 401,
     });
 
-    expect(setAuthToken).not.toHaveBeenCalled();
+    expect(getStoredSession()).toBeNull();
   });
 
   it('should handle network errors during login', async () => {
@@ -254,8 +289,13 @@ describe('AuthService - Token Refresh', () => {
   });
 
   it('should refresh access token successfully (mock without idToken)', async () => {
-    // Set up initial refresh token
-    localStorage.setItem('lfmt_refresh_token', 'old-refresh-token');
+    // Set up an existing session with a refresh token. authService reads
+    // the refresh token via the canonical helper, which sees this blob.
+    setStoredSession({
+      idToken: 'old-id',
+      accessToken: 'old-access',
+      refreshToken: 'old-refresh-token',
+    });
 
     const mockResponse: Partial<AxiosResponse> = {
       data: {
@@ -274,16 +314,23 @@ describe('AuthService - Token Refresh', () => {
       refreshToken: 'old-refresh-token',
     });
 
-    // Without idToken in the mock, setAuthToken falls back to accessToken.
-    expect(setAuthToken).toHaveBeenCalledWith('new-access-token');
-    expect(setAccessToken).toHaveBeenCalledWith('new-access-token');
+    // Without idToken in the mock, the ingest seam falls back to accessToken.
+    // The blob is updated atomically; refreshToken is rotated.
+    const session = getStoredSession();
+    expect(session?.idToken).toBe('new-access-token');
+    expect(session?.accessToken).toBe('new-access-token');
+    expect(session?.refreshToken).toBe('new-refresh-token');
 
     // Verify new access token is returned
     expect(result.accessToken).toBe('new-access-token');
   });
 
   it('should use idToken as Bearer credential when present in refresh response', async () => {
-    localStorage.setItem('lfmt_refresh_token', 'old-refresh-token');
+    setStoredSession({
+      idToken: 'old-id',
+      accessToken: 'old-access',
+      refreshToken: 'old-refresh-token',
+    });
 
     const mockResponse: Partial<AxiosResponse> = {
       data: {
@@ -299,12 +346,16 @@ describe('AuthService - Token Refresh', () => {
     await authService.refreshToken();
 
     // ID token is the correct Bearer credential for API Gateway.
-    expect(setAuthToken).toHaveBeenCalledWith('new-id-token');
-    expect(setAccessToken).toHaveBeenCalledWith('new-access-token');
+    // The original refresh token MUST survive because the response
+    // omitted refreshToken (Cognito REFRESH_TOKEN_AUTH behaviour).
+    const session = getStoredSession();
+    expect(session?.idToken).toBe('new-id-token');
+    expect(session?.accessToken).toBe('new-access-token');
+    expect(session?.refreshToken).toBe('old-refresh-token');
   });
 
   it('should handle missing refresh token', async () => {
-    // No refresh token in localStorage
+    // No session at all → no refresh token to send.
     await expect(authService.refreshToken()).rejects.toEqual({
       message: 'No refresh token available',
       status: 401,
@@ -314,7 +365,11 @@ describe('AuthService - Token Refresh', () => {
   });
 
   it('should handle expired refresh token', async () => {
-    localStorage.setItem('lfmt_refresh_token', 'expired-token');
+    setStoredSession({
+      idToken: 'expired-id',
+      accessToken: 'expired-access',
+      refreshToken: 'expired-token',
+    });
 
     vi.mocked(apiClient.post).mockRejectedValueOnce({
       message: 'Your session has expired. Please log in again.',
@@ -326,8 +381,8 @@ describe('AuthService - Token Refresh', () => {
       status: 401,
     });
 
-    // Should clear tokens on expired refresh token
-    expect(clearAuthToken).toHaveBeenCalled();
+    // Should clear the session on expired refresh token.
+    expect(getStoredSession()).toBeNull();
   });
 });
 
@@ -338,23 +393,45 @@ describe('AuthService - Logout', () => {
   });
 
   it('should logout user and clear all tokens', async () => {
-    // Set up tokens
-    localStorage.setItem('lfmt_access_token', 'test-access-token');
-    localStorage.setItem('lfmt_refresh_token', 'test-refresh-token');
-    localStorage.setItem('lfmt_user', JSON.stringify({ id: 'user-123' }));
+    // Set up tokens via the canonical helper.
+    setStoredSession({
+      idToken: 'id',
+      accessToken: 'test-access-token',
+      refreshToken: 'test-refresh-token',
+      user: { id: 'user-123' },
+    });
 
     await authService.logout();
 
-    // Verify all tokens are cleared
-    expect(clearAuthToken).toHaveBeenCalled();
+    // Verify the session was cleared.
+    expect(getStoredSession()).toBeNull();
   });
 
   it('should logout even if no tokens exist', async () => {
-    // No tokens in localStorage
+    // No tokens in localStorage. clearAuthToken is idempotent — should
+    // not throw.
+    await expect(authService.logout()).resolves.toBeUndefined();
+    expect(getStoredSession()).toBeNull();
+  });
+
+  it('should also remove any straggling legacy keys (defense in depth)', async () => {
+    // Pre-populate the legacy keys (could happen if the deploy-rollover
+    // window leaves a stale key behind from a previous build).
+    localStorage.setItem('lfmt_id_token', 'legacy-id');
+    localStorage.setItem('lfmt_access_token', 'legacy-access');
+    localStorage.setItem('lfmt_refresh_token', 'legacy-refresh');
+    localStorage.setItem('lfmt_user', '{}');
+    setStoredSession({ idToken: 'id', accessToken: 'a' });
+
     await authService.logout();
 
-    // Should still call clearAuthToken (idempotent operation)
-    expect(clearAuthToken).toHaveBeenCalled();
+    // clearAuthToken removes both the blob AND the legacy keys.
+    expect(localStorage.length).toBe(0);
+
+    // Sanity: clearAuthToken is the helper exercised by logout.
+    // Re-calling it directly is a no-op.
+    clearAuthToken();
+    expect(localStorage.length).toBe(0);
   });
 });
 

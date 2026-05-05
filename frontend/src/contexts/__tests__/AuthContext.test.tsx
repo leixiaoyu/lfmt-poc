@@ -78,9 +78,15 @@ describe('AuthContext - Initialization', () => {
       lastName: 'Doe',
     };
 
-    // Set up localStorage with user data
-    localStorage.setItem('lfmt_access_token', 'existing-token');
-    localStorage.setItem('lfmt_user', JSON.stringify(mockUser));
+    // Set up the one-blob session (Issue #196).
+    localStorage.setItem(
+      'lfmt_session',
+      JSON.stringify({
+        idToken: 'existing-token',
+        accessToken: 'existing-token',
+        user: mockUser,
+      })
+    );
 
     vi.mocked(authService.getCurrentUser).mockResolvedValueOnce(mockUser);
 
@@ -500,8 +506,14 @@ describe('AuthContext - Initial User Load', () => {
       lastName: 'User',
     };
 
-    localStorage.setItem('lfmt_access_token', 'stored-token');
-    localStorage.setItem('lfmt_user', JSON.stringify(mockUser));
+    localStorage.setItem(
+      'lfmt_session',
+      JSON.stringify({
+        idToken: 'stored-token',
+        accessToken: 'stored-token',
+        user: mockUser,
+      })
+    );
 
     vi.mocked(authService.getCurrentUser).mockResolvedValueOnce(mockUser);
 
@@ -522,7 +534,10 @@ describe('AuthContext - Initial User Load', () => {
   });
 
   it('should handle failed user load and clear auth', async () => {
-    localStorage.setItem('lfmt_access_token', 'invalid-token');
+    localStorage.setItem(
+      'lfmt_session',
+      JSON.stringify({ idToken: 'invalid-token', accessToken: 'invalid-token' })
+    );
 
     const loadError = {
       message: 'Your session has expired. Please log in again.',

@@ -1237,9 +1237,6 @@ describe('LFMT Infrastructure Stack', () => {
       // 'unsafe-eval' was removed from script-src after verifying that the
       // production Vite/MUI bundle contains no eval()/new Function() calls.
       // Re-introducing it would weaken script-src CSP and must trip CI.
-      // Note: 'unsafe-inline' is intentionally NOT asserted absent yet —
-      // that lands with Part 1 (nonce-injection pipeline). Tracked in the
-      // Part 1 follow-up issue.
       const flattenCsp = (csp: unknown): string => {
         if (typeof csp === 'string') return csp;
         if (csp && typeof csp === 'object' && 'Fn::Join' in (csp as object)) {
@@ -1263,6 +1260,64 @@ describe('LFMT Infrastructure Stack', () => {
             .ContentSecurityPolicy;
         const flat = flattenCsp(csp);
         expect(flat).not.toContain("'unsafe-eval'");
+      });
+    });
+
+    test("script-src does not contain 'unsafe-inline' (Issue #194)", () => {
+      // Regression guard for Issue #194.
+      //
+      // 'unsafe-inline' on script-src would let an XSS payload inject an
+      // inline `<script>` to read `localStorage` and exfiltrate the API
+      // Gateway Bearer credential — exactly the risk the OMC reviewer
+      // flagged on PR #193 once `idToken` started living in localStorage.
+      //
+      // The directive is safely removable because the built `dist/index.html`
+      // emits no inline `<script>` blocks (verified during PR #194).
+      // Re-introducing 'unsafe-inline' on script-src would re-open the
+      // exfiltration class and must trip CI.
+      //
+      // Note: 'unsafe-inline' on style-src remains present. MUI/Emotion
+      // injects runtime styles via document.head.appendChild('<style>')
+      // and removing this directive requires a Lambda@Edge nonce
+      // pipeline. That work is tracked in a separate follow-up issue;
+      // it does not address the same exfiltration class.
+      const flattenCsp = (csp: unknown): string => {
+        if (typeof csp === 'string') return csp;
+        if (csp && typeof csp === 'object' && 'Fn::Join' in (csp as object)) {
+          const join = (csp as { 'Fn::Join': [string, unknown[]] })['Fn::Join'];
+          const parts = join[1];
+          return parts.map((p) => (typeof p === 'string' ? p : JSON.stringify(p))).join('');
+        }
+        return JSON.stringify(csp);
+      };
+
+      const policies = template.findResources('AWS::CloudFront::ResponseHeadersPolicy');
+      const cspCarryingPolicies = Object.values(policies).filter((policy: any) => {
+        return !!policy?.Properties?.ResponseHeadersPolicyConfig?.SecurityHeadersConfig
+          ?.ContentSecurityPolicy?.ContentSecurityPolicy;
+      });
+      expect(cspCarryingPolicies.length).toBeGreaterThanOrEqual(2);
+
+      cspCarryingPolicies.forEach((policy: any) => {
+        const csp =
+          policy.Properties.ResponseHeadersPolicyConfig.SecurityHeadersConfig.ContentSecurityPolicy
+            .ContentSecurityPolicy;
+        const flat = flattenCsp(csp);
+        // Extract just the script-src directive, then assert it does
+        // NOT contain 'unsafe-inline'. Avoids accidentally tripping on
+        // the style-src 'unsafe-inline' that is intentionally retained.
+        const scriptSrcMatch = flat.match(/script-src[^;]*/);
+        if (!scriptSrcMatch) {
+          throw new Error(`script-src directive missing from CSP: ${flat}`);
+        }
+        expect(scriptSrcMatch[0]).not.toContain("'unsafe-inline'");
+        // Round 2 item 4: positive assertion. A test that only checks
+        // for absence is fragile against a future regression that
+        // accidentally drops the directive entirely (e.g.,
+        // `script-src` missing → browser defaults to `default-src`,
+        // which IS `'self'`, so the SPA still loads but the contract
+        // is now implicit). Assert `'self'` is the explicit value.
+        expect(scriptSrcMatch[0]).toMatch(/^script-src\s+'self'\s*$/);
       });
     });
 
