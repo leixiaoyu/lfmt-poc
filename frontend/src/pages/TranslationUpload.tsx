@@ -5,7 +5,7 @@
  * Implements requirements from OpenSpec: translation-upload/spec.md
  */
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Box,
@@ -30,30 +30,6 @@ import { getLanguageLabel, getToneLabel } from '../utils/translationLabels';
 import { getTranslationErrorMessage } from '../utils/translationErrorMessages';
 
 const STEPS = ['Legal Attestation', 'Translation Settings', 'Upload Document', 'Review & Submit'];
-
-/**
- * How long to wait between each getJobStatus poll while waiting for the
- * backend to finish chunking the uploaded document (ms).
- */
-const CHUNKING_POLL_INTERVAL_MS = 2_000;
-
-/**
- * Maximum wall-clock time to wait for the job to reach CHUNKED status.
- * After this deadline the user sees an explicit timeout error rather than
- * hanging forever.
- */
-const CHUNKING_POLL_TIMEOUT_MS = 60_000;
-
-/**
- * Job statuses that mean the chunking pipeline has failed permanently.
- * Encountering any of these during polling terminates the wait immediately
- * with an actionable error instead of burning the full timeout budget.
- */
-const CHUNKING_TERMINAL_ERROR_STATUSES = [
-  'CHUNKING_FAILED',
-  'FAILED',
-  'TRANSLATION_FAILED',
-] as const;
 
 /**
  * Canonical list of fields that must be non-empty for wizard step 1
@@ -119,12 +95,27 @@ export const TranslationUpload: React.FC = () => {
    * progress. Updated as the request moves through upload → chunking → start.
    */
   const [submitPhase, setSubmitPhase] = useState<string>('Uploading...');
+
   /**
-   * Ref used to cancel the chunking-poll timer if the component unmounts
-   * while a poll is in flight (prevents "setState on unmounted component"
-   * React warnings during tests).
+   * Whether the component is currently mounted.  Used to guard setState calls
+   * that arrive after an async operation started before unmount.
+   *
+   * We use a ref (not state) so reads are synchronous and writes do not cause
+   * re-renders. The effect below sets it to false when the component unmounts.
+   *
+   * Critical fix (PR #202 OMC Round 2): the previous implementation only
+   * cleared the polling timer in the handleSubmit finally block, which means
+   * if the user navigated away mid-poll the timer kept firing and setState
+   * was called on a dead component — causing React warnings and a memory leak.
    */
-  const pollingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isMountedRef = useRef(true);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
 
   const validateStep = (step: number): boolean => {
     const newErrors: FormErrors = {};
@@ -208,80 +199,28 @@ export const TranslationUpload: React.FC = () => {
         formData.legalAttestation.acceptLiabilityTerms
       );
 
-      // Upload document
-      const job = await translationService.uploadDocument({
-        file: formData.file,
-        legalAttestation,
-      });
-
-      // Bug #2 fix — race condition between S3 upload landing and startTranslation.
+      // Upload document and wait for backend to finish chunking.
       //
-      // After the S3 PUT completes, the backend pipeline is:
-      //   S3 event → uploadComplete Lambda → chunkDocument Lambda → status CHUNKED
-      //
-      // startTranslation (backend lines 132-139) requires status === 'CHUNKED'.
-      // Calling it immediately after uploadDocument returns a 400 INVALID_JOB_STATUS
-      // because chunking is still in flight, which the frontend error-message helper
-      // maps to "Connection lost" (statusCode undefined → network-error branch).
-      //
-      // Fix: poll getJobStatus until the job reaches CHUNKED, then call
-      // startTranslation. The poll respects a 60-second timeout and exits early
-      // on terminal-error statuses so the user never waits longer than necessary.
+      // Bug #2 fix (PR #202): uploadAndAwaitChunked combines the S3 PUT with a
+      // getJobStatus polling loop so startTranslation is never called before the
+      // job reaches CHUNKED status. The polling state machine lives in the
+      // service layer (not here) — see translationService.uploadAndAwaitChunked.
       setSubmitPhase('Processing upload...');
 
-      const deadline = Date.now() + CHUNKING_POLL_TIMEOUT_MS;
-
-      const waitForChunked = (): Promise<void> =>
-        new Promise((resolve, reject) => {
-          const tick = async () => {
-            try {
-              const statusJob = await translationService.getJobStatus(job.jobId);
-
-              if (statusJob.status === 'CHUNKED') {
-                // Ready — proceed to startTranslation.
-                resolve();
-                return;
-              }
-
-              // Terminal error — no point polling further.
-              if (
-                (CHUNKING_TERMINAL_ERROR_STATUSES as ReadonlyArray<string>).includes(
-                  statusJob.status
-                )
-              ) {
-                reject(
-                  new Error(
-                    `Document processing failed with status: ${statusJob.status}. Please try again.`
-                  )
-                );
-                return;
-              }
-
-              // Timeout guard.
-              if (Date.now() >= deadline) {
-                reject(
-                  new Error(
-                    'Document processing timed out. Your file was uploaded successfully — please refresh and try starting the translation again.'
-                  )
-                );
-                return;
-              }
-
-              // Still PENDING / CHUNKING — schedule the next tick.
-              pollingTimerRef.current = setTimeout(tick, CHUNKING_POLL_INTERVAL_MS);
-            } catch (err) {
-              // getJobStatus itself threw — propagate so the outer catch
-              // can surface the user-facing message.
-              reject(err);
+      const job = await translationService.uploadAndAwaitChunked(
+        { file: formData.file, legalAttestation },
+        {
+          onPollTick: () => {
+            // Keep the label stable during polling; a future PR could show
+            // chunk-count progress here if the backend exposes it.
+            if (isMountedRef.current) {
+              setSubmitPhase('Processing upload...');
             }
-          };
+          },
+        }
+      );
 
-          // Kick off the first tick immediately so we don't add an
-          // unnecessary 2-second pause when chunking completes quickly.
-          void tick();
-        });
-
-      await waitForChunked();
+      if (!isMountedRef.current) return;
 
       setSubmitPhase('Starting translation...');
 
@@ -293,9 +232,12 @@ export const TranslationUpload: React.FC = () => {
         tone: formData.translationConfig.tone as any,
       });
 
+      if (!isMountedRef.current) return;
+
       // Navigate to translation detail page
       navigate(`/translation/${job.jobId}`);
     } catch (error) {
+      if (!isMountedRef.current) return;
       // Issue #147: surface a user-facing message keyed off the HTTP
       // status (or the absence of one, for network failures) rather
       // than passing through the raw backend message or a generic
@@ -303,14 +245,17 @@ export const TranslationUpload: React.FC = () => {
       // and handles both `TranslationServiceError` (which carries
       // `statusCode`) and bare `Error` shapes — the previous if/else
       // was a refactor leftover. (R4: OMC review follow-up.)
+      //
+      // Errors thrown by the polling loop are plain `Error` objects with
+      // descriptive `message` strings. getTranslationErrorMessage now
+      // reads `error.message` before falling back to NETWORK_MESSAGE when
+      // `statusCode` is undefined — so "Document processing timed out" etc.
+      // reach the user instead of the generic "Connection lost" phrase.
       setSubmitError(getTranslationErrorMessage(error));
     } finally {
-      // Clear any pending poll timer to prevent setState on unmounted component.
-      if (pollingTimerRef.current !== null) {
-        clearTimeout(pollingTimerRef.current);
-        pollingTimerRef.current = null;
+      if (isMountedRef.current) {
+        setIsSubmitting(false);
       }
-      setIsSubmitting(false);
     }
   };
 
