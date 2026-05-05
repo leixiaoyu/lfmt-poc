@@ -133,13 +133,15 @@ export const uploadDocument = async (request: UploadDocumentRequest): Promise<Tr
 
     const { uploadUrl, jobId, requiredHeaders } = presignedResponse.data.data;
 
-    // Step 2: Upload file directly to S3 using presigned URL
-    // Note: We use axios directly here because S3 doesn't need our API interceptors/auth headers
+    // Step 2: Upload file directly to S3 using presigned URL.
+    // Note: We use axios directly here because S3 doesn't need our API interceptors/auth headers.
+    // IMPORTANT: rely exclusively on requiredHeaders returned by the backend. The backend signs the
+    // presigned URL with the exact Content-Type it puts in requiredHeaders (lines 224-227 of
+    // uploadRequest.ts). Adding an extra 'Content-Type' override here risks a mismatch between
+    // the signed value and the sent value when the browser File.type differs from what the backend
+    // normalised, which causes S3 to reject the request with SignatureDoesNotMatch.
     await axios.put(uploadUrl, request.file, {
-      headers: {
-        ...requiredHeaders,
-        'Content-Type': request.file.type,
-      },
+      headers: { ...requiredHeaders },
     });
 
     // Step 3: Return job information

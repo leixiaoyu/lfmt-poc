@@ -89,6 +89,9 @@ describe('TranslationService - uploadDocument', () => {
       // Mock presigned URL response from backend.
       // The backend now includes both `fileId` (the S3 object key component)
       // and `jobId` (the DynamoDB record key) in the response envelope.
+      // requiredHeaders mirrors what uploadRequest.ts lines 224-227 returns:
+      // Content-Type (already normalised server-side to match the signed value)
+      // plus any additional S3 metadata headers.
       const mockPresignedResponse = {
         data: {
           data: {
@@ -96,6 +99,7 @@ describe('TranslationService - uploadDocument', () => {
             fileId: 'file-abc',
             jobId: 'job-123',
             requiredHeaders: {
+              'Content-Type': 'text/plain',
               'x-amz-server-side-encryption': 'AES256',
             },
           },
@@ -125,16 +129,20 @@ describe('TranslationService - uploadDocument', () => {
         legalAttestation: mockLegalAttestation,
       });
 
-      // Assert - Step 2: Upload to S3
+      // Assert - Step 2: Upload to S3.
+      // Bug #1 fix (SignatureDoesNotMatch): the PUT must use ONLY the headers
+      // supplied by the backend in requiredHeaders — no extra Content-Type
+      // override from request.file.type. The backend already places Content-Type
+      // in requiredHeaders with the value it signed.
       expect(mockedAxios.put).toHaveBeenCalledTimes(1);
       expect(mockedAxios.put).toHaveBeenCalledWith(
         'https://s3.amazonaws.com/bucket/presigned-url',
         mockFile,
         expect.objectContaining({
-          headers: expect.objectContaining({
+          headers: {
             'Content-Type': 'text/plain',
             'x-amz-server-side-encryption': 'AES256',
-          }),
+          },
         })
       );
 
@@ -142,6 +150,77 @@ describe('TranslationService - uploadDocument', () => {
       expect(result.jobId).toBe('job-123');
       expect(result.fileName).toBe('test.txt');
       expect(result.status).toBe('PENDING');
+    });
+
+    // ---------------------------------------------------------------------------
+    // Bug #1 regression guard — SignatureDoesNotMatch on S3 PUT
+    //
+    // Root cause: translationService previously spread requiredHeaders AND then
+    // overrode Content-Type with request.file.type. If the browser's File.type
+    // differs from what the backend normalised when signing the presigned URL,
+    // S3 rejects the PUT with SignatureDoesNotMatch.
+    //
+    // Fix: rely exclusively on requiredHeaders from the backend.
+    //
+    // This test verifies the exact headers object forwarded to axios.put:
+    //   • No extra Content-Type key beyond what the backend sent.
+    //   • Additional backend headers (e.g. server-side encryption) are preserved.
+    //   • When browser File.type diverges from what the backend signed, the
+    //     backend value takes precedence.
+    // ---------------------------------------------------------------------------
+    it('should send only requiredHeaders to S3 — no extra Content-Type override', async () => {
+      // Arrange: browser File has 'text/plain' but backend signed for 'text/x-rst'
+      // (simulating a normalisation step on the server side).
+      const mockFile = new File(['content'], 'document.rst', { type: 'text/plain' });
+      const mockLegalAttestation: LegalAttestation = {
+        acceptCopyrightOwnership: true,
+        acceptTranslationRights: true,
+        acceptLiabilityTerms: true,
+        userIPAddress: 'captured-by-backend',
+        userAgent: 'Mozilla/5.0',
+        timestamp: '2024-10-31T12:00:00Z',
+      };
+
+      // Backend signed for 'text/x-rst' — note: intentionally different from
+      // the browser File.type ('text/plain') to expose the old double-set bug.
+      const mockPresignedResponse = {
+        data: {
+          data: {
+            uploadUrl: 'https://s3.amazonaws.com/bucket/presigned-url',
+            fileId: 'file-rst',
+            jobId: 'job-rst',
+            requiredHeaders: {
+              'Content-Type': 'text/x-rst',
+              'Content-Length': '7',
+            },
+          },
+        },
+      };
+
+      mockedApiClient.post.mockResolvedValueOnce(mockPresignedResponse);
+      mockedAxios.put.mockResolvedValueOnce({ data: null });
+
+      // Act
+      await uploadDocument({ file: mockFile, legalAttestation: mockLegalAttestation });
+
+      // Assert: the PUT headers object must equal exactly what the backend
+      // provided — no extra keys, and Content-Type must be the backend value
+      // ('text/x-rst'), NOT the browser File.type ('text/plain').
+      expect(mockedAxios.put).toHaveBeenCalledWith(
+        'https://s3.amazonaws.com/bucket/presigned-url',
+        mockFile,
+        expect.objectContaining({
+          headers: {
+            'Content-Type': 'text/x-rst',
+            'Content-Length': '7',
+          },
+        })
+      );
+
+      // Explicit guard: the browser MIME type must NOT override the signed value.
+      const sentHeaders = mockedAxios.put.mock.calls[0][2].headers as Record<string, string>;
+      expect(sentHeaders['Content-Type']).toBe('text/x-rst');
+      expect(sentHeaders['Content-Type']).not.toBe('text/plain');
     });
 
     it('should include legal attestation in JSON payload to backend', async () => {
