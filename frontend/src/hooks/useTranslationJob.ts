@@ -10,8 +10,10 @@
 import { useQuery } from '@tanstack/react-query';
 import { useState, useEffect } from 'react';
 import { translationService, TranslationJob } from '../services/translationService';
+import { TRANSLATION_TERMINAL_STATUSES } from '@lfmt/shared-types';
 
-const TERMINAL_STATES = ['COMPLETED', 'FAILED', 'CHUNKING_FAILED', 'TRANSLATION_FAILED'] as const;
+// Use the canonical list from shared-types so there is one source of truth.
+const TERMINAL_STATES = TRANSLATION_TERMINAL_STATUSES;
 
 export function isTerminalState(status: string): boolean {
   return TERMINAL_STATES.includes(status as (typeof TERMINAL_STATES)[number]);
