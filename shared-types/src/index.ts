@@ -6,20 +6,32 @@ export * from './auth';
 export * from './errors'; // Export ValidationError from here
 export * from './jobs'; // Export JobStatus + TranslationJobStatus + TRANSLATION_TERMINAL_STATUSES + CHUNKING_ERROR_STATUSES from here
 
-// Explicit named re-exports for the *value* (const) exports of ./jobs.
+// Re-export the *value* (const) exports of ./jobs via an
+// import-then-export pattern.
 //
 // `export *` above compiles (under tsconfig `module: "commonjs"`) to
 // `__exportStar(require('./jobs'), exports)`, which copies properties
-// onto `exports` at runtime. Vite's static analyzer cannot trace through
-// that pattern for named *value* imports — type-only imports work because
-// they are erased, but `import { CHUNKING_ERROR_STATUSES } from
-// '@lfmt/shared-types'` was failing in `vitest run --coverage` with
-// "is not exported by shared-types/dist/index.js". Listing the value
-// exports explicitly here lets Vite see them statically. The `export *`
-// above continues to provide every other (type) export from ./jobs.
+// onto `exports` dynamically at runtime. Vite's static analyzer cannot
+// trace through that pattern for named *value* imports — type-only
+// imports work because they are erased, but `import { CHUNKING_ERROR_STATUSES }
+// from '@lfmt/shared-types'` failed in `vitest run --coverage` with
+// "is not exported by shared-types/dist/index.js".
 //
-// See PR #202 CI run 25354493112 for the failure that motivated this.
-export { TRANSLATION_TERMINAL_STATUSES, CHUNKING_ERROR_STATUSES } from './jobs';
+// A naive `export { X } from './jobs'` does NOT fix this — TypeScript
+// emits it as `Object.defineProperty(exports, 'X', { get: ... })`, which
+// some Node/Vite/Rollup version combinations also fail to recognise as
+// a static named export. The CI failure persisted on Node 20 even after
+// the simple re-export. See PR #202 CI runs 25354493112 + 25375703338.
+//
+// The import-then-export pattern below compiles to direct property
+// assignment (`exports.X = jobs_1.X;`), which Vite recognises reliably
+// across Node 18/20/22.
+import {
+  CHUNKING_ERROR_STATUSES as _CHUNKING_ERROR_STATUSES,
+  TRANSLATION_TERMINAL_STATUSES as _TRANSLATION_TERMINAL_STATUSES,
+} from './jobs';
+export const CHUNKING_ERROR_STATUSES = _CHUNKING_ERROR_STATUSES;
+export const TRANSLATION_TERMINAL_STATUSES = _TRANSLATION_TERMINAL_STATUSES;
 export * from './documents'; // Export ValidationResult from here (primary)
 export * from './legal';
 export * from './workflows';
