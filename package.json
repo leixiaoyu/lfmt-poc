@@ -45,8 +45,8 @@
     "backend/infrastructure"
   ],
   "engines": {
-    "node": ">=18.0.0",
-    "npm": ">=8.0.0"
+    "node": ">=22.0.0",
+    "npm": ">=10.0.0"
   },
   "devDependencies": {
     "prettier": "^3.8.1"
