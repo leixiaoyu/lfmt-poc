@@ -1356,4 +1356,61 @@ describe('LFMT Infrastructure Stack', () => {
       }
     });
   });
+
+  describe('Lambda Runtime Drift Guard (PR #203 R2)', () => {
+    // Regression guard mirroring the CSP/'unsafe-eval' pattern (PR #198):
+    //
+    // PR #203 centralized the Lambda runtime version into a single module
+    // constant (LAMBDA_RUNTIME = lambda.Runtime.NODEJS_22_X) and bumped all
+    // 12 Lambda definitions away from the EOL'd Node 18 runtime. Without
+    // this regression test, an accidental future revert of the constant
+    // (or a one-off Lambda definition that hardcodes an older runtime)
+    // would silently re-introduce an unsupported runtime that AWS will
+    // eventually force-migrate.
+    //
+    // Both checks below operate on the synthesized CloudFormation template
+    // so they catch ANY Lambda the stack creates — including CDK-managed
+    // helper functions (e.g., log retention) — not just the application
+    // Lambdas defined in lfmt-infrastructure-stack.ts. The runtime contract
+    // applies to all Node-based Lambdas in the stack regardless of origin.
+    //
+    // Note: the BucketNotificationsHandler that CDK injects for S3-event
+    // wiring uses python3.x and is intentionally NOT checked here — it is
+    // not a Node Lambda and AWS manages its lifecycle separately.
+
+    test('All Node.js Lambdas use nodejs22.x runtime', () => {
+      const allLambdas = template.findResources('AWS::Lambda::Function');
+      const nodeLambdas = Object.entries(allLambdas).filter(
+        ([, fn]: [string, any]) => typeof fn.Properties?.Runtime === 'string'
+          && fn.Properties.Runtime.startsWith('nodejs')
+      );
+
+      // Sanity check: the stack defines 12 application Lambdas (auth x5,
+      // upload x2, chunking x1, translation x4) plus CDK-managed helpers.
+      // Whatever the exact count, there must be at least the 12 we wrote.
+      expect(nodeLambdas.length).toBeGreaterThanOrEqual(12);
+
+      nodeLambdas.forEach(([logicalId, fn]: [string, any]) => {
+        expect(fn.Properties.Runtime).toBe('nodejs22.x');
+        // Sanity log on the unlikely failure path: name the offending
+        // Lambda so CI output points straight at the regression.
+        if (fn.Properties.Runtime !== 'nodejs22.x') {
+          throw new Error(
+            `Lambda ${logicalId} runtime is ${fn.Properties.Runtime}, expected nodejs22.x`
+          );
+        }
+      });
+    });
+
+    test('No Lambda uses an EOL Node runtime (nodejs18.x or nodejs20.x)', () => {
+      // Negative assertion: explicitly forbid the runtime values we just
+      // migrated away from. This catches the regression case where a
+      // developer copy-pastes an old Lambda definition and accidentally
+      // hardcodes lambda.Runtime.NODEJS_18_X / NODEJS_20_X instead of
+      // referencing the centralized LAMBDA_RUNTIME constant.
+      const templateString = JSON.stringify(template.toJSON());
+      expect(templateString).not.toContain('"nodejs18.x"');
+      expect(templateString).not.toContain('"nodejs20.x"');
+    });
+  });
 });
