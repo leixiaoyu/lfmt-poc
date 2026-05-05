@@ -81,7 +81,7 @@ This ensures Vite picks up the production API configuration.
 ### Prerequisites
 
 - AWS CLI configured with `us-east-1` region
-- Node.js 18+
+- Node.js 22+
 - AWS CDK v2
 
 ### Backend + Infrastructure

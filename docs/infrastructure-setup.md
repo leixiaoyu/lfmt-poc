@@ -40,7 +40,7 @@ This guide covers the complete setup of AWS infrastructure for the Long-Form Tra
 ### Required Software
 
 - AWS CLI v2 (`aws --version`)
-- Node.js 18+ (`node --version`)
+- Node.js 22+ (`node --version`)
 - AWS CDK v2 (`cdk --version`)
 - Git (`git --version`)
 

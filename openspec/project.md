@@ -46,7 +46,7 @@ High-level capability map (detailed status in PROGRESS.md):
 
 - **Infrastructure**: AWS CDK v2 (TypeScript)
 - **Compute**:
-  - AWS Lambda (Node.js 18, ARM64 for 20% cost savings)
+  - AWS Lambda (Node.js 22, ARM64 for 20% cost savings)
   - ECS Fargate (planned for long-running translation jobs)
 - **API**: API Gateway REST API with JWT authorizers
 - **Database**: DynamoDB (on-demand billing)
@@ -351,7 +351,7 @@ High-level capability map (detailed status in PROGRESS.md):
   - Security headers policy (CSP, HSTS, X-Frame-Options)
   - Cache invalidation after deployments
 - **API Gateway**: REST API with caching and rate limiting
-- **Lambda**: Serverless compute (Node.js 18 runtime)
+- **Lambda**: Serverless compute (Node.js 22 runtime)
 - **DynamoDB**: NoSQL database with on-demand billing
 - **S3**: Object storage with intelligent tiering
   - Frontend hosting bucket (CloudFront origin)

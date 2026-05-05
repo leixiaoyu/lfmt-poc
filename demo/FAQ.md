@@ -113,7 +113,7 @@ We built a **serverless AWS architecture** designed for infinite scalability:
 ```
 Frontend (React 18 + CloudFront)
 → API Gateway + Cognito (JWT Auth)
-→ Lambda Functions (Node.js 18)
+→ Lambda Functions (Node.js 22)
 → Step Functions (Orchestration)
 → Data Layer (S3 + DynamoDB + Secrets Manager)
 ```

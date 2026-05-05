@@ -22,7 +22,7 @@
 
 ### Backend
 
-- **Runtime**: Node.js 18 (AWS Lambda)
+- **Runtime**: Node.js 22 (AWS Lambda)
 - **Infrastructure**: AWS CDK v2 (TypeScript)
 - **Services**: API Gateway, DynamoDB, S3, Step Functions, Cognito
 - **Translation**: Gemini 2.5 Flash (Google AI - free tier)
