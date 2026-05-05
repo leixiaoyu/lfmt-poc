@@ -31,7 +31,8 @@
       "@/services/*": ["src/services/*"],
       "@/hooks/*": ["src/hooks/*"],
       "@/contexts/*": ["src/contexts/*"],
-      "@/utils/*": ["src/utils/*"]
+      "@/utils/*": ["src/utils/*"],
+      "@lfmt/shared-types": ["../shared-types/dist/index.d.ts"]
     }
   },
   "include": ["src"],
