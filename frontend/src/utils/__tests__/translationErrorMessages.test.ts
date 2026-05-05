@@ -1,11 +1,18 @@
 /**
- * Unit tests for translationErrorMessages.ts (Issue #147, R5 OMC follow-up).
+ * Unit tests for translationErrorMessages.ts (Issue #147, R5 OMC follow-up,
+ * PR #202 OMC Round 2 Code-3).
  *
  * Locks in the precedence rules:
  *   1. Known HTTP status → curated phrase.
- *   2. statusCode === undefined → NETWORK_MESSAGE (axios !response).
- *   3. Unknown status with a usable message → pass-through.
+ *   2a. statusCode === undefined + specific message → surface the message.
+ *   2b. statusCode === undefined + generic/absent message → NETWORK_MESSAGE.
+ *   3. Unknown status with a usable backend message → pass-through.
  *   4. null / non-object error → FALLBACK_MESSAGE.
+ *
+ * Rule 2a was added in PR #202 Round 2: the polling loop throws plain Error
+ * objects with descriptive messages (e.g. "Document processing timed out…")
+ * that should reach the user rather than being swallowed by the catch-all
+ * NETWORK_MESSAGE branch.
  */
 
 import { describe, it, expect } from 'vitest';
@@ -37,17 +44,69 @@ describe('getTranslationErrorMessage — mapped HTTP statuses', () => {
   });
 });
 
+describe('getTranslationErrorMessage — polling-loop descriptive errors (Code-3)', () => {
+  // These errors are thrown by uploadAndAwaitChunked when the chunking
+  // pipeline fails or times out. They are plain Error objects (no statusCode)
+  // but have descriptive message strings that should reach the user.
+
+  it('surfaces the polling-loop terminal-error message verbatim', () => {
+    // Thrown when getJobStatus returns CHUNKING_FAILED.
+    const error = {
+      message: 'Document processing failed with status: CHUNKING_FAILED. Please try again.',
+    };
+    expect(getTranslationErrorMessage(error)).toBe(
+      'Document processing failed with status: CHUNKING_FAILED. Please try again.'
+    );
+  });
+
+  it('surfaces the polling-loop timeout message verbatim', () => {
+    const error = {
+      message:
+        'Document processing timed out. Your file was uploaded successfully — please refresh and try starting the translation again.',
+    };
+    expect(getTranslationErrorMessage(error)).toBe(
+      'Document processing timed out. Your file was uploaded successfully — please refresh and try starting the translation again.'
+    );
+  });
+
+  it('surfaces any non-generic descriptive message when statusCode is absent', () => {
+    // Custom error not originating from the polling loop.
+    const error = { message: 'Chunking service is currently offline.' };
+    expect(getTranslationErrorMessage(error)).toBe('Chunking service is currently offline.');
+  });
+});
+
 describe('getTranslationErrorMessage — network failures', () => {
-  it('returns NETWORK_MESSAGE when statusCode is undefined', () => {
+  it('returns NETWORK_MESSAGE when statusCode is undefined and message is generic "Network Error"', () => {
     // Axios sets `error.response = undefined` for ERR_NETWORK; the
     // wrapper TranslationServiceError surfaces that as
-    // statusCode = undefined.
+    // statusCode = undefined with message = "Network Error".
     const error = { message: 'Network Error' };
     expect(getTranslationErrorMessage(error)).toBe(NETWORK_MESSAGE);
   });
 
-  it('returns NETWORK_MESSAGE when statusCode is undefined even with no message', () => {
+  it('returns NETWORK_MESSAGE when statusCode is undefined and message is absent', () => {
     expect(getTranslationErrorMessage({})).toBe(NETWORK_MESSAGE);
+  });
+
+  it('returns NETWORK_MESSAGE when statusCode is undefined and message is empty string', () => {
+    expect(getTranslationErrorMessage({ message: '' })).toBe(NETWORK_MESSAGE);
+  });
+
+  it.each(['Network Error', 'network error', '  NETWORK ERROR  '])(
+    'treats generic message %j as a network error (case/space insensitive)',
+    (msg) => {
+      expect(getTranslationErrorMessage({ message: msg })).toBe(NETWORK_MESSAGE);
+    }
+  );
+
+  it.each([
+    'An unexpected error occurred',
+    'an unexpected error occurred',
+    'Request failed',
+    'Failed to fetch',
+  ])('treats generic message %j as a network error', (msg) => {
+    expect(getTranslationErrorMessage({ message: msg })).toBe(NETWORK_MESSAGE);
   });
 });
 
