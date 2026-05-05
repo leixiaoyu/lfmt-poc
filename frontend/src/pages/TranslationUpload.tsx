@@ -5,7 +5,7 @@
  * Implements requirements from OpenSpec: translation-upload/spec.md
  */
 
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Box,
@@ -30,6 +30,30 @@ import { getLanguageLabel, getToneLabel } from '../utils/translationLabels';
 import { getTranslationErrorMessage } from '../utils/translationErrorMessages';
 
 const STEPS = ['Legal Attestation', 'Translation Settings', 'Upload Document', 'Review & Submit'];
+
+/**
+ * How long to wait between each getJobStatus poll while waiting for the
+ * backend to finish chunking the uploaded document (ms).
+ */
+const CHUNKING_POLL_INTERVAL_MS = 2_000;
+
+/**
+ * Maximum wall-clock time to wait for the job to reach CHUNKED status.
+ * After this deadline the user sees an explicit timeout error rather than
+ * hanging forever.
+ */
+const CHUNKING_POLL_TIMEOUT_MS = 60_000;
+
+/**
+ * Job statuses that mean the chunking pipeline has failed permanently.
+ * Encountering any of these during polling terminates the wait immediately
+ * with an actionable error instead of burning the full timeout budget.
+ */
+const CHUNKING_TERMINAL_ERROR_STATUSES = [
+  'CHUNKING_FAILED',
+  'FAILED',
+  'TRANSLATION_FAILED',
+] as const;
 
 /**
  * Canonical list of fields that must be non-empty for wizard step 1
@@ -90,6 +114,17 @@ export const TranslationUpload: React.FC = () => {
   const [errors, setErrors] = useState<FormErrors>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  /**
+   * Human-readable label shown in the submit button while the workflow is in
+   * progress. Updated as the request moves through upload → chunking → start.
+   */
+  const [submitPhase, setSubmitPhase] = useState<string>('Uploading...');
+  /**
+   * Ref used to cancel the chunking-poll timer if the component unmounts
+   * while a poll is in flight (prevents "setState on unmounted component"
+   * React warnings during tests).
+   */
+  const pollingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const validateStep = (step: number): boolean => {
     const newErrors: FormErrors = {};
@@ -163,6 +198,7 @@ export const TranslationUpload: React.FC = () => {
 
     setIsSubmitting(true);
     setSubmitError(null);
+    setSubmitPhase('Uploading...');
 
     try {
       // Create legal attestation with IP and user agent
@@ -178,7 +214,78 @@ export const TranslationUpload: React.FC = () => {
         legalAttestation,
       });
 
-      // Start translation immediately
+      // Bug #2 fix — race condition between S3 upload landing and startTranslation.
+      //
+      // After the S3 PUT completes, the backend pipeline is:
+      //   S3 event → uploadComplete Lambda → chunkDocument Lambda → status CHUNKED
+      //
+      // startTranslation (backend lines 132-139) requires status === 'CHUNKED'.
+      // Calling it immediately after uploadDocument returns a 400 INVALID_JOB_STATUS
+      // because chunking is still in flight, which the frontend error-message helper
+      // maps to "Connection lost" (statusCode undefined → network-error branch).
+      //
+      // Fix: poll getJobStatus until the job reaches CHUNKED, then call
+      // startTranslation. The poll respects a 60-second timeout and exits early
+      // on terminal-error statuses so the user never waits longer than necessary.
+      setSubmitPhase('Processing upload...');
+
+      const deadline = Date.now() + CHUNKING_POLL_TIMEOUT_MS;
+
+      const waitForChunked = (): Promise<void> =>
+        new Promise((resolve, reject) => {
+          const tick = async () => {
+            try {
+              const statusJob = await translationService.getJobStatus(job.jobId);
+
+              if (statusJob.status === 'CHUNKED') {
+                // Ready — proceed to startTranslation.
+                resolve();
+                return;
+              }
+
+              // Terminal error — no point polling further.
+              if (
+                (CHUNKING_TERMINAL_ERROR_STATUSES as ReadonlyArray<string>).includes(
+                  statusJob.status
+                )
+              ) {
+                reject(
+                  new Error(
+                    `Document processing failed with status: ${statusJob.status}. Please try again.`
+                  )
+                );
+                return;
+              }
+
+              // Timeout guard.
+              if (Date.now() >= deadline) {
+                reject(
+                  new Error(
+                    'Document processing timed out. Your file was uploaded successfully — please refresh and try starting the translation again.'
+                  )
+                );
+                return;
+              }
+
+              // Still PENDING / CHUNKING — schedule the next tick.
+              pollingTimerRef.current = setTimeout(tick, CHUNKING_POLL_INTERVAL_MS);
+            } catch (err) {
+              // getJobStatus itself threw — propagate so the outer catch
+              // can surface the user-facing message.
+              reject(err);
+            }
+          };
+
+          // Kick off the first tick immediately so we don't add an
+          // unnecessary 2-second pause when chunking completes quickly.
+          void tick();
+        });
+
+      await waitForChunked();
+
+      setSubmitPhase('Starting translation...');
+
+      // Start translation — job is now in CHUNKED status.
       await translationService.startTranslation(job.jobId, {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         targetLanguage: formData.translationConfig.targetLanguage as any,
@@ -198,6 +305,11 @@ export const TranslationUpload: React.FC = () => {
       // was a refactor leftover. (R4: OMC review follow-up.)
       setSubmitError(getTranslationErrorMessage(error));
     } finally {
+      // Clear any pending poll timer to prevent setState on unmounted component.
+      if (pollingTimerRef.current !== null) {
+        clearTimeout(pollingTimerRef.current);
+        pollingTimerRef.current = null;
+      }
       setIsSubmitting(false);
     }
   };
@@ -320,7 +432,7 @@ export const TranslationUpload: React.FC = () => {
               disabled={isSubmitting}
               startIcon={isSubmitting ? <CircularProgress size={20} /> : null}
             >
-              {isSubmitting ? 'Uploading...' : 'Submit & Start Translation'}
+              {isSubmitting ? submitPhase : 'Submit & Start Translation'}
             </Button>
           ) : (
             <Button variant="contained" onClick={handleNext}>

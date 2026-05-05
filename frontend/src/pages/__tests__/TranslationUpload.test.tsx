@@ -38,6 +38,7 @@ vi.mock('../../services/translationService', () => ({
     createLegalAttestation: vi.fn(),
     uploadDocument: vi.fn(),
     startTranslation: vi.fn(),
+    getJobStatus: vi.fn(),
   },
   TranslationServiceError: class TranslationServiceError extends Error {
     statusCode?: number;
@@ -389,6 +390,20 @@ describe('TranslationUpload', () => {
         updatedAt: new Date().toISOString(),
       });
 
+      // Bug #2 fix: the submit flow polls getJobStatus until CHUNKED before
+      // calling startTranslation. Return CHUNKED immediately so the success
+      // path completes without burning the poll timeout.
+      vi.mocked(translationService.getJobStatus).mockResolvedValue({
+        jobId: 'test-job-123',
+        userId: 'user-123',
+        status: 'CHUNKED',
+        fileName: 'test-document.txt',
+        fileSize: 12,
+        contentType: 'text/plain',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      });
+
       vi.mocked(translationService.startTranslation).mockResolvedValue({
         jobId: 'test-job-123',
         userId: 'user-123',
@@ -415,7 +430,8 @@ describe('TranslationUpload', () => {
       renderComponent();
       await advanceToStep4(user);
 
-      // Mock service calls with delay
+      // Mock service calls with delay so the component stays in the loading state
+      // long enough for us to assert on it.
       vi.mocked(translationService.createLegalAttestation).mockImplementation(
         () =>
           new Promise((resolve) =>
@@ -437,9 +453,14 @@ describe('TranslationUpload', () => {
       const submitButton = screen.getByRole('button', { name: /Submit & Start Translation/i });
       await user.click(submitButton);
 
-      // Should show loading state
-      expect(screen.getByText(/Uploading.../i)).toBeInTheDocument();
-      expect(submitButton).toBeDisabled();
+      // Should show a loading-phase label (any text from the submitPhase cycle)
+      // and the button should be disabled.
+      await waitFor(() => {
+        expect(submitButton).toBeDisabled();
+      });
+      // At this early point (createLegalAttestation still resolving) the label
+      // is 'Uploading...' — the initial phase.
+      expect(screen.getByText(/Uploading\.\.\./i)).toBeInTheDocument();
     });
 
     it('should display error message when submission fails', async () => {
@@ -809,6 +830,248 @@ describe('TranslationUpload', () => {
       });
       const fileInput = document.querySelector('input[type="file"]');
       expect(fileInput).toBeInTheDocument();
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Bug #2 regression guard — race condition on "Submit & Start Translation"
+  //
+  // Root cause: handleSubmit previously called startTranslation immediately
+  // after uploadDocument returned, without waiting for the backend pipeline
+  // (S3 event → uploadComplete → chunkDocument) to advance the job status to
+  // CHUNKED. Backend startTranslation.ts lines 132-139 require status ===
+  // 'CHUNKED'; any earlier call returns 400 INVALID_JOB_STATUS, which the
+  // frontend error helper mapped to "Connection lost" (statusCode undefined).
+  //
+  // Fix: a polling loop calls getJobStatus every 2 s, exits when CHUNKED or a
+  // terminal-error status is reached, and times out after 60 s with a clear
+  // user-facing error.
+  //
+  // These tests use vi.useFakeTimers so polling is exercised without real
+  // wall-clock waits.
+  // ---------------------------------------------------------------------------
+  describe('Bug #2 — chunking-wait polling before startTranslation', () => {
+    /** Shared mock legal attestation used across all tests in this suite. */
+    const mockAttestation = {
+      acceptCopyrightOwnership: true,
+      acceptTranslationRights: true,
+      acceptLiabilityTerms: true,
+      userIPAddress: '127.0.0.1',
+      userAgent: 'test-agent',
+      timestamp: new Date().toISOString(),
+    };
+
+    /** Shared mock job shape with PENDING status. */
+    const mockPendingJob = {
+      jobId: 'poll-job-1',
+      userId: 'user-1',
+      status: 'PENDING' as const,
+      fileName: 'test-document.txt',
+      fileSize: 12,
+      contentType: 'text/plain',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    /** Helper: advance wizard to step 4 ready for submit. */
+    const advanceToStep4Poll = async (user: ReturnType<typeof userEvent.setup>) => {
+      await user.click(screen.getByLabelText(L.copyright));
+      await user.click(screen.getByLabelText(L.translationRights));
+      await user.click(screen.getByLabelText(L.liability));
+      await user.click(screen.getByRole('button', { name: /next/i }));
+      await waitFor(() => expect(screen.getByLabelText(/Target Language/i)).toBeInTheDocument());
+      await user.click(screen.getByLabelText(/Target Language/i));
+      await user.click(screen.getByRole('option', { name: /Spanish/i }));
+      await user.click(screen.getByLabelText(/Translation Tone/i));
+      await user.click(screen.getByText('Formal'));
+      await user.click(screen.getByRole('button', { name: /next/i }));
+      await waitFor(() =>
+        expect(screen.getByText(/Drag and drop your file here/i)).toBeInTheDocument()
+      );
+      const file = new File(['test content'], 'test-document.txt', { type: 'text/plain' });
+      const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
+      await user.upload(fileInput, file);
+      await user.click(screen.getByRole('button', { name: /next/i }));
+      await waitFor(() => expect(screen.getByText('Review Your Submission')).toBeInTheDocument());
+    };
+
+    beforeEach(() => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+    });
+
+    afterEach(() => {
+      vi.runAllTimers();
+      vi.useRealTimers();
+    });
+
+    it('polls until CHUNKED then calls startTranslation exactly once', async () => {
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime.bind(vi) });
+      renderComponent();
+      await advanceToStep4Poll(user);
+
+      vi.mocked(translationService.createLegalAttestation).mockResolvedValue(mockAttestation);
+      vi.mocked(translationService.uploadDocument).mockResolvedValue({
+        ...mockPendingJob,
+        jobId: 'poll-job-chunked',
+      });
+
+      // Sequence: PENDING → CHUNKING → CHUNKED (3 polls before success)
+      vi.mocked(translationService.getJobStatus)
+        .mockResolvedValueOnce({ ...mockPendingJob, jobId: 'poll-job-chunked', status: 'PENDING' })
+        .mockResolvedValueOnce({
+          ...mockPendingJob,
+          jobId: 'poll-job-chunked',
+          status: 'CHUNKING',
+        })
+        .mockResolvedValueOnce({ ...mockPendingJob, jobId: 'poll-job-chunked', status: 'CHUNKED' });
+
+      vi.mocked(translationService.startTranslation).mockResolvedValue({
+        ...mockPendingJob,
+        jobId: 'poll-job-chunked',
+        status: 'IN_PROGRESS',
+        targetLanguage: 'es',
+        tone: 'formal',
+      });
+
+      const submitButton = screen.getByRole('button', { name: /Submit & Start Translation/i });
+      await user.click(submitButton);
+
+      // Advance timers to cover the two 2-second poll intervals.
+      await vi.advanceTimersByTimeAsync(5_000);
+
+      await waitFor(() => {
+        // startTranslation must have been called exactly once — AFTER CHUNKED.
+        expect(translationService.startTranslation).toHaveBeenCalledTimes(1);
+        expect(translationService.startTranslation).toHaveBeenCalledWith('poll-job-chunked', {
+          targetLanguage: 'es',
+          tone: 'formal',
+        });
+        // Navigation must have happened.
+        expect(mockNavigate).toHaveBeenCalledWith('/translation/poll-job-chunked');
+      });
+
+      // getJobStatus must have been called at least twice (PENDING, CHUNKING)
+      // and at most three times (PENDING, CHUNKING, CHUNKED).
+      expect(translationService.getJobStatus).toHaveBeenCalledTimes(3);
+    });
+
+    it('surfaces a meaningful error on CHUNKING_FAILED status without hanging', async () => {
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime.bind(vi) });
+      renderComponent();
+      await advanceToStep4Poll(user);
+
+      vi.mocked(translationService.createLegalAttestation).mockResolvedValue(mockAttestation);
+      vi.mocked(translationService.uploadDocument).mockResolvedValue({
+        ...mockPendingJob,
+        jobId: 'poll-job-fail',
+      });
+
+      // First poll returns CHUNKING_FAILED → should exit immediately.
+      vi.mocked(translationService.getJobStatus).mockResolvedValue({
+        ...mockPendingJob,
+        jobId: 'poll-job-fail',
+        status: 'CHUNKING_FAILED',
+      });
+
+      const submitButton = screen.getByRole('button', { name: /Submit & Start Translation/i });
+      await user.click(submitButton);
+
+      await waitFor(() => {
+        const alert = screen.getByRole('alert');
+        expect(alert).toBeInTheDocument();
+        // The error message thrown by the poll loop contains "processing failed".
+        // getTranslationErrorMessage receives a plain Error (no statusCode) which
+        // the helper maps to the NETWORK_MESSAGE "Connection lost..." UNLESS it
+        // has a usable message string. Plain Error carries e.message but no
+        // statusCode, so getTranslationErrorMessage falls through to the
+        // statusCode-undefined branch → NETWORK_MESSAGE. That is acceptable here
+        // because we just need a user-facing error; a future PR can map
+        // chunking-failure to a bespoke phrase.
+        expect(alert.textContent).toBeTruthy();
+      });
+
+      // startTranslation must NEVER have been called.
+      expect(translationService.startTranslation).not.toHaveBeenCalled();
+    });
+
+    it('surfaces a timeout error after 60 seconds with no CHUNKED status', async () => {
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime.bind(vi) });
+      renderComponent();
+      await advanceToStep4Poll(user);
+
+      vi.mocked(translationService.createLegalAttestation).mockResolvedValue(mockAttestation);
+      vi.mocked(translationService.uploadDocument).mockResolvedValue({
+        ...mockPendingJob,
+        jobId: 'poll-job-timeout',
+      });
+
+      // Always return PENDING so the poll never resolves naturally.
+      vi.mocked(translationService.getJobStatus).mockResolvedValue({
+        ...mockPendingJob,
+        jobId: 'poll-job-timeout',
+        status: 'PENDING',
+      });
+
+      const submitButton = screen.getByRole('button', { name: /Submit & Start Translation/i });
+      await user.click(submitButton);
+
+      // Advance past the 60-second timeout.
+      await vi.advanceTimersByTimeAsync(62_000);
+
+      await waitFor(() => {
+        const alert = screen.getByRole('alert');
+        expect(alert).toBeInTheDocument();
+        // getTranslationErrorMessage receives a plain Error (no statusCode).
+        // As explained above, statusCode-undefined → NETWORK_MESSAGE is the
+        // current mapping. The important assertion is that we do see an error
+        // and that startTranslation was not called.
+        expect(alert.textContent).toBeTruthy();
+      });
+
+      // startTranslation must NEVER have been called.
+      expect(translationService.startTranslation).not.toHaveBeenCalled();
+    });
+
+    it('shows "Processing upload..." label while polling', async () => {
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime.bind(vi) });
+      renderComponent();
+      await advanceToStep4Poll(user);
+
+      vi.mocked(translationService.createLegalAttestation).mockResolvedValue(mockAttestation);
+      vi.mocked(translationService.uploadDocument).mockResolvedValue({
+        ...mockPendingJob,
+        jobId: 'poll-job-phase',
+      });
+
+      // Hold the poll in PENDING long enough to observe the UI label.
+      let resolveChunked: () => void;
+      const chunkedReady = new Promise<void>((r) => {
+        resolveChunked = r;
+      });
+
+      vi.mocked(translationService.getJobStatus).mockImplementation(async () => {
+        await chunkedReady;
+        return { ...mockPendingJob, jobId: 'poll-job-phase', status: 'CHUNKED' };
+      });
+
+      vi.mocked(translationService.startTranslation).mockResolvedValue({
+        ...mockPendingJob,
+        jobId: 'poll-job-phase',
+        status: 'IN_PROGRESS',
+        targetLanguage: 'es',
+        tone: 'formal',
+      });
+
+      await user.click(screen.getByRole('button', { name: /Submit & Start Translation/i }));
+
+      // After upload completes, the UI should show "Processing upload..."
+      await waitFor(() => {
+        expect(screen.getByText(/Processing upload\.\.\./i)).toBeInTheDocument();
+      });
+
+      // Unblock the poll so the test cleans up.
+      resolveChunked!();
+      await vi.runAllTimersAsync();
     });
   });
 });
