@@ -6,32 +6,39 @@ export * from './auth';
 export * from './errors'; // Export ValidationError from here
 export * from './jobs'; // Export JobStatus + TranslationJobStatus + TRANSLATION_TERMINAL_STATUSES + CHUNKING_ERROR_STATUSES from here
 
-// Re-export the *value* (const) exports of ./jobs via an
-// import-then-export pattern.
+// Inline the value (const) exports for the translation-job status arrays.
 //
-// `export *` above compiles (under tsconfig `module: "commonjs"`) to
-// `__exportStar(require('./jobs'), exports)`, which copies properties
-// onto `exports` dynamically at runtime. Vite's static analyzer cannot
-// trace through that pattern for named *value* imports — type-only
-// imports work because they are erased, but `import { CHUNKING_ERROR_STATUSES }
-// from '@lfmt/shared-types'` failed in `vitest run --coverage` with
-// "is not exported by shared-types/dist/index.js".
+// These constants are also defined in `./jobs` and the `export *` above
+// includes them in the runtime barrel. We re-declare them here as
+// top-level `export const` so they compile (under tsconfig
+// `module: "commonjs"`) to direct property assignment:
+//   exports.CHUNKING_ERROR_STATUSES = [...];
+// Vite/Rollup's CJS named-export detection recognises this pattern
+// reliably across Node 18/20/22.
 //
-// A naive `export { X } from './jobs'` does NOT fix this — TypeScript
-// emits it as `Object.defineProperty(exports, 'X', { get: ... })`, which
-// some Node/Vite/Rollup version combinations also fail to recognise as
-// a static named export. The CI failure persisted on Node 20 even after
-// the simple re-export. See PR #202 CI runs 25354493112 + 25375703338.
-//
-// The import-then-export pattern below compiles to direct property
-// assignment (`exports.X = jobs_1.X;`), which Vite recognises reliably
-// across Node 18/20/22.
-import {
-  CHUNKING_ERROR_STATUSES as _CHUNKING_ERROR_STATUSES,
-  TRANSLATION_TERMINAL_STATUSES as _TRANSLATION_TERMINAL_STATUSES,
-} from './jobs';
-export const CHUNKING_ERROR_STATUSES = _CHUNKING_ERROR_STATUSES;
-export const TRANSLATION_TERMINAL_STATUSES = _TRANSLATION_TERMINAL_STATUSES;
+// Why not re-export from ./jobs? Tried in PR #202 commits 9d955f6 and
+// aa83497 — both `export { X } from './jobs'` (compiles to
+// `Object.defineProperty(exports, 'X', { get: ... })`) and the
+// import-then-export pattern (compiles to `exports.X = jobs_1.X;`)
+// failed Vite's static analyzer on Node 20 in CI when consumed via
+// the dist/index.js alias. Inlining the arrays here is a duplication
+// risk vs ./jobs (the satisfies clause guards against type drift); a
+// future ESM migration of shared-types eliminates the workaround.
+// See PR #202 CI runs 25354493112, 25375703338, 25376048087.
+import type { TranslationJobStatus } from './jobs';
+
+export const TRANSLATION_TERMINAL_STATUSES = [
+  'COMPLETED',
+  'FAILED',
+  'CHUNKING_FAILED',
+  'TRANSLATION_FAILED',
+] as const satisfies ReadonlyArray<TranslationJobStatus>;
+
+export const CHUNKING_ERROR_STATUSES = [
+  'CHUNKING_FAILED',
+  'FAILED',
+  'TRANSLATION_FAILED',
+] as const satisfies ReadonlyArray<TranslationJobStatus>;
 export * from './documents'; // Export ValidationResult from here (primary)
 export * from './legal';
 export * from './workflows';
