@@ -5,7 +5,7 @@
  * Implements requirements from OpenSpec: translation-upload/spec.md
  */
 
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Box,
@@ -90,6 +90,32 @@ export const TranslationUpload: React.FC = () => {
   const [errors, setErrors] = useState<FormErrors>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  /**
+   * Human-readable label shown in the submit button while the workflow is in
+   * progress. Updated as the request moves through upload → chunking → start.
+   */
+  const [submitPhase, setSubmitPhase] = useState<string>('Uploading...');
+
+  /**
+   * Whether the component is currently mounted.  Used to guard setState calls
+   * that arrive after an async operation started before unmount.
+   *
+   * We use a ref (not state) so reads are synchronous and writes do not cause
+   * re-renders. The effect below sets it to false when the component unmounts.
+   *
+   * Critical fix (PR #202 OMC Round 2): the previous implementation only
+   * cleared the polling timer in the handleSubmit finally block, which means
+   * if the user navigated away mid-poll the timer kept firing and setState
+   * was called on a dead component — causing React warnings and a memory leak.
+   */
+  const isMountedRef = useRef(true);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
 
   const validateStep = (step: number): boolean => {
     const newErrors: FormErrors = {};
@@ -163,6 +189,7 @@ export const TranslationUpload: React.FC = () => {
 
     setIsSubmitting(true);
     setSubmitError(null);
+    setSubmitPhase('Uploading...');
 
     try {
       // Create legal attestation with IP and user agent
@@ -172,13 +199,32 @@ export const TranslationUpload: React.FC = () => {
         formData.legalAttestation.acceptLiabilityTerms
       );
 
-      // Upload document
-      const job = await translationService.uploadDocument({
-        file: formData.file,
-        legalAttestation,
-      });
+      // Upload document and wait for backend to finish chunking.
+      //
+      // Bug #2 fix (PR #202): uploadAndAwaitChunked combines the S3 PUT with a
+      // getJobStatus polling loop so startTranslation is never called before the
+      // job reaches CHUNKED status. The polling state machine lives in the
+      // service layer (not here) — see translationService.uploadAndAwaitChunked.
+      setSubmitPhase('Processing upload...');
 
-      // Start translation immediately
+      const job = await translationService.uploadAndAwaitChunked(
+        { file: formData.file, legalAttestation },
+        {
+          onPollTick: () => {
+            // Keep the label stable during polling; a future PR could show
+            // chunk-count progress here if the backend exposes it.
+            if (isMountedRef.current) {
+              setSubmitPhase('Processing upload...');
+            }
+          },
+        }
+      );
+
+      if (!isMountedRef.current) return;
+
+      setSubmitPhase('Starting translation...');
+
+      // Start translation — job is now in CHUNKED status.
       await translationService.startTranslation(job.jobId, {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         targetLanguage: formData.translationConfig.targetLanguage as any,
@@ -186,9 +232,12 @@ export const TranslationUpload: React.FC = () => {
         tone: formData.translationConfig.tone as any,
       });
 
+      if (!isMountedRef.current) return;
+
       // Navigate to translation detail page
       navigate(`/translation/${job.jobId}`);
     } catch (error) {
+      if (!isMountedRef.current) return;
       // Issue #147: surface a user-facing message keyed off the HTTP
       // status (or the absence of one, for network failures) rather
       // than passing through the raw backend message or a generic
@@ -196,9 +245,17 @@ export const TranslationUpload: React.FC = () => {
       // and handles both `TranslationServiceError` (which carries
       // `statusCode`) and bare `Error` shapes — the previous if/else
       // was a refactor leftover. (R4: OMC review follow-up.)
+      //
+      // Errors thrown by the polling loop are plain `Error` objects with
+      // descriptive `message` strings. getTranslationErrorMessage now
+      // reads `error.message` before falling back to NETWORK_MESSAGE when
+      // `statusCode` is undefined — so "Document processing timed out" etc.
+      // reach the user instead of the generic "Connection lost" phrase.
       setSubmitError(getTranslationErrorMessage(error));
     } finally {
-      setIsSubmitting(false);
+      if (isMountedRef.current) {
+        setIsSubmitting(false);
+      }
     }
   };
 
@@ -320,7 +377,7 @@ export const TranslationUpload: React.FC = () => {
               disabled={isSubmitting}
               startIcon={isSubmitting ? <CircularProgress size={20} /> : null}
             >
-              {isSubmitting ? 'Uploading...' : 'Submit & Start Translation'}
+              {isSubmitting ? submitPhase : 'Submit & Start Translation'}
             </Button>
           ) : (
             <Button variant="contained" onClick={handleNext}>

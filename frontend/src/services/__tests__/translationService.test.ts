@@ -18,12 +18,15 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import axios, { AxiosError } from 'axios';
 import {
   uploadDocument,
+  uploadAndAwaitChunked,
   startTranslation,
   getJobStatus,
   getTranslationJobs,
   downloadTranslation,
   createLegalAttestation,
   TranslationServiceError,
+  UPLOAD_AWAIT_CHUNKED_POLL_INTERVAL_MS,
+  UPLOAD_AWAIT_CHUNKED_TIMEOUT_MS,
   type TranslationJob,
   type LegalAttestation,
   type UploadDocumentRequest,
@@ -89,6 +92,9 @@ describe('TranslationService - uploadDocument', () => {
       // Mock presigned URL response from backend.
       // The backend now includes both `fileId` (the S3 object key component)
       // and `jobId` (the DynamoDB record key) in the response envelope.
+      // requiredHeaders mirrors what uploadRequest.ts lines 224-227 returns:
+      // Content-Type (already normalised server-side to match the signed value)
+      // plus any additional S3 metadata headers.
       const mockPresignedResponse = {
         data: {
           data: {
@@ -96,6 +102,7 @@ describe('TranslationService - uploadDocument', () => {
             fileId: 'file-abc',
             jobId: 'job-123',
             requiredHeaders: {
+              'Content-Type': 'text/plain',
               'x-amz-server-side-encryption': 'AES256',
             },
           },
@@ -125,23 +132,102 @@ describe('TranslationService - uploadDocument', () => {
         legalAttestation: mockLegalAttestation,
       });
 
-      // Assert - Step 2: Upload to S3
+      // Assert - Step 2: Upload to S3.
+      // Bug #1 fix (SignatureDoesNotMatch): the PUT must use ONLY the headers
+      // supplied by the backend in requiredHeaders — no extra Content-Type
+      // override from request.file.type. The backend already places Content-Type
+      // in requiredHeaders with the value it signed.
+      //
+      // Code-4 (OMC Round 2): use strict toEqual at the outer level (not
+      // objectContaining) so a future stray config key in the axios options
+      // object is caught rather than silently passing through.
       expect(mockedAxios.put).toHaveBeenCalledTimes(1);
       expect(mockedAxios.put).toHaveBeenCalledWith(
         'https://s3.amazonaws.com/bucket/presigned-url',
         mockFile,
-        expect.objectContaining({
-          headers: expect.objectContaining({
+        {
+          headers: {
             'Content-Type': 'text/plain',
             'x-amz-server-side-encryption': 'AES256',
-          }),
-        })
+          },
+        }
       );
 
       // Assert - Result
       expect(result.jobId).toBe('job-123');
       expect(result.fileName).toBe('test.txt');
       expect(result.status).toBe('PENDING');
+    });
+
+    // ---------------------------------------------------------------------------
+    // Bug #1 regression guard — SignatureDoesNotMatch on S3 PUT
+    //
+    // Root cause: translationService previously spread requiredHeaders AND then
+    // overrode Content-Type with request.file.type. If the browser's File.type
+    // differs from what the backend normalised when signing the presigned URL,
+    // S3 rejects the PUT with SignatureDoesNotMatch.
+    //
+    // Fix: rely exclusively on requiredHeaders from the backend.
+    //
+    // This test verifies the exact headers object forwarded to axios.put:
+    //   • No extra Content-Type key beyond what the backend sent.
+    //   • Additional backend headers (e.g. server-side encryption) are preserved.
+    //   • When browser File.type diverges from what the backend signed, the
+    //     backend value takes precedence.
+    // ---------------------------------------------------------------------------
+    it('should send only requiredHeaders to S3 — no extra Content-Type override', async () => {
+      // Arrange: browser File has 'text/plain' but backend signed for 'text/x-rst'
+      // (simulating a normalisation step on the server side).
+      const mockFile = new File(['content'], 'document.rst', { type: 'text/plain' });
+      const mockLegalAttestation: LegalAttestation = {
+        acceptCopyrightOwnership: true,
+        acceptTranslationRights: true,
+        acceptLiabilityTerms: true,
+        userIPAddress: 'captured-by-backend',
+        userAgent: 'Mozilla/5.0',
+        timestamp: '2024-10-31T12:00:00Z',
+      };
+
+      // Backend signed for 'text/x-rst' — note: intentionally different from
+      // the browser File.type ('text/plain') to expose the old double-set bug.
+      const mockPresignedResponse = {
+        data: {
+          data: {
+            uploadUrl: 'https://s3.amazonaws.com/bucket/presigned-url',
+            fileId: 'file-rst',
+            jobId: 'job-rst',
+            requiredHeaders: {
+              'Content-Type': 'text/x-rst',
+              'Content-Length': '7',
+            },
+          },
+        },
+      };
+
+      mockedApiClient.post.mockResolvedValueOnce(mockPresignedResponse);
+      mockedAxios.put.mockResolvedValueOnce({ data: null });
+
+      // Act
+      await uploadDocument({ file: mockFile, legalAttestation: mockLegalAttestation });
+
+      // Assert: the PUT headers object must equal exactly what the backend
+      // provided — no extra keys, and Content-Type must be the backend value
+      // ('text/x-rst'), NOT the browser File.type ('text/plain').
+      expect(mockedAxios.put).toHaveBeenCalledWith(
+        'https://s3.amazonaws.com/bucket/presigned-url',
+        mockFile,
+        expect.objectContaining({
+          headers: {
+            'Content-Type': 'text/x-rst',
+            'Content-Length': '7',
+          },
+        })
+      );
+
+      // Explicit guard: the browser MIME type must NOT override the signed value.
+      const sentHeaders = mockedAxios.put.mock.calls[0][2].headers as Record<string, string>;
+      expect(sentHeaders['Content-Type']).toBe('text/x-rst');
+      expect(sentHeaders['Content-Type']).not.toBe('text/plain');
     });
 
     it('should include legal attestation in JSON payload to backend', async () => {
@@ -776,5 +862,264 @@ describe('TranslationService - createLegalAttestation', () => {
     expect(result.timestamp).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
     expect(resultTime).toBeGreaterThanOrEqual(beforeTime);
     expect(resultTime).toBeLessThanOrEqual(afterTime);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// uploadAndAwaitChunked — polling state machine (Arch-1, OMC Round 2)
+//
+// The polling logic was extracted from the page component into the service
+// layer so the UI has a single awaitable. These tests exercise the full
+// state machine (PENDING → CHUNKING → CHUNKED, terminal errors, timeout)
+// using vi.useFakeTimers to avoid real wall-clock waits.
+//
+// We spy on uploadDocument and getJobStatus so the tests verify the
+// internal collaboration without re-mocking the entire module.
+// ---------------------------------------------------------------------------
+describe('TranslationService - uploadAndAwaitChunked', () => {
+  const mockFile = new File(['hello'], 'doc.txt', { type: 'text/plain' });
+  const mockLegalAttestation: LegalAttestation = {
+    acceptCopyrightOwnership: true,
+    acceptTranslationRights: true,
+    acceptLiabilityTerms: true,
+    userIPAddress: 'captured-by-backend',
+    userAgent: 'Mozilla/5.0',
+    timestamp: '2024-10-31T12:00:00Z',
+  };
+
+  const baseJob: TranslationJob = {
+    jobId: 'await-job',
+    userId: 'user-1',
+    fileName: 'doc.txt',
+    fileSize: 5,
+    contentType: 'text/plain',
+    status: 'PENDING',
+    createdAt: '2024-10-31T12:00:00Z',
+    updatedAt: '2024-10-31T12:00:00Z',
+  };
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.clearAllMocks();
+    (getAuthToken as ReturnType<typeof vi.fn>).mockReturnValue('mock-token-123');
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  it('exports UPLOAD_AWAIT_CHUNKED_POLL_INTERVAL_MS as 1000ms (Perf-5: 1 s default)', () => {
+    // The poll interval was reduced from 2 s to 1 s in OMC Round 2 (Perf-5)
+    // to halve perceived "Processing upload..." dwell time.
+    expect(UPLOAD_AWAIT_CHUNKED_POLL_INTERVAL_MS).toBe(1_000);
+  });
+
+  it('exports UPLOAD_AWAIT_CHUNKED_TIMEOUT_MS as 60000ms', () => {
+    expect(UPLOAD_AWAIT_CHUNKED_TIMEOUT_MS).toBe(60_000);
+  });
+
+  it('resolves with CHUNKED job immediately when first poll returns CHUNKED', async () => {
+    mockedApiClient.post.mockResolvedValueOnce({
+      data: {
+        data: {
+          uploadUrl: 'https://s3.example.com/presigned',
+          fileId: 'f1',
+          jobId: 'await-job',
+          requiredHeaders: { 'Content-Type': 'text/plain' },
+        },
+      },
+    });
+    mockedAxios.put.mockResolvedValueOnce({ data: null });
+
+    mockedApiClient.get.mockResolvedValueOnce({
+      data: { data: { ...baseJob, status: 'CHUNKED' } },
+    });
+
+    const result = await uploadAndAwaitChunked(
+      { file: mockFile, legalAttestation: mockLegalAttestation },
+      { pollIntervalMs: 100, timeoutMs: 5_000 }
+    );
+
+    expect(result.status).toBe('CHUNKED');
+    expect(result.jobId).toBe('await-job');
+  });
+
+  it('polls PENDING → CHUNKING → CHUNKED then resolves', async () => {
+    mockedApiClient.post.mockResolvedValueOnce({
+      data: {
+        data: {
+          uploadUrl: 'https://s3.example.com/presigned',
+          fileId: 'f1',
+          jobId: 'await-job',
+          requiredHeaders: { 'Content-Type': 'text/plain' },
+        },
+      },
+    });
+    mockedAxios.put.mockResolvedValueOnce({ data: null });
+
+    // Three polls: PENDING, CHUNKING, CHUNKED
+    mockedApiClient.get
+      .mockResolvedValueOnce({ data: { data: { ...baseJob, status: 'PENDING' } } })
+      .mockResolvedValueOnce({ data: { data: { ...baseJob, status: 'CHUNKING' } } })
+      .mockResolvedValueOnce({ data: { data: { ...baseJob, status: 'CHUNKED' } } });
+
+    const resultPromise = uploadAndAwaitChunked(
+      { file: mockFile, legalAttestation: mockLegalAttestation },
+      { pollIntervalMs: 100, timeoutMs: 5_000 }
+    );
+
+    // Advance timers to cover the two 100ms poll intervals.
+    await vi.advanceTimersByTimeAsync(400);
+
+    const result = await resultPromise;
+    expect(result.status).toBe('CHUNKED');
+    expect(mockedApiClient.get).toHaveBeenCalledTimes(3);
+  });
+
+  it('rejects immediately on CHUNKING_FAILED with descriptive message', async () => {
+    mockedApiClient.post.mockResolvedValueOnce({
+      data: {
+        data: {
+          uploadUrl: 'https://s3.example.com/presigned',
+          fileId: 'f1',
+          jobId: 'await-job',
+          requiredHeaders: { 'Content-Type': 'text/plain' },
+        },
+      },
+    });
+    mockedAxios.put.mockResolvedValueOnce({ data: null });
+
+    mockedApiClient.get.mockResolvedValueOnce({
+      data: { data: { ...baseJob, status: 'CHUNKING_FAILED' } },
+    });
+
+    await expect(
+      uploadAndAwaitChunked(
+        { file: mockFile, legalAttestation: mockLegalAttestation },
+        { pollIntervalMs: 100, timeoutMs: 5_000 }
+      )
+    ).rejects.toThrow(/Document processing failed with status: CHUNKING_FAILED/);
+
+    // Only one poll call — terminal error exits immediately.
+    expect(mockedApiClient.get).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects immediately on FAILED status', async () => {
+    mockedApiClient.post.mockResolvedValueOnce({
+      data: {
+        data: {
+          uploadUrl: 'https://s3.example.com/presigned',
+          fileId: 'f1',
+          jobId: 'await-job',
+          requiredHeaders: { 'Content-Type': 'text/plain' },
+        },
+      },
+    });
+    mockedAxios.put.mockResolvedValueOnce({ data: null });
+
+    mockedApiClient.get.mockResolvedValueOnce({
+      data: { data: { ...baseJob, status: 'FAILED' } },
+    });
+
+    await expect(
+      uploadAndAwaitChunked(
+        { file: mockFile, legalAttestation: mockLegalAttestation },
+        { pollIntervalMs: 100, timeoutMs: 5_000 }
+      )
+    ).rejects.toThrow(/Document processing failed with status: FAILED/);
+  });
+
+  it('rejects with timeout message after timeoutMs elapses', async () => {
+    mockedApiClient.post.mockResolvedValueOnce({
+      data: {
+        data: {
+          uploadUrl: 'https://s3.example.com/presigned',
+          fileId: 'f1',
+          jobId: 'await-job',
+          requiredHeaders: { 'Content-Type': 'text/plain' },
+        },
+      },
+    });
+    mockedAxios.put.mockResolvedValueOnce({ data: null });
+
+    // Always return PENDING so the loop never exits via success.
+    mockedApiClient.get.mockResolvedValue({
+      data: { data: { ...baseJob, status: 'PENDING' } },
+    });
+
+    const resultPromise = uploadAndAwaitChunked(
+      { file: mockFile, legalAttestation: mockLegalAttestation },
+      { pollIntervalMs: 100, timeoutMs: 500 }
+    );
+
+    // Attach the rejection handler BEFORE advancing timers so the promise is
+    // never considered "unhandled" — an unhandled rejection emitted between
+    // the reject() call and the await below causes a spurious Vitest error.
+    const expectation = expect(resultPromise).rejects.toThrow(/Document processing timed out/);
+
+    // Advance past the 500ms timeout.
+    await vi.advanceTimersByTimeAsync(700);
+
+    await expectation;
+  });
+
+  it('calls onPollTick callback with each status', async () => {
+    mockedApiClient.post.mockResolvedValueOnce({
+      data: {
+        data: {
+          uploadUrl: 'https://s3.example.com/presigned',
+          fileId: 'f1',
+          jobId: 'await-job',
+          requiredHeaders: { 'Content-Type': 'text/plain' },
+        },
+      },
+    });
+    mockedAxios.put.mockResolvedValueOnce({ data: null });
+
+    mockedApiClient.get
+      .mockResolvedValueOnce({ data: { data: { ...baseJob, status: 'CHUNKING' } } })
+      .mockResolvedValueOnce({ data: { data: { ...baseJob, status: 'CHUNKED' } } });
+
+    const onPollTick = vi.fn();
+
+    const resultPromise = uploadAndAwaitChunked(
+      { file: mockFile, legalAttestation: mockLegalAttestation },
+      { pollIntervalMs: 100, timeoutMs: 5_000, onPollTick }
+    );
+
+    await vi.advanceTimersByTimeAsync(300);
+    await resultPromise;
+
+    // onPollTick called for CHUNKING tick (CHUNKED tick also fires before resolve).
+    expect(onPollTick).toHaveBeenCalledWith('CHUNKING');
+    expect(onPollTick).toHaveBeenCalledWith('CHUNKED');
+  });
+
+  it('propagates getJobStatus network errors', async () => {
+    mockedApiClient.post.mockResolvedValueOnce({
+      data: {
+        data: {
+          uploadUrl: 'https://s3.example.com/presigned',
+          fileId: 'f1',
+          jobId: 'await-job',
+          requiredHeaders: { 'Content-Type': 'text/plain' },
+        },
+      },
+    });
+    mockedAxios.put.mockResolvedValueOnce({ data: null });
+
+    const networkError = {
+      isAxiosError: true,
+      message: 'Network Error',
+    } as AxiosError;
+    mockedApiClient.get.mockRejectedValueOnce(networkError);
+
+    await expect(
+      uploadAndAwaitChunked(
+        { file: mockFile, legalAttestation: mockLegalAttestation },
+        { pollIntervalMs: 100, timeoutMs: 5_000 }
+      )
+    ).rejects.toThrow('Network Error');
   });
 });

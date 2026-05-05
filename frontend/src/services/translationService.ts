@@ -7,9 +7,18 @@
 
 import axios, { AxiosError } from 'axios';
 import { apiClient } from '../utils/api';
+import type { TranslationJobStatus } from '@lfmt/shared-types';
+import { CHUNKING_ERROR_STATUSES } from '@lfmt/shared-types';
+
+// Re-export so callers can use the shared-types values without an extra import.
+export type { TranslationJobStatus };
 
 /**
- * Translation Job Status
+ * Translation Job
+ *
+ * Represents the frontend view of a job record. `status` uses the canonical
+ * TranslationJobStatus union defined in @lfmt/shared-types so the type is
+ * the single source of truth across service, hooks, and page components.
  */
 export interface TranslationJob {
   jobId: string;
@@ -17,15 +26,7 @@ export interface TranslationJob {
   fileName: string;
   fileSize: number;
   contentType: string;
-  status:
-    | 'PENDING'
-    | 'CHUNKING'
-    | 'CHUNKED'
-    | 'IN_PROGRESS'
-    | 'COMPLETED'
-    | 'FAILED'
-    | 'CHUNKING_FAILED'
-    | 'TRANSLATION_FAILED';
+  status: TranslationJobStatus;
   targetLanguage?: string;
   tone?: 'formal' | 'informal' | 'neutral';
   totalChunks?: number;
@@ -74,6 +75,27 @@ export interface StartTranslationRequest {
 }
 
 /**
+ * Options for uploadAndAwaitChunked.
+ */
+export interface UploadAndAwaitChunkedOptions {
+  /**
+   * How long to wait between getJobStatus polls (ms).
+   * Defaults to UPLOAD_AWAIT_CHUNKED_POLL_INTERVAL_MS.
+   */
+  pollIntervalMs?: number;
+  /**
+   * Total wall-clock budget before timing out (ms).
+   * Defaults to UPLOAD_AWAIT_CHUNKED_TIMEOUT_MS.
+   */
+  timeoutMs?: number;
+  /**
+   * Called after each completed poll tick so the caller can update UI
+   * (e.g. set a "Processing upload..." label).
+   */
+  onPollTick?: (status: TranslationJobStatus) => void;
+}
+
+/**
  * Translation Service Error
  */
 export class TranslationServiceError extends Error {
@@ -86,6 +108,24 @@ export class TranslationServiceError extends Error {
     this.name = 'TranslationServiceError';
   }
 }
+
+// ---------------------------------------------------------------------------
+// Polling constants — owned here (service layer) so the UI component is free
+// of backend-protocol knowledge. Values can be overridden via
+// UploadAndAwaitChunkedOptions for tests or future tuning.
+// ---------------------------------------------------------------------------
+
+/**
+ * Default interval between getJobStatus polls while waiting for chunking
+ * to complete. 1 s provides responsive feedback without hammering the API.
+ */
+export const UPLOAD_AWAIT_CHUNKED_POLL_INTERVAL_MS = 1_000;
+
+/**
+ * Default maximum wall-clock budget for the chunking-wait loop.
+ * After this deadline the caller receives a descriptive timeout error.
+ */
+export const UPLOAD_AWAIT_CHUNKED_TIMEOUT_MS = 60_000;
 
 /**
  * Handle API errors
@@ -133,13 +173,15 @@ export const uploadDocument = async (request: UploadDocumentRequest): Promise<Tr
 
     const { uploadUrl, jobId, requiredHeaders } = presignedResponse.data.data;
 
-    // Step 2: Upload file directly to S3 using presigned URL
-    // Note: We use axios directly here because S3 doesn't need our API interceptors/auth headers
+    // Step 2: Upload file directly to S3 using presigned URL.
+    // Note: We use axios directly here because S3 doesn't need our API interceptors/auth headers.
+    // IMPORTANT: rely exclusively on requiredHeaders returned by the backend. The backend signs the
+    // presigned URL with the exact Content-Type it puts in requiredHeaders (lines 224-227 of
+    // uploadRequest.ts). Adding an extra 'Content-Type' override here risks a mismatch between
+    // the signed value and the sent value when the browser File.type differs from what the backend
+    // normalised, which causes S3 to reject the request with SignatureDoesNotMatch.
     await axios.put(uploadUrl, request.file, {
-      headers: {
-        ...requiredHeaders,
-        'Content-Type': request.file.type,
-      },
+      headers: { ...requiredHeaders },
     });
 
     // Step 3: Return job information
@@ -158,6 +200,96 @@ export const uploadDocument = async (request: UploadDocumentRequest): Promise<Tr
   } catch (error) {
     return handleError(error);
   }
+};
+
+/**
+ * Upload a document and wait until the backend chunking pipeline advances
+ * the job to `CHUNKED` status before returning.
+ *
+ * This encapsulates the race-condition fix (PR #202 Bug #2): after the S3
+ * PUT completes, the backend pipeline
+ *   S3 event → uploadComplete Lambda → chunkDocument Lambda → CHUNKED
+ * runs asynchronously. `startTranslation` requires `status === 'CHUNKED'`;
+ * calling it before that returns 400 INVALID_JOB_STATUS.
+ *
+ * By owning the polling loop here (service layer) we keep the UI component
+ * free of backend-protocol knowledge and give callers a single awaitable:
+ *
+ * ```ts
+ * const job = await translationService.uploadAndAwaitChunked(request, opts);
+ * await translationService.startTranslation(job.jobId, config);
+ * ```
+ *
+ * @throws {TranslationServiceError} — propagated from uploadDocument or
+ *   getJobStatus on API errors.
+ * @throws {Error} — `message` set to a user-displayable string for both
+ *   terminal-error and timeout exit paths so callers can surface it directly
+ *   via getTranslationErrorMessage (which reads `error.message` when
+ *   `statusCode` is undefined).
+ */
+export const uploadAndAwaitChunked = async (
+  request: UploadDocumentRequest,
+  options: UploadAndAwaitChunkedOptions = {}
+): Promise<TranslationJob> => {
+  const pollIntervalMs = options.pollIntervalMs ?? UPLOAD_AWAIT_CHUNKED_POLL_INTERVAL_MS;
+  const timeoutMs = options.timeoutMs ?? UPLOAD_AWAIT_CHUNKED_TIMEOUT_MS;
+  const onPollTick = options.onPollTick;
+
+  // Phase 1: upload to S3 and receive initial job record.
+  const job = await uploadDocument(request);
+
+  // Phase 2: poll until CHUNKED, terminal error, or timeout.
+  const deadline = Date.now() + timeoutMs;
+
+  return new Promise<TranslationJob>((resolve, reject) => {
+    const tick = async () => {
+      try {
+        const statusJob = await getJobStatus(job.jobId);
+
+        onPollTick?.(statusJob.status);
+
+        if (statusJob.status === 'CHUNKED') {
+          // Chunking complete — resolve with the fresh job record.
+          resolve(statusJob);
+          return;
+        }
+
+        // Terminal-error statuses: chunking failed permanently.
+        if (
+          (CHUNKING_ERROR_STATUSES as ReadonlyArray<TranslationJobStatus>).includes(
+            statusJob.status
+          )
+        ) {
+          reject(
+            new Error(
+              `Document processing failed with status: ${statusJob.status}. Please try again.`
+            )
+          );
+          return;
+        }
+
+        // Timeout guard.
+        if (Date.now() >= deadline) {
+          reject(
+            new Error(
+              'Document processing timed out. Your file was uploaded successfully — please refresh and try starting the translation again.'
+            )
+          );
+          return;
+        }
+
+        // Still PENDING / CHUNKING — schedule the next tick.
+        setTimeout(() => void tick(), pollIntervalMs);
+      } catch (err) {
+        // getJobStatus threw (e.g. network error) — propagate.
+        reject(err);
+      }
+    };
+
+    // Kick off the first tick immediately so we don't add an unnecessary
+    // poll-interval pause when chunking completes quickly.
+    void tick();
+  });
 };
 
 /**
@@ -259,6 +391,7 @@ export const createLegalAttestation = async (
  */
 export const translationService = {
   uploadDocument,
+  uploadAndAwaitChunked,
   startTranslation,
   getJobStatus,
   getTranslationJobs,

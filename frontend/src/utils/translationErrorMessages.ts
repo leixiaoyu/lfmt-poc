@@ -38,32 +38,68 @@ const NETWORK_MESSAGE = 'Connection lost — check your internet and try again.'
 const FALLBACK_MESSAGE = 'An unexpected error occurred. Please try again.';
 
 /**
+ * Generic message strings that are too vague to be surfaced as-is.
+ * If the error's `message` property matches one of these (exact, trimmed,
+ * case-insensitive), we fall back to NETWORK_MESSAGE instead of passing it
+ * through. This prevents "Network Error" or "An unexpected error occurred"
+ * from leaking from the axios / service layer into the UI.
+ */
+const GENERIC_MESSAGES = new Set(
+  ['network error', 'an unexpected error occurred', 'request failed', 'failed to fetch'].map((s) =>
+    s.toLowerCase()
+  )
+);
+
+/**
  * Resolve a user-facing message for a translation-submit failure.
  *
  * Precedence:
  *   1. Known HTTP status → curated phrase.
- *   2. statusCode is undefined AND we have no usable message → treat as
- *      a network error (axios sets `error.response = undefined` for
+ *   2. statusCode is undefined AND the error has a specific, non-generic
+ *      `message` string → surface that message directly. This handles errors
+ *      thrown by the polling loop (e.g. "Document processing timed out…")
+ *      which are plain `Error` objects with descriptive messages but no HTTP
+ *      status code.
+ *   3. statusCode is undefined AND message is generic / absent → treat as a
+ *      pure network error (axios sets `error.response = undefined` for
  *      ERR_NETWORK).
- *   3. Backend-provided message that is non-empty and non-generic →
+ *   4. Backend-provided message that is non-empty and non-generic →
  *      pass through (handles spec-driven errors we haven't enumerated).
- *   4. Final fallback.
+ *   5. Final fallback.
  */
 export function getTranslationErrorMessage(error: unknown): string {
   if (!error || typeof error !== 'object') {
     return FALLBACK_MESSAGE;
   }
   const e = error as TranslationErrorLike;
+
+  // 1. Known HTTP status → curated phrase.
   if (typeof e.statusCode === 'number' && STATUS_MESSAGES[e.statusCode]) {
     return STATUS_MESSAGES[e.statusCode];
   }
+
   if (e.statusCode === undefined) {
-    // No HTTP status reached us — almost certainly a network/transport
-    // failure (axios.isAxiosError && !error.response).
+    // No HTTP status reached us. Two sub-cases:
+    //   a. A descriptive message from the polling loop or another non-network
+    //      throw (e.g. "Document processing timed out…") — surface it.
+    //   b. A generic/absent message — treat as network/transport failure.
+    if (
+      typeof e.message === 'string' &&
+      e.message.length > 0 &&
+      !GENERIC_MESSAGES.has(e.message.trim().toLowerCase())
+    ) {
+      // 2. Specific polling-loop or custom error message.
+      return e.message;
+    }
+    // 3. Generic / absent message → network error.
     return NETWORK_MESSAGE;
   }
+
+  // 4. Unmapped HTTP status but a usable backend message.
   if (typeof e.message === 'string' && e.message.length > 0) {
     return e.message;
   }
+
+  // 5. Final fallback.
   return FALLBACK_MESSAGE;
 }

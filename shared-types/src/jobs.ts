@@ -3,6 +3,12 @@ import { z } from 'zod';
 import { fileSizeSchema } from './validation';
 
 // Job Status Types
+
+/**
+ * Legacy chunk-pipeline job status union used by the original spec documents.
+ * Retained for historical compatibility; prefer TranslationJobStatus for all
+ * new code touching the LFMT translation workflow.
+ */
 export type JobStatus =
   | 'QUEUED'
   | 'PROCESSING'
@@ -13,6 +19,60 @@ export type JobStatus =
   | 'FAILED'
   | 'CANCELLED'
   | 'RESUMED';
+
+/**
+ * Canonical status union for LFMT translation jobs as they flow through the
+ * actual backend pipeline:
+ *
+ *   PENDING → (S3 event) → CHUNKING → CHUNKED
+ *     → (startTranslation) → IN_PROGRESS → COMPLETED
+ *
+ * Terminal states (no further transitions):
+ *   COMPLETED | FAILED | CHUNKING_FAILED | TRANSLATION_FAILED
+ *
+ * This type is the single source of truth shared between:
+ *   - frontend/src/services/translationService.ts (TranslationJob.status)
+ *   - frontend/src/hooks/useTranslationJob.ts (TERMINAL_STATES)
+ *   - frontend/src/pages/TranslationUpload.tsx (polling loop terminal check)
+ *
+ * Backend Lambda handlers currently use string literals directly; a future
+ * backend-types PR will import from here.
+ */
+export type TranslationJobStatus =
+  | 'PENDING'
+  | 'CHUNKING'
+  | 'CHUNKED'
+  | 'IN_PROGRESS'
+  | 'COMPLETED'
+  | 'FAILED'
+  | 'CHUNKING_FAILED'
+  | 'TRANSLATION_FAILED';
+
+/**
+ * Statuses that represent a terminal (no-further-transition) outcome for a
+ * translation job. Used by the frontend polling loop and useTranslationJob
+ * hook to decide when to stop polling.
+ */
+export const TRANSLATION_TERMINAL_STATUSES = [
+  'COMPLETED',
+  'FAILED',
+  'CHUNKING_FAILED',
+  'TRANSLATION_FAILED',
+] as const satisfies ReadonlyArray<TranslationJobStatus>;
+
+/** Type helper — narrows to just the terminal members of TranslationJobStatus. */
+export type TranslationTerminalStatus = (typeof TRANSLATION_TERMINAL_STATUSES)[number];
+
+/**
+ * Statuses that indicate the chunking pipeline has failed permanently.
+ * The submit-flow polling loop exits immediately when any of these is seen
+ * instead of burning the full timeout budget.
+ */
+export const CHUNKING_ERROR_STATUSES = [
+  'CHUNKING_FAILED',
+  'FAILED',
+  'TRANSLATION_FAILED',
+] as const satisfies ReadonlyArray<TranslationJobStatus>;
 
 export type JobPriority = 'LOW' | 'NORMAL' | 'HIGH';
 export type QualityLevel = 'STANDARD' | 'PREMIUM';
