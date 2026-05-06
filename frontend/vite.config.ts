@@ -100,14 +100,15 @@ export default defineConfig(({ command, mode }) => {
         '@/hooks': path.resolve(__dirname, './src/hooks'),
         '@/contexts': path.resolve(__dirname, './src/contexts'),
         '@/utils': path.resolve(__dirname, './src/utils'),
-        // Resolve @lfmt/shared-types to the built CommonJS output so both the
-        // dev server and the Vitest test runner can import it without requiring
-        // a separate build step to be run beforehand. The package.json `main`
-        // field already points at `dist/index.js`, but that path is only found
-        // when the package is symlinked into node_modules. With this alias Vite
-        // and Vitest always find the built file regardless of workspace setup.
-        // TSC gets its own mapping via tsconfig.json `paths` → dist/index.d.ts.
-        '@lfmt/shared-types': path.resolve(__dirname, '../shared-types/dist/index.js'),
+        // Resolve @lfmt/shared-types to the built ESM output so both the dev
+        // server and the Vitest test runner can import it without requiring a
+        // separate build step to be run beforehand. The package now ships a
+        // dual CJS+ESM bundle (PR #203 R3); pointing the alias at the ESM
+        // output lets Rollup's named-export static analyzer see every export
+        // directly (the previous CJS path required an inline-duplication
+        // workaround in shared-types/src/index.ts that has since been removed).
+        // TSC gets its own mapping via tsconfig.json `paths` → dist/cjs/index.d.ts.
+        '@lfmt/shared-types': path.resolve(__dirname, '../shared-types/dist/esm/index.js'),
       },
     },
     server: {
