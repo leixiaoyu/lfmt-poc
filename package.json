@@ -48,6 +48,10 @@
     "node": ">=22.11.0",
     "npm": ">=10.9.0"
   },
+  "overrides": {
+    "brace-expansion": "^5.0.5",
+    "minimatch": "^9.0.7"
+  },
   "devDependencies": {
     "prettier": "^3.8.1"
   }
