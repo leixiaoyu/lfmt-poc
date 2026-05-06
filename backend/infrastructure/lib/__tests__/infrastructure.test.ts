@@ -1413,4 +1413,90 @@ describe('LFMT Infrastructure Stack', () => {
       expect(templateString).not.toContain('"nodejs20.x"');
     });
   });
+
+  describe('Lambda Architecture Drift Guard (PR #203 R3)', () => {
+    // Regression guard mirroring the runtime drift guard (PR #203 R2):
+    //
+    // PR #203 R3 centralized the Lambda CPU architecture into a single
+    // module constant (LAMBDA_ARCHITECTURE = lambda.Architecture.ARM_64)
+    // and migrated all 12 application Lambda definitions from the AWS
+    // x86_64 default to ARM64 (Graviton). Without this regression test,
+    // an accidental future revert of the constant — or a one-off Lambda
+    // definition that omits `architecture` and falls back to x86_64 —
+    // would silently regress the ~20% cost saving and the documentation
+    // claim in openspec/project.md that the stack runs on Graviton.
+    //
+    // Scope: APPLICATION Lambdas only. CDK injects helper Lambdas for
+    // its own machinery (e.g., S3 auto-delete custom-resource provider,
+    // log-retention setter, BucketNotificationsHandler) which do NOT
+    // expose a CDK-level architecture knob — they ship with AWS defaults
+    // (x86_64 today). Filtering them out keeps the assertion focused on
+    // the Lambdas that LFMT actually owns. Helper detection: any Lambda
+    // logical ID starting with "Custom" or "BucketNotificationsHandler"
+    // is CDK-injected and excluded.
+
+    const isApplicationLambda = (logicalId: string): boolean =>
+      !logicalId.startsWith('Custom')
+      && !logicalId.startsWith('BucketNotificationsHandler');
+
+    test('All application Node.js Lambdas declare arm64 architecture', () => {
+      const allLambdas = template.findResources('AWS::Lambda::Function');
+      const appNodeLambdas = Object.entries(allLambdas).filter(
+        ([logicalId, fn]: [string, any]) =>
+          isApplicationLambda(logicalId)
+          && typeof fn.Properties?.Runtime === 'string'
+          && fn.Properties.Runtime.startsWith('nodejs')
+      );
+
+      // Sanity check: the test stack defines 11 application Lambdas
+      // (all NodejsFunction; PreSignUp is dev-only and absent in the
+      // 'test' environment). The runtime drift guard uses a 12-Lambda
+      // floor because it runs against synth output that may include
+      // dev-only Lambdas; here we use 10 as a safe lower bound that
+      // still catches mass deletions.
+      expect(appNodeLambdas.length).toBeGreaterThanOrEqual(10);
+
+      appNodeLambdas.forEach(([logicalId, fn]: [string, any]) => {
+        // CDK serializes Architecture into the `Architectures` array
+        // on the CFN resource (note the plural — Lambda's CFN schema
+        // accepts a single-element array, not a scalar).
+        if (!Array.isArray(fn.Properties.Architectures)
+            || fn.Properties.Architectures[0] !== 'arm64') {
+          throw new Error(
+            `Application Lambda ${logicalId} architecture is `
+              + `${JSON.stringify(fn.Properties.Architectures)}, expected ["arm64"]`
+          );
+        }
+        expect(fn.Properties.Architectures).toEqual(['arm64']);
+      });
+    });
+
+    test('No application Lambda uses x86_64 architecture', () => {
+      // Negative assertion: forbid the architecture value we just left
+      // behind on application Lambdas. Catches the copy-paste regression
+      // where a developer reuses an old Lambda definition that omits
+      // `architecture` (CDK would silently default it back to x86_64) or
+      // hardcodes lambda.Architecture.X86_64.
+      //
+      // Per-Lambda check (not a JSON.stringify substring scan) because
+      // CDK-injected helper Lambdas legitimately ship with x86_64 defaults
+      // we do not control; a substring scan would false-positive on those.
+      const allLambdas = template.findResources('AWS::Lambda::Function');
+      const appNodeLambdas = Object.entries(allLambdas).filter(
+        ([logicalId, fn]: [string, any]) =>
+          isApplicationLambda(logicalId)
+          && typeof fn.Properties?.Runtime === 'string'
+          && fn.Properties.Runtime.startsWith('nodejs')
+      );
+      appNodeLambdas.forEach(([logicalId, fn]: [string, any]) => {
+        const archs = fn.Properties.Architectures ?? [];
+        if (Array.isArray(archs) && archs.includes('x86_64')) {
+          throw new Error(
+            `Application Lambda ${logicalId} declares x86_64 — must be arm64`
+          );
+        }
+        expect(archs).not.toContain('x86_64');
+      });
+    });
+  });
 });

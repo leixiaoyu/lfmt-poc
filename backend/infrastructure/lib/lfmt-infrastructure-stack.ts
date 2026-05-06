@@ -32,6 +32,26 @@ import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
 // 2026-05; AWS Lambda has supported it since November 2024.
 const LAMBDA_RUNTIME = lambda.Runtime.NODEJS_22_X;
 
+// Centralized Lambda CPU architecture — single source of truth (DRY).
+//
+// AWS Graviton (ARM64) gives Lambda ~20% lower per-ms cost and ~10–15%
+// better price/performance vs the x86_64 default for typical Node.js
+// workloads. The LFMT translation Lambdas are network-bound on the
+// Gemini API call, so the perf gain is modest — but the cost reduction
+// is independent of workload mix.
+//
+// Safe to bump on this stack because none of the Lambda code paths use
+// native node-gyp dependencies; everything is pure TypeScript bundled
+// by esbuild via NodejsFunction. esbuild emits architecture-neutral
+// JavaScript, so Lambda picks up the ARM64 binary at deploy time
+// without any per-function build changes.
+//
+// Drift-prevention: the infrastructure test suite asserts every Node
+// Lambda in the synthesized template uses arm64 (mirror of the
+// LAMBDA_RUNTIME drift guard). Any future Lambda added without this
+// constant will fail that test.
+const LAMBDA_ARCHITECTURE = lambda.Architecture.ARM_64;
+
 export interface LfmtInfrastructureStackProps extends StackProps {
   stackName: string;
   environment: string;
@@ -363,6 +383,7 @@ export class LfmtInfrastructureStack extends Stack {
     if (isDev) {
       const preSignUpFunction = new lambda.Function(this, 'PreSignUpTrigger', {
         runtime: LAMBDA_RUNTIME,
+        architecture: LAMBDA_ARCHITECTURE,
         handler: 'index.handler',
         code: lambda.Code.fromInline(`
           exports.handler = async (event) => {
@@ -872,6 +893,7 @@ export class LfmtInfrastructureStack extends Stack {
       entry: '../functions/auth/register.ts',
       handler: 'handler',
       runtime: LAMBDA_RUNTIME,
+      architecture: LAMBDA_ARCHITECTURE,
       role: authRole,
       environment: commonEnv,
       timeout: Duration.seconds(30),
@@ -891,6 +913,7 @@ export class LfmtInfrastructureStack extends Stack {
       entry: '../functions/auth/login.ts',
       handler: 'handler',
       runtime: LAMBDA_RUNTIME,
+      architecture: LAMBDA_ARCHITECTURE,
       role: authRole,
       environment: commonEnv,
       timeout: Duration.seconds(30),
@@ -910,6 +933,7 @@ export class LfmtInfrastructureStack extends Stack {
       entry: '../functions/auth/refreshToken.ts',
       handler: 'handler',
       runtime: LAMBDA_RUNTIME,
+      architecture: LAMBDA_ARCHITECTURE,
       role: authRole,
       environment: commonEnv,
       timeout: Duration.seconds(30),
@@ -929,6 +953,7 @@ export class LfmtInfrastructureStack extends Stack {
       entry: '../functions/auth/resetPassword.ts',
       handler: 'handler',
       runtime: LAMBDA_RUNTIME,
+      architecture: LAMBDA_ARCHITECTURE,
       role: authRole,
       environment: commonEnv,
       timeout: Duration.seconds(30),
@@ -948,6 +973,7 @@ export class LfmtInfrastructureStack extends Stack {
       entry: '../functions/auth/getCurrentUser.ts',
       handler: 'handler',
       runtime: LAMBDA_RUNTIME,
+      architecture: LAMBDA_ARCHITECTURE,
       role: authRole,
       environment: commonEnv,
       timeout: Duration.seconds(30),
@@ -967,6 +993,7 @@ export class LfmtInfrastructureStack extends Stack {
       entry: '../functions/jobs/uploadRequest.ts',
       handler: 'handler',
       runtime: LAMBDA_RUNTIME,
+      architecture: LAMBDA_ARCHITECTURE,
       role: uploadRole,
       environment: commonEnv,
       timeout: Duration.seconds(30),
@@ -986,6 +1013,7 @@ export class LfmtInfrastructureStack extends Stack {
       entry: '../functions/jobs/uploadComplete.ts',
       handler: 'handler',
       runtime: LAMBDA_RUNTIME,
+      architecture: LAMBDA_ARCHITECTURE,
       role: uploadRole,
       environment: commonEnv,
       timeout: Duration.seconds(60), // Longer timeout for validation and updates
@@ -1005,6 +1033,7 @@ export class LfmtInfrastructureStack extends Stack {
       entry: '../functions/chunking/chunkDocument.ts',
       handler: 'handler',
       runtime: LAMBDA_RUNTIME,
+      architecture: LAMBDA_ARCHITECTURE,
       role: chunkingRole,
       environment: commonEnv,
       timeout: Duration.minutes(5), // 5 minutes for large document processing
@@ -1024,6 +1053,7 @@ export class LfmtInfrastructureStack extends Stack {
       entry: '../functions/translation/translateChunk.ts',
       handler: 'handler',
       runtime: LAMBDA_RUNTIME,
+      architecture: LAMBDA_ARCHITECTURE,
       role: translationRole,
       environment: {
         ...commonEnv,
@@ -1047,6 +1077,7 @@ export class LfmtInfrastructureStack extends Stack {
       entry: '../functions/jobs/startTranslation.ts',
       handler: 'handler',
       runtime: LAMBDA_RUNTIME,
+      architecture: LAMBDA_ARCHITECTURE,
       role: translationRole,
       environment: {
         ...commonEnv,
@@ -1071,6 +1102,7 @@ export class LfmtInfrastructureStack extends Stack {
       entry: '../functions/jobs/getTranslationStatus.ts',
       handler: 'handler',
       runtime: LAMBDA_RUNTIME,
+      architecture: LAMBDA_ARCHITECTURE,
       role: translationRole,
       environment: commonEnv,
       timeout: Duration.seconds(30),
