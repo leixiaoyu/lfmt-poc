@@ -45,8 +45,13 @@
     "backend/infrastructure"
   ],
   "engines": {
-    "node": ">=18.0.0",
-    "npm": ">=8.0.0"
+    "node": ">=22.11.0",
+    "npm": ">=10.9.0"
+  },
+  "//overrides": "Root-level only: per-workspace `overrides` blocks (in shared-types/, backend/infrastructure/) are silently ignored by npm — only this root block fires for workspace members. Standalone packages NOT in `workspaces` (backend/functions/, frontend/) keep their own `overrides` because their installs are independent of this lockfile (npm ci runs there separately). minimatch=^9.0.7 escapes the GHSA-3ppc-4f35-3m26 / GHSA-7r86-cg39-jmmj / GHSA-23c5-xmqv-rm74 ReDoS range (9.0.0-9.0.6). brace-expansion=^5.0.5 is precautionary — current resolved versions in the tree are 1.1.13/2.0.2/2.0.3 (none in the vulnerable 4.0.0-5.0.4 range), so this override is a forward-guard against future hoists, not active remediation today.",
+  "overrides": {
+    "brace-expansion": "^5.0.5",
+    "minimatch": "^9.0.7"
   },
   "devDependencies": {
     "prettier": "^3.8.1"

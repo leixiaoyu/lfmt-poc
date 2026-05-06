@@ -18,7 +18,7 @@ These tests cover:
 
 **Requirements:**
 
-- Node.js 18+ (required for native `fetch` API support)
+- Node.js 22+ (required for native `fetch` API support)
 - AWS credentials (optional, for automatic test user cleanup)
 
 ```bash

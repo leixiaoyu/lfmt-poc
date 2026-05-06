@@ -86,7 +86,7 @@ December 2025
 └─────────────────┬───────────────────────────────────────────┘
                   │
 ┌─────────────────┴───────────────────────────────────────────┐
-│  LAMBDA FUNCTIONS (Node.js 18)                              │
+│  LAMBDA FUNCTIONS (Node.js 22)                              │
 │  ├─ Upload Presigned URL                                    │
 │  ├─ Chunk Document (3,500 tokens + 250 overlap)             │
 │  ├─ Translate Chunk (Gemini 2.5 Flash)                      │

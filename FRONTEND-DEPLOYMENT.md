@@ -7,7 +7,7 @@ This guide provides step-by-step instructions for deploying the LFMT Translation
 ## Prerequisites
 
 - AWS CLI configured with appropriate credentials
-- Node.js 18+ and npm installed
+- Node.js 22+ and npm installed
 - Access to deployed AWS infrastructure (LfmtPocDev or LfmtPocProd stack)
 - Proper IAM permissions for S3 and CloudFront operations
 

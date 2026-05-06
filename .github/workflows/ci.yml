@@ -12,7 +12,7 @@ on:
 
 env:
   AWS_REGION: us-east-1
-  NODE_VERSION: '20'
+  NODE_VERSION: '22'
 
 jobs:
   test:
@@ -284,6 +284,32 @@ jobs:
 
       - name: Run npm audit (infrastructure)
         working-directory: backend/infrastructure
+        run: npm audit --audit-level=high || echo "Audit completed with warnings"
+
+      # PR #203 R2 (security-auditor follow-up): close the audit-coverage
+      # gap. Pre-R2 the security-scan job only audited backend/functions and
+      # backend/infrastructure, leaving shared-types and frontend (the
+      # browser-shipped surface) without any high-severity gate at all. We
+      # now run npm audit in every install-able package directory so the
+      # snapshot is uniform.
+      #
+      # Both new audits remain informational (|| echo) to match the
+      # established pattern in this job — making them blocking today would
+      # block on pre-existing transitive vulnerabilities tracked in separate
+      # follow-up issues. Tighten to blocking once the backlog is cleared.
+      # Audit not run at the workspaces root because npm's workspace audit
+      # behavior is buggy (double-counts transitive deps); per-package is
+      # the canonical pattern.
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Run npm audit (frontend)
+        working-directory: frontend
+        run: npm audit --audit-level=high || echo "Audit completed with warnings"
+
+      - name: Run npm audit (shared-types)
+        working-directory: shared-types
         run: npm audit --audit-level=high || echo "Audit completed with warnings"
 
   test-frontend:

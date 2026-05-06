@@ -48,7 +48,7 @@ on:
 
 env:
   AWS_REGION: us-east-1
-  NODE_VERSION: '20'
+  NODE_VERSION: '22'
 
 # Concurrency group (OMC perf + architect review, PR #185 follow-up):
 #

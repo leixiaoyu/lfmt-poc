@@ -1,6 +1,6 @@
 // Job Management Types - From Document 7 (Job State Management)
 import { z } from 'zod';
-import { fileSizeSchema } from './validation';
+import { fileSizeSchema } from './validation.js';
 
 // Job Status Types
 

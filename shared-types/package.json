@@ -2,11 +2,28 @@
   "name": "@lfmt/shared-types",
   "version": "1.0.0",
   "description": "Shared TypeScript types for LFMT POC",
-  "main": "dist/index.js",
-  "types": "dist/index.d.ts",
+  "main": "./dist/cjs/index.js",
+  "module": "./dist/esm/index.js",
+  "types": "./dist/cjs/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/cjs/index.d.ts",
+      "import": "./dist/esm/index.js",
+      "require": "./dist/cjs/index.js",
+      "default": "./dist/cjs/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist"
+  ],
   "scripts": {
-    "build": "tsc",
+    "build": "npm run build:prepare && npm run build:cjs && npm run build:esm",
+    "build:prepare": "node scripts/write-format-package-jsons.cjs",
+    "build:cjs": "tsc -p tsconfig.json",
+    "build:esm": "tsc -p tsconfig.esm.json",
     "watch": "tsc --watch",
+    "pretest": "npm run build",
     "test": "jest",
     "lint": "eslint src/**/*.ts",
     "format": "prettier --write .",
@@ -25,14 +42,11 @@
     "jest": "^29.0.0",
     "@types/jest": "^29.0.0",
     "ts-jest": "^29.0.0",
-    "eslint": "^8.0.0",
-    "@typescript-eslint/eslint-plugin": "^6.0.0",
-    "@typescript-eslint/parser": "^6.0.0"
+    "eslint": "^8.56.0",
+    "@typescript-eslint/eslint-plugin": "^7.18.0",
+    "@typescript-eslint/parser": "^7.18.0"
   },
   "dependencies": {
     "zod": "^3.22.0"
-  },
-  "overrides": {
-    "minimatch": "9.0.5"
   }
 }

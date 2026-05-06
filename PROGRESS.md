@@ -346,7 +346,7 @@ _None open. See "Recently Resolved" below._
 ### Core Technologies
 
 - **Frontend**: React 18 + TypeScript + Material-UI + Vite
-- **Backend**: Node.js 18 (AWS Lambda) + API Gateway + DynamoDB
+- **Backend**: Node.js 22 (AWS Lambda) + API Gateway + DynamoDB
 - **Hosting**: CloudFront + S3 (CDK-managed)
 - **Translation**: Gemini 2.5 Flash (Google AI)
 - **Orchestration**: AWS Step Functions

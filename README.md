@@ -34,7 +34,7 @@ This is a proof-of-concept implementation of a Long-Form Translation Service tha
 
 ### Prerequisites
 
-- Node.js 18+
+- Node.js 22+
 - AWS CLI configured
 - AWS CDK v2
 - Git

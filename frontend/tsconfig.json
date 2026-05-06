@@ -32,7 +32,7 @@
       "@/hooks/*": ["src/hooks/*"],
       "@/contexts/*": ["src/contexts/*"],
       "@/utils/*": ["src/utils/*"],
-      "@lfmt/shared-types": ["../shared-types/dist/index.d.ts"]
+      "@lfmt/shared-types": ["../shared-types/dist/cjs/index.d.ts"]
     }
   },
   "include": ["src"],

@@ -397,7 +397,7 @@ If you encounter any unexpected behavior:
 
 1. Check the browser console for errors
 2. Verify all dependencies are installed (`npm install`)
-3. Ensure you're using Node.js 18+ (`node --version`)
+3. Ensure you're using Node.js 22+ (`node --version`)
 4. Clear browser cache and localStorage
 5. Try incognito/private mode to rule out extension conflicts
 

@@ -1,0 +1,48 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    // ESM emit (PR #203 R4 — fixes architect-reviewer Critical):
+    //   The ESM build must be importable by Node-native ESM consumers
+    //   (i.e., `import('@lfmt/shared-types')` from a Node 22 process,
+    //   not just via a bundler). Node-native ESM does NOT probe file
+    //   extensions, so the previous combination of `module: ESNext` +
+    //   `moduleResolution: node` emitted bare `from './jobs'` imports
+    //   that failed at runtime with ERR_MODULE_NOT_FOUND.
+    //
+    //   Why `module: ESNext` + `moduleResolution: bundler` (vs the
+    //   apparently-canonical `node16` + `node16`):
+    //     - `node16` decides ESM-vs-CJS per source file by walking up
+    //       to the nearest enclosing `package.json` and reading its
+    //       `type` field. The parent `shared-types/package.json`
+    //       deliberately has no top-level `"type"` (the package's
+    //       primary identity stays CJS for backend Lambda compat),
+    //       so `node16` would conclude every `.ts` file in `src/` is
+    //       CJS and silently emit CJS into `dist/esm/`. Pre-creating
+    //       `dist/esm/package.json` does NOT help because the walk-up
+    //       starts from each SOURCE file, not the output file.
+    //     - `module: ESNext` forces real ESM emit unconditionally,
+    //       sidestepping the package.json walk-up entirely.
+    //     - `moduleResolution: bundler` (TS 5.x+) is the matching
+    //       resolver: it preserves explicit `.js` extensions verbatim
+    //       in the output and accepts ESM emit. `bundler` does NOT
+    //       enforce `.js` extensions in the SOURCE the way `node16`
+    //       would — that drift guard lives in the dual-package
+    //       contract test (`src/__tests__/dual-package.test.ts`),
+    //       which spawns a Node-native `import()` against
+    //       `dist/esm/index.js` and fails with ERR_MODULE_NOT_FOUND
+    //       if anyone removes a `.js` extension from a relative
+    //       import. Test-as-contract is sufficient and avoids the
+    //       config gymnastics of forcing `node16` to lie about the
+    //       parent package.json type.
+    //
+    //   The base `tsconfig.json` (CJS build) under `module: commonjs`
+    //   happily accepts the same `.js`-suffixed imports, stripping
+    //   them as needed — so the source compiles cleanly under both
+    //   targets without divergence.
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "outDir": "./dist/esm",
+    "declaration": true,
+    "declarationMap": true
+  }
+}

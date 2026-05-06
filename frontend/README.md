@@ -37,7 +37,7 @@ frontend/
 
 ### Prerequisites
 
-- Node.js 18+ and npm 9+
+- Node.js 22+ and npm 10+
 - Backend API running at https://8brwlwf68h.execute-api.us-east-1.amazonaws.com/v1/
 
 ### Getting Started
