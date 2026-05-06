@@ -167,6 +167,18 @@ test.describe('Production Smoke Tests @smoke', () => {
     // approach used by every other E2E spec — see complete-workflow.spec.ts,
     // translation-progress.spec.ts).  We then assert the URL and wait for the
     // wizard heading ("New Translation") which is unique to that route.
+    //
+    // The page object is instantiated here, BEFORE the navigation step that
+    // uses it. PR #202 introduced `uploadPage.goto()` in the navigation step
+    // closure but left the `const uploadPage = ...` declaration further down
+    // (alongside the wizard step blocks). The closure executes asynchronously,
+    // hits the Temporal Dead Zone, and throws
+    // `ReferenceError: Cannot access 'uploadPage' before initialization`.
+    // The bug was masked by earlier failure modes (CJS analysis blocked the
+    // bundle from loading, the navigation step never executed) until PR #203
+    // resolved them; the TDZ then surfaced on the first deploy run after #203.
+    const uploadPage = new TranslationUploadPage(page);
+
     await test.step('User can navigate to upload page', async () => {
       await uploadPage.goto();
       await expect(page).toHaveURL(/translation\/upload/i, { timeout: 10000 });
@@ -189,7 +201,6 @@ test.describe('Production Smoke Tests @smoke', () => {
     // (PR #184 review follow-up) so wizard navigation lives in exactly one
     // place. The smoke test still owns its `test.step()` framing and its
     // post-submit translation-completion polling.
-    const uploadPage = new TranslationUploadPage(page);
 
     // Step 3a: Complete legal attestation (wizard step 0)
     await test.step('Complete legal attestation step', async () => {
