@@ -46,7 +46,7 @@ High-level capability map (detailed status in PROGRESS.md):
 
 - **Infrastructure**: AWS CDK v2 (TypeScript)
 - **Compute**:
-  - AWS Lambda (Node.js 22, ARM64 for 20% cost savings)
+  - AWS Lambda (Node.js 22, ARM64 / Graviton). Cost win is uniform — every billed millisecond is ~20% cheaper than x86_64. Wall-clock perf win is bimodal: `chunkDocument` (CPU-bound `gpt-tokenizer` hot loops) sees 10–15% faster execution on Graviton, user-visible as 5–15s saved on a 400K-word document; `translateChunk` is network-dominated by the Gemini API call so the wall-clock delta is <2%, but the cost reduction still applies on every billed ms.
   - ECS Fargate (planned for long-running translation jobs)
 - **API**: API Gateway REST API with JWT authorizers
 - **Database**: DynamoDB (on-demand billing)
