@@ -1,6 +1,6 @@
 // Document Processing Types - From Document 4 (Document Chunking Engine)
 import { z } from 'zod';
-import { fileSizeSchema } from './validation';
+import { fileSizeSchema } from './validation.js';
 
 // Document Chunking
 export interface DocumentChunk {

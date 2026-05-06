@@ -18,10 +18,10 @@
     "dist"
   ],
   "scripts": {
-    "build": "npm run build:cjs && npm run build:esm && npm run build:postprocess",
+    "build": "npm run build:prepare && npm run build:cjs && npm run build:esm",
+    "build:prepare": "node scripts/write-format-package-jsons.cjs",
     "build:cjs": "tsc -p tsconfig.json",
     "build:esm": "tsc -p tsconfig.esm.json",
-    "build:postprocess": "node scripts/write-format-package-jsons.cjs",
     "watch": "tsc --watch",
     "test": "jest",
     "lint": "eslint src/**/*.ts",
@@ -41,14 +41,11 @@
     "jest": "^29.0.0",
     "@types/jest": "^29.0.0",
     "ts-jest": "^29.0.0",
-    "eslint": "^8.0.0",
+    "eslint": "^8.56.0",
     "@typescript-eslint/eslint-plugin": "^7.18.0",
     "@typescript-eslint/parser": "^7.18.0"
   },
   "dependencies": {
     "zod": "^3.22.0"
-  },
-  "overrides": {
-    "minimatch": "^9.0.7"
   }
 }
