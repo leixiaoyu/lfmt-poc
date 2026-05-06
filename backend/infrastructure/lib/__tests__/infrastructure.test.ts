@@ -1357,6 +1357,47 @@ describe('LFMT Infrastructure Stack', () => {
     });
   });
 
+  // Helper-Lambda exclusion filter shared by the runtime + architecture
+  // drift guards (PR #203 R4 item 2 — adds LogRetention to the prefix
+  // list per code-reviewer + architect feedback).
+  //
+  // CDK injects Lambdas for its own machinery — S3 auto-delete custom-
+  // resource provider, log-retention setter, BucketNotificationsHandler,
+  // etc. — that do NOT expose CDK-level runtime/architecture knobs and
+  // ship with AWS defaults we cannot influence. Filtering them out keeps
+  // both drift guards focused on the Lambdas that LFMT actually owns.
+  //
+  // Helper-prefix list (extend whenever a new CDK helper class shows up):
+  //   - Custom*                     S3 auto-delete + assorted custom resources
+  //   - BucketNotificationsHandler* S3-event wiring (Python; not Node)
+  //   - LogRetention*               aws-cdk-lib/aws-logs LogRetention setter,
+  //                                 injected when a construct declares
+  //                                 `logRetention:`. Currently only
+  //                                 attached to the dev-only PreSignUp
+  //                                 Lambda; absent in the test stack —
+  //                                 but listed here defensively so any
+  //                                 future addition of `logRetention:` to
+  //                                 a test-visible Lambda doesn't silently
+  //                                 corrupt the drift-guard scope.
+  const isApplicationLambda = (logicalId: string): boolean =>
+    !logicalId.startsWith('Custom')
+    && !logicalId.startsWith('BucketNotificationsHandler')
+    && !logicalId.startsWith('LogRetention');
+
+  // PR #203 R4 item 2: pin exact application-Lambda count instead of a
+  // loose `>= N` floor. Drift guards should fail loudly on ANY headcount
+  // change so additions/removals force a deliberate test update.
+  //
+  // Test environment has 11 application Lambdas (Register, Login,
+  // RefreshToken, ResetPassword, GetCurrentUser, UploadRequest,
+  // UploadComplete, ChunkDocument, TranslateChunk, StartTranslation,
+  // GetTranslationStatus). The dev-only PreSignUp Lambda (12th) is gated
+  // behind `isDev` (stackName.toLowerCase().includes('dev')) and is
+  // absent in the 'test' stackName used by these tests. Update this
+  // constant + the matching count in the dev-synth Round 3 PR body
+  // whenever a Lambda is added or removed.
+  const EXPECTED_APPLICATION_LAMBDA_COUNT = 11;
+
   describe('Lambda Runtime Drift Guard (PR #203 R2)', () => {
     // Regression guard mirroring the CSP/'unsafe-eval' pattern (PR #198):
     //
@@ -1368,37 +1409,34 @@ describe('LFMT Infrastructure Stack', () => {
     // would silently re-introduce an unsupported runtime that AWS will
     // eventually force-migrate.
     //
-    // Both checks below operate on the synthesized CloudFormation template
-    // so they catch ANY Lambda the stack creates — including CDK-managed
-    // helper functions (e.g., log retention) — not just the application
-    // Lambdas defined in lfmt-infrastructure-stack.ts. The runtime contract
-    // applies to all Node-based Lambdas in the stack regardless of origin.
-    //
-    // Note: the BucketNotificationsHandler that CDK injects for S3-event
-    // wiring uses python3.x and is intentionally NOT checked here — it is
-    // not a Node Lambda and AWS manages its lifecycle separately.
+    // Scope (R4 update): APPLICATION Lambdas only — same filter as the
+    // architecture drift guard below. CDK helper Lambdas (Custom*,
+    // BucketNotificationsHandler*, LogRetention*) follow AWS-managed
+    // runtime/architecture defaults we cannot control via CDK props.
 
-    test('All Node.js Lambdas use nodejs22.x runtime', () => {
+    test('All application Node.js Lambdas use nodejs22.x runtime', () => {
       const allLambdas = template.findResources('AWS::Lambda::Function');
-      const nodeLambdas = Object.entries(allLambdas).filter(
-        ([, fn]: [string, any]) => typeof fn.Properties?.Runtime === 'string'
+      const appNodeLambdas = Object.entries(allLambdas).filter(
+        ([logicalId, fn]: [string, any]) =>
+          isApplicationLambda(logicalId)
+          && typeof fn.Properties?.Runtime === 'string'
           && fn.Properties.Runtime.startsWith('nodejs')
       );
 
-      // Sanity check: the stack defines 12 application Lambdas (auth x5,
-      // upload x2, chunking x1, translation x4) plus CDK-managed helpers.
-      // Whatever the exact count, there must be at least the 12 we wrote.
-      expect(nodeLambdas.length).toBeGreaterThanOrEqual(12);
+      // R4: exact-count pin (was `>= 12` — accidentally satisfied by 11
+      // app + 1 CDK helper happening to be Node, which is fragile).
+      expect(appNodeLambdas).toHaveLength(EXPECTED_APPLICATION_LAMBDA_COUNT);
 
-      nodeLambdas.forEach(([logicalId, fn]: [string, any]) => {
-        expect(fn.Properties.Runtime).toBe('nodejs22.x');
+      appNodeLambdas.forEach(([logicalId, fn]: [string, any]) => {
         // Sanity log on the unlikely failure path: name the offending
         // Lambda so CI output points straight at the regression.
         if (fn.Properties.Runtime !== 'nodejs22.x') {
           throw new Error(
-            `Lambda ${logicalId} runtime is ${fn.Properties.Runtime}, expected nodejs22.x`
+            `Application Lambda ${logicalId} runtime is `
+              + `${fn.Properties.Runtime}, expected nodejs22.x`
           );
         }
+        expect(fn.Properties.Runtime).toBe('nodejs22.x');
       });
     });
 
@@ -1425,19 +1463,6 @@ describe('LFMT Infrastructure Stack', () => {
     // definition that omits `architecture` and falls back to x86_64 —
     // would silently regress the ~20% cost saving and the documentation
     // claim in openspec/project.md that the stack runs on Graviton.
-    //
-    // Scope: APPLICATION Lambdas only. CDK injects helper Lambdas for
-    // its own machinery (e.g., S3 auto-delete custom-resource provider,
-    // log-retention setter, BucketNotificationsHandler) which do NOT
-    // expose a CDK-level architecture knob — they ship with AWS defaults
-    // (x86_64 today). Filtering them out keeps the assertion focused on
-    // the Lambdas that LFMT actually owns. Helper detection: any Lambda
-    // logical ID starting with "Custom" or "BucketNotificationsHandler"
-    // is CDK-injected and excluded.
-
-    const isApplicationLambda = (logicalId: string): boolean =>
-      !logicalId.startsWith('Custom')
-      && !logicalId.startsWith('BucketNotificationsHandler');
 
     test('All application Node.js Lambdas declare arm64 architecture', () => {
       const allLambdas = template.findResources('AWS::Lambda::Function');
@@ -1448,13 +1473,10 @@ describe('LFMT Infrastructure Stack', () => {
           && fn.Properties.Runtime.startsWith('nodejs')
       );
 
-      // Sanity check: the test stack defines 11 application Lambdas
-      // (all NodejsFunction; PreSignUp is dev-only and absent in the
-      // 'test' environment). The runtime drift guard uses a 12-Lambda
-      // floor because it runs against synth output that may include
-      // dev-only Lambdas; here we use 10 as a safe lower bound that
-      // still catches mass deletions.
-      expect(appNodeLambdas.length).toBeGreaterThanOrEqual(10);
+      // R4: exact-count pin (was `>= 10`). Same headcount contract as
+      // the runtime drift guard above — see EXPECTED_APPLICATION_LAMBDA_COUNT
+      // comment for the rationale and update protocol.
+      expect(appNodeLambdas).toHaveLength(EXPECTED_APPLICATION_LAMBDA_COUNT);
 
       appNodeLambdas.forEach(([logicalId, fn]: [string, any]) => {
         // CDK serializes Architecture into the `Architectures` array

@@ -30,7 +30,11 @@ module.exports = {
       // Note: Strict type-checking will be fully enforced in Phase 1.1 (TypeScript Strict Mode Migration)
       files: ['**/*.ts'],
       excludedFiles: ['**/*.test.ts', '**/__tests__/**'],
-      extends: ['plugin:@typescript-eslint/recommended-requiring-type-checking'],
+      // PR #203 R4: `recommended-requiring-type-checking` was deprecated in
+      // @typescript-eslint v6 and removed in v8. The canonical replacement
+      // in v7 (which we now pin via ^7.18.0) is `recommended-type-checked`.
+      // Same rule set, future-proof name.
+      extends: ['plugin:@typescript-eslint/recommended-type-checked'],
       parserOptions: {
         project: './tsconfig.json',
         tsconfigRootDir: __dirname,

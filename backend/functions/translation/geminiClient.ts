@@ -12,7 +12,13 @@ import { GoogleGenAI } from '@google/genai';
 // information at compile time and emits no JS reference at runtime, while
 // the constants below use plain string literals (which are exactly the
 // FinishReason enum's runtime values per @google/genai/dist/node/node.d.ts).
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
+//
+// PR #203 R4: removed a stale `eslint-disable-next-line
+// @typescript-eslint/no-unused-vars` directive that suppressed a
+// v6-era false positive. `@typescript-eslint v7` correctly recognises
+// `import type` consumed as a type annotation (line ~463 below) as
+// "used", so the disable is now reported as unused-disable and was
+// itself a lint error.
 import type { FinishReason } from '@google/genai';
 import {
   SecretsManagerClient,
