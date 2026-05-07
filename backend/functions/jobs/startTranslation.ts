@@ -13,7 +13,7 @@ import {
 } from '@aws-sdk/client-dynamodb';
 import { SFNClient, StartExecutionCommand, StartExecutionCommandOutput } from '@aws-sdk/client-sfn';
 import { marshall, unmarshall } from '@aws-sdk/util-dynamodb';
-import { DynamoDBJob } from '@lfmt/shared-types';
+import { DynamoDBJob, TRANSLATION_TONE_VALUES, TranslationTone } from '@lfmt/shared-types';
 import Logger from '../shared/logger';
 import { getRequiredEnv } from '../shared/env';
 import { createSuccessResponse, createErrorResponse } from '../shared/api-response';
@@ -54,7 +54,9 @@ const getStateMachineArn = async (): Promise<string> => {
  */
 interface StartTranslationRequest {
   targetLanguage: string;
-  tone?: 'formal' | 'informal' | 'neutral';
+  // TranslationTone is the canonical type from shared-types — single source
+  // of truth shared with the frontend TONE_OPTIONS selector.
+  tone?: TranslationTone;
   contextChunks?: number;
 }
 
@@ -249,10 +251,13 @@ function validateRequest(body: StartTranslationRequest): {
     };
   }
 
-  if (body.tone && !['formal', 'informal', 'neutral'].includes(body.tone)) {
+  // TRANSLATION_TONE_VALUES is the canonical allowlist from shared-types — the
+  // single source of truth that also types the frontend TONE_OPTIONS selector.
+  // Using it here ensures the backend and UI never drift independently.
+  if (body.tone && !(TRANSLATION_TONE_VALUES as ReadonlyArray<string>).includes(body.tone)) {
     return {
       valid: false,
-      error: `Invalid tone: ${body.tone}. Must be one of: formal, informal, neutral`,
+      error: `Invalid tone: ${body.tone}. Must be one of: ${TRANSLATION_TONE_VALUES.join(', ')}`,
     };
   }
 

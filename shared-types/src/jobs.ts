@@ -5,6 +5,35 @@ import { fileSizeSchema } from './validation.js';
 // Job Status Types
 
 /**
+ * Canonical translation tone type — single source of truth shared between the
+ * frontend tone selector (TranslationConfig.tsx TONE_OPTIONS) and the backend
+ * validation in startTranslation.ts and translateChunk.ts.
+ *
+ * When changing the allowed set of tones:
+ *   1. Update this union.
+ *   2. Update TONE_OPTIONS in frontend/src/components/Translation/TranslationConfig.tsx.
+ *   3. Update the `includes()` guard in startTranslation.ts validateRequest().
+ *   4. Update the `tone?` field type in TranslateChunkEvent (translateChunk.ts).
+ *
+ * The tone contract test (backend/functions/translation/toneContract.test.ts)
+ * enforces that all three sources stay in sync at compile time.
+ */
+export type TranslationTone = 'formal' | 'informal' | 'neutral';
+
+/**
+ * The canonical array of allowed tone values — derived from TranslationTone so
+ * the literal union and this runtime array cannot drift.
+ *
+ * Use this for backend validation (`TRANSLATION_TONE_VALUES.includes(body.tone)`)
+ * instead of inline string arrays so all references stay in sync.
+ */
+export const TRANSLATION_TONE_VALUES: ReadonlyArray<TranslationTone> = [
+  'formal',
+  'informal',
+  'neutral',
+] as const;
+
+/**
  * Legacy chunk-pipeline job status union used by the original spec documents.
  * Retained for historical compatibility; prefer TranslationJobStatus for all
  * new code touching the LFMT translation workflow.
@@ -191,8 +220,8 @@ export interface DynamoDBJob {
   // Translation Metadata
   translationStatus?: 'NOT_STARTED' | 'IN_PROGRESS' | 'COMPLETED' | 'TRANSLATION_FAILED';
   targetLanguage?: string;
-  translationTone?: 'formal' | 'informal' | 'neutral';
-  tone?: 'formal' | 'informal' | 'neutral'; // Alias for translationTone
+  translationTone?: TranslationTone;
+  tone?: TranslationTone; // Alias for translationTone
   translatedChunks?: number;
   tokensUsed?: number;
   estimatedCost?: number;
@@ -312,6 +341,35 @@ export interface DeleteJobApiResponse {
   jobId: string;
   /** Advisory warning when S3 cleanup fails after a successful DDB delete. */
   warning?: string;
+  [key: string]: unknown;
+}
+
+/**
+ * Response body returned by GET /translation/{jobId}/download.
+ *
+ * Note: The actual HTTP response from the Lambda is raw text/plain (not JSON).
+ * This interface documents what metadata would be available if the endpoint
+ * were ever changed to return a JSON envelope. It is NOT currently used by
+ * the runtime path — it exists as a type reference for documentation and
+ * future-proofing.
+ *
+ * @see backend/functions/translation/downloadTranslation.ts
+ */
+export interface DownloadTranslationApiResponse {
+  /** The assembled translated document as plain text. */
+  content: string;
+  /** Suggested filename for the browser download. */
+  filename: string;
+  /** Metadata derived from the job record. */
+  metadata: {
+    sourceLanguage: string;
+    targetLanguage?: string;
+    tone?: TranslationTone;
+    completedAt?: string;
+    totalChunks: number;
+    tokensUsed?: number;
+    estimatedCost?: number;
+  };
   [key: string]: unknown;
 }
 
