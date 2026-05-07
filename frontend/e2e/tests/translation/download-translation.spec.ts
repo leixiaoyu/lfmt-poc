@@ -191,8 +191,9 @@ test.describe('Translation Download Workflow', () => {
     const jobIdMatch = currentUrl.match(/\/translation\/([a-f0-9-]+)/);
     const jobId = jobIdMatch![1];
 
-    // Intercept download request and force it to fail
-    await page.route(`**/v1/translation/jobs/${jobId}/download`, (route) => {
+    // Intercept the download request and force it to fail.
+    // Route is /jobs/{jobId}/download (not /translation/jobs/{jobId}/download).
+    await page.route(`**/v1/jobs/${jobId}/download`, (route) => {
       route.fulfill({
         status: 500,
         body: JSON.stringify({ error: 'Download failed' }),
@@ -202,17 +203,14 @@ test.describe('Translation Download Workflow', () => {
     // Try to download (should fail)
     const downloadButton = page.locator('button:has-text("Download Translation")');
 
-    // Wait for COMPLETED status or timeout
-    try {
-      await detailPage.waitForStatus('COMPLETED', 30000);
+    // Wait for COMPLETED status or timeout — assertion failures must NOT be
+    // swallowed here so test failures are visible in CI.
+    await detailPage.waitForStatus('COMPLETED', 30000);
 
-      await downloadButton.click();
+    await downloadButton.click();
 
-      // Wait for error message
-      await expect(page.locator('text=/failed to download/i')).toBeVisible({ timeout: 5000 });
-    } catch (e) {
-      // console.log('Could not test download error - job not completed');
-    }
+    // Wait for error message
+    await expect(page.locator('text=/failed to download/i')).toBeVisible({ timeout: 5000 });
   });
 
   test('should allow re-downloading the same file multiple times', async ({ page }) => {

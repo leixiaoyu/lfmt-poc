@@ -87,12 +87,16 @@ export class LfmtInfrastructureStack extends Stack {
   private getTranslationStatusFunction?: lambda.Function;
   private getJobFunction?: lambda.Function;
   private deleteJobFunction?: lambda.Function;
+  private downloadTranslationFunction?: lambda.Function;
 
   // IAM role for Lambda functions
   private lambdaRole?: iam.Role;
   // Dedicated role for the delete-job Lambda — isolated from translationRole so
   // that only this one function gets DeleteItem + s3:DeleteObject permissions.
   private deleteJobRole?: iam.Role;
+  // Dedicated role for the download-translation Lambda — scoped to GetItem on
+  // JobsTable and GetObject on the translated/* prefix only.
+  private downloadTranslationRole?: iam.Role;
 
   // Step Functions state machine
   public readonly translationStateMachine: stepfunctions.StateMachine;
@@ -127,6 +131,34 @@ export class LfmtInfrastructureStack extends Stack {
     }
 
     return origins;
+  }
+
+  /**
+   * Return a consistent CORS preflight options object for a new API Gateway resource.
+   *
+   * The allowed-headers list and allowCredentials flag are identical across all
+   * protected endpoints; only the HTTP methods differ (POST for mutating resources,
+   * GET for read endpoints). Centralising them here prevents the three lines of
+   * headers drifting independently (OMC review #9).
+   */
+  private corsPreflightOptions(
+    primaryMethod: 'GET' | 'POST' | 'DELETE' | 'PUT'
+  ): apigateway.ResourceOptions {
+    return {
+      defaultCorsPreflightOptions: {
+        allowOrigins: this.getAllowedApiOrigins(),
+        allowMethods: [primaryMethod, 'OPTIONS'],
+        allowHeaders: [
+          'Content-Type',
+          'X-Amz-Date',
+          'Authorization',
+          'X-Api-Key',
+          'X-Amz-Security-Token',
+          'X-Request-ID',
+        ],
+        allowCredentials: true,
+      },
+    };
   }
 
   constructor(scope: Construct, id: string, props: LfmtInfrastructureStackProps) {
@@ -889,6 +921,55 @@ export class LfmtInfrastructureStack extends Stack {
       ],
     });
 
+    // ===================================================================
+    // Role 6: Download Translation Lambda Function Role (isolated, minimal permissions)
+    //
+    // This role is EXCLUSIVELY for the download-translation Lambda.  It is
+    // separate from translationRole because translationRole is shared across
+    // ~5 Lambdas and grants broad S3 access (GetObject, PutObject, DeleteObject)
+    // on the entire bucket.  The download Lambda only needs:
+    //   - dynamodb:GetItem on JobsTable (ownership check via loadJobForUser)
+    //   - s3:GetObject on documentBucket/translated/* (read translated chunks)
+    //   - s3:ListBucket on documentBucket (enumerate chunks for assembly)
+    //   - CloudWatch Logs write (via AWSLambdaBasicExecutionRole)
+    //
+    // Scoping to the translated/* prefix prevents this function from reading
+    // source documents (uploads/, documents/) or chunk metadata (chunks/).
+    // ===================================================================
+    this.downloadTranslationRole = new iam.Role(this, 'DownloadTranslationLambdaRole', {
+      assumedBy: new iam.ServicePrincipal('lambda.amazonaws.com'),
+      description: 'Isolated execution role for download-translation Lambda — read-only access to translated chunks and job ownership check',
+      managedPolicies: [
+        iam.ManagedPolicy.fromAwsManagedPolicyName('service-role/AWSLambdaBasicExecutionRole'),
+      ],
+    });
+
+    new iam.ManagedPolicy(this, 'DownloadTranslationPolicy', {
+      roles: [this.downloadTranslationRole],
+      statements: [
+        // DynamoDB: GetItem on JobsTable only (ownership check via loadJobForUser)
+        new iam.PolicyStatement({
+          effect: iam.Effect.ALLOW,
+          actions: ['dynamodb:GetItem'],
+          resources: [this.jobsTable.tableArn],
+        }),
+        // S3: GetObject scoped to the translated/* prefix (translated chunks only)
+        new iam.PolicyStatement({
+          effect: iam.Effect.ALLOW,
+          actions: ['s3:GetObject'],
+          resources: [`${this.documentBucket.bucketArn}/translated/*`],
+        }),
+        // S3: ListBucket needed for ListObjectsV2 to enumerate chunks under the prefix.
+        // Scoped to the bucket ARN (resource-level condition for prefix is on the key,
+        // not the bucket ARN, so the bucket-level permission must be bucket-scoped).
+        new iam.PolicyStatement({
+          effect: iam.Effect.ALLOW,
+          actions: ['s3:ListBucket'],
+          resources: [this.documentBucket.bucketArn],
+        }),
+      ],
+    });
+
     // Step Functions Execution Role
     // SECURITY: Changed wildcard to specific function (only translate-chunk is invoked by Step Functions)
     const stepFunctionsRole = new iam.Role(this, 'StepFunctionsExecutionRole', {
@@ -1233,6 +1314,28 @@ export class LfmtInfrastructureStack extends Stack {
       description: 'Delete a job record and cascade S3 cleanup (authenticated owner only)',
       role: this.deleteJobRole,
       environment: commonEnv,
+    });
+
+    // Download Translation Lambda Function — GET /translation/{jobId}/download
+    // Assembles translated chunks from S3 and returns the full document as
+    // a raw text/plain response so the frontend can stream it to a Blob download.
+    //
+    // Uses DEDICATED role (downloadTranslationRole, Role 6) with read-only access
+    // to translated/* on the document bucket and GetItem on the jobs table.
+    // Using translationRole here would grant PutObject / DeleteObject on the
+    // full bucket — unnecessary for a read-only operation.
+    if (!this.downloadTranslationRole) {
+      throw new Error('downloadTranslationRole must be created before createLambdaFunctions');
+    }
+    this.downloadTranslationFunction = this.createJobLambda({
+      id: 'DownloadTranslationFunction',
+      functionName: `lfmt-download-translation-${this.stackName}`,
+      entry: '../functions/translation/downloadTranslation.ts',
+      description: 'Assemble translated chunks and return full document for download',
+      role: this.downloadTranslationRole,
+      environment: commonEnv,
+      timeoutSeconds: 60, // Large documents (400K words) may need time to fetch and concatenate chunks
+      memoryMB: 512,      // Buffer for concatenating many chunk strings in memory
     });
 
     // Add S3 event notification for upload completion
@@ -1670,7 +1773,9 @@ export class LfmtInfrastructureStack extends Stack {
       !this.getTranslationStatusFunction ||
       !this.getJobFunction ||
       !this.deleteJobFunction ||
-      !this.deleteJobRole
+      !this.deleteJobRole ||
+      !this.downloadTranslationFunction ||
+      !this.downloadTranslationRole
     ) {
       throw new Error('Lambda functions and roles must be created before API endpoints');
     }
@@ -1752,21 +1857,7 @@ export class LfmtInfrastructureStack extends Stack {
 
     // POST /jobs/upload - Request Upload URL (requires authentication)
     const jobsResource = this.api.root.resourceForPath('jobs');
-    const uploadResource = jobsResource.addResource('upload', {
-      defaultCorsPreflightOptions: {
-        allowOrigins: this.getAllowedApiOrigins(),
-        allowMethods: ['POST', 'OPTIONS'],
-        allowHeaders: [
-          'Content-Type',
-          'X-Amz-Date',
-          'Authorization',
-          'X-Api-Key',
-          'X-Amz-Security-Token',
-          'X-Request-ID',
-        ],
-        allowCredentials: true,
-      },
-    });
+    const uploadResource = jobsResource.addResource('upload', this.corsPreflightOptions('POST'));
 
     uploadResource.addMethod('POST', new apigateway.LambdaIntegration(this.uploadRequestFunction), {
       authorizationType: apigateway.AuthorizationType.COGNITO,
@@ -1783,21 +1874,10 @@ export class LfmtInfrastructureStack extends Stack {
     // Use existing /jobs/{jobId} resource created in createApiGateway()
     const jobResource = jobsResource.resourceForPath('{jobId}');
 
-    const translateResource = jobResource.addResource('translate', {
-      defaultCorsPreflightOptions: {
-        allowOrigins: this.getAllowedApiOrigins(),
-        allowMethods: ['POST', 'OPTIONS'],
-        allowHeaders: [
-          'Content-Type',
-          'X-Amz-Date',
-          'Authorization',
-          'X-Api-Key',
-          'X-Amz-Security-Token',
-          'X-Request-ID',
-        ],
-        allowCredentials: true,
-      },
-    });
+    const translateResource = jobResource.addResource(
+      'translate',
+      this.corsPreflightOptions('POST')
+    );
     translateResource.addMethod('POST', new apigateway.LambdaIntegration(this.startTranslationFunction), {
       authorizationType: apigateway.AuthorizationType.COGNITO,
       authorizer: authorizer,
@@ -1810,21 +1890,10 @@ export class LfmtInfrastructureStack extends Stack {
     });
 
     // GET /jobs/{jobId}/translation-status - Get Translation Status (requires authentication)
-    const translationStatusResource = jobResource.addResource('translation-status', {
-      defaultCorsPreflightOptions: {
-        allowOrigins: this.getAllowedApiOrigins(),
-        allowMethods: ['GET', 'OPTIONS'],
-        allowHeaders: [
-          'Content-Type',
-          'X-Amz-Date',
-          'Authorization',
-          'X-Api-Key',
-          'X-Amz-Security-Token',
-          'X-Request-ID',
-        ],
-        allowCredentials: true,
-      },
-    });
+    const translationStatusResource = jobResource.addResource(
+      'translation-status',
+      this.corsPreflightOptions('GET')
+    );
     translationStatusResource.addMethod('GET', new apigateway.LambdaIntegration(this.getTranslationStatusFunction), {
       authorizationType: apigateway.AuthorizationType.COGNITO,
       authorizer: authorizer,
@@ -1844,6 +1913,23 @@ export class LfmtInfrastructureStack extends Stack {
       authorizationType: apigateway.AuthorizationType.COGNITO,
       authorizer: authorizer,
     });
+
+    // GET /jobs/{jobId}/download — Download translated document (requires authentication)
+    //
+    // Nested under the existing /jobs/{jobId} resource to be consistent with the
+    // other job-scoped endpoints: /jobs/{jobId}/translate, /jobs/{jobId}/translation-status,
+    // GET /jobs/{jobId}. A separate /translation root was used initially but was moved
+    // here (OMC review #4) to avoid a degenerate parallel resource hierarchy.
+    const downloadResource = jobResource.addResource('download', this.corsPreflightOptions('GET'));
+
+    downloadResource.addMethod(
+      'GET',
+      new apigateway.LambdaIntegration(this.downloadTranslationFunction),
+      {
+        authorizationType: apigateway.AuthorizationType.COGNITO,
+        authorizer: authorizer,
+      }
+    );
 
     // Add Gateway Responses to include CORS headers on errors
     // Note: Gateway Response headers must be static strings, cannot use dynamic origins

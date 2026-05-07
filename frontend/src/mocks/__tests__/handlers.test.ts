@@ -322,7 +322,7 @@ describe('Translation pipeline (msw/node)', () => {
     expect(hist.data[0].jobId).toBe(jobId);
 
     // 6. download
-    const dl = await fetch(`${API_URL}/translation/${jobId}/download`);
+    const dl = await fetch(`${API_URL}/jobs/${jobId}/download`);
     expect(dl.status).toBe(200);
     const text = await dl.text();
     expect(text).toContain('[MOCK TRANSLATION COMPLETE]');

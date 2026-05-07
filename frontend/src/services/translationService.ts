@@ -344,7 +344,7 @@ export const getTranslationJobs = async (): Promise<TranslationJob[]> => {
  */
 export const downloadTranslation = async (jobId: string): Promise<Blob> => {
   try {
-    const response = await apiClient.get(`/translation/${jobId}/download`, {
+    const response = await apiClient.get(`/jobs/${jobId}/download`, {
       responseType: 'blob',
     });
 

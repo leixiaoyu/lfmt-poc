@@ -16,3 +16,9 @@ enough to exercise upload, chunking, translation, and completion without
 burning provider budget or flaking on slow days. If you need to test the
 large-document path, use the full-size fixtures under demo/test-documents/
 or the backend performance benchmark in backend/tests/performance/.
+
+Good translation preserves the original voice, cultural nuances, and the
+logical flow of arguments. A skilled translator does not merely map words;
+they reconstruct the author's intent in the target language with fidelity
+and fluency. This final paragraph brings the fixture above the 1 KB minimum
+required by the backend fileSizeSchema validator (MIN_FILE_SIZE = 1000 bytes).

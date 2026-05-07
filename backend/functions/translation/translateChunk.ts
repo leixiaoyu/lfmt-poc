@@ -21,6 +21,7 @@ import { GeminiClient } from './geminiClient';
 import { DistributedRateLimiter } from '../shared/distributedRateLimiter';
 import { GEMINI_RATE_LIMITS, RateLimitType, RateLimitError } from '../shared/types/rateLimiting';
 import { TranslationOptions, TranslationContext, GeminiApiError } from './types';
+import type { TranslationTone } from '@lfmt/shared-types';
 import Logger from '../shared/logger';
 import { getRequiredEnv } from '../shared/env';
 import { countTokens } from '../shared/tokenizer';
@@ -68,7 +69,9 @@ export interface TranslateChunkEvent {
   userId: string;
   chunkIndex: number;
   targetLanguage: string;
-  tone?: 'formal' | 'informal' | 'neutral';
+  // TranslationTone is the canonical union from shared-types — single source
+  // of truth shared with the frontend TONE_OPTIONS and startTranslation.ts.
+  tone?: TranslationTone;
   contextChunks?: number; // Number of previous chunks to use as context (default: 2)
 }
 

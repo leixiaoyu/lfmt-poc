@@ -761,7 +761,7 @@ describe('TranslationService - downloadTranslation', () => {
       // Assert
       expect(mockedApiClient.get).toHaveBeenCalledTimes(1);
       expect(mockedApiClient.get).toHaveBeenCalledWith(
-        expect.stringContaining(`/translation/${jobId}/download`),
+        expect.stringContaining(`/jobs/${jobId}/download`),
         expect.objectContaining({
           responseType: 'blob',
         })
@@ -792,6 +792,30 @@ describe('TranslationService - downloadTranslation', () => {
       // Act & Assert
       await expect(downloadTranslation(jobId)).rejects.toThrow(
         'Translation not available for download'
+      );
+    });
+
+    it('should throw error on 409 Translation Not Yet Complete (OMC #17)', async () => {
+      // Arrange — 409 means job exists but is IN_PROGRESS / not yet downloadable.
+      // The frontend must surface this to the user rather than swallowing it.
+      const jobId = 'job-still-in-progress';
+
+      const mockError = {
+        isAxiosError: true,
+        response: {
+          status: 409,
+          data: {
+            message: 'Translation not yet complete; current status: IN_PROGRESS',
+          },
+        },
+        message: 'Conflict',
+      } as AxiosError;
+
+      mockedApiClient.get.mockRejectedValueOnce(mockError);
+
+      // Act & Assert
+      await expect(downloadTranslation(jobId)).rejects.toThrow(
+        'Translation not yet complete; current status: IN_PROGRESS'
       );
     });
   });

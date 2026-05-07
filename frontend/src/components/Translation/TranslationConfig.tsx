@@ -17,6 +17,7 @@ import {
   Paper,
   SelectChangeEvent,
 } from '@mui/material';
+import { TRANSLATION_TONE_VALUES, type TranslationTone } from '@lfmt/shared-types';
 
 // LANGUAGE_OPTIONS / TONE_OPTIONS are exported as the canonical source of
 // truth for both (a) the dropdown rendered below AND (b) the read-only
@@ -43,15 +44,31 @@ export const LANGUAGE_OPTIONS = [
   { value: 'zh', label: 'Chinese (中文)' },
 ] as const;
 
+/**
+ * Human-readable metadata for each tone — ordered for UI display.
+ * The value field is constrained to TranslationTone (from shared-types) so
+ * TypeScript raises a compile error if a value is added here that isn't in
+ * TRANSLATION_TONE_VALUES, or if TRANSLATION_TONE_VALUES drops a value that
+ * still exists here (OMC review #5 — single source of truth).
+ */
+const TONE_METADATA: Record<TranslationTone, { label: string; description: string }> = {
+  formal: { label: 'Formal', description: 'Professional and respectful language' },
+  neutral: { label: 'Neutral', description: 'Balanced and standard language' },
+  informal: { label: 'Informal', description: 'Casual and conversational language' },
+};
+
+// Derive TONE_OPTIONS from TRANSLATION_TONE_VALUES so the allowed set of tones
+// is always in sync with the backend validator. Adding a tone to shared-types
+// automatically makes it available here; removing one causes a compile error
+// at the TONE_METADATA lookup above — no silent drift possible.
 // eslint-disable-next-line react-refresh/only-export-components
-export const TONE_OPTIONS = [
-  { value: 'formal', label: 'Formal', description: 'Professional and respectful language' },
-  { value: 'neutral', label: 'Neutral', description: 'Balanced and standard language' },
-  { value: 'informal', label: 'Informal', description: 'Casual and conversational language' },
-] as const;
+export const TONE_OPTIONS = TRANSLATION_TONE_VALUES.map((value) => ({
+  value,
+  ...TONE_METADATA[value],
+}));
 
 export type LanguageCode = (typeof LANGUAGE_OPTIONS)[number]['value'];
-export type ToneCode = (typeof TONE_OPTIONS)[number]['value'];
+export type ToneCode = TranslationTone;
 
 export interface TranslationConfigData {
   targetLanguage: LanguageCode | '';
