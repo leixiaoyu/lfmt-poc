@@ -26,6 +26,40 @@ module.exports = {
   },
   overrides: [
     {
+      // All test files: relax no-explicit-any only.
+      //
+      // `no-explicit-any` is turned OFF rather than 'warn' because the CI lint
+      // script runs with --max-warnings 0, so 'warn' would block CI just as
+      // 'error' would. The trade-off: developers see no editor signal for new
+      // `any` introduced in test code. Mitigation: PRs that introduce new `any`
+      // in test files should be questioned in review (this comment is the
+      // documented reminder). The cast patterns here are genuinely unavoidable:
+      //   - aws-sdk-client-mock resolves with raw DynamoDB attribute maps
+      //     ({S: '...', N: '...'}) that don't match the SDK return types.
+      //   - Partial APIGatewayProxyEvent mocks require `as any` because
+      //     supplying every optional field would bloat the test fixtures.
+      files: ['**/*.test.ts', '**/__tests__/**/*.ts'],
+      rules: {
+        '@typescript-eslint/no-explicit-any': 'off',
+      },
+    },
+    {
+      // Smoke and integration tests only: also disable no-console.
+      //
+      // Smoke/integration tests deliberately emit console output (✓/✗ progress
+      // lines) so CI logs show which steps passed. These are load-bearing
+      // diagnostics, not debug leftovers. Unit tests do NOT get this exemption —
+      // they should use the structured Logger or Jest's built-in output instead.
+      files: [
+        '**/tests/smoke/**/*.ts',
+        '**/tests/integration/**/*.ts',
+        '**/__tests__/integration/**/*.ts',
+      ],
+      rules: {
+        'no-console': 'off',
+      },
+    },
+    {
       // Apply type-checking rules only to non-test files
       // Note: Strict type-checking will be fully enforced in Phase 1.1 (TypeScript Strict Mode Migration)
       files: ['**/*.ts'],

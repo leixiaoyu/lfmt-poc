@@ -62,11 +62,15 @@ class Logger {
       ...context,
     };
 
-    // Use console.error for ERROR/WARN, console.log for others
-    // This ensures errors show up in CloudWatch error metrics
+    // Use console.error for ERROR/WARN, console.log for others.
+    // This ensures errors surface in CloudWatch error metrics. The logger IS
+    // the console abstraction — these two calls are the intentional output
+    // path for the entire Lambda structured-logging layer.
     if (level === LogLevel.ERROR || level === LogLevel.WARN) {
+      // eslint-disable-next-line no-console -- structured logger writes to CloudWatch via console
       console.error(JSON.stringify(logEntry));
     } else {
+      // eslint-disable-next-line no-console -- structured logger writes to CloudWatch via console
       console.log(JSON.stringify(logEntry));
     }
   }

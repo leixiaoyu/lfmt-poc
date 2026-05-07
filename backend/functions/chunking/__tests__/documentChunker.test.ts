@@ -72,6 +72,7 @@ describe('DocumentChunker', () => {
         const tokens = countTokens(chunk.primaryContent);
         expect(tokens).toBeLessThanOrEqual(3500);
         if (tokens > 3500) {
+          // eslint-disable-next-line no-console -- diagnostic: only runs when the assertion above fails
           console.error(`Chunk ${index} exceeds limit: ${tokens} tokens`);
         }
       });

@@ -452,12 +452,119 @@ describe('LFMT Infrastructure Stack', () => {
       expect(allPolicies).not.toContain('dynamodb:Scan');
     });
 
-    test('No dynamodb:DeleteItem in any IAM policy', () => {
-      // Security verification: Ensure dangerous DynamoDB DeleteItem action is not granted
-      // This prevents accidental data deletion and enforces soft-delete patterns
+    test('dynamodb:DeleteItem is scoped only to the dedicated deleteJobRole — translationRole must NOT have it', () => {
+      // OMC security-auditor item #2 (R2):
+      // The delete-job Lambda has its own dedicated IAM role (DeleteJobLambdaRole /
+      // Role 5) so that DeleteItem is isolated to that one function.
+      //
+      // This test enforces three things:
+      // 1. DeleteItem appears at least once (the delete-job policy IS wired)
+      // 2. Every DeleteItem statement resource is the JobsTable ARN — not a
+      //    wildcard and not any other table.  The ARN is a CloudFormation {"Fn::GetAtt"}
+      //    reference whose stringified form contains "JobsTable" in the logical ID.
+      // 3. The TranslationLambdaRole (translationRole) does NOT have DeleteItem —
+      //    if it did, ~5 other Lambdas would silently inherit it.
       const templateJson = template.toJSON();
-      const allPolicies = JSON.stringify(templateJson);
-      expect(allPolicies).not.toContain('dynamodb:DeleteItem');
+      const resources = templateJson.Resources || {};
+
+      type Statement = { Action?: string | string[]; Resource?: unknown; Effect?: string };
+      type PolicyDoc = { Statement?: Statement[] };
+
+      // Helper: collect all IAM statements matching a predicate from the template
+      const collectStatements = (
+        pred: (actions: string[]) => boolean
+      ): Array<{ resource: unknown; sourceLogicalId: string }> => {
+        const found: Array<{ resource: unknown; sourceLogicalId: string }> = [];
+        Object.entries(resources).forEach(([logicalId, resource]) => {
+          const cfn = resource as {
+            Type?: string;
+            Properties?: {
+              Policies?: Array<{ PolicyDocument?: PolicyDoc }>;
+              PolicyDocument?: PolicyDoc;
+            };
+          };
+          const extractFromDoc = (doc: PolicyDoc | undefined) => {
+            if (!doc?.Statement) return;
+            doc.Statement.forEach((stmt) => {
+              const actions = Array.isArray(stmt.Action) ? stmt.Action : [stmt.Action ?? ''];
+              if (pred(actions)) {
+                found.push({ resource: stmt.Resource, sourceLogicalId: logicalId });
+              }
+            });
+          };
+          if (cfn.Type === 'AWS::IAM::Role') {
+            cfn.Properties?.Policies?.forEach((p) => extractFromDoc(p.PolicyDocument));
+          }
+          if (cfn.Type === 'AWS::IAM::Policy' || cfn.Type === 'AWS::IAM::ManagedPolicy') {
+            extractFromDoc(cfn.Properties?.PolicyDocument);
+          }
+        });
+        return found;
+      };
+
+      const isDeleteItem = (actions: string[]) =>
+        actions.some((a) => a === 'dynamodb:DeleteItem' || a === 'dynamodb:*');
+
+      const deleteItemStatements = collectStatements(isDeleteItem);
+
+      // 1. DeleteItem must appear — the delete-job policy is wired
+      expect(deleteItemStatements.length).toBeGreaterThan(0);
+
+      // 2. Every DeleteItem grant must reference the jobs table ARN (not a wildcard,
+      //    not any other table).  In synthesised CloudFormation the ARN is represented
+      //    as {"Fn::GetAtt": ["<JobsTableLogicalId>", "Arn"]} — the logical ID always
+      //    contains "JobsTable" because that's the CDK construct ID used in the stack.
+      deleteItemStatements.forEach(({ resource }) => {
+        const resourceStr = JSON.stringify(resource);
+        // Must not be a wildcard resource
+        expect(resourceStr).not.toBe('"*"');
+        expect(resourceStr).not.toContain('"*"');
+        // Must reference exactly the jobs table (logical ID check — tighter than
+        // the loose /JobsTable/i regex used previously)
+        expect(resourceStr).toMatch(/"JobsTable[A-Za-z0-9]*/);
+      });
+
+      // 3. The TranslationLambdaRole itself must not carry DeleteItem.
+      //    Find the TranslationLambdaRole logical ID, then find every ManagedPolicy /
+      //    Policy that attaches to it, and assert none of those contains DeleteItem.
+      const translationRoleLogicalIds = Object.entries(resources)
+        .filter(([, r]) => {
+          const res = r as { Type?: string; Properties?: { Description?: string } };
+          return (
+            res.Type === 'AWS::IAM::Role' &&
+            res.Properties?.Description?.includes('TranslationLambdaRole') === false &&
+            res.Properties?.Description?.includes('translation Lambda functions') === true
+          );
+        })
+        .map(([lid]) => lid);
+
+      // There should be exactly one TranslationLambdaRole
+      expect(translationRoleLogicalIds).toHaveLength(1);
+      const translationRoleLogicalId = translationRoleLogicalIds[0];
+
+      // Collect all policies that attach to translationRole via Roles property
+      const policiesAttachedToTranslationRole = Object.entries(resources).filter(([, r]) => {
+        const res = r as { Type?: string; Properties?: { Roles?: unknown[] } };
+        if (
+          res.Type !== 'AWS::IAM::ManagedPolicy' &&
+          res.Type !== 'AWS::IAM::Policy'
+        ) return false;
+        const roles = res.Properties?.Roles ?? [];
+        return JSON.stringify(roles).includes(translationRoleLogicalId);
+      });
+
+      // None of those policies should contain DeleteItem
+      policiesAttachedToTranslationRole.forEach(([logicalId, policy]) => {
+        const policyStr = JSON.stringify(policy);
+        expect(policyStr).not.toContain('DeleteItem');
+        // eslint-disable-next-line no-console -- test diagnostic output
+        if (policyStr.includes('DeleteItem')) {
+          console.error(
+            `translationRole policy ${logicalId} unexpectedly contains DeleteItem — ` +
+              'this grants ~5 other Lambdas delete permission!'
+          );
+        }
+      });
     });
 
     test('No dynamodb:* wildcard in any IAM policy', () => {
@@ -1391,12 +1498,12 @@ describe('LFMT Infrastructure Stack', () => {
   // Test environment has 11 application Lambdas (Register, Login,
   // RefreshToken, ResetPassword, GetCurrentUser, UploadRequest,
   // UploadComplete, ChunkDocument, TranslateChunk, StartTranslation,
-  // GetTranslationStatus). The dev-only PreSignUp Lambda (12th) is gated
-  // behind `isDev` (stackName.toLowerCase().includes('dev')) and is
-  // absent in the 'test' stackName used by these tests. Update this
-  // constant + the matching count in the dev-synth Round 3 PR body
-  // whenever a Lambda is added or removed.
-  const EXPECTED_APPLICATION_LAMBDA_COUNT = 11;
+  // GetTranslationStatus, GetJob, DeleteJob). The dev-only PreSignUp Lambda
+  // (14th) is gated behind `isDev` (stackName.toLowerCase().includes('dev'))
+  // and is absent in the 'test' stackName used by these tests. Update this
+  // constant + the matching count in the PR body whenever a Lambda is added
+  // or removed (PR #208: +2 for GetJob + DeleteJob, 11 → 13).
+  const EXPECTED_APPLICATION_LAMBDA_COUNT = 13;
 
   describe('Lambda Runtime Drift Guard (PR #203 R2)', () => {
     // Regression guard mirroring the CSP/'unsafe-eval' pattern (PR #198):
