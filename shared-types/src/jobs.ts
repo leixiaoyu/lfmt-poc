@@ -27,11 +27,11 @@ export type TranslationTone = 'formal' | 'informal' | 'neutral';
  * Use this for backend validation (`TRANSLATION_TONE_VALUES.includes(body.tone)`)
  * instead of inline string arrays so all references stay in sync.
  */
-export const TRANSLATION_TONE_VALUES: ReadonlyArray<TranslationTone> = [
+export const TRANSLATION_TONE_VALUES = [
   'formal',
   'informal',
   'neutral',
-] as const;
+] as const satisfies ReadonlyArray<TranslationTone>;
 
 /**
  * Legacy chunk-pipeline job status union used by the original spec documents.
@@ -345,7 +345,7 @@ export interface DeleteJobApiResponse {
 }
 
 /**
- * Response body returned by GET /translation/{jobId}/download.
+ * Response body returned by GET /jobs/{jobId}/download.
  *
  * Note: The actual HTTP response from the Lambda is raw text/plain (not JSON).
  * This interface documents what metadata would be available if the endpoint
@@ -353,6 +353,7 @@ export interface DeleteJobApiResponse {
  * the runtime path — it exists as a type reference for documentation and
  * future-proofing.
  *
+ * @internal — not part of the public API contract; subject to change without notice.
  * @see backend/functions/translation/downloadTranslation.ts
  */
 export interface DownloadTranslationApiResponse {

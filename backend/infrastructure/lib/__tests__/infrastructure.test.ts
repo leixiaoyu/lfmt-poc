@@ -1636,6 +1636,11 @@ describe('LFMT Infrastructure Stack', () => {
     // Drift guards for the new DownloadTranslation Lambda added in the
     // demo-readiness PR. These mirror the patterns used for GetJob and
     // DeleteJob (PR #208): runtime + architecture + IAM role isolation.
+    //
+    // CDK logical-ID convention: CDK generates PascalCase logical IDs from the
+    // construct `id` string (e.g. 'DownloadTranslationFunction' + hash suffix).
+    // Tests that search for the Lambda by logical ID must use PascalCase patterns,
+    // NOT the kebab-case function name (lfmt-download-translation-*).
 
     test('DownloadTranslationFunction exists with nodejs22.x + arm64', () => {
       template.hasResourceProperties('AWS::Lambda::Function', {
@@ -1731,10 +1736,11 @@ describe('LFMT Infrastructure Stack', () => {
       expect(hasTranslatedPrefixScope).toBe(true);
     });
 
-    test('API Gateway has GET /translation/{jobId}/download route', () => {
+    test('API Gateway has GET /jobs/{jobId}/download route', () => {
       // Verify the API Gateway resource tree contains the download path.
-      // CDK creates one ApiGateway::Resource per path segment; we check that
-      // a resource named 'download' exists and a GET method is registered on it.
+      // The route is /jobs/{jobId}/download (not /translation/{jobId}/download)
+      // to stay consistent with the /jobs/{jobId}/translate and /jobs/{jobId}/translation-status
+      // convention (OMC review #4). CDK creates one ApiGateway::Resource per path segment.
       template.hasResourceProperties('AWS::ApiGateway::Resource', {
         PathPart: 'download',
       });
@@ -1751,7 +1757,7 @@ describe('LFMT Infrastructure Stack', () => {
       expect(downloadGetMethod).toBeDefined();
     });
 
-    test('GET /translation/{jobId}/download method uses COGNITO authorizer', () => {
+    test('GET /jobs/{jobId}/download method uses COGNITO authorizer', () => {
       // The download endpoint must be protected — unauthenticated access would
       // leak translated documents to anyone who knows a jobId.
       const methods = template.findResources('AWS::ApiGateway::Method');

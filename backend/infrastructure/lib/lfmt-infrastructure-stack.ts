@@ -133,6 +133,34 @@ export class LfmtInfrastructureStack extends Stack {
     return origins;
   }
 
+  /**
+   * Return a consistent CORS preflight options object for a new API Gateway resource.
+   *
+   * The allowed-headers list and allowCredentials flag are identical across all
+   * protected endpoints; only the HTTP methods differ (POST for mutating resources,
+   * GET for read endpoints). Centralising them here prevents the three lines of
+   * headers drifting independently (OMC review #9).
+   */
+  private corsPreflightOptions(
+    primaryMethod: 'GET' | 'POST' | 'DELETE' | 'PUT'
+  ): apigateway.ResourceOptions {
+    return {
+      defaultCorsPreflightOptions: {
+        allowOrigins: this.getAllowedApiOrigins(),
+        allowMethods: [primaryMethod, 'OPTIONS'],
+        allowHeaders: [
+          'Content-Type',
+          'X-Amz-Date',
+          'Authorization',
+          'X-Api-Key',
+          'X-Amz-Security-Token',
+          'X-Request-ID',
+        ],
+        allowCredentials: true,
+      },
+    };
+  }
+
   constructor(scope: Construct, id: string, props: LfmtInfrastructureStackProps) {
     super(scope, id, props);
 
@@ -1829,21 +1857,7 @@ export class LfmtInfrastructureStack extends Stack {
 
     // POST /jobs/upload - Request Upload URL (requires authentication)
     const jobsResource = this.api.root.resourceForPath('jobs');
-    const uploadResource = jobsResource.addResource('upload', {
-      defaultCorsPreflightOptions: {
-        allowOrigins: this.getAllowedApiOrigins(),
-        allowMethods: ['POST', 'OPTIONS'],
-        allowHeaders: [
-          'Content-Type',
-          'X-Amz-Date',
-          'Authorization',
-          'X-Api-Key',
-          'X-Amz-Security-Token',
-          'X-Request-ID',
-        ],
-        allowCredentials: true,
-      },
-    });
+    const uploadResource = jobsResource.addResource('upload', this.corsPreflightOptions('POST'));
 
     uploadResource.addMethod('POST', new apigateway.LambdaIntegration(this.uploadRequestFunction), {
       authorizationType: apigateway.AuthorizationType.COGNITO,
@@ -1860,21 +1874,10 @@ export class LfmtInfrastructureStack extends Stack {
     // Use existing /jobs/{jobId} resource created in createApiGateway()
     const jobResource = jobsResource.resourceForPath('{jobId}');
 
-    const translateResource = jobResource.addResource('translate', {
-      defaultCorsPreflightOptions: {
-        allowOrigins: this.getAllowedApiOrigins(),
-        allowMethods: ['POST', 'OPTIONS'],
-        allowHeaders: [
-          'Content-Type',
-          'X-Amz-Date',
-          'Authorization',
-          'X-Api-Key',
-          'X-Amz-Security-Token',
-          'X-Request-ID',
-        ],
-        allowCredentials: true,
-      },
-    });
+    const translateResource = jobResource.addResource(
+      'translate',
+      this.corsPreflightOptions('POST')
+    );
     translateResource.addMethod('POST', new apigateway.LambdaIntegration(this.startTranslationFunction), {
       authorizationType: apigateway.AuthorizationType.COGNITO,
       authorizer: authorizer,
@@ -1887,21 +1890,10 @@ export class LfmtInfrastructureStack extends Stack {
     });
 
     // GET /jobs/{jobId}/translation-status - Get Translation Status (requires authentication)
-    const translationStatusResource = jobResource.addResource('translation-status', {
-      defaultCorsPreflightOptions: {
-        allowOrigins: this.getAllowedApiOrigins(),
-        allowMethods: ['GET', 'OPTIONS'],
-        allowHeaders: [
-          'Content-Type',
-          'X-Amz-Date',
-          'Authorization',
-          'X-Api-Key',
-          'X-Amz-Security-Token',
-          'X-Request-ID',
-        ],
-        allowCredentials: true,
-      },
-    });
+    const translationStatusResource = jobResource.addResource(
+      'translation-status',
+      this.corsPreflightOptions('GET')
+    );
     translationStatusResource.addMethod('GET', new apigateway.LambdaIntegration(this.getTranslationStatusFunction), {
       authorizationType: apigateway.AuthorizationType.COGNITO,
       authorizer: authorizer,
@@ -1922,61 +1914,13 @@ export class LfmtInfrastructureStack extends Stack {
       authorizer: authorizer,
     });
 
-    // GET /translation/{jobId}/download — Download translated document (requires authentication)
+    // GET /jobs/{jobId}/download — Download translated document (requires authentication)
     //
-    // The frontend calls `GET /translation/{jobId}/download` (not /jobs/{jobId}/download)
-    // because the download is a translation-domain operation, not a jobs-domain operation.
-    // We create a new /translation root resource here rather than nesting under /jobs to
-    // match the frontend's URL exactly without requiring a service-layer change.
-    //
-    // Note: createApiGateway() does NOT create a /translation resource, so we add it here.
-    const translationRootResource = this.api.root.addResource('translation', {
-      defaultCorsPreflightOptions: {
-        allowOrigins: this.getAllowedApiOrigins(),
-        allowMethods: ['GET', 'OPTIONS'],
-        allowHeaders: [
-          'Content-Type',
-          'X-Amz-Date',
-          'Authorization',
-          'X-Api-Key',
-          'X-Amz-Security-Token',
-          'X-Request-ID',
-        ],
-        allowCredentials: true,
-      },
-    });
-
-    const translationJobResource = translationRootResource.addResource('{jobId}', {
-      defaultCorsPreflightOptions: {
-        allowOrigins: this.getAllowedApiOrigins(),
-        allowMethods: ['GET', 'OPTIONS'],
-        allowHeaders: [
-          'Content-Type',
-          'X-Amz-Date',
-          'Authorization',
-          'X-Api-Key',
-          'X-Amz-Security-Token',
-          'X-Request-ID',
-        ],
-        allowCredentials: true,
-      },
-    });
-
-    const downloadResource = translationJobResource.addResource('download', {
-      defaultCorsPreflightOptions: {
-        allowOrigins: this.getAllowedApiOrigins(),
-        allowMethods: ['GET', 'OPTIONS'],
-        allowHeaders: [
-          'Content-Type',
-          'X-Amz-Date',
-          'Authorization',
-          'X-Api-Key',
-          'X-Amz-Security-Token',
-          'X-Request-ID',
-        ],
-        allowCredentials: true,
-      },
-    });
+    // Nested under the existing /jobs/{jobId} resource to be consistent with the
+    // other job-scoped endpoints: /jobs/{jobId}/translate, /jobs/{jobId}/translation-status,
+    // GET /jobs/{jobId}. A separate /translation root was used initially but was moved
+    // here (OMC review #4) to avoid a degenerate parallel resource hierarchy.
+    const downloadResource = jobResource.addResource('download', this.corsPreflightOptions('GET'));
 
     downloadResource.addMethod(
       'GET',

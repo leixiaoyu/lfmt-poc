@@ -254,7 +254,7 @@ function validateRequest(body: StartTranslationRequest): {
   // TRANSLATION_TONE_VALUES is the canonical allowlist from shared-types — the
   // single source of truth that also types the frontend TONE_OPTIONS selector.
   // Using it here ensures the backend and UI never drift independently.
-  if (body.tone && !(TRANSLATION_TONE_VALUES as ReadonlyArray<string>).includes(body.tone)) {
+  if (body.tone && !(TRANSLATION_TONE_VALUES as readonly string[]).includes(body.tone)) {
     return {
       valid: false,
       error: `Invalid tone: ${body.tone}. Must be one of: ${TRANSLATION_TONE_VALUES.join(', ')}`,

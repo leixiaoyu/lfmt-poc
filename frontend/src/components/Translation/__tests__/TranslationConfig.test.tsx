@@ -22,9 +22,11 @@ import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom';
 import {
   TranslationConfig,
+  TONE_OPTIONS,
   type TranslationConfigData,
   type TranslationConfigProps,
 } from '../TranslationConfig';
+import { TRANSLATION_TONE_VALUES } from '@lfmt/shared-types';
 import { TRANSLATION_CONFIG_LABEL_PATTERNS as TC } from '../translationConfigLabels';
 
 describe('TranslationConfig', () => {
@@ -571,6 +573,33 @@ describe('TranslationConfig', () => {
     it('tone pattern matches the rendered Translation Tone label', () => {
       render(<TranslationConfig {...defaultProps} />);
       expect(screen.getByLabelText(TC.tone)).toBeInTheDocument();
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // SSoT contract — TONE_OPTIONS values must exactly match TRANSLATION_TONE_VALUES
+  // (OMC review #5 + Critical 2 follow-up: frontend parity with shared-types)
+  // ---------------------------------------------------------------------------
+  describe('TranslationTone SSoT contract', () => {
+    it('TONE_OPTIONS has the same value set as TRANSLATION_TONE_VALUES', () => {
+      const optionValues = TONE_OPTIONS.map((o) => o.value).sort();
+      const canonicalValues = [...TRANSLATION_TONE_VALUES].sort();
+      expect(optionValues).toEqual(canonicalValues);
+    });
+
+    it('TONE_OPTIONS length equals TRANSLATION_TONE_VALUES length (no duplicates)', () => {
+      expect(TONE_OPTIONS.length).toBe(TRANSLATION_TONE_VALUES.length);
+    });
+
+    it('every TONE_OPTIONS entry has a non-empty label and description', () => {
+      TONE_OPTIONS.forEach(({ value, label, description }) => {
+        expect(typeof label).toBe('string');
+        expect(label.length).toBeGreaterThan(0);
+        expect(typeof description).toBe('string');
+        expect(description.length).toBeGreaterThan(0);
+        // value must be in the canonical set
+        expect(TRANSLATION_TONE_VALUES).toContain(value);
+      });
     });
   });
 });

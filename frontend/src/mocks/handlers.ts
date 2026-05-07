@@ -332,7 +332,7 @@ const authHandlers: HttpHandler[] = [
 //   POST /jobs/:jobId/translate                   — kick off translation
 //   GET  /jobs/:jobId/translation-status          — poll progress
 //   GET  /jobs                                    — job history
-//   GET  /translation/:jobId/download             — download translated text
+//   GET  /jobs/:jobId/download                    — download translated text
 //
 // All responses are wrapped in `{ data: T }` to match the existing
 // frontend contract (translationService.ts:175, 190, 203, 214 all
@@ -710,11 +710,11 @@ const translationHandlers: HttpHandler[] = [
     return HttpResponse.json({ data: list }, { status: 200 });
   }),
 
-  // GET /translation/:jobId/download — return simulated translated text.
+  // GET /jobs/:jobId/download — return simulated translated text.
   // The frontend's translationService.downloadTranslation requests
   // `responseType: 'blob'`. MSW returns a body with the right
   // Content-Type and axios will produce a Blob in the browser.
-  http.get(buildPath('/translation/:jobId/download'), ({ params }) => {
+  http.get(buildPath('/jobs/:jobId/download'), ({ params }) => {
     const jobId = String(params.jobId);
     const job = jobs.get(jobId);
     if (!job) {
