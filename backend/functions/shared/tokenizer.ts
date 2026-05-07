@@ -23,8 +23,9 @@ export function countTokens(text: string): number {
     const tokens = encode(text);
     return tokens.length;
   } catch (error) {
-    // Fallback to rough estimation if tokenization fails
-    // Average of ~4 characters per token for English text
+    // Fallback to rough estimation if tokenization fails.
+    // Average of ~4 characters per token for English text.
+    // eslint-disable-next-line no-console -- tokenizer is a stateless utility with no Logger dependency; fallback warning must reach CloudWatch
     console.warn('Token encoding failed, using fallback estimation', error);
     return Math.ceil(text.length / 4);
   }

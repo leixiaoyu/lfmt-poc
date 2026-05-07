@@ -20,10 +20,7 @@ describe('deleteJob endpoint', () => {
   });
 
   /** Build a minimal API Gateway event for DELETE /jobs/{jobId} */
-  const createEvent = (
-    jobId: string,
-    userId = 'user-123'
-  ): Partial<APIGatewayProxyEvent> => ({
+  const createEvent = (jobId: string, userId = 'user-123'): Partial<APIGatewayProxyEvent> => ({
     httpMethod: 'DELETE',
     path: `/jobs/${jobId}`,
     pathParameters: { jobId },

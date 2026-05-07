@@ -1163,10 +1163,17 @@ export class LfmtInfrastructureStack extends Stack {
       },
     });
 
-    // Grant deleteJob the additional DeleteItem permission it needs on the jobs
-    // table.  This is the only function that deletes job records, so keeping the
-    // grant here (rather than on the shared role) limits blast radius.
-    this.jobsTable.grantWriteData(this.deleteJobFunction);
+    // Grant deleteJob exactly the additional DeleteItem permission it needs.
+    // grantWriteData() would also add PutItem/UpdateItem/BatchWriteItem which
+    // are unnecessary here, so we use an explicit addToRolePolicy instead to
+    // stay within the least-privilege principle enforced by the infra tests.
+    this.deleteJobFunction.addToRolePolicy(
+      new iam.PolicyStatement({
+        effect: iam.Effect.ALLOW,
+        actions: ['dynamodb:DeleteItem'],
+        resources: [this.jobsTable.tableArn],
+      })
+    );
 
     // Add S3 event notification for upload completion
     this.documentBucket.addEventNotification(

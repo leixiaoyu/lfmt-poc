@@ -20,10 +20,7 @@ describe('getJob endpoint', () => {
   });
 
   /** Build a minimal API Gateway event for GET /jobs/{jobId} */
-  const createEvent = (
-    jobId: string,
-    userId = 'user-123'
-  ): Partial<APIGatewayProxyEvent> => ({
+  const createEvent = (jobId: string, userId = 'user-123'): Partial<APIGatewayProxyEvent> => ({
     httpMethod: 'GET',
     path: `/jobs/${jobId}`,
     pathParameters: { jobId },

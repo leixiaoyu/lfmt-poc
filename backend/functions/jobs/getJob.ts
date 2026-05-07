@@ -87,7 +87,13 @@ export const handler = async (event: APIGatewayProxyEvent): Promise<APIGatewayPr
     const job = await loadJob(jobId, userId);
 
     if (!job) {
-      return createErrorResponse(404, `Job not found: ${jobId}`, undefined, undefined, requestOrigin);
+      return createErrorResponse(
+        404,
+        `Job not found: ${jobId}`,
+        undefined,
+        undefined,
+        requestOrigin
+      );
     }
 
     const responseBody: GetJobResponse = {

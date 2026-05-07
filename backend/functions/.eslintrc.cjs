@@ -26,6 +26,24 @@ module.exports = {
   },
   overrides: [
     {
+      // Test files: relax rules that produce unavoidable noise in test contexts.
+      //
+      // `no-explicit-any`: aws-sdk-client-mock resolves with raw DynamoDB
+      // attribute maps ({S: '...', N: '...'}) that don't match the SDK return
+      // types; `as any` is the established cast pattern across all existing
+      // test files in this repo. Partial APIGatewayProxyEvent mocks also
+      // require `as any` because every optional field would need a stub.
+      //
+      // `no-console`: smoke and integration tests deliberately emit console
+      // output (✓/✗ progress lines) so CI logs show which steps passed.
+      // These are not debug leftovers — they are load-bearing diagnostics.
+      files: ['**/*.test.ts', '**/__tests__/**/*.ts'],
+      rules: {
+        '@typescript-eslint/no-explicit-any': 'off',
+        'no-console': 'off',
+      },
+    },
+    {
       // Apply type-checking rules only to non-test files
       // Note: Strict type-checking will be fully enforced in Phase 1.1 (TypeScript Strict Mode Migration)
       files: ['**/*.ts'],

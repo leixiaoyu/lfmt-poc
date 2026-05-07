@@ -452,12 +452,54 @@ describe('LFMT Infrastructure Stack', () => {
       expect(allPolicies).not.toContain('dynamodb:Scan');
     });
 
-    test('No dynamodb:DeleteItem in any IAM policy', () => {
-      // Security verification: Ensure dangerous DynamoDB DeleteItem action is not granted
-      // This prevents accidental data deletion and enforces soft-delete patterns
+    test('dynamodb:DeleteItem is scoped only to the jobs table', () => {
+      // Security verification: DeleteItem is intentionally granted to the
+      // delete-job Lambda (DELETE /jobs/{jobId}) so users can remove their own
+      // job records.  The grant is scoped to the jobs table ARN only — it must
+      // NOT appear in any policy that covers a wildcard resource or any table
+      // other than the jobs table.
+      //
+      // Previous assertion ("no DeleteItem anywhere") was tightened here when
+      // the delete-job endpoint was implemented (PR #208).  The replacement
+      // assertion verifies *scoping* rather than *absence*.
       const templateJson = template.toJSON();
-      const allPolicies = JSON.stringify(templateJson);
-      expect(allPolicies).not.toContain('dynamodb:DeleteItem');
+      const resources = templateJson.Resources || {};
+
+      // Collect every IAM statement that contains DeleteItem
+      const deleteItemStatements: Array<{ resource: unknown; effect: string }> = [];
+      Object.values(resources).forEach((resource) => {
+        const cfnResource = resource as {
+          Type?: string;
+          Properties?: {
+            Policies?: Array<{ PolicyDocument?: { Statement?: Array<{ Action?: string | string[]; Resource?: unknown; Effect?: string }> } }>;
+            PolicyDocument?: { Statement?: Array<{ Action?: string | string[]; Resource?: unknown; Effect?: string }> };
+          };
+        };
+        const extractStatements = (doc: { Statement?: Array<{ Action?: string | string[]; Resource?: unknown; Effect?: string }> } | undefined) => {
+          if (!doc?.Statement) return;
+          doc.Statement.forEach((stmt) => {
+            const actions = Array.isArray(stmt.Action) ? stmt.Action : [stmt.Action ?? ''];
+            if (actions.some((a) => a.includes('DeleteItem') || a === 'dynamodb:*')) {
+              deleteItemStatements.push({ resource: stmt.Resource, effect: stmt.Effect ?? 'Allow' });
+            }
+          });
+        };
+        if (cfnResource.Type === 'AWS::IAM::Role' && cfnResource.Properties?.Policies) {
+          cfnResource.Properties.Policies.forEach((p) => extractStatements(p.PolicyDocument));
+        }
+        if (cfnResource.Type === 'AWS::IAM::Policy' || cfnResource.Type === 'AWS::IAM::ManagedPolicy') {
+          extractStatements(cfnResource.Properties?.PolicyDocument);
+        }
+      });
+
+      // Every DeleteItem statement must reference only the jobs table (no wildcards)
+      deleteItemStatements.forEach(({ resource }) => {
+        const resourceStr = JSON.stringify(resource);
+        // Must not be a wildcard
+        expect(resourceStr).not.toContain('"*"');
+        // Must reference the jobs table (by logical ID suffix match)
+        expect(resourceStr).toMatch(/JobsTable/i);
+      });
     });
 
     test('No dynamodb:* wildcard in any IAM policy', () => {
@@ -1391,12 +1433,12 @@ describe('LFMT Infrastructure Stack', () => {
   // Test environment has 11 application Lambdas (Register, Login,
   // RefreshToken, ResetPassword, GetCurrentUser, UploadRequest,
   // UploadComplete, ChunkDocument, TranslateChunk, StartTranslation,
-  // GetTranslationStatus). The dev-only PreSignUp Lambda (12th) is gated
-  // behind `isDev` (stackName.toLowerCase().includes('dev')) and is
-  // absent in the 'test' stackName used by these tests. Update this
-  // constant + the matching count in the dev-synth Round 3 PR body
-  // whenever a Lambda is added or removed.
-  const EXPECTED_APPLICATION_LAMBDA_COUNT = 11;
+  // GetTranslationStatus, GetJob, DeleteJob). The dev-only PreSignUp Lambda
+  // (14th) is gated behind `isDev` (stackName.toLowerCase().includes('dev'))
+  // and is absent in the 'test' stackName used by these tests. Update this
+  // constant + the matching count in the PR body whenever a Lambda is added
+  // or removed (PR #208: +2 for GetJob + DeleteJob, 11 → 13).
+  const EXPECTED_APPLICATION_LAMBDA_COUNT = 13;
 
   describe('Lambda Runtime Drift Guard (PR #203 R2)', () => {
     // Regression guard mirroring the CSP/'unsafe-eval' pattern (PR #198):
