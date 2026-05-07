@@ -11,6 +11,12 @@ import { DynamoDBJob } from '@lfmt/shared-types';
 import Logger from '../shared/logger';
 import { getRequiredEnv } from '../shared/env';
 import { createSuccessResponse, createErrorResponse } from '../shared/api-response';
+// Note: getTranslationStatus does NOT use loadJobForUser from jobRepository.ts.
+// It retains ConsistentRead: true (inline below) because it is polled tightly
+// during an active translation — the UI updates on every poll response, so a
+// stale read could show outdated progress for several hundred milliseconds.
+// getJob.ts and deleteJob.ts use eventually-consistent reads via jobRepository,
+// which is sufficient for their one-shot access patterns.
 
 const logger = new Logger('lfmt-translation-status');
 const dynamoClient = new DynamoDBClient({});

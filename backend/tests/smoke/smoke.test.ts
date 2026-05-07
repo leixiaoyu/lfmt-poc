@@ -515,6 +515,9 @@ describe('Production Smoke Tests', () => {
         authToken
       );
 
+      // Guard: surface the actual status + body if the upload call failed,
+      // instead of crashing with TypeError on the .data.data.jobId access below.
+      expect(uploadResponse.status).toBe(200);
       // Backend wraps the presigned-URL payload: { message, data: { jobId, ... } }
       jobId = uploadResponse.data.data.jobId;
     });
@@ -661,6 +664,9 @@ describe('Production Smoke Tests', () => {
         authToken
       );
 
+      // Guard: surface the actual status + body if the upload call failed,
+      // instead of crashing with TypeError on the .data.data.jobId access below.
+      expect(uploadResponse.status).toBe(200);
       // Backend wraps the presigned-URL payload: { message, data: { jobId, ... } }
       jobId = uploadResponse.data.data.jobId;
     });
@@ -705,6 +711,9 @@ describe('Production Smoke Tests', () => {
         authToken
       );
 
+      // Guard: surface the actual status + body if the upload call failed,
+      // instead of crashing with TypeError on the .data.data.jobId access below.
+      expect(uploadResponse.status).toBe(200);
       // Backend wraps the presigned-URL payload: { message, data: { jobId, ... } }
       const testJobId = uploadResponse.data.data.jobId;
 

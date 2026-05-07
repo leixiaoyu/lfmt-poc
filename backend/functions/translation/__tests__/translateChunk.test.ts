@@ -193,6 +193,7 @@ describe('translateChunk Lambda', () => {
       const result = await handler(event);
 
       if (!result.success) {
+        // eslint-disable-next-line no-console -- diagnostic: surfaces handler error when the assertion below would fail
         console.error('Test failed with error:', result.error);
       }
       expect(result.success).toBe(true);

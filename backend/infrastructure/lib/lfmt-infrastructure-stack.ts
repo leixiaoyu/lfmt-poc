@@ -90,6 +90,9 @@ export class LfmtInfrastructureStack extends Stack {
 
   // IAM role for Lambda functions
   private lambdaRole?: iam.Role;
+  // Dedicated role for the delete-job Lambda — isolated from translationRole so
+  // that only this one function gets DeleteItem + s3:DeleteObject permissions.
+  private deleteJobRole?: iam.Role;
 
   // Step Functions state machine
   public readonly translationStateMachine: stepfunctions.StateMachine;
@@ -843,6 +846,49 @@ export class LfmtInfrastructureStack extends Stack {
     // New deployments should use specific roles (authRole, uploadRole, chunkingRole, translationRole)
     this.lambdaRole = (this as any).translationRole; // Default to most permissive role for backward compatibility
 
+    // ===================================================================
+    // Role 5: Delete Job Lambda Function Role (isolated, minimal permissions)
+    //
+    // This role is EXCLUSIVELY for the delete-job Lambda.  It is separate from
+    // translationRole because translationRole is shared by ~5 Lambdas — adding
+    // DeleteItem to it would grant all of them that permission, defeating the
+    // least-privilege goal stated in the IAM section header above.
+    //
+    // Permissions:
+    //   - dynamodb:GetItem on JobsTable  (already part of the single-round-trip
+    //     conditional delete; DynamoDB's ReturnValues: ALL_OLD also reads the item)
+    //   - dynamodb:DeleteItem on JobsTable
+    //   - s3:DeleteObject on documentBucket/* (S3 cascade cleanup)
+    //   - CloudWatch Logs write  (via AWSLambdaBasicExecutionRole)
+    // ===================================================================
+    this.deleteJobRole = new iam.Role(this, 'DeleteJobLambdaRole', {
+      assumedBy: new iam.ServicePrincipal('lambda.amazonaws.com'),
+      description: 'Isolated execution role for delete-job Lambda — minimal DynamoDB + S3 delete permissions only',
+      managedPolicies: [
+        iam.ManagedPolicy.fromAwsManagedPolicyName('service-role/AWSLambdaBasicExecutionRole'),
+      ],
+    });
+
+    new iam.ManagedPolicy(this, 'DeleteJobPolicy', {
+      roles: [this.deleteJobRole],
+      statements: [
+        // DynamoDB: GetItem (conditional delete reads the item internally via ALL_OLD)
+        // and DeleteItem — scoped to the jobs table only.
+        new iam.PolicyStatement({
+          effect: iam.Effect.ALLOW,
+          actions: ['dynamodb:GetItem', 'dynamodb:DeleteItem'],
+          resources: [this.jobsTable.tableArn],
+        }),
+        // S3: DeleteObject on the document bucket for cascade cleanup of uploaded
+        // files after the job record is removed.  Scoped to prefix-level.
+        new iam.PolicyStatement({
+          effect: iam.Effect.ALLOW,
+          actions: ['s3:DeleteObject'],
+          resources: [`${this.documentBucket.bucketArn}/*`],
+        }),
+      ],
+    });
+
     // Step Functions Execution Role
     // SECURITY: Changed wildcard to specific function (only translate-chunk is invoked by Step Functions)
     const stepFunctionsRole = new iam.Role(this, 'StepFunctionsExecutionRole', {
@@ -857,6 +903,45 @@ export class LfmtInfrastructureStack extends Stack {
             }),
           ],
         }),
+      },
+    });
+  }
+
+  /**
+   * createJobLambda — thin helper to remove repetition in the 13 NodejsFunction
+   * blocks for jobs-related Lambdas.  Each block shares the same bundling config,
+   * runtime, architecture, and environment; only the function-specific opts differ.
+   *
+   * Applied to getJob and deleteJob (the two new Lambdas in PR #208) and
+   * intentionally scoped there to keep churn minimal.  The larger refactor
+   * (applying to all 13 sites) is tracked as Issue #64 (nested stacks).
+   */
+  private createJobLambda(opts: {
+    id: string;
+    functionName: string;
+    entry: string;
+    description: string;
+    role: iam.Role;
+    environment: Record<string, string>;
+    timeoutSeconds?: number;
+    memoryMB?: number;
+  }): NodejsFunction {
+    return new NodejsFunction(this, opts.id, {
+      functionName: opts.functionName,
+      entry: opts.entry,
+      handler: 'handler',
+      runtime: LAMBDA_RUNTIME,
+      architecture: LAMBDA_ARCHITECTURE,
+      role: opts.role,
+      environment: opts.environment,
+      timeout: Duration.seconds(opts.timeoutSeconds ?? 30),
+      memorySize: opts.memoryMB ?? 256,
+      description: opts.description,
+      bundling: {
+        externalModules: ['aws-sdk', '@aws-sdk/*'],
+        minify: true,
+        sourceMap: true,
+        forceDockerBundling: false,
       },
     });
   }
@@ -1120,60 +1205,35 @@ export class LfmtInfrastructureStack extends Stack {
 
     // Get Job Lambda Function — GET /jobs/{jobId}
     // Reads a single job record owned by the authenticated user.
-    // Uses translationRole which already has DynamoDB GetItem on the jobs table.
-    this.getJobFunction = new NodejsFunction(this, 'GetJobFunction', {
+    // Reuses translationRole (already has dynamodb:GetItem on all tables).
+    this.getJobFunction = this.createJobLambda({
+      id: 'GetJobFunction',
       functionName: `lfmt-get-job-${this.stackName}`,
       entry: '../functions/jobs/getJob.ts',
-      handler: 'handler',
-      runtime: LAMBDA_RUNTIME,
-      architecture: LAMBDA_ARCHITECTURE,
+      description: 'Get a job record by ID for the authenticated owner',
       role: translationRole,
       environment: commonEnv,
-      timeout: Duration.seconds(30),
-      memorySize: 256,
-      description: 'Get a job record by ID for the authenticated owner',
-      bundling: {
-        externalModules: ['aws-sdk', '@aws-sdk/*'],
-        minify: true,
-        sourceMap: true,
-        forceDockerBundling: false,
-      },
     });
 
     // Delete Job Lambda Function — DELETE /jobs/{jobId}
-    // Permanently removes a job record owned by the authenticated user.
-    // Needs DynamoDB GetItem (ownership check) + DeleteItem; we add a scoped
-    // inline policy rather than broadening the shared translationRole.
-    this.deleteJobFunction = new NodejsFunction(this, 'DeleteJobFunction', {
+    // Uses a DEDICATED role (deleteJobRole, Role 5) with ONLY the permissions
+    // this function actually needs: dynamodb:GetItem + dynamodb:DeleteItem on the
+    // jobs table, and s3:DeleteObject on the document bucket.
+    //
+    // IMPORTANT: Do NOT use translationRole here.  translationRole is shared
+    // across ~5 Lambda functions; adding DeleteItem to it would grant ALL of them
+    // that permission, defeating least-privilege (OMC security-auditor item #2).
+    if (!this.deleteJobRole) {
+      throw new Error('deleteJobRole must be created before createLambdaFunctions');
+    }
+    this.deleteJobFunction = this.createJobLambda({
+      id: 'DeleteJobFunction',
       functionName: `lfmt-delete-job-${this.stackName}`,
       entry: '../functions/jobs/deleteJob.ts',
-      handler: 'handler',
-      runtime: LAMBDA_RUNTIME,
-      architecture: LAMBDA_ARCHITECTURE,
-      role: translationRole,
+      description: 'Delete a job record and cascade S3 cleanup (authenticated owner only)',
+      role: this.deleteJobRole,
       environment: commonEnv,
-      timeout: Duration.seconds(30),
-      memorySize: 256,
-      description: 'Delete a job record owned by the authenticated user',
-      bundling: {
-        externalModules: ['aws-sdk', '@aws-sdk/*'],
-        minify: true,
-        sourceMap: true,
-        forceDockerBundling: false,
-      },
     });
-
-    // Grant deleteJob exactly the additional DeleteItem permission it needs.
-    // grantWriteData() would also add PutItem/UpdateItem/BatchWriteItem which
-    // are unnecessary here, so we use an explicit addToRolePolicy instead to
-    // stay within the least-privilege principle enforced by the infra tests.
-    this.deleteJobFunction.addToRolePolicy(
-      new iam.PolicyStatement({
-        effect: iam.Effect.ALLOW,
-        actions: ['dynamodb:DeleteItem'],
-        resources: [this.jobsTable.tableArn],
-      })
-    );
 
     // Add S3 event notification for upload completion
     this.documentBucket.addEventNotification(
@@ -1599,8 +1659,20 @@ export class LfmtInfrastructureStack extends Stack {
   }
 
   private createApiEndpoints() {
-    if (!this.registerFunction || !this.loginFunction || !this.refreshTokenFunction || !this.resetPasswordFunction || !this.getCurrentUserFunction || !this.uploadRequestFunction || !this.startTranslationFunction || !this.getTranslationStatusFunction || !this.getJobFunction || !this.deleteJobFunction) {
-      throw new Error('Lambda functions must be created before API endpoints');
+    if (
+      !this.registerFunction ||
+      !this.loginFunction ||
+      !this.refreshTokenFunction ||
+      !this.resetPasswordFunction ||
+      !this.getCurrentUserFunction ||
+      !this.uploadRequestFunction ||
+      !this.startTranslationFunction ||
+      !this.getTranslationStatusFunction ||
+      !this.getJobFunction ||
+      !this.deleteJobFunction ||
+      !this.deleteJobRole
+    ) {
+      throw new Error('Lambda functions and roles must be created before API endpoints');
     }
 
     if (!this.authResource) {

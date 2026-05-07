@@ -452,53 +452,118 @@ describe('LFMT Infrastructure Stack', () => {
       expect(allPolicies).not.toContain('dynamodb:Scan');
     });
 
-    test('dynamodb:DeleteItem is scoped only to the jobs table', () => {
-      // Security verification: DeleteItem is intentionally granted to the
-      // delete-job Lambda (DELETE /jobs/{jobId}) so users can remove their own
-      // job records.  The grant is scoped to the jobs table ARN only — it must
-      // NOT appear in any policy that covers a wildcard resource or any table
-      // other than the jobs table.
+    test('dynamodb:DeleteItem is scoped only to the dedicated deleteJobRole — translationRole must NOT have it', () => {
+      // OMC security-auditor item #2 (R2):
+      // The delete-job Lambda has its own dedicated IAM role (DeleteJobLambdaRole /
+      // Role 5) so that DeleteItem is isolated to that one function.
       //
-      // Previous assertion ("no DeleteItem anywhere") was tightened here when
-      // the delete-job endpoint was implemented (PR #208).  The replacement
-      // assertion verifies *scoping* rather than *absence*.
+      // This test enforces three things:
+      // 1. DeleteItem appears at least once (the delete-job policy IS wired)
+      // 2. Every DeleteItem statement resource is the JobsTable ARN — not a
+      //    wildcard and not any other table.  The ARN is a CloudFormation {"Fn::GetAtt"}
+      //    reference whose stringified form contains "JobsTable" in the logical ID.
+      // 3. The TranslationLambdaRole (translationRole) does NOT have DeleteItem —
+      //    if it did, ~5 other Lambdas would silently inherit it.
       const templateJson = template.toJSON();
       const resources = templateJson.Resources || {};
 
-      // Collect every IAM statement that contains DeleteItem
-      const deleteItemStatements: Array<{ resource: unknown; effect: string }> = [];
-      Object.values(resources).forEach((resource) => {
-        const cfnResource = resource as {
-          Type?: string;
-          Properties?: {
-            Policies?: Array<{ PolicyDocument?: { Statement?: Array<{ Action?: string | string[]; Resource?: unknown; Effect?: string }> } }>;
-            PolicyDocument?: { Statement?: Array<{ Action?: string | string[]; Resource?: unknown; Effect?: string }> };
-          };
-        };
-        const extractStatements = (doc: { Statement?: Array<{ Action?: string | string[]; Resource?: unknown; Effect?: string }> } | undefined) => {
-          if (!doc?.Statement) return;
-          doc.Statement.forEach((stmt) => {
-            const actions = Array.isArray(stmt.Action) ? stmt.Action : [stmt.Action ?? ''];
-            if (actions.some((a) => a.includes('DeleteItem') || a === 'dynamodb:*')) {
-              deleteItemStatements.push({ resource: stmt.Resource, effect: stmt.Effect ?? 'Allow' });
-            }
-          });
-        };
-        if (cfnResource.Type === 'AWS::IAM::Role' && cfnResource.Properties?.Policies) {
-          cfnResource.Properties.Policies.forEach((p) => extractStatements(p.PolicyDocument));
-        }
-        if (cfnResource.Type === 'AWS::IAM::Policy' || cfnResource.Type === 'AWS::IAM::ManagedPolicy') {
-          extractStatements(cfnResource.Properties?.PolicyDocument);
-        }
-      });
+      type Statement = { Action?: string | string[]; Resource?: unknown; Effect?: string };
+      type PolicyDoc = { Statement?: Statement[] };
 
-      // Every DeleteItem statement must reference only the jobs table (no wildcards)
+      // Helper: collect all IAM statements matching a predicate from the template
+      const collectStatements = (
+        pred: (actions: string[]) => boolean
+      ): Array<{ resource: unknown; sourceLogicalId: string }> => {
+        const found: Array<{ resource: unknown; sourceLogicalId: string }> = [];
+        Object.entries(resources).forEach(([logicalId, resource]) => {
+          const cfn = resource as {
+            Type?: string;
+            Properties?: {
+              Policies?: Array<{ PolicyDocument?: PolicyDoc }>;
+              PolicyDocument?: PolicyDoc;
+            };
+          };
+          const extractFromDoc = (doc: PolicyDoc | undefined) => {
+            if (!doc?.Statement) return;
+            doc.Statement.forEach((stmt) => {
+              const actions = Array.isArray(stmt.Action) ? stmt.Action : [stmt.Action ?? ''];
+              if (pred(actions)) {
+                found.push({ resource: stmt.Resource, sourceLogicalId: logicalId });
+              }
+            });
+          };
+          if (cfn.Type === 'AWS::IAM::Role') {
+            cfn.Properties?.Policies?.forEach((p) => extractFromDoc(p.PolicyDocument));
+          }
+          if (cfn.Type === 'AWS::IAM::Policy' || cfn.Type === 'AWS::IAM::ManagedPolicy') {
+            extractFromDoc(cfn.Properties?.PolicyDocument);
+          }
+        });
+        return found;
+      };
+
+      const isDeleteItem = (actions: string[]) =>
+        actions.some((a) => a === 'dynamodb:DeleteItem' || a === 'dynamodb:*');
+
+      const deleteItemStatements = collectStatements(isDeleteItem);
+
+      // 1. DeleteItem must appear — the delete-job policy is wired
+      expect(deleteItemStatements.length).toBeGreaterThan(0);
+
+      // 2. Every DeleteItem grant must reference the jobs table ARN (not a wildcard,
+      //    not any other table).  In synthesised CloudFormation the ARN is represented
+      //    as {"Fn::GetAtt": ["<JobsTableLogicalId>", "Arn"]} — the logical ID always
+      //    contains "JobsTable" because that's the CDK construct ID used in the stack.
       deleteItemStatements.forEach(({ resource }) => {
         const resourceStr = JSON.stringify(resource);
-        // Must not be a wildcard
+        // Must not be a wildcard resource
+        expect(resourceStr).not.toBe('"*"');
         expect(resourceStr).not.toContain('"*"');
-        // Must reference the jobs table (by logical ID suffix match)
-        expect(resourceStr).toMatch(/JobsTable/i);
+        // Must reference exactly the jobs table (logical ID check — tighter than
+        // the loose /JobsTable/i regex used previously)
+        expect(resourceStr).toMatch(/"JobsTable[A-Za-z0-9]*/);
+      });
+
+      // 3. The TranslationLambdaRole itself must not carry DeleteItem.
+      //    Find the TranslationLambdaRole logical ID, then find every ManagedPolicy /
+      //    Policy that attaches to it, and assert none of those contains DeleteItem.
+      const translationRoleLogicalIds = Object.entries(resources)
+        .filter(([, r]) => {
+          const res = r as { Type?: string; Properties?: { Description?: string } };
+          return (
+            res.Type === 'AWS::IAM::Role' &&
+            res.Properties?.Description?.includes('TranslationLambdaRole') === false &&
+            res.Properties?.Description?.includes('translation Lambda functions') === true
+          );
+        })
+        .map(([lid]) => lid);
+
+      // There should be exactly one TranslationLambdaRole
+      expect(translationRoleLogicalIds).toHaveLength(1);
+      const translationRoleLogicalId = translationRoleLogicalIds[0];
+
+      // Collect all policies that attach to translationRole via Roles property
+      const policiesAttachedToTranslationRole = Object.entries(resources).filter(([, r]) => {
+        const res = r as { Type?: string; Properties?: { Roles?: unknown[] } };
+        if (
+          res.Type !== 'AWS::IAM::ManagedPolicy' &&
+          res.Type !== 'AWS::IAM::Policy'
+        ) return false;
+        const roles = res.Properties?.Roles ?? [];
+        return JSON.stringify(roles).includes(translationRoleLogicalId);
+      });
+
+      // None of those policies should contain DeleteItem
+      policiesAttachedToTranslationRole.forEach(([logicalId, policy]) => {
+        const policyStr = JSON.stringify(policy);
+        expect(policyStr).not.toContain('DeleteItem');
+        // eslint-disable-next-line no-console -- test diagnostic output
+        if (policyStr.includes('DeleteItem')) {
+          console.error(
+            `translationRole policy ${logicalId} unexpectedly contains DeleteItem — ` +
+              'this grants ~5 other Lambdas delete permission!'
+          );
+        }
       });
     });
 

@@ -26,6 +26,7 @@ describe('getJob endpoint', () => {
     pathParameters: { jobId },
     headers: { Authorization: 'Bearer mock-token' },
     requestContext: {
+      requestId: 'test-request-id',
       authorizer: {
         claims: { sub: userId, email: 'test@example.com' },
       },
@@ -61,6 +62,8 @@ describe('getJob endpoint', () => {
     expect(body.filename).toBe('document.txt');
     expect(body.fileSize).toBe(1024);
     expect(body.createdAt).toBe(createdAt);
+    // requestId is threaded through to the response body
+    expect(body.requestId).toBe('test-request-id');
   });
 
   it('should include translationStatus when present', async () => {
@@ -84,7 +87,39 @@ describe('getJob endpoint', () => {
   });
 
   // ---------------------------------------------------------------------------
-  // Not found
+  // BOLA (Broken Object Level Authorization) — OWASP API1:2023
+  // ---------------------------------------------------------------------------
+
+  it('returns 404 when job exists but is owned by a different user', async () => {
+    // The DynamoDB composite key lookup uses the requester's userId as the RANGE
+    // key. If the job belongs to a different user, DynamoDB returns no Item —
+    // the same response as a completely missing record. The handler must return
+    // 404 (NOT 403) to avoid leaking resource existence to the attacker.
+    dynamoMock.on(GetItemCommand).resolves({ Item: undefined });
+
+    // Requester 'attacker-999' asks for a job owned by 'user-123'
+    const result = await handler(createEvent('job-abc', 'attacker-999') as APIGatewayProxyEvent);
+
+    expect(result.statusCode).toBe(404);
+  });
+
+  it('does not return job data in 404 response body (BOLA privacy)', async () => {
+    // Even on the error path, the response body must not contain any job fields
+    // (jobId, userId, status, filename, etc.) that could confirm the resource exists.
+    dynamoMock.on(GetItemCommand).resolves({ Item: undefined });
+
+    const result = await handler(createEvent('job-abc', 'attacker-999') as APIGatewayProxyEvent);
+
+    const body = JSON.parse(result.body);
+    // Error body should have only `message` (and optionally requestId, errors)
+    expect(body).not.toHaveProperty('status');
+    expect(body).not.toHaveProperty('filename');
+    expect(body).not.toHaveProperty('userId');
+    expect(body).not.toHaveProperty('createdAt');
+  });
+
+  // ---------------------------------------------------------------------------
+  // Not found (non-existent job)
   // ---------------------------------------------------------------------------
 
   it('should return 404 when job does not exist', async () => {
@@ -108,6 +143,7 @@ describe('getJob endpoint', () => {
       pathParameters: { jobId: 'job-abc' },
       headers: {},
       requestContext: {
+        requestId: 'test-request-id',
         // No authorizer → claims.sub is undefined
       } as any,
     };
@@ -128,6 +164,7 @@ describe('getJob endpoint', () => {
       pathParameters: null,
       headers: {},
       requestContext: {
+        requestId: 'test-request-id',
         authorizer: { claims: { sub: 'user-123' } },
       } as any,
     };

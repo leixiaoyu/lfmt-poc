@@ -273,6 +273,48 @@ export interface CancelJobResponse {
   estimatedStopTime?: string;
 }
 
+// ---------------------------------------------------------------------------
+// REST API response DTOs — GET /jobs/{jobId} and DELETE /jobs/{jobId}
+// ---------------------------------------------------------------------------
+
+/**
+ * Response body returned by GET /jobs/{jobId}.
+ *
+ * Shape is intentionally flat (no `data` wrapper) so frontend callers can
+ * access `response.data.jobId` directly without an extra nesting level.
+ * Only the fields that are meaningful to callers are exposed; internal
+ * DynamoDB fields (e.g. executionArn, legalAttestation) are omitted.
+ *
+ * The index signature satisfies the `ApiSuccessResponse` constraint used
+ * by `createSuccessResponse` in the Lambda handler.
+ */
+export interface GetJobApiResponse {
+  jobId: string;
+  userId: string;
+  status: string;
+  filename?: string;
+  fileSize?: number;
+  createdAt: string;
+  updatedAt?: string;
+  translationStatus?: string;
+  targetLanguage?: string;
+  [key: string]: unknown;
+}
+
+/**
+ * Response body returned by DELETE /jobs/{jobId}.
+ *
+ * Minimal shape: confirms which job was deleted and surfaces any advisory
+ * warnings (e.g. an orphaned S3 object that could not be removed).
+ */
+export interface DeleteJobApiResponse {
+  message: string;
+  jobId: string;
+  /** Advisory warning when S3 cleanup fails after a successful DDB delete. */
+  warning?: string;
+  [key: string]: unknown;
+}
+
 // Validation Schemas
 export const createJobRequestSchema = z.object({
   userId: z.string().uuid(),
