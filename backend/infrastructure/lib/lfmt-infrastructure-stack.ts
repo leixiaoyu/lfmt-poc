@@ -895,7 +895,7 @@ export class LfmtInfrastructureStack extends Stack {
     // ===================================================================
     this.deleteJobRole = new iam.Role(this, 'DeleteJobLambdaRole', {
       assumedBy: new iam.ServicePrincipal('lambda.amazonaws.com'),
-      description: 'Isolated execution role for delete-job Lambda — minimal DynamoDB + S3 delete permissions only',
+      description: 'Isolated execution role for delete-job Lambda - minimal DynamoDB + S3 delete permissions only',
       managedPolicies: [
         iam.ManagedPolicy.fromAwsManagedPolicyName('service-role/AWSLambdaBasicExecutionRole'),
       ],
@@ -938,7 +938,7 @@ export class LfmtInfrastructureStack extends Stack {
     // ===================================================================
     this.downloadTranslationRole = new iam.Role(this, 'DownloadTranslationLambdaRole', {
       assumedBy: new iam.ServicePrincipal('lambda.amazonaws.com'),
-      description: 'Isolated execution role for download-translation Lambda — read-only access to translated chunks and job ownership check',
+      description: 'Isolated execution role for download-translation Lambda - read-only access to translated chunks and job ownership check',
       managedPolicies: [
         iam.ManagedPolicy.fromAwsManagedPolicyName('service-role/AWSLambdaBasicExecutionRole'),
       ],
