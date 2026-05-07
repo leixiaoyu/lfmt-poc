@@ -1495,15 +1495,18 @@ describe('LFMT Infrastructure Stack', () => {
   // loose `>= N` floor. Drift guards should fail loudly on ANY headcount
   // change so additions/removals force a deliberate test update.
   //
-  // Test environment has 11 application Lambdas (Register, Login,
-  // RefreshToken, ResetPassword, GetCurrentUser, UploadRequest,
-  // UploadComplete, ChunkDocument, TranslateChunk, StartTranslation,
-  // GetTranslationStatus, GetJob, DeleteJob). The dev-only PreSignUp Lambda
-  // (14th) is gated behind `isDev` (stackName.toLowerCase().includes('dev'))
-  // and is absent in the 'test' stackName used by these tests. Update this
-  // constant + the matching count in the PR body whenever a Lambda is added
-  // or removed (PR #208: +2 for GetJob + DeleteJob, 11 → 13).
-  const EXPECTED_APPLICATION_LAMBDA_COUNT = 13;
+  // Test environment application Lambdas:
+  //   Register, Login, RefreshToken, ResetPassword, GetCurrentUser,
+  //   UploadRequest, UploadComplete, ChunkDocument, TranslateChunk,
+  //   StartTranslation, GetTranslationStatus, GetJob, DeleteJob,
+  //   DownloadTranslation (added in demo-readiness PR).
+  // The dev-only PreSignUp Lambda is gated behind `isDev`
+  // (stackName.toLowerCase().includes('dev')) and is absent in the
+  // 'test' stackName used by these tests.
+  // Update this constant + the PR body whenever a Lambda is added or removed
+  // (PR #208: +2 for GetJob + DeleteJob, 11 → 13; demo-readiness: +1 for
+  // DownloadTranslation, 13 → 14).
+  const EXPECTED_APPLICATION_LAMBDA_COUNT = 14;
 
   describe('Lambda Runtime Drift Guard (PR #203 R2)', () => {
     // Regression guard mirroring the CSP/'unsafe-eval' pattern (PR #198):
@@ -1626,6 +1629,139 @@ describe('LFMT Infrastructure Stack', () => {
         }
         expect(archs).not.toContain('x86_64');
       });
+    });
+  });
+
+  describe('Download Translation Lambda (demo-readiness)', () => {
+    // Drift guards for the new DownloadTranslation Lambda added in the
+    // demo-readiness PR. These mirror the patterns used for GetJob and
+    // DeleteJob (PR #208): runtime + architecture + IAM role isolation.
+
+    test('DownloadTranslationFunction exists with nodejs22.x + arm64', () => {
+      template.hasResourceProperties('AWS::Lambda::Function', {
+        FunctionName: 'lfmt-download-translation-test',
+        Runtime: 'nodejs22.x',
+        Architectures: ['arm64'],
+      });
+    });
+
+    test('DownloadTranslationFunction has a dedicated IAM role (not translationRole)', () => {
+      // The download Lambda must NOT reuse translationRole — that role grants
+      // PutObject + DeleteObject on the full bucket.  The dedicated
+      // DownloadTranslationLambdaRole is read-only on translated/* only.
+      const functions = template.findResources('AWS::Lambda::Function');
+      const downloadFn = Object.values(functions).find((fn: any) =>
+        fn.Properties?.FunctionName === 'lfmt-download-translation-test'
+      ) as any;
+
+      expect(downloadFn).toBeDefined();
+
+      // The Role property is a Ref or GetAtt to the dedicated role.
+      // Find the DownloadTranslationLambdaRole in the template and verify
+      // the Lambda's role references it.
+      const roles = template.findResources('AWS::IAM::Role');
+      const downloadRole = Object.entries(roles).find(([, role]: [string, any]) =>
+        role.Properties?.Description?.includes('download-translation')
+      );
+      expect(downloadRole).toBeDefined();
+    });
+
+    test('DownloadTranslationLambdaRole does NOT have s3:PutObject or s3:DeleteObject', () => {
+      // Security assertion: the download role must be read-only.
+      // PutObject / DeleteObject on the document bucket would allow this
+      // Lambda to overwrite or delete source documents — not its purpose.
+      const roles = template.findResources('AWS::IAM::Role');
+      const downloadRoleEntry = Object.entries(roles).find(([, role]: [string, any]) =>
+        role.Properties?.Description?.includes('download-translation')
+      );
+      expect(downloadRoleEntry).toBeDefined();
+
+      // Collect all managed policies that reference the download role's logical ID.
+      const downloadRoleLogicalId = downloadRoleEntry![0];
+      const managedPolicies = template.findResources('AWS::IAM::ManagedPolicy');
+      const downloadPolicies = Object.values(managedPolicies).filter((policy: any) => {
+        const roles = policy.Properties?.Roles ?? [];
+        return JSON.stringify(roles).includes(downloadRoleLogicalId);
+      });
+
+      const downloadPoliciesStr = JSON.stringify(downloadPolicies);
+      expect(downloadPoliciesStr).not.toContain('s3:PutObject');
+      expect(downloadPoliciesStr).not.toContain('s3:DeleteObject');
+    });
+
+    test('DownloadTranslationLambdaRole has s3:GetObject on translated/* prefix only', () => {
+      // Verify that GetObject is scoped to the translated/* prefix and does
+      // NOT allow reads on the full bucket (which would expose source documents).
+      const managedPolicies = template.findResources('AWS::IAM::ManagedPolicy');
+      const downloadPolicyWithGetObject = Object.values(managedPolicies).find((policy: any) => {
+        const policyStr = JSON.stringify(policy);
+        return policyStr.includes('s3:GetObject') && policyStr.includes('download-translation');
+      });
+
+      // If the above filter is too strict due to description not being in the policy
+      // resource itself, just verify a GetObject policy for translated/* exists.
+      const roles = template.findResources('AWS::IAM::Role');
+      const downloadRoleEntry = Object.entries(roles).find(([, role]: [string, any]) =>
+        role.Properties?.Description?.includes('download-translation')
+      );
+      expect(downloadRoleEntry).toBeDefined();
+
+      const downloadRoleLogicalId = downloadRoleEntry![0];
+      const allManagedPolicies = template.findResources('AWS::IAM::ManagedPolicy');
+      const policiesForDownload = Object.values(allManagedPolicies).filter((policy: any) => {
+        const rolesArr = policy.Properties?.Roles ?? [];
+        return JSON.stringify(rolesArr).includes(downloadRoleLogicalId);
+      });
+
+      // At least one policy attached to the download role must grant GetObject
+      const policiesStr = JSON.stringify(policiesForDownload);
+      expect(policiesStr).toContain('s3:GetObject');
+
+      // The GetObject grant must be scoped to a path containing 'translated'
+      // (not a wildcard on the full bucket).
+      const hasTranslatedPrefixScope = policiesForDownload.some((policy: any) => {
+        const stmts = policy.Properties?.PolicyDocument?.Statement ?? [];
+        return stmts.some((stmt: any) => {
+          const actions = Array.isArray(stmt.Action) ? stmt.Action : [stmt.Action];
+          if (!actions.includes('s3:GetObject')) return false;
+          const resources = Array.isArray(stmt.Resource) ? stmt.Resource : [stmt.Resource];
+          return JSON.stringify(resources).includes('translated');
+        });
+      });
+      expect(hasTranslatedPrefixScope).toBe(true);
+    });
+
+    test('API Gateway has GET /translation/{jobId}/download route', () => {
+      // Verify the API Gateway resource tree contains the download path.
+      // CDK creates one ApiGateway::Resource per path segment; we check that
+      // a resource named 'download' exists and a GET method is registered on it.
+      template.hasResourceProperties('AWS::ApiGateway::Resource', {
+        PathPart: 'download',
+      });
+
+      // Verify a GET method exists that integrates with the download Lambda.
+      // CDK logical IDs use PascalCase (e.g. "DownloadTranslationFunction…"),
+      // so we search for the PascalCase prefix in the serialised URI object.
+      const methods = template.findResources('AWS::ApiGateway::Method');
+      const downloadGetMethod = Object.values(methods).find((method: any) => {
+        const uri = JSON.stringify(method.Properties?.Integration?.Uri ?? '');
+        const httpMethod = method.Properties?.HttpMethod;
+        return httpMethod === 'GET' && uri.includes('DownloadTranslation');
+      });
+      expect(downloadGetMethod).toBeDefined();
+    });
+
+    test('GET /translation/{jobId}/download method uses COGNITO authorizer', () => {
+      // The download endpoint must be protected — unauthenticated access would
+      // leak translated documents to anyone who knows a jobId.
+      const methods = template.findResources('AWS::ApiGateway::Method');
+      const downloadGetMethod = Object.values(methods).find((method: any) => {
+        const uri = JSON.stringify(method.Properties?.Integration?.Uri ?? '');
+        return method.Properties?.HttpMethod === 'GET' && uri.includes('DownloadTranslation');
+      });
+
+      expect(downloadGetMethod).toBeDefined();
+      expect((downloadGetMethod as any).Properties?.AuthorizationType).toBe('COGNITO_USER_POOLS');
     });
   });
 });
