@@ -520,7 +520,15 @@ describe('Production Smoke Tests', () => {
     });
 
     it('should poll job status', async () => {
-      const response = await makeRequest(`/jobs/${jobId}`, 'GET', undefined, authToken);
+      // GET /jobs/{jobId} is not implemented; the deployed endpoint for
+      // retrieving job state is GET /jobs/{jobId}/translation-status, which
+      // returns a flat object containing both `jobId` and `status`.
+      const response = await makeRequest(
+        `/jobs/${jobId}/translation-status`,
+        'GET',
+        undefined,
+        authToken
+      );
 
       // Should succeed
       expect(response.status).toBe(200);
@@ -631,13 +639,16 @@ describe('Production Smoke Tests', () => {
       // Request describe-block above for context.
       authToken = loginResponse.data.idToken;
 
-      // Create a job for deletion test
+      // Create a job for deletion test.
+      // fileSize must be >= 1000 bytes (the backend's MIN_FILE_SIZE validation
+      // constant); 512 is below that threshold and causes a 400 response whose
+      // body has no `data` property, crashing the `.data.data.jobId` access.
       const uploadResponse = await makeRequest(
         '/jobs/upload',
         'POST',
         {
           fileName: 'smoke-test-delete.txt',
-          fileSize: 512,
+          fileSize: 1024,
           contentType: 'text/plain',
           legalAttestation: {
             acceptCopyrightOwnership: true,
@@ -674,13 +685,14 @@ describe('Production Smoke Tests', () => {
     });
 
     it('should reject deletion without authentication', async () => {
-      // Create another job to test unauthorized deletion
+      // Create another job to test unauthorized deletion.
+      // fileSize must be >= 1000 bytes — 256 fails backend validation.
       const uploadResponse = await makeRequest(
         '/jobs/upload',
         'POST',
         {
           fileName: 'smoke-test-protected.txt',
-          fileSize: 256,
+          fileSize: 1024,
           contentType: 'text/plain',
           legalAttestation: {
             acceptCopyrightOwnership: true,

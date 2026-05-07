@@ -85,6 +85,8 @@ export class LfmtInfrastructureStack extends Stack {
   private translateChunkFunction?: lambda.Function;
   private startTranslationFunction?: lambda.Function;
   private getTranslationStatusFunction?: lambda.Function;
+  private getJobFunction?: lambda.Function;
+  private deleteJobFunction?: lambda.Function;
 
   // IAM role for Lambda functions
   private lambdaRole?: iam.Role;
@@ -1116,6 +1118,56 @@ export class LfmtInfrastructureStack extends Stack {
       },
     });
 
+    // Get Job Lambda Function — GET /jobs/{jobId}
+    // Reads a single job record owned by the authenticated user.
+    // Uses translationRole which already has DynamoDB GetItem on the jobs table.
+    this.getJobFunction = new NodejsFunction(this, 'GetJobFunction', {
+      functionName: `lfmt-get-job-${this.stackName}`,
+      entry: '../functions/jobs/getJob.ts',
+      handler: 'handler',
+      runtime: LAMBDA_RUNTIME,
+      architecture: LAMBDA_ARCHITECTURE,
+      role: translationRole,
+      environment: commonEnv,
+      timeout: Duration.seconds(30),
+      memorySize: 256,
+      description: 'Get a job record by ID for the authenticated owner',
+      bundling: {
+        externalModules: ['aws-sdk', '@aws-sdk/*'],
+        minify: true,
+        sourceMap: true,
+        forceDockerBundling: false,
+      },
+    });
+
+    // Delete Job Lambda Function — DELETE /jobs/{jobId}
+    // Permanently removes a job record owned by the authenticated user.
+    // Needs DynamoDB GetItem (ownership check) + DeleteItem; we add a scoped
+    // inline policy rather than broadening the shared translationRole.
+    this.deleteJobFunction = new NodejsFunction(this, 'DeleteJobFunction', {
+      functionName: `lfmt-delete-job-${this.stackName}`,
+      entry: '../functions/jobs/deleteJob.ts',
+      handler: 'handler',
+      runtime: LAMBDA_RUNTIME,
+      architecture: LAMBDA_ARCHITECTURE,
+      role: translationRole,
+      environment: commonEnv,
+      timeout: Duration.seconds(30),
+      memorySize: 256,
+      description: 'Delete a job record owned by the authenticated user',
+      bundling: {
+        externalModules: ['aws-sdk', '@aws-sdk/*'],
+        minify: true,
+        sourceMap: true,
+        forceDockerBundling: false,
+      },
+    });
+
+    // Grant deleteJob the additional DeleteItem permission it needs on the jobs
+    // table.  This is the only function that deletes job records, so keeping the
+    // grant here (rather than on the shared role) limits blast radius.
+    this.jobsTable.grantWriteData(this.deleteJobFunction);
+
     // Add S3 event notification for upload completion
     this.documentBucket.addEventNotification(
       s3.EventType.OBJECT_CREATED,
@@ -1540,7 +1592,7 @@ export class LfmtInfrastructureStack extends Stack {
   }
 
   private createApiEndpoints() {
-    if (!this.registerFunction || !this.loginFunction || !this.refreshTokenFunction || !this.resetPasswordFunction || !this.getCurrentUserFunction || !this.uploadRequestFunction || !this.startTranslationFunction || !this.getTranslationStatusFunction) {
+    if (!this.registerFunction || !this.loginFunction || !this.refreshTokenFunction || !this.resetPasswordFunction || !this.getCurrentUserFunction || !this.uploadRequestFunction || !this.startTranslationFunction || !this.getTranslationStatusFunction || !this.getJobFunction || !this.deleteJobFunction) {
       throw new Error('Lambda functions must be created before API endpoints');
     }
 
@@ -1695,6 +1747,21 @@ export class LfmtInfrastructureStack extends Stack {
       },
     });
     translationStatusResource.addMethod('GET', new apigateway.LambdaIntegration(this.getTranslationStatusFunction), {
+      authorizationType: apigateway.AuthorizationType.COGNITO,
+      authorizer: authorizer,
+    });
+
+    // GET /jobs/{jobId} - Get Job (requires authentication)
+    // Returns the current state of a job record owned by the caller.
+    // Reuses the existing /jobs/{jobId} resource created in createApiGateway().
+    jobResource.addMethod('GET', new apigateway.LambdaIntegration(this.getJobFunction), {
+      authorizationType: apigateway.AuthorizationType.COGNITO,
+      authorizer: authorizer,
+    });
+
+    // DELETE /jobs/{jobId} - Delete Job (requires authentication)
+    // Permanently removes the caller's job record from DynamoDB.
+    jobResource.addMethod('DELETE', new apigateway.LambdaIntegration(this.deleteJobFunction), {
       authorizationType: apigateway.AuthorizationType.COGNITO,
       authorizer: authorizer,
     });
