@@ -426,5 +426,101 @@ codebase.
 
 ---
 
-**Last Updated**: 2025-11-09
+## AWS String Constraint Validation (OMC-followup R2)
+
+### The Rule
+
+> **Every string field that flows from CDK code into an AWS resource property
+> must be validated against AWS's character-set constraints at synth time —
+> not at deploy time.**
+
+CDK happily accepts arbitrary Unicode in CDK property values. The CloudFormation
+template synthesizes cleanly. `npm test` passes. Then `cdk deploy` fails at
+resource creation because AWS validates the actual string against a per-resource
+regex that's narrower than what CDK accepts.
+
+### Why It Matters: PRs #208 + #212 Deploy Rollback
+
+PRs #208 (DeleteJobLambdaRole) and #212 (DownloadTranslationLambdaRole)
+introduced new IAM roles with em-dash characters (`—`, U+2014) in their
+`description` strings. AWS IAM rejects:
+
+```
+Resource handler returned message: "1 validation error detected: Value at
+'description' failed to satisfy constraint: Member must satisfy regular
+expression pattern: [\u0009\u000A\u000D\u0020-\u007E\u00A1-\u00FF]*"
+```
+
+That regex permits ASCII printable (0x20-0x7E) + tab/LF/CR + Latin-1 Supplement
+(0xA1-0xFF). U+2014 is well outside Latin-1, so the role create failed and CDK
+rolled back the entire stack — taking the new download endpoint, GET/DELETE
+`/jobs/{id}`, and 11 unrelated Lambda updates with it.
+
+Both PRs went through 5-agent OMC reviews. Multiple reviewers inspected the
+new IAM roles for IAM scope correctness, BOLA, and IAM `Condition` hardening.
+None spotted that the description string contained Unicode that AWS would
+reject — because the test suite never asserted the AWS character constraint.
+PR #213 was filed as the hotfix.
+
+### The Reviewer / Test-Author Checklist
+
+When adding or modifying any AWS resource property that accepts a string:
+
+1. **Identify the AWS character constraint** for that property. The IAM
+   `Description` regex above is one of many. Examples:
+   - IAM Role/Policy `Description`: `[\u0009\u000A\u000D\u0020-\u007E\u00A1-\u00FF]*`
+     (ASCII + Latin-1 only, no Unicode beyond)
+   - Resource tags: 256 chars max, no `aws:` prefix
+   - S3 bucket names: lowercase, hyphens, 3-63 chars
+   - CloudWatch alarm names: ASCII printable
+   - IAM resource names: `[\w+=,.@-]+`
+2. **Add a synth-time test** that walks the synthesized template and validates
+   the property against the AWS regex. The PR #213 implementation is the
+   canonical example — see `backend/infrastructure/lib/__tests__/infrastructure.test.ts`
+   "AWS String Constraint Drift Guard (PR #213)".
+3. **Prefer ASCII-only string literals in CDK source.** Reserve em-dashes,
+   smart quotes, and other Unicode typography for code comments (stripped by
+   tsc) or doc-comment strings (not sent to AWS).
+
+### Example: PR #213's Drift Guard
+
+```typescript
+test('all `Description` fields contain only AWS-allowed characters', () => {
+  const awsAllowedDescription = /^[\x09\x0A\x0D\x20-\x7E\xA1-\xFF]*$/;
+  const violations: string[] = [];
+  const visit = (path: string, node: unknown): void => {
+    // walk the entire synthesized JSON template, collecting every
+    // `Description` field and validating against the AWS regex
+    // ...
+  };
+  visit('$', template.toJSON());
+  expect(violations).toEqual([]);  // friendly multi-violation surface
+});
+```
+
+The test fails fast in `npm test` — long before `cdk deploy` ever runs.
+
+### OMC Test-Automator Reviewer Checklist Update
+
+When reviewing a PR that introduces or modifies any AWS resource:
+
+- [ ] Are all string fields (Description, Name, Path, etc.) validated against
+      the relevant AWS character constraint? If a `Description` is user-typed
+      English prose, it's a candidate for non-ASCII drift.
+- [ ] Is there a synth-time test that walks the template and asserts the
+      constraint? Or is the only validation `cdk deploy` itself?
+- [ ] If a CDK Aspect could provide broader coverage (e.g., `cdk-nag`), is
+      adoption tracked as a follow-up?
+
+### When This Rule Applies
+
+- Any new `iam.Role`, `iam.Policy`, `iam.User`, etc. with a `description`
+- Any new resource type whose schema includes `Description` / `Name` /
+  `Comment` with documented character constraints
+- Any cdk construct that interpolates user-supplied input into resource
+  property strings
+
+---
+
+**Last Updated**: 2026-05-07
 **Maintained By**: LFMT Engineering Team

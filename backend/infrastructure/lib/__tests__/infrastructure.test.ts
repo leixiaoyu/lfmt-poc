@@ -1624,11 +1624,85 @@ describe('LFMT Infrastructure Stack', () => {
         const archs = fn.Properties.Architectures ?? [];
         if (Array.isArray(archs) && archs.includes('x86_64')) {
           throw new Error(
-            `Application Lambda ${logicalId} declares x86_64 — must be arm64`
+            `Application Lambda ${logicalId} declares x86_64 - must be arm64`
           );
         }
         expect(archs).not.toContain('x86_64');
       });
+    });
+  });
+
+  describe('AWS String Constraint Drift Guard (PR #213)', () => {
+    // Regression guard for the deploy failure that rolled back the
+    // post-PR-#212 deploy on commit d8fd9a8:
+    //
+    //   AWS::IAM::Role | DeleteJobLambdaRole - Resource handler returned
+    //   message: "1 validation error detected: Value at 'description' failed
+    //   to satisfy constraint: Member must satisfy regular expression pattern:
+    //   [\u0009\u000A\u000D\u0020-\u007E\u00A1-\u00FF]*"
+    //
+    // PRs #208 and #212 introduced new IAM roles whose `description` strings
+    // contained em-dashes (U+2014). AWS IAM only accepts ASCII printable
+    // (0x20-0x7E) + tab/LF/CR + Latin-1 Supplement (0xA1-0xFF). U+2014 is
+    // outside that range; CDK happily synthesized the template, npm test
+    // passed, but `cdk deploy` failed at resource creation, leaving the
+    // stack in UPDATE_ROLLBACK_COMPLETE and blocking the demo journey.
+    //
+    // This guard walks the synthesized template and validates every
+    // `Description` property (the field AWS rejected on us) against the
+    // documented IAM regex. Walking the JSON template instead of the CDK
+    // construct surface guarantees we catch any resource type whose
+    // serialized description ends up in a CFN string slot — not just IAM.
+    //
+    // See docs/cdk-best-practices.md "AWS String Constraint Validation"
+    // section for the broader pattern.
+
+    test('all `Description` fields contain only AWS-allowed characters', () => {
+      // Per AWS docs: IAM Role / Policy / etc. `Description` accepts:
+      //   ASCII printable (0x20-0x7E) + tab (0x09) + LF (0x0A) + CR (0x0D)
+      //   + Latin-1 Supplement (0xA1-0xFF). NO Unicode beyond Latin-1.
+      const awsAllowedDescription = /^[\x09\x0A\x0D\x20-\x7E\xA1-\xFF]*$/;
+
+      // Walk the entire synthesized template, collecting every
+      // `Description` (and `description` — case varies by resource type).
+      const violations: string[] = [];
+      const visit = (path: string, node: unknown): void => {
+        if (node === null || node === undefined) return;
+        if (Array.isArray(node)) {
+          node.forEach((item, i) => visit(`${path}[${i}]`, item));
+          return;
+        }
+        if (typeof node === 'object') {
+          for (const [key, value] of Object.entries(node as Record<string, unknown>)) {
+            if (
+              (key === 'Description' || key === 'description')
+              && typeof value === 'string'
+              && !awsAllowedDescription.test(value)
+            ) {
+              // Surface the offending character(s) for fast triage.
+              const offenders = [...value]
+                .filter((ch) => !awsAllowedDescription.test(ch))
+                .map((ch) => `U+${ch.codePointAt(0)!.toString(16).padStart(4, '0').toUpperCase()} ('${ch}')`)
+                .join(', ');
+              violations.push(
+                `${path}.${key} contains chars outside AWS Latin-1 range: ${offenders}\n  value: ${value.slice(0, 120)}`
+              );
+            }
+            visit(`${path}.${key}`, value);
+          }
+        }
+      };
+      visit('$', template.toJSON());
+
+      // Friendly failure message: list ALL violations at once so a single
+      // CI run surfaces every offender (not just the first).
+      if (violations.length > 0) {
+        throw new Error(
+          `Found ${violations.length} Description field(s) with characters AWS will reject:\n\n`
+            + violations.join('\n\n')
+        );
+      }
+      expect(violations).toEqual([]);
     });
   });
 
