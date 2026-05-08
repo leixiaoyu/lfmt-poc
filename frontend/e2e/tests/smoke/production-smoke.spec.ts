@@ -332,4 +332,151 @@ test.describe('Production Smoke Tests @smoke', () => {
       expect(headers['content-security-policy']).toBeTruthy();
     });
   });
+
+  // ---------------------------------------------------------------------------
+  // CSP regression test — Issue #98 / 2026-05-08 demo-blocking incident.
+  //
+  // The deployed CSP `connect-src` was missing the document-bucket origin, so
+  // the browser-side presigned-PUT was blocked before any HTTP response. The
+  // failure mode was browser-only: curl-driven validation of the same API
+  // contract worked end-to-end because curl ignores CSP. None of the prior
+  // smoke / E2E tests asserted on browser-emitted CSP violations, so the
+  // regression slipped to the manual demo walkthrough.
+  //
+  // This test:
+  //   1. Hits the response headers and confirms CSP `connect-src` enumerates
+  //      both the API Gateway origin AND the document S3 bucket origin.
+  //   2. Drives the browser through register → login → upload (the same path
+  //      that broke). It listens for `securitypolicyviolation` events and the
+  //      console "Refused to set unsafe header" warning, and fails on either.
+  //
+  // NOTE: This test is tagged `@csp-regression` AND `@smoke` so it runs as
+  // part of the post-deploy verification suite without needing a separate CI
+  // wiring step. It must NOT use MSW or any mock — the entire point is to
+  // exercise the real CSP and the real S3 PUT.
+  // ---------------------------------------------------------------------------
+  test('CSP Regression: browser-side S3 PUT is not blocked by CSP @csp-regression', async ({
+    page,
+  }) => {
+    // Capture every CSP violation reported by the browser. In Chromium the
+    // `securitypolicyviolation` DOM event fires for each blocked resource;
+    // we mirror it onto the page for the test runner to inspect.
+    const cspViolations: string[] = [];
+    await page.addInitScript(() => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (window as any).__cspViolations = [];
+      window.addEventListener('securitypolicyviolation', (e) => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (window as any).__cspViolations.push({
+          violatedDirective: e.violatedDirective,
+          blockedURI: e.blockedURI,
+        });
+      });
+    });
+
+    // Capture "Refused to set unsafe header" console errors — these
+    // indicate someone re-introduced a forbidden header (Content-Length).
+    const unsafeHeaderWarnings: string[] = [];
+    page.on('console', (msg) => {
+      const text = msg.text();
+      if (/Refused to set unsafe header/i.test(text)) {
+        unsafeHeaderWarnings.push(text);
+      }
+    });
+
+    // Step 1: Verify CSP header on the deployed CloudFront response.
+    await test.step('CSP enumerates both API Gateway and document S3 bucket', async () => {
+      const response = await page.goto(baseURL);
+      const csp = response?.headers()['content-security-policy'];
+      if (!csp) throw new Error('CSP header missing on root document');
+
+      // API Gateway origin (any execute-api host).
+      expect(csp).toMatch(/connect-src[^;]*execute-api/);
+      // Document S3 bucket origin. The dev stack's bucket is
+      // lfmt-documents-lfmtpocdev — match the host pattern liberally so
+      // a future stack-name change (lfmt-documents-<stack>) doesn't
+      // require a test update, but still proves the bucket entry exists.
+      expect(csp).toMatch(/connect-src[^;]*lfmt-documents-[a-z0-9-]+\.s3\./i);
+      // Wildcard guard — no `*.s3.amazonaws.com`. (OWASP: wildcards on
+      // S3 hosts let any compromised bucket script exfiltrate the
+      // user's API Gateway Bearer credential.)
+      expect(csp).not.toContain('*.s3.amazonaws.com');
+    });
+
+    // Step 2: Walk the same browser path that broke on 2026-05-08.
+    const user = generateSmokeTestUser();
+    await test.step('Register a fresh user via API', async () => {
+      const registerResponse = await page.request.post(
+        `${resolveApiUrl(apiBaseURL)}/auth/register`,
+        {
+          data: {
+            email: user.email,
+            password: user.password,
+            confirmPassword: user.password,
+            firstName: user.firstName,
+            lastName: user.lastName,
+            acceptedTerms: true,
+            acceptedPrivacy: true,
+          },
+          failOnStatusCode: false,
+        }
+      );
+      const status = registerResponse.status();
+      if (status !== 201 && status !== 409) {
+        throw new Error(`Pre-test registration failed: ${status}`);
+      }
+    });
+
+    await test.step('Login via UI', async () => {
+      await page.goto(`${baseURL}/login`);
+      await page.getByLabel(/email/i).fill(user.email);
+      await page.getByLabel(/password/i).fill(user.password);
+      await page.getByRole('button', { name: /log in|sign in/i }).click();
+      await expect(page).toHaveURL(/dashboard|translate|upload/i, { timeout: 15000 });
+    });
+
+    const uploadPage = new TranslationUploadPage(page);
+    await test.step('Drive wizard through to submit (exercises S3 PUT)', async () => {
+      await uploadPage.goto();
+      await uploadPage.completeLegalAttestationByRole();
+      await uploadPage.configureTranslationSettingsByRole();
+      await uploadPage.uploadFileAndAwaitDisplay(SMOKE_FIXTURE_PATH, 'smoke-test-minimal.txt');
+      await uploadPage.advanceToReviewByRole('smoke-test-minimal.txt');
+      await uploadPage.submitTranslationByRole();
+
+      // Wait for either the success indicator (translation started) OR an
+      // error alert. We don't need to wait for full translation — only that
+      // the S3 PUT succeeded and the backend transitioned the job past
+      // PENDING_UPLOAD. A "translation started/processing" indicator proves
+      // both: CSP allowed the PUT, and the backend's S3-event pipeline
+      // observed the upload.
+      await expect(
+        page.getByText(/translation.*started|translating|processing/i).first()
+      ).toBeVisible({ timeout: 30000 });
+    });
+
+    // Step 3: Assert no CSP violations were emitted by the browser.
+    await test.step('No CSP violations emitted', async () => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const violations = await page.evaluate(() => (window as any).__cspViolations || []);
+      cspViolations.push(
+        ...violations.map(
+          (v: { violatedDirective: string; blockedURI: string }) =>
+            `${v.violatedDirective} blocked ${v.blockedURI}`
+        )
+      );
+      expect(
+        cspViolations,
+        `Browser reported CSP violations during upload flow: ${cspViolations.join(', ')}`
+      ).toEqual([]);
+    });
+
+    // Step 4: Assert no "Refused to set unsafe header" warnings.
+    await test.step('No browser-forbidden header warnings emitted', async () => {
+      expect(
+        unsafeHeaderWarnings,
+        `Browser refused setRequestHeader calls: ${unsafeHeaderWarnings.join(', ')}`
+      ).toEqual([]);
+    });
+  });
 });

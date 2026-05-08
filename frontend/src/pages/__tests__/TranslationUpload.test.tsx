@@ -57,6 +57,14 @@ vi.mock('../../services/translationService', () => ({
       this.statusCode = statusCode;
     }
   },
+  // Re-export the production sentinel so the Issue #98 page test can
+  // verify the wizard surfaces the targeted phrase verbatim. The literal
+  // text below mirrors translationService.S3_UPLOAD_BLOCKED_MESSAGE; the
+  // assertion in the page test uses a substring match (/Upload was blocked/)
+  // so a wording tweak in the production constant only forces an update
+  // here, not at every assertion site.
+  S3_UPLOAD_BLOCKED_MESSAGE:
+    'Upload was blocked. This is likely a configuration issue — please refresh and try again, or contact support if it persists.',
 }));
 
 describe('TranslationUpload', () => {
@@ -517,6 +525,41 @@ describe('TranslationUpload', () => {
         const errorAlert = screen.getByRole('alert');
         expect(errorAlert).toBeInTheDocument();
         expect(errorAlert).toHaveTextContent(/Connection lost/i);
+      });
+    });
+
+    // -----------------------------------------------------------------------
+    // Issue #98 — accurate UI error when the S3 PUT is blocked (CSP / SW).
+    //
+    // The translation service surfaces a S3_UPLOAD_BLOCKED_MESSAGE for this
+    // case (see translationService.test.ts "throws TranslationServiceError
+    // (S3_UPLOAD_BLOCKED_MESSAGE) when S3 PUT has no response"). The error
+    // mapper passes the message through verbatim because statusCode is
+    // undefined and the message is non-generic. We assert here that the page
+    // surfaces the targeted phrase rather than the misleading generic
+    // "Connection lost" text that hid the original demo blocker.
+    // -----------------------------------------------------------------------
+    it('should display the S3-upload-blocked phrase when CSP/network blocks the PUT', async () => {
+      const user = userEvent.setup();
+      renderComponent();
+      await advanceToStep4(user);
+
+      const { S3_UPLOAD_BLOCKED_MESSAGE, TranslationServiceError } =
+        await import('../../services/translationService');
+      // statusCode left undefined to match the production wrap path.
+      vi.mocked(translationService.uploadAndAwaitChunked).mockRejectedValue(
+        new TranslationServiceError(S3_UPLOAD_BLOCKED_MESSAGE)
+      );
+
+      const submitButton = screen.getByRole('button', { name: /Submit & Start Translation/i });
+      await user.click(submitButton);
+
+      await waitFor(() => {
+        const errorAlert = screen.getByRole('alert');
+        expect(errorAlert).toBeInTheDocument();
+        expect(errorAlert).toHaveTextContent(/Upload was blocked/i);
+        // Negative assertion — the misleading generic phrase must NOT appear.
+        expect(errorAlert).not.toHaveTextContent(/Connection lost/i);
       });
     });
 

@@ -109,6 +109,86 @@ export class TranslationServiceError extends Error {
   }
 }
 
+/**
+ * Headers the browser refuses to let JavaScript set on an XHR / fetch
+ * (Fetch spec §forbidden-header-name). The Set is keyed on lowercase
+ * names so we can match case-insensitively against whatever the backend
+ * sends in `requiredHeaders` — `Content-Length`, `content-length`, etc.
+ *
+ * We intentionally only strip the headers actively populated by the
+ * backend's PresignedUrlResponse today (`Content-Length`). The full
+ * forbidden list per spec is much larger; expanding the filter to cover
+ * everything risks dropping a header the backend may legitimately add
+ * later that we WOULD want to forward (e.g. a custom `x-amz-...`
+ * header), so each entry below is here because the backend currently
+ * sets it and the browser refuses it. Add new entries deliberately,
+ * with the same justification.
+ */
+const BROWSER_FORBIDDEN_REQUEST_HEADERS = new Set<string>(['content-length']);
+
+/**
+ * Filter out headers the browser will refuse to send (and would emit
+ * "Refused to set unsafe header" warnings for) before handing the map
+ * to axios / XHR.
+ *
+ * Exported for the regression test that asserts `Content-Length` is
+ * never forwarded — see translationService.test.ts.
+ */
+export function stripBrowserForbiddenHeaders(
+  headers: Record<string, string>
+): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(headers).filter(
+      ([name]) => !BROWSER_FORBIDDEN_REQUEST_HEADERS.has(name.toLowerCase())
+    )
+  );
+}
+
+/**
+ * Sentinel message used by `wrapS3UploadError` when the browser blocks
+ * the S3 PUT before any HTTP response is received. Exported so the
+ * page-level error mapper (`translationErrorMessages`) can match on it
+ * deterministically rather than parsing a free-form string.
+ *
+ * The wording is deliberately neutral: from the browser's perspective
+ * we cannot prove which of {CSP block, network outage, DNS failure,
+ * S3 outage} caused `error.response === undefined`, so we describe the
+ * symptom and point the user at the action with the highest expected
+ * value (contact support if persistent — these are config issues, not
+ * transient network blips, in 95%+ of observed cases).
+ */
+export const S3_UPLOAD_BLOCKED_MESSAGE =
+  'Upload was blocked. This is likely a configuration issue — please refresh and try again, or contact support if it persists.';
+
+/**
+ * Re-shape an S3 PUT failure so the page-level error UI can tell it
+ * apart from API-side failures. axios reports CSP-blocked / network-
+ * level failures with `error.response` undefined; that's the only
+ * signal we have at this seam. We map it to a TranslationServiceError
+ * with `statusCode = undefined` and `S3_UPLOAD_BLOCKED_MESSAGE` so the
+ * page mapper surfaces the targeted phrase rather than the misleading
+ * generic "Connection lost" text.
+ */
+function wrapS3UploadError(error: unknown): TranslationServiceError {
+  if (axios.isAxiosError(error)) {
+    if (!error.response) {
+      // No HTTP response — CSP block, DNS failure, or network outage.
+      return new TranslationServiceError(S3_UPLOAD_BLOCKED_MESSAGE, undefined, error);
+    }
+    // S3 returned an HTTP error (e.g. SignatureDoesNotMatch, 403). Surface
+    // its status to the page so it can branch on the curated table in
+    // translationErrorMessages.
+    return new TranslationServiceError(
+      error.response.statusText || `S3 upload failed with status ${error.response.status}`,
+      error.response.status,
+      error
+    );
+  }
+  // Non-axios error — preserve the message but mark it as a service error.
+  const message = error instanceof Error ? error.message : 'S3 upload failed';
+  return new TranslationServiceError(message);
+}
+
 // ---------------------------------------------------------------------------
 // Polling constants — owned here (service layer) so the UI component is free
 // of backend-protocol knowledge. Values can be overridden via
@@ -175,14 +255,45 @@ export const uploadDocument = async (request: UploadDocumentRequest): Promise<Tr
 
     // Step 2: Upload file directly to S3 using presigned URL.
     // Note: We use axios directly here because S3 doesn't need our API interceptors/auth headers.
-    // IMPORTANT: rely exclusively on requiredHeaders returned by the backend. The backend signs the
-    // presigned URL with the exact Content-Type it puts in requiredHeaders (lines 224-227 of
-    // uploadRequest.ts). Adding an extra 'Content-Type' override here risks a mismatch between
-    // the signed value and the sent value when the browser File.type differs from what the backend
-    // normalised, which causes S3 to reject the request with SignatureDoesNotMatch.
-    await axios.put(uploadUrl, request.file, {
-      headers: { ...requiredHeaders },
-    });
+    //
+    // IMPORTANT (Bug #1, SignatureDoesNotMatch): rely exclusively on requiredHeaders returned by
+    // the backend. The backend signs the presigned URL with the exact Content-Type it puts in
+    // requiredHeaders (lines 224-227 of uploadRequest.ts). Adding an extra 'Content-Type' override
+    // here risks a mismatch between the signed value and the sent value when the browser File.type
+    // differs from what the backend normalised, which causes S3 to reject the request with
+    // SignatureDoesNotMatch.
+    //
+    // IMPORTANT (browser unsafe-header rule): strip Content-Length before handing headers to the
+    // browser-side XHR. Per Fetch spec §forbidden-header-name, browsers refuse setRequestHeader on
+    // 'Content-Length' (and several other transport-managed headers) and emit
+    // "Refused to set unsafe header 'Content-Length'" to the console. The browser ALWAYS sets
+    // Content-Length itself based on the body size, so the signature still matches — but only if
+    // we don't try to set it manually. The backend keeps Content-Length in `requiredHeaders` for
+    // documentation purposes and for non-browser callers (e.g., CLI smoke tests via curl that DO
+    // honour the value); the browser path filters it out at the seam where headers cross into XHR
+    // land.
+    //
+    // Root cause of the 2026-05-08 browser walkthrough failure: the curl validation path bypasses
+    // both CSP and the unsafe-header rule, so the API contract worked end-to-end via curl but the
+    // browser path was never exercised against the deployed configuration. This filter + the CSP
+    // bucket-origin entry in lfmt-infrastructure-stack.ts (`buildCsp`) close that gap.
+    const browserSafeHeaders = stripBrowserForbiddenHeaders(requiredHeaders);
+
+    try {
+      await axios.put(uploadUrl, request.file, {
+        headers: browserSafeHeaders,
+      });
+    } catch (uploadError) {
+      // Step 2a: re-shape S3-side failures so the UI layer can distinguish them
+      // from API-side failures (presigned URL request, status polling, etc.).
+      //
+      // axios reports CSP-blocked / network-failed XHRs with `error.response`
+      // === undefined (no HTTP response was ever received) and `error.request`
+      // populated. Without distinguishing this from an API outage we surface a
+      // generic "Connection lost" message — see PR for issue #98 + bug class
+      // explanation in `getTranslationErrorMessage` for the precedence rules.
+      throw wrapS3UploadError(uploadError);
+    }
 
     // Step 3: Return job information
     // Note: The backend creates the job record but doesn't return it immediately

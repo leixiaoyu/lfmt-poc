@@ -2059,11 +2059,18 @@ export class LfmtInfrastructureStack extends Stack {
         },
         contentSecurityPolicy: {
           // CSP body sourced from `buildCsp()` (Round 2 item 10).
-          // The `connect-src` argument is a region-wide wildcard at
-          // initial deploy time — `updateCloudFrontCSP()` swaps it for
-          // the concrete API Gateway domain once that resource exists.
+          // The `connect-src` arguments are region-wide wildcards at
+          // initial deploy time — `updateCloudFrontCSP()` swaps the API
+          // Gateway entry for the concrete domain once that resource
+          // exists. The document-bucket entry is included here too so
+          // browser-side presigned-PUT uploads succeed even before the
+          // updated policy is applied (preventing the same CSP-block
+          // class that caused the demo-blocking failure on 2026-05-08).
           // See `buildCsp()` JSDoc for the full hardening status.
-          contentSecurityPolicy: this.buildCsp('https://*.execute-api.us-east-1.amazonaws.com'),
+          contentSecurityPolicy: this.buildCsp([
+            'https://*.execute-api.us-east-1.amazonaws.com',
+            `https://${this.documentBucket.bucketRegionalDomainName}`,
+          ]),
           override: true,
         },
       },
@@ -2134,11 +2141,23 @@ export class LfmtInfrastructureStack extends Stack {
    * (e.g., Issue #197's `style-src` nonce work) now only edits ONE
    * place.
    *
-   * The only per-call variable is `connectSrc` — the wildcard
-   * `https://*.execute-api.us-east-1.amazonaws.com` is used at initial
-   * deploy time (before API Gateway exists), then replaced with the
-   * concrete `https://<apiId>.execute-api.<region>.amazonaws.com` once
-   * the API is provisioned.
+   * The per-call variable is `connectSrc` — a list of additional
+   * origins appended to `connect-src` alongside `'self'`. The list
+   * always includes:
+   *   1. The API Gateway origin (wildcard at initial deploy time, then
+   *      replaced with the concrete `https://<apiId>.execute-api.<region>.amazonaws.com`
+   *      once API Gateway is provisioned).
+   *   2. The S3 document-bucket regional domain
+   *      (`https://lfmt-documents-<stack>.s3.<region>.amazonaws.com`).
+   *      The browser performs presigned-PUT uploads directly against
+   *      this origin; without it the upload XHR is blocked by CSP and
+   *      the wizard surfaces a misleading "Connection lost" error
+   *      (root cause of the 2026-05-08 demo-blocking regression — the
+   *      curl validation path bypasses CSP, so this only manifests in
+   *      a real browser). The bucket origin is enumerated explicitly
+   *      (not via a `*.s3.amazonaws.com` wildcard) per OWASP CSP
+   *      guidance: a wildcard would let any compromised bucket script
+   *      exfiltrate the user's API Gateway Bearer credential.
    *
    * Hardening status (Issues #133, #194):
    *   - 'unsafe-eval' REMOVED from script-src.
@@ -2167,20 +2186,28 @@ export class LfmtInfrastructureStack extends Stack {
    *   Until then, every reviewer who looks at this code will see this
    *   block and know exactly what to do (and why we didn't do it now).
    */
-  private buildCsp(connectSrc: string): string {
-    return [
-      `default-src 'self'`,
-      `script-src 'self'`,
-      `style-src 'self' 'unsafe-inline'`,
-      `img-src 'self' data: https:`,
-      `font-src 'self' data:`,
-      `connect-src 'self' ${connectSrc}`,
-      `object-src 'none'`,
-      `base-uri 'self'`,
-      `form-action 'self'`,
-      `frame-ancestors 'none'`,
-      `upgrade-insecure-requests`,
-    ].join('; ') + ';';
+  private buildCsp(connectSrc: string | string[]): string {
+    // Accept either a single origin (back-compat with older callers) or
+    // an explicit list. The list form is preferred — it makes the set of
+    // browser-reachable origins visible at the call site so reviewers
+    // can audit each addition (cf. the document-bucket entry added in
+    // 2026-05 to unblock browser-side presigned-PUT uploads).
+    const connectSrcEntries = Array.isArray(connectSrc) ? connectSrc : [connectSrc];
+    return (
+      [
+        `default-src 'self'`,
+        `script-src 'self'`,
+        `style-src 'self' 'unsafe-inline'`,
+        `img-src 'self' data: https:`,
+        `font-src 'self' data:`,
+        `connect-src 'self' ${connectSrcEntries.join(' ')}`,
+        `object-src 'none'`,
+        `base-uri 'self'`,
+        `form-action 'self'`,
+        `frame-ancestors 'none'`,
+        `upgrade-insecure-requests`,
+      ].join('; ') + ';'
+    );
   }
 
   private updateCloudFrontCSP() {
@@ -2227,10 +2254,16 @@ export class LfmtInfrastructureStack extends Stack {
         },
         contentSecurityPolicy: {
           // CSP body sourced from `buildCsp()` (Round 2 item 10) so the
-          // initial and updated policies cannot drift. `connect-src` is
-          // now the concrete API Gateway domain — see `buildCsp()`
+          // initial and updated policies cannot drift. `connect-src`
+          // now lists BOTH the concrete API Gateway domain AND the
+          // document-bucket regional domain — the latter is required
+          // for browser-side presigned-PUT uploads (root cause of the
+          // 2026-05-08 demo-blocking regression). See `buildCsp()`
           // JSDoc for the full hardening status (#133, #194, #197).
-          contentSecurityPolicy: this.buildCsp(`https://${apiDomain}`),
+          contentSecurityPolicy: this.buildCsp([
+            `https://${apiDomain}`,
+            `https://${this.documentBucket.bucketRegionalDomainName}`,
+          ]),
           override: true,
         },
       },

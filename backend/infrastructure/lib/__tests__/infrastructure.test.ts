@@ -1438,6 +1438,84 @@ describe('LFMT Infrastructure Stack', () => {
       });
     });
 
+    test('CSP connect-src includes both API Gateway and document S3 bucket origins (Issue #98)', () => {
+      // Regression guard for the 2026-05-08 demo-blocking incident.
+      //
+      // The browser performs presigned-PUT uploads directly against the
+      // document S3 bucket; CSP `connect-src` must whitelist that origin
+      // alongside the API Gateway origin or the XHR is blocked and the
+      // wizard surfaces a misleading "Connection lost" error. The bucket
+      // is enumerated explicitly (not via a `*.s3.amazonaws.com` wildcard)
+      // per OWASP CSP guidance — see `buildCsp()` JSDoc.
+      //
+      // Both the initial response-headers policy AND the post-API
+      // "Updated" policy must include the bucket origin (the user's first
+      // upload may happen before the second policy is fully propagated to
+      // CloudFront edges).
+      const flattenCsp = (csp: unknown): string => {
+        if (typeof csp === 'string') return csp;
+        if (csp && typeof csp === 'object' && 'Fn::Join' in (csp as object)) {
+          const join = (csp as { 'Fn::Join': [string, unknown[]] })['Fn::Join'];
+          const parts = join[1];
+          return parts
+            .map((p) => {
+              if (typeof p === 'string') return p;
+              // Resolve common CFN intrinsics into a stable searchable
+              // marker. The bucket regional domain is a Fn::GetAtt on the
+              // DocumentBucket resource at synth time (CDK uses the
+              // logical id `DocumentBucket...`); we surface the full
+              // intrinsic so the test below can match on it deterministically.
+              return JSON.stringify(p);
+            })
+            .join('');
+        }
+        return JSON.stringify(csp);
+      };
+
+      const policies = template.findResources('AWS::CloudFront::ResponseHeadersPolicy');
+      const cspCarryingPolicies = Object.values(policies).filter((policy: any) => {
+        return !!policy?.Properties?.ResponseHeadersPolicyConfig?.SecurityHeadersConfig
+          ?.ContentSecurityPolicy?.ContentSecurityPolicy;
+      });
+      expect(cspCarryingPolicies.length).toBeGreaterThanOrEqual(2);
+
+      cspCarryingPolicies.forEach((policy: any) => {
+        const csp =
+          policy.Properties.ResponseHeadersPolicyConfig.SecurityHeadersConfig.ContentSecurityPolicy
+            .ContentSecurityPolicy;
+        const flat = flattenCsp(csp);
+
+        // 1. API Gateway origin must be present (wildcard form on the
+        //    initial policy, concrete domain on the updated policy — both
+        //    contain the literal substring 'execute-api').
+        expect(flat).toContain('execute-api');
+
+        // 2. Document-bucket origin must be present. CDK lowercases the
+        //    bucket name into `lfmt-documents-test`, then resolves the
+        //    regional domain at synth time; on a synthesized template
+        //    this surfaces as either:
+        //      a) Fn::GetAtt → ['DocumentBucket<hash>', 'RegionalDomainName']
+        //         (when used inside a string literal that doesn't already
+        //         resolve at synth time, like other CFN refs), OR
+        //      b) the literal string 'lfmt-documents-test.s3.<region>...'
+        //         (when CDK's tokenizer pre-resolves it, which is what
+        //         happens here because buildCsp interpolates into a plain
+        //         template literal that becomes a CloudFormation Fn::Join).
+        //    Either form is acceptable — we just need to prove the bucket
+        //    is enumerated, not that a particular CFN intrinsic was used.
+        const hasBucketLiteral = flat.includes('lfmt-documents-test');
+        const hasBucketGetAtt = flat.includes('DocumentBucket') && flat.includes('RegionalDomainName');
+        expect(hasBucketLiteral || hasBucketGetAtt).toBe(true);
+
+        // 3. connect-src directive must still start with 'self' and
+        //    must NOT use a generic `https://*.s3.amazonaws.com` wildcard
+        //    (OWASP — wildcards on S3 hosts let any compromised bucket
+        //    script exfiltrate the user's API Gateway Bearer credential).
+        expect(flat).toMatch(/connect-src\s+'self'/);
+        expect(flat).not.toContain('*.s3.amazonaws.com');
+      });
+    });
+
     test('Frontend S3 bucket has public access blocked', () => {
       const buckets = template.findResources('AWS::S3::Bucket');
       const frontendBucket = Object.values(buckets).find((bucket: any) => {
