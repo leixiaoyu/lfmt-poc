@@ -361,17 +361,67 @@ test.describe('Production Smoke Tests @smoke', () => {
     // Capture every CSP violation reported by the browser. In Chromium the
     // `securitypolicyviolation` DOM event fires for each blocked resource;
     // we mirror it onto the page for the test runner to inspect.
+    //
+    // R-perf-1 (PR #214 OMC): we ALSO surface the violations through a
+    // page-level flag (`__s3CspBlocked`) so the wizard-driving step can
+    // short-circuit the moment a CSP block is observed against the S3
+    // origin. Without this, the test waits for `getByText(...processing)`
+    // to time out (30 s) and — worse — the backend may have already
+    // initiated chunking + Gemini calls, burning daily quota for a run
+    // that's known to fail.
     const cspViolations: string[] = [];
     await page.addInitScript(() => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (window as any).__cspViolations = [];
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (window as any).__s3CspBlocked = null;
       window.addEventListener('securitypolicyviolation', (e) => {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (window as any).__cspViolations.push({
           violatedDirective: e.violatedDirective,
           blockedURI: e.blockedURI,
         });
+        // Short-circuit signal: any CSP block whose blocked URI points
+        // at the document S3 bucket means the upload PUT was rejected
+        // and we can fail fast without waiting for translation kick-off.
+        if (
+          e.violatedDirective?.startsWith('connect-src') &&
+          /s3[.-][a-z0-9-]+\.amazonaws\.com/i.test(e.blockedURI || '')
+        ) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          (window as any).__s3CspBlocked = {
+            violatedDirective: e.violatedDirective,
+            blockedURI: e.blockedURI,
+          };
+        }
       });
+
+      // R-perf-1: instrument XHR to detect S3-PUT failures with status
+      // 0 (network-level / CSP block) — same fail-fast intent. We patch
+      // XMLHttpRequest.prototype.open to record the URL, then surface
+      // the failure via `__s3PutFailed` when the load event fires with
+      // status 0 against the document-bucket origin.
+      const OriginalXHR = window.XMLHttpRequest;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (window as any).__s3PutFailed = null;
+      const originalOpen = OriginalXHR.prototype.open;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      OriginalXHR.prototype.open = function (this: any, method: string, url: string) {
+        this.__lfmtUrl = url;
+        this.__lfmtMethod = method;
+        this.addEventListener('loadend', () => {
+          if (
+            this.__lfmtMethod === 'PUT' &&
+            this.status === 0 &&
+            /s3[.-][a-z0-9-]+\.amazonaws\.com/i.test(String(this.__lfmtUrl))
+          ) {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            (window as any).__s3PutFailed = { url: this.__lfmtUrl, status: this.status };
+          }
+        });
+        // eslint-disable-next-line prefer-rest-params
+        return originalOpen.apply(this, arguments as unknown as Parameters<typeof originalOpen>);
+      };
     });
 
     // Capture "Refused to set unsafe header" console errors — these
@@ -444,15 +494,61 @@ test.describe('Production Smoke Tests @smoke', () => {
       await uploadPage.advanceToReviewByRole('smoke-test-minimal.txt');
       await uploadPage.submitTranslationByRole();
 
-      // Wait for either the success indicator (translation started) OR an
-      // error alert. We don't need to wait for full translation — only that
-      // the S3 PUT succeeded and the backend transitioned the job past
-      // PENDING_UPLOAD. A "translation started/processing" indicator proves
-      // both: CSP allowed the PUT, and the backend's S3-event pipeline
-      // observed the upload.
-      await expect(
-        page.getByText(/translation.*started|translating|processing/i).first()
-      ).toBeVisible({ timeout: 30000 });
+      // R-perf-1 (PR #214 OMC): race the success indicator against the
+      // fail-fast flags from `addInitScript` above. If a CSP block or
+      // status-0 PUT failure has already fired, abort immediately rather
+      // than waiting 30 s for the success indicator that can never come
+      // — and, more importantly, before we wait long enough for the
+      // backend's S3-event pipeline to consume Gemini quota on a job
+      // that's known to fail.
+      //
+      // We poll the page-level flags every 200 ms via `waitForFunction`,
+      // resolving the moment EITHER condition holds:
+      //   1. The success indicator text appears (happy path).
+      //   2. `__s3CspBlocked` or `__s3PutFailed` is populated (fast-fail).
+      // The handle's return value tells us which branch tripped so the
+      // assertion below can surface a specific, actionable error.
+      const outcomeHandle = await page.waitForFunction(
+        () => {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const w = window as any;
+          if (w.__s3CspBlocked) {
+            return { kind: 'cspBlocked', detail: w.__s3CspBlocked };
+          }
+          if (w.__s3PutFailed) {
+            return { kind: 'putFailed', detail: w.__s3PutFailed };
+          }
+          // Look for the success indicator in the DOM. We check the
+          // text directly rather than reusing the Playwright locator
+          // because we need a synchronous boolean inside this poller.
+          const bodyText = document.body?.innerText || '';
+          if (/translation.*started|translating|processing/i.test(bodyText)) {
+            return { kind: 'started' };
+          }
+          return null;
+        },
+        undefined,
+        { timeout: 30000, polling: 200 }
+      );
+
+      const outcome = (await outcomeHandle.jsonValue()) as
+        | { kind: 'started' }
+        | { kind: 'cspBlocked'; detail: { violatedDirective: string; blockedURI: string } }
+        | { kind: 'putFailed'; detail: { url: string; status: number } };
+
+      if (outcome.kind === 'cspBlocked') {
+        throw new Error(
+          `S3 PUT blocked by CSP — ${outcome.detail.violatedDirective} blocked ${outcome.detail.blockedURI}. ` +
+            `This is the 2026-05-08 demo-blocking regression class — check buildCsp() and document-bucket CORS.`
+        );
+      }
+      if (outcome.kind === 'putFailed') {
+        throw new Error(
+          `S3 PUT failed at network layer (status 0) — url=${outcome.detail.url}. ` +
+            `Likely CORS preflight rejection or DNS failure; verify document-bucket CORS includes the CloudFront origin.`
+        );
+      }
+      // outcome.kind === 'started' — happy path, continue.
     });
 
     // Step 3: Assert no CSP violations were emitted by the browser.

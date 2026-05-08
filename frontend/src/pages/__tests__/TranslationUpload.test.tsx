@@ -38,34 +38,30 @@ vi.mock('react-router-dom', async () => {
 // layer so tests can stub the whole "upload + wait" operation as a single
 // mock. getJobStatus is kept in the mock because the Bug #2 polling tests
 // exercise the service internals via the separate describe block below.
-vi.mock('../../services/translationService', () => ({
-  translationService: {
-    createLegalAttestation: vi.fn(),
-    uploadAndAwaitChunked: vi.fn(),
-    startTranslation: vi.fn(),
-    getJobStatus: vi.fn(),
-  },
-  TranslationServiceError: class TranslationServiceError extends Error {
-    statusCode?: number;
-    constructor(message: string, statusCode?: number) {
-      super(message);
-      this.name = 'TranslationServiceError';
-      // Mirror the production constructor (translationService.ts:79-87) so
-      // tests that exercise HTTP-status-aware UX (Issue #147) get a real
-      // statusCode on the error instead of always falling through to the
-      // network-error branch of getTranslationErrorMessage.
-      this.statusCode = statusCode;
-    }
-  },
-  // Re-export the production sentinel so the Issue #98 page test can
-  // verify the wizard surfaces the targeted phrase verbatim. The literal
-  // text below mirrors translationService.S3_UPLOAD_BLOCKED_MESSAGE; the
-  // assertion in the page test uses a substring match (/Upload was blocked/)
-  // so a wording tweak in the production constant only forces an update
-  // here, not at every assertion site.
-  S3_UPLOAD_BLOCKED_MESSAGE:
-    'Upload was blocked. This is likely a configuration issue — please refresh and try again, or contact support if it persists.',
-}));
+//
+// PR #214 OMC C-test-1: pull the real `S3_UPLOAD_BLOCKED_MESSAGE` and
+// `TranslationServiceError` from the production module via
+// `vi.importActual`. Re-declaring those values inline here let the test
+// pass even when the production sentinel changed (the mock would still
+// surface the stale literal); routing through the actual module
+// guarantees the regression test breaks the moment production drifts.
+vi.mock('../../services/translationService', async () => {
+  const actual = await vi.importActual<typeof import('../../services/translationService')>(
+    '../../services/translationService'
+  );
+  return {
+    ...actual,
+    // Override only the methods the page calls — preserve every constant
+    // (including S3_UPLOAD_BLOCKED_MESSAGE) and class (including
+    // TranslationServiceError) at their real production identity.
+    translationService: {
+      createLegalAttestation: vi.fn(),
+      uploadAndAwaitChunked: vi.fn(),
+      startTranslation: vi.fn(),
+      getJobStatus: vi.fn(),
+    },
+  };
+});
 
 describe('TranslationUpload', () => {
   const renderComponent = () => {

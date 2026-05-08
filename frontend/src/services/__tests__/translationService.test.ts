@@ -366,7 +366,11 @@ describe('TranslationService - uploadDocument', () => {
         },
       });
 
-      mockedAxios.put.mockRejectedValueOnce({
+      // Hold the rejected axios error in a named local so the test can
+      // assert reference equality on `originalError` below — without
+      // that, a future refactor that wraps the cause (losing the chain)
+      // would silently pass the bare instanceOf check.
+      const rejectedAxiosError = {
         isAxiosError: true,
         message: 'Request failed with status code 403',
         response: {
@@ -374,7 +378,9 @@ describe('TranslationService - uploadDocument', () => {
           statusText: 'Forbidden',
           data: '<Error>SignatureDoesNotMatch</Error>',
         },
-      } as unknown as AxiosError);
+      } as unknown as AxiosError;
+
+      mockedAxios.put.mockRejectedValueOnce(rejectedAxiosError);
 
       try {
         await uploadDocument({ file: mockFile, legalAttestation: mockLegalAttestation });
@@ -382,7 +388,113 @@ describe('TranslationService - uploadDocument', () => {
       } catch (err) {
         expect(err).toBeInstanceOf(TranslationServiceError);
         expect((err as TranslationServiceError).statusCode).toBe(403);
+        // C-test-3 (PR #214 OMC): lock originalError preservation. The
+        // wrap path MUST forward the rejected axios error verbatim so
+        // monitoring tools (Sentry, Rollbar) can introspect `.response`
+        // on the cause chain. If a future refactor wraps the cause
+        // (e.g. `new Error(err.message)`), this assertion breaks.
+        expect((err as TranslationServiceError).originalError).toBe(rejectedAxiosError);
       }
+    });
+
+    // -------------------------------------------------------------------------
+    // C-test-2 (PR #214 OMC): wrapS3UploadError non-axios branch.
+    //
+    // When axios.put rejects with a value that ISN'T an AxiosError (a
+    // plain Error, a string, undefined), the wrap path must still:
+    //   1. Throw TranslationServiceError (not the raw value).
+    //   2. Preserve the original message (when one exists).
+    //   3. Preserve `originalError` so the cause chain survives — this
+    //      was the gap R-arch-2 closed.
+    // -------------------------------------------------------------------------
+    describe('wrapS3UploadError — non-axios rejected values', () => {
+      const buildAttestation = (): LegalAttestation => ({
+        acceptCopyrightOwnership: true,
+        acceptTranslationRights: true,
+        acceptLiabilityTerms: true,
+        userIPAddress: 'captured-by-backend',
+        userAgent: 'Mozilla/5.0',
+        timestamp: '2024-10-31T12:00:00Z',
+      });
+
+      const mockPresigned = () => {
+        mockedApiClient.post.mockResolvedValueOnce({
+          data: {
+            data: {
+              uploadUrl: 'https://s3.amazonaws.com/bucket/presigned-url',
+              fileId: 'file-1',
+              jobId: 'job-1',
+              requiredHeaders: { 'Content-Type': 'text/plain' },
+            },
+          },
+        });
+      };
+
+      it('re-throws TranslationServiceError preserving plain Error message + cause', async () => {
+        const mockFile = new File(['content'], 'doc.txt', { type: 'text/plain' });
+        mockPresigned();
+
+        const plainError = new Error('disk full while reading body');
+        mockedAxios.put.mockRejectedValueOnce(plainError);
+
+        try {
+          await uploadDocument({ file: mockFile, legalAttestation: buildAttestation() });
+          expect.fail('Should have thrown TranslationServiceError');
+        } catch (err) {
+          expect(err).toBeInstanceOf(TranslationServiceError);
+          expect((err as TranslationServiceError).message).toBe('disk full while reading body');
+          // statusCode is undefined for non-axios failures.
+          expect((err as TranslationServiceError).statusCode).toBeUndefined();
+          // R-arch-2: the cause chain must be intact so monitoring tools
+          // can see the underlying disk-full Error rather than just the
+          // wrapped service error.
+          expect((err as TranslationServiceError).originalError).toBe(plainError);
+        }
+      });
+
+      it('handles a thrown string gracefully (does not crash)', async () => {
+        const mockFile = new File(['content'], 'doc.txt', { type: 'text/plain' });
+        mockPresigned();
+
+        // axios shouldn't reject with a string in practice, but the
+        // wrap path must not crash on `error.message` access if it does.
+        mockedAxios.put.mockRejectedValueOnce('boom');
+
+        try {
+          await uploadDocument({ file: mockFile, legalAttestation: buildAttestation() });
+          expect.fail('Should have thrown TranslationServiceError');
+        } catch (err) {
+          expect(err).toBeInstanceOf(TranslationServiceError);
+          // Falls back to the generic message — but does NOT throw a
+          // TypeError accessing .message on a string.
+          expect((err as TranslationServiceError).message).toBe('S3 upload failed');
+          // R-arch-2: even non-Error rejections produce a synthetic
+          // cause so the monitoring path always has SOMETHING to log.
+          const original = (err as TranslationServiceError).originalError as Error | undefined;
+          expect(original).toBeInstanceOf(Error);
+          expect(original?.message).toBe('boom');
+        }
+      });
+
+      it('handles a thrown undefined gracefully (does not crash)', async () => {
+        const mockFile = new File(['content'], 'doc.txt', { type: 'text/plain' });
+        mockPresigned();
+
+        mockedAxios.put.mockRejectedValueOnce(undefined);
+
+        try {
+          await uploadDocument({ file: mockFile, legalAttestation: buildAttestation() });
+          expect.fail('Should have thrown TranslationServiceError');
+        } catch (err) {
+          expect(err).toBeInstanceOf(TranslationServiceError);
+          expect((err as TranslationServiceError).message).toBe('S3 upload failed');
+          // The synthetic cause stringifies undefined to "undefined" —
+          // not pretty, but provably non-crashing and non-empty.
+          const original = (err as TranslationServiceError).originalError as Error | undefined;
+          expect(original).toBeInstanceOf(Error);
+          expect(original?.message).toBe('undefined');
+        }
+      });
     });
 
     it('should include legal attestation in JSON payload to backend', async () => {

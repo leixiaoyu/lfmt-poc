@@ -7,8 +7,15 @@
 
 import axios, { AxiosError } from 'axios';
 import { apiClient } from '../utils/api';
+import { stripBrowserForbiddenHeaders } from '../utils/headerFilters';
 import type { TranslationJobStatus } from '@lfmt/shared-types';
 import { CHUNKING_ERROR_STATUSES } from '@lfmt/shared-types';
+
+// Re-export so callers that previously imported the helper from this
+// service module (and any test that mocks/asserts on it via the service
+// surface) keep working unchanged. The single source of truth lives in
+// utils/headerFilters.
+export { stripBrowserForbiddenHeaders } from '../utils/headerFilters';
 
 // Re-export so callers can use the shared-types values without an extra import.
 export type { TranslationJobStatus };
@@ -110,41 +117,6 @@ export class TranslationServiceError extends Error {
 }
 
 /**
- * Headers the browser refuses to let JavaScript set on an XHR / fetch
- * (Fetch spec §forbidden-header-name). The Set is keyed on lowercase
- * names so we can match case-insensitively against whatever the backend
- * sends in `requiredHeaders` — `Content-Length`, `content-length`, etc.
- *
- * We intentionally only strip the headers actively populated by the
- * backend's PresignedUrlResponse today (`Content-Length`). The full
- * forbidden list per spec is much larger; expanding the filter to cover
- * everything risks dropping a header the backend may legitimately add
- * later that we WOULD want to forward (e.g. a custom `x-amz-...`
- * header), so each entry below is here because the backend currently
- * sets it and the browser refuses it. Add new entries deliberately,
- * with the same justification.
- */
-const BROWSER_FORBIDDEN_REQUEST_HEADERS = new Set<string>(['content-length']);
-
-/**
- * Filter out headers the browser will refuse to send (and would emit
- * "Refused to set unsafe header" warnings for) before handing the map
- * to axios / XHR.
- *
- * Exported for the regression test that asserts `Content-Length` is
- * never forwarded — see translationService.test.ts.
- */
-export function stripBrowserForbiddenHeaders(
-  headers: Record<string, string>
-): Record<string, string> {
-  return Object.fromEntries(
-    Object.entries(headers).filter(
-      ([name]) => !BROWSER_FORBIDDEN_REQUEST_HEADERS.has(name.toLowerCase())
-    )
-  );
-}
-
-/**
  * Sentinel message used by `wrapS3UploadError` when the browser blocks
  * the S3 PUT before any HTTP response is received. Exported so the
  * page-level error mapper (`translationErrorMessages`) can match on it
@@ -184,9 +156,24 @@ function wrapS3UploadError(error: unknown): TranslationServiceError {
       error
     );
   }
-  // Non-axios error — preserve the message but mark it as a service error.
+  // Non-axios error — preserve the message AND the original cause so
+  // monitoring tools (Sentry, Rollbar, etc.) see the underlying failure
+  // rather than a stripped-down service error. If the rejected value
+  // wasn't even an Error (string, undefined, plain object), wrap it in
+  // a synthetic Error so `originalError.message` stays a string and the
+  // cause chain remains inspectable downstream.
+  //
+  // The `originalError` field is typed `AxiosError | undefined` on
+  // TranslationServiceError; we cast through `as unknown as AxiosError`
+  // here because the runtime contract ("preserve any cause") is wider
+  // than the compile-time type, which exists primarily to keep the
+  // axios-error code paths type-safe. Rather than widen the field's
+  // type (which would force every consumer to handle three cases), we
+  // narrow at this single call site — the cost is one cast, the benefit
+  // is monitoring tools see the cause regardless of its origin.
+  const originalError = error instanceof Error ? error : new Error(String(error));
   const message = error instanceof Error ? error.message : 'S3 upload failed';
-  return new TranslationServiceError(message);
+  return new TranslationServiceError(message, undefined, originalError as unknown as AxiosError);
 }
 
 // ---------------------------------------------------------------------------

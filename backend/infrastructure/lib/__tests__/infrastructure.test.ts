@@ -1516,6 +1516,78 @@ describe('LFMT Infrastructure Stack', () => {
       });
     });
 
+    // -------------------------------------------------------------------------
+    // C-sec (PR #214 OMC): document bucket CORS must include CloudFront
+    // origin.
+    //
+    // Browser-side presigned-PUT uploads originate from the CloudFront-
+    // hosted SPA. Without the CloudFront domain in the bucket's CORS
+    // `AllowedOrigins`, the preflight OPTIONS is rejected and the PUT
+    // never fires. The CSP fix only solved one half of the demo-blocking
+    // incident; this test pins the other half so a future contributor
+    // can't drop the `addCorsRule` call without breaking the build.
+    //
+    // Implementation note: we use literal CloudFront domain strings
+    // (NOT `frontendDistribution.distributionDomainName`) to avoid a
+    // CFN cyclic dependency — see `addCloudFrontOriginToDocumentBucketCors`
+    // JSDoc. The test stack runs with `environment: 'test'`, which
+    // falls through to the `dev` literal list, so we assert on that
+    // domain (`d39xcun7144jgl.cloudfront.net`) — the same value that
+    // `getAllowedApiOrigins()` enumerates as the dev tier source of
+    // truth.
+    // -------------------------------------------------------------------------
+    test('Document bucket CORS includes CloudFront distribution origin', () => {
+      const buckets = template.findResources('AWS::S3::Bucket');
+      const docBucketEntry = Object.entries(buckets).find(([, bucket]) => {
+        const bucketName = (bucket as { Properties?: { BucketName?: unknown } })
+          .Properties?.BucketName;
+        // Document bucket has BucketName = `lfmt-documents-<stack>`.
+        if (typeof bucketName === 'string') return bucketName.includes('lfmt-documents');
+        // Token form (Fn::Join) — match on the literal segment.
+        const join = (bucketName as { 'Fn::Join'?: [string, unknown[]] })?.[
+          'Fn::Join'
+        ];
+        return Array.isArray(join?.[1])
+          ? join[1].some(
+              (part) => typeof part === 'string' && part.includes('lfmt-documents')
+            )
+          : false;
+      });
+
+      expect(docBucketEntry).toBeDefined();
+      const [, docBucket] = docBucketEntry!;
+      const corsRules =
+        (docBucket as { Properties?: { CorsConfiguration?: { CorsRules?: unknown[] } } })
+          .Properties?.CorsConfiguration?.CorsRules ?? [];
+      expect(Array.isArray(corsRules)).toBe(true);
+      // Two rules expected: (1) the initial localhost-dev rule from
+      // `createS3Buckets` and (2) the CloudFront-origin rule appended
+      // by `addCloudFrontOriginToDocumentBucketCors`. We assert
+      // `>= 2` so a future merge into a single rule (semantic equiv)
+      // doesn't break the test, but the current shape is two rules.
+      expect(corsRules.length).toBeGreaterThanOrEqual(2);
+
+      // Flatten every CORS rule's AllowedOrigins so the assertion is
+      // robust to the rule being either:
+      //   a) merged with the initial localhost rule (single CorsRule), or
+      //   b) appended via addCorsRule (second CorsRule entry).
+      // Either layout is correct as long as the CloudFront distribution
+      // domain ends up in the union.
+      const allOrigins: string[] = corsRules.flatMap((rule) =>
+        ((rule as { AllowedOrigins?: unknown[] }).AllowedOrigins ?? []).filter(
+          (o): o is string => typeof o === 'string'
+        )
+      );
+
+      // Use Match.arrayWith semantics — the CloudFront dev origin must
+      // be present somewhere in the union of CORS rules.
+      expect(allOrigins).toEqual(
+        expect.arrayContaining([
+          expect.stringMatching(/d39xcun7144jgl\.cloudfront\.net/),
+        ])
+      );
+    });
+
     test('Frontend S3 bucket has public access blocked', () => {
       const buckets = template.findResources('AWS::S3::Bucket');
       const frontendBucket = Object.values(buckets).find((bucket: any) => {

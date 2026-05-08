@@ -11,7 +11,7 @@
 
 import { apiClient } from '../utils/api';
 import type { PresignedUrlRequest, PresignedUrlResponse } from '@lfmt/shared-types';
-import { stripBrowserForbiddenHeaders } from './translationService';
+import { stripBrowserForbiddenHeaders } from '../utils/headerFilters';
 
 /**
  * Upload progress callback
@@ -132,7 +132,7 @@ export async function uploadToS3(
     // "Refused to set unsafe header 'Content-Length'" and the call is a
     // no-op. The browser ALWAYS sets Content-Length itself based on the
     // body, so the S3 signature still matches as long as we don't try to
-    // set it manually. See translationService.stripBrowserForbiddenHeaders
+    // set it manually. See `utils/headerFilters.stripBrowserForbiddenHeaders`
     // for the canonical filter (and the 2026-05-08 demo-blocking incident
     // post-mortem in this PR's body).
     const browserSafeHeaders = stripBrowserForbiddenHeaders(requiredHeaders);

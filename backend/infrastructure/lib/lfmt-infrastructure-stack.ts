@@ -189,6 +189,13 @@ export class LfmtInfrastructureStack extends Stack {
     // 6. Frontend Hosting (CloudFront + S3) - Create early to get CloudFront URL for CORS
     this.createFrontendHosting(removalPolicy);
 
+    // 6.5. Document-bucket CORS — append per-environment CloudFront
+    // origin so browser-side presigned-PUT uploads pass the bucket's
+    // OPTIONS preflight. Uses literal CloudFront domain strings (NOT
+    // `frontendDistribution.distributionDomainName`) to avoid a CFN
+    // cyclic dependency — see method JSDoc for details.
+    this.addCloudFrontOriginToDocumentBucketCors(props.environment);
+
     // 7. IAM Roles and Policies
     this.createIamRoles();
 
@@ -364,6 +371,77 @@ export class LfmtInfrastructureStack extends Stack {
           ],
         },
       ],
+    });
+  }
+
+  /**
+   * Append the CloudFront distribution origin to the document bucket's
+   * CORS `AllowedOrigins` (PR #214 OMC C-sec).
+   *
+   * Browser-side presigned-PUT uploads originate from the CloudFront-
+   * hosted SPA. The bucket's CORS preflight (OPTIONS /key) must echo
+   * `Access-Control-Allow-Origin: https://<cloudfront-domain>` or the
+   * browser blocks the subsequent PUT. The CSP fix in `buildCsp()`
+   * solved one half of the demo-blocking incident (CSP `connect-src`);
+   * this bucket-CORS entry solves the other half. Without both, a fresh
+   * deploy in a new region would still fail in a real browser even
+   * though curl-driven validation succeeds.
+   *
+   * IMPORTANT (cyclic-dependency avoidance): the response-headers
+   * policy used by `frontendDistribution` already references
+   * `documentBucket.bucketRegionalDomainName` (CSP `connect-src`). If
+   * we then made the bucket's CORS rule reference
+   * `frontendDistribution.distributionDomainName` we would create a
+   * CFN cycle (DocumentBucket → FrontendDistribution → policy →
+   * DocumentBucket). To break the cycle we use literal CloudFront
+   * domain strings per environment — the same approach that
+   * `getAllowedApiOrigins()` (dev tier) already takes for the API
+   * Gateway CORS list. This is acceptable because:
+   *   1. CloudFront distribution domains are stable across deploys
+   *      (CDK only re-creates the distribution on logical-id changes,
+   *      not on every `cdk deploy`).
+   *   2. The same value is already maintained as the source of truth
+   *      in `getAllowedApiOrigins()` — drift between the two would
+   *      surface immediately in the API CORS reference.
+   *
+   * Production gating: localhost origins are dev-only. We mirror the
+   * environment switch used by `getAllowedApiOrigins()` so prod-tier
+   * deploys don't accidentally allow `http://localhost:3000` to upload
+   * to the prod document bucket.
+   *
+   * @param environment - Stack environment ('dev' | 'staging' | 'prod')
+   *   from `LfmtInfrastructureStackProps`. Used to select the right
+   *   set of additional origins per tier.
+   */
+  private addCloudFrontOriginToDocumentBucketCors(environment: string) {
+    // Per-environment CloudFront origin literals. The dev value is the
+    // CDK-managed CloudFront distribution domain — the same literal
+    // already enumerated in `getAllowedApiOrigins()` for the dev tier.
+    // Drift between the two would surface as a broken API CORS first
+    // (much louder failure mode than a broken upload), so the API list
+    // is the practical source of truth.
+    const cloudFrontOriginsByEnvironment: Record<string, string[]> = {
+      dev: ['https://d39xcun7144jgl.cloudfront.net'],
+      staging: ['https://staging.lfmt.yourcompany.com'],
+      prod: ['https://lfmt.yourcompany.com'],
+    };
+
+    // Default to the dev list for any unknown environment label
+    // (matches the `default:` branch in `getAllowedApiOrigins()`).
+    const additionalOrigins =
+      cloudFrontOriginsByEnvironment[environment] ?? cloudFrontOriginsByEnvironment.dev;
+
+    this.documentBucket.addCorsRule({
+      allowedMethods: [s3.HttpMethods.GET, s3.HttpMethods.PUT, s3.HttpMethods.POST],
+      allowedOrigins: additionalOrigins,
+      allowedHeaders: [
+        'Content-Type',
+        'x-amz-date',
+        'Authorization',
+        'x-api-key',
+        'x-amz-security-token',
+      ],
+      maxAge: 3000,
     });
   }
 
@@ -2067,10 +2145,12 @@ export class LfmtInfrastructureStack extends Stack {
           // updated policy is applied (preventing the same CSP-block
           // class that caused the demo-blocking failure on 2026-05-08).
           // See `buildCsp()` JSDoc for the full hardening status.
-          contentSecurityPolicy: this.buildCsp([
-            'https://*.execute-api.us-east-1.amazonaws.com',
-            `https://${this.documentBucket.bucketRegionalDomainName}`,
-          ]),
+          contentSecurityPolicy: this.buildCsp({
+            connectSrc: [
+              'https://*.execute-api.us-east-1.amazonaws.com',
+              `https://${this.documentBucket.bucketRegionalDomainName}`,
+            ],
+          }),
           override: true,
         },
       },
@@ -2181,33 +2261,42 @@ export class LfmtInfrastructureStack extends Stack {
    *
    *   Issue #201 has the full implementation plan and acceptance
    *   criteria; when it lands, the activation here is a one-line
-   *   edit: append `report-uri ${reportUri}` to the directive list
-   *   below and pass the new endpoint URL through `updateCloudFrontCSP`.
-   *   Until then, every reviewer who looks at this code will see this
-   *   block and know exactly what to do (and why we didn't do it now).
+   *   edit: pass `reportUri` through to the options object below and
+   *   the directive is appended automatically. Until then, every
+   *   reviewer who looks at this code will see this block and know
+   *   exactly what to do (and why we didn't do it now).
+   *
+   * @param opts.connectSrc - Origins appended to `connect-src` alongside
+   *   `'self'`. Always pass an explicit list so reviewers can audit each
+   *   addition at the call site.
+   * @param opts.reportUri - Optional CSP `report-uri` endpoint. When set,
+   *   a `report-uri ${reportUri}` directive is appended (issue #201).
+   *   Left undefined today — see telemetry note above.
    */
-  private buildCsp(connectSrc: string | string[]): string {
-    // Accept either a single origin (back-compat with older callers) or
-    // an explicit list. The list form is preferred — it makes the set of
-    // browser-reachable origins visible at the call site so reviewers
-    // can audit each addition (cf. the document-bucket entry added in
-    // 2026-05 to unblock browser-side presigned-PUT uploads).
-    const connectSrcEntries = Array.isArray(connectSrc) ? connectSrc : [connectSrc];
-    return (
-      [
-        `default-src 'self'`,
-        `script-src 'self'`,
-        `style-src 'self' 'unsafe-inline'`,
-        `img-src 'self' data: https:`,
-        `font-src 'self' data:`,
-        `connect-src 'self' ${connectSrcEntries.join(' ')}`,
-        `object-src 'none'`,
-        `base-uri 'self'`,
-        `form-action 'self'`,
-        `frame-ancestors 'none'`,
-        `upgrade-insecure-requests`,
-      ].join('; ') + ';'
-    );
+  private buildCsp(opts: { connectSrc: string[]; reportUri?: string }): string {
+    const directives: string[] = [
+      `default-src 'self'`,
+      `script-src 'self'`,
+      `style-src 'self' 'unsafe-inline'`,
+      `img-src 'self' data: https:`,
+      `font-src 'self' data:`,
+      `connect-src 'self' ${opts.connectSrc.join(' ')}`,
+      `object-src 'none'`,
+      `base-uri 'self'`,
+      `form-action 'self'`,
+      `frame-ancestors 'none'`,
+      `upgrade-insecure-requests`,
+    ];
+
+    if (opts.reportUri) {
+      // CSP grammar requires `report-uri` to be the LAST directive so
+      // that any future tail-only directive (e.g. `report-to`) can be
+      // appended without breaking the value. Issue #201 will switch to
+      // `report-to` once the violation-receiver Lambda lands.
+      directives.push(`report-uri ${opts.reportUri}`);
+    }
+
+    return directives.join('; ') + ';';
   }
 
   private updateCloudFrontCSP() {
@@ -2260,10 +2349,12 @@ export class LfmtInfrastructureStack extends Stack {
           // for browser-side presigned-PUT uploads (root cause of the
           // 2026-05-08 demo-blocking regression). See `buildCsp()`
           // JSDoc for the full hardening status (#133, #194, #197).
-          contentSecurityPolicy: this.buildCsp([
-            `https://${apiDomain}`,
-            `https://${this.documentBucket.bucketRegionalDomainName}`,
-          ]),
+          contentSecurityPolicy: this.buildCsp({
+            connectSrc: [
+              `https://${apiDomain}`,
+              `https://${this.documentBucket.bucketRegionalDomainName}`,
+            ],
+          }),
           override: true,
         },
       },
