@@ -8,7 +8,12 @@
 import axios from 'axios';
 import { apiClient } from '../utils/api';
 import { stripBrowserForbiddenHeaders } from '../utils/headerFilters';
-import type { TranslationJobStatus } from '@lfmt/shared-types';
+import type {
+  PresignedUrlApiResponse,
+  StartTranslationApiResponse,
+  TranslationJobStatus,
+  TranslationStatusApiResponse,
+} from '@lfmt/shared-types';
 import { CHUNKING_ERROR_STATUSES } from '@lfmt/shared-types';
 
 // N1 (PR #214 OMC R2): the back-compat re-export of
@@ -237,16 +242,15 @@ const handleError = (error: unknown): never => {
  */
 export const uploadDocument = async (request: UploadDocumentRequest): Promise<TranslationJob> => {
   try {
-    // Step 1: Request presigned URL from backend
-    const presignedResponse = await apiClient.post<{
-      data: {
-        uploadUrl: string;
-        fileId: string;
-        jobId: string;
-        expiresIn: number;
-        requiredHeaders: Record<string, string>;
-      };
-    }>('/jobs/upload', {
+    // Step 1: Request presigned URL from backend.
+    //
+    // POST /jobs/upload is the ONLY job-side endpoint that wraps its payload
+    // in `{message, data}` — every other handler returns a flat object. We
+    // type the response with the shared `PresignedUrlApiResponse` DTO from
+    // @lfmt/shared-types so a wire-shape drift between the Lambda
+    // (`backend/functions/jobs/uploadRequest.ts`) and this reader fails at
+    // compile time rather than crashing the demo at runtime.
+    const presignedResponse = await apiClient.post<PresignedUrlApiResponse>('/jobs/upload', {
       fileName: request.file.name,
       fileSize: request.file.size,
       contentType: request.file.type,
@@ -406,47 +410,124 @@ export const uploadAndAwaitChunked = async (
 };
 
 /**
- * Start translation for a job
+ * Start translation for a job.
+ *
+ * The real Lambda (`backend/functions/jobs/startTranslation.ts`) returns a
+ * FLAT object — not `{data: ...}`. Reading `response.data.data` here was
+ * the demo blocker fixed in the 2026-05-09 hotfix; this version reads
+ * `response.data` directly and uses the shared `StartTranslationApiResponse`
+ * DTO so any future drift fails at compile time.
+ *
+ * The Lambda's response is a wider shape than `TranslationJob` (it also
+ * carries `executionArn`, `estimatedCost`, etc.), but the wizard only
+ * needs the `TranslationJob`-compatible fields, so we map at this seam.
  */
 export const startTranslation = async (
   jobId: string,
   config: TranslationConfig
 ): Promise<TranslationJob> => {
   try {
-    const response = await apiClient.post<{ data: TranslationJob }>(`/jobs/${jobId}/translate`, {
+    const response = await apiClient.post<StartTranslationApiResponse>(`/jobs/${jobId}/translate`, {
       targetLanguage: config.targetLanguage,
       tone: config.tone,
     });
 
-    return response.data.data;
+    const body = response.data;
+    return {
+      jobId: body.jobId,
+      // The backend response does not echo userId here; the field is
+      // tracked elsewhere (auth context / job detail endpoint). Default
+      // to '' to satisfy the TranslationJob shape; the value is not
+      // read on the post-startTranslation code paths today.
+      userId: '',
+      fileName: '',
+      fileSize: 0,
+      contentType: '',
+      // The job has just been transitioned to IN_PROGRESS — the wire
+      // shape of `translationStatus` happens to be the same as
+      // TranslationJob.status for this code path.
+      status: body.translationStatus as TranslationJobStatus,
+      targetLanguage: body.targetLanguage,
+      totalChunks: body.totalChunks,
+      completedChunks: body.chunksTranslated,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
   } catch (error) {
     return handleError(error);
   }
 };
 
 /**
- * Get job status
+ * Get job status.
+ *
+ * The real Lambda (`backend/functions/jobs/getTranslationStatus.ts`) returns
+ * a FLAT object, NOT `{data: ...}`. Reading `response.data.data` here was
+ * the root cause of the 2026-05-09 demo blocker:
+ *
+ *   "Cannot read properties of undefined (reading 'status')"
+ *
+ * — `response.data.data` was undefined, the polling loop in
+ * `uploadAndAwaitChunked` then dereferenced `.status` on undefined and
+ * crashed step 4 of the upload wizard.
+ *
+ * The shared `TranslationStatusApiResponse` DTO from @lfmt/shared-types
+ * is the single source of truth; both the Lambda and this reader import
+ * it so a future drift surfaces at compile time, not at the demo.
+ *
+ * Note on field-name mapping: the backend returns `chunksTranslated`
+ * (mirroring its DDB column) while the frontend's `TranslationJob` uses
+ * `completedChunks`. We translate at this seam.
  */
 export const getJobStatus = async (jobId: string): Promise<TranslationJob> => {
   try {
-    const response = await apiClient.get<{ data: TranslationJob }>(
+    const response = await apiClient.get<TranslationStatusApiResponse>(
       `/jobs/${jobId}/translation-status`
     );
 
-    return response.data.data;
+    const body = response.data;
+    return {
+      jobId: body.jobId,
+      userId: body.userId ?? '',
+      fileName: body.fileName ?? '',
+      fileSize: body.fileSize ?? 0,
+      contentType: body.contentType ?? '',
+      status: body.status as TranslationJobStatus,
+      targetLanguage: body.targetLanguage,
+      tone: body.tone,
+      totalChunks: body.totalChunks,
+      completedChunks: body.chunksTranslated,
+      createdAt: body.createdAt ?? new Date().toISOString(),
+      updatedAt: body.translationCompletedAt ?? body.createdAt ?? new Date().toISOString(),
+      completedAt: body.translationCompletedAt,
+      errorMessage: body.error,
+    };
   } catch (error) {
     return handleError(error);
   }
 };
 
 /**
- * Get all translation jobs for the current user
+ * Get all translation jobs for the current user.
+ *
+ * KNOWN-LIMITATION: as of 2026-05-09 there is NO `GET /jobs` route on the
+ * real backend (`backend/infrastructure/lib/lfmt-infrastructure-stack.ts`
+ * only exposes `GET /jobs/{jobId}` and `GET /jobs/{jobId}/translation-status`).
+ * The History page (`pages/TranslationHistory.tsx`) currently calls this
+ * method against the deployed backend and gets a 403/404 — the page
+ * surfaces an empty list, which is the "silently broken" behaviour
+ * flagged in the hotfix audit. This is a pre-existing gap, NOT a
+ * regression from this hotfix; tracked as a follow-up.
+ *
+ * For envelope correctness when the endpoint DOES exist (today only via
+ * the MSW mock): the convention across the rest of the API is a flat
+ * shape, so the reader expects `response.data` to BE the array.
  */
 export const getTranslationJobs = async (): Promise<TranslationJob[]> => {
   try {
-    const response = await apiClient.get<{ data: TranslationJob[] }>('/jobs');
+    const response = await apiClient.get<TranslationJob[]>('/jobs');
 
-    return response.data.data;
+    return response.data;
   } catch (error) {
     return handleError(error);
   }

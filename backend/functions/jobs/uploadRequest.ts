@@ -9,6 +9,7 @@ import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { DynamoDBClient, PutItemCommand } from '@aws-sdk/client-dynamodb';
 import { marshall } from '@aws-sdk/util-dynamodb';
 import {
+  PresignedUrlApiResponse,
   PresignedUrlRequest,
   PresignedUrlResponse,
   fileValidationSchema,
@@ -227,15 +228,20 @@ export const handler = async (event: APIGatewayProxyEvent): Promise<APIGatewayPr
       },
     };
 
-    return createSuccessResponse(
-      200,
-      {
-        message: 'Upload URL generated successfully',
-        data: response,
-      },
-      requestId,
-      requestOrigin
-    );
+    // Type the wire envelope with the shared DTO so any drift from the
+    // frontend reader (translationService.uploadDocument /
+    // uploadService.requestUploadUrl, both of which read
+    // `response.data.data`) surfaces at compile time.
+    //
+    // Note: this endpoint deliberately wraps the payload in `{message, data}`
+    // (uniquely among the job-side endpoints) — see PresignedUrlApiResponse
+    // in shared-types for the rationale.
+    const envelope: PresignedUrlApiResponse = {
+      message: 'Upload URL generated successfully',
+      data: response,
+    };
+
+    return createSuccessResponse(200, envelope, requestId, requestOrigin);
   } catch (error) {
     logger.error('Unexpected error during upload request processing', {
       requestId,

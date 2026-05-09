@@ -803,20 +803,18 @@ describe('TranslationService - startTranslation', () => {
         tone: 'formal',
       };
 
+      // Wire shape mirrors the real `startTranslation` Lambda
+      // (StartTranslationApiResponse): FLAT body, no `data` wrapper, and
+      // the field name is `chunksTranslated` rather than the
+      // frontend-side `completedChunks`.
       const mockResponse = {
         data: {
-          data: {
-            jobId: 'job-123',
-            userId: 'user-456',
-            status: 'CHUNKING' as const,
-            targetLanguage: 'es' as const,
-            tone: 'formal' as const,
-            fileName: 'test.txt',
-            fileSize: 1024,
-            contentType: 'text/plain',
-            createdAt: '2024-10-31T12:00:00Z',
-            updatedAt: '2024-10-31T12:00:00Z',
-          },
+          message: 'Translation started successfully',
+          jobId: 'job-123',
+          translationStatus: 'IN_PROGRESS',
+          targetLanguage: 'es',
+          totalChunks: 4,
+          chunksTranslated: 0,
         },
       };
 
@@ -831,9 +829,11 @@ describe('TranslationService - startTranslation', () => {
         expect.stringContaining(`/jobs/${jobId}/translate`),
         request
       );
-      expect(result.status).toBe('CHUNKING');
+      expect(result.jobId).toBe('job-123');
+      expect(result.status).toBe('IN_PROGRESS');
       expect(result.targetLanguage).toBe('es');
-      expect(result.tone).toBe('formal');
+      expect(result.totalChunks).toBe(4);
+      expect(result.completedChunks).toBe(0);
     });
   });
 
@@ -901,26 +901,29 @@ describe('TranslationService - getJobStatus', () => {
 
   describe('Success Scenarios', () => {
     it('should fetch job status successfully', async () => {
-      // Arrange
+      // Arrange — wire shape mirrors the real getTranslationStatus Lambda
+      // (TranslationStatusApiResponse from @lfmt/shared-types): FLAT body
+      // (no `data` wrapper) and the field name is `chunksTranslated`,
+      // not `completedChunks`. The frontend service translates at the
+      // boundary back into the local `TranslationJob` shape.
       const jobId = 'job-123';
-      const mockJob: TranslationJob = {
+      const mockWire = {
         jobId: 'job-123',
         userId: 'user-456',
         status: 'IN_PROGRESS',
+        translationStatus: 'IN_PROGRESS',
         fileName: 'test.txt',
         fileSize: 1024,
         contentType: 'text/plain',
         targetLanguage: 'es',
-        tone: 'neutral',
+        tone: 'neutral' as const,
         totalChunks: 10,
-        completedChunks: 5,
+        chunksTranslated: 5,
+        progressPercentage: 50,
         createdAt: '2024-10-31T12:00:00Z',
-        updatedAt: '2024-10-31T12:05:00Z',
       };
 
-      mockedApiClient.get.mockResolvedValueOnce({
-        data: { data: mockJob },
-      });
+      mockedApiClient.get.mockResolvedValueOnce({ data: mockWire });
 
       // Act
       const result = await getJobStatus(jobId);
@@ -930,40 +933,42 @@ describe('TranslationService - getJobStatus', () => {
       expect(mockedApiClient.get).toHaveBeenCalledWith(
         expect.stringContaining(`/jobs/${jobId}/translation-status`)
       );
-      expect(result).toEqual(mockJob);
+      expect(result.jobId).toBe('job-123');
+      expect(result.status).toBe('IN_PROGRESS');
       expect(result.completedChunks).toBe(5);
       expect(result.totalChunks).toBe(10);
+      expect(result.fileSize).toBe(1024);
+      expect(result.tone).toBe('neutral');
     });
 
     it('should handle COMPLETED status', async () => {
       // Arrange
       const jobId = 'job-123';
-      const mockJob: TranslationJob = {
+      const mockWire = {
         jobId: 'job-123',
         userId: 'user-456',
         status: 'COMPLETED',
+        translationStatus: 'COMPLETED',
         fileName: 'test.txt',
         fileSize: 1024,
         contentType: 'text/plain',
         targetLanguage: 'es',
-        tone: 'neutral',
+        tone: 'neutral' as const,
         totalChunks: 10,
-        completedChunks: 10,
+        chunksTranslated: 10,
+        progressPercentage: 100,
         createdAt: '2024-10-31T12:00:00Z',
-        updatedAt: '2024-10-31T12:30:00Z',
-        completedAt: '2024-10-31T12:30:00Z',
+        translationCompletedAt: '2024-10-31T12:30:00Z',
       };
 
-      mockedApiClient.get.mockResolvedValueOnce({
-        data: { data: mockJob },
-      });
+      mockedApiClient.get.mockResolvedValueOnce({ data: mockWire });
 
       // Act
       const result = await getJobStatus(jobId);
 
       // Assert
       expect(result.status).toBe('COMPLETED');
-      expect(result.completedAt).toBeDefined();
+      expect(result.completedAt).toBe('2024-10-31T12:30:00Z');
     });
   });
 
@@ -1027,9 +1032,11 @@ describe('TranslationService - getTranslationJobs', () => {
         },
       ];
 
-      mockedApiClient.get.mockResolvedValueOnce({
-        data: { data: mockJobs },
-      });
+      // Wire shape mirrors the mock contract: a flat array, no
+      // `{data: ...}` wrapper. (As of 2026-05-09 the live backend has
+      // no GET /jobs route — see KNOWN-LIMITATION on
+      // translationService.getTranslationJobs.)
+      mockedApiClient.get.mockResolvedValueOnce({ data: mockJobs });
 
       // Act
       const result = await getTranslationJobs();
@@ -1042,10 +1049,8 @@ describe('TranslationService - getTranslationJobs', () => {
     });
 
     it('should return empty array when no jobs exist', async () => {
-      // Arrange
-      mockedApiClient.get.mockResolvedValueOnce({
-        data: { data: [] },
-      });
+      // Arrange — flat array (no wrapper), per the contract above.
+      mockedApiClient.get.mockResolvedValueOnce({ data: [] });
 
       // Act
       const result = await getTranslationJobs();
@@ -1263,6 +1268,27 @@ describe('TranslationService - uploadAndAwaitChunked', () => {
     updatedAt: '2024-10-31T12:00:00Z',
   };
 
+  // Build the flat TranslationStatusApiResponse wire shape that the real
+  // `getTranslationStatus` Lambda emits. The 2026-05-09 hotfix collapsed
+  // the previous `{data: { data: TranslationJob }}` envelope to a flat
+  // body and mapped `chunksTranslated` (DDB column) ↔ `completedChunks`
+  // (frontend type) at the service seam — all of which is exercised here.
+  const buildWireStatus = (status: string) => ({
+    jobId: baseJob.jobId,
+    userId: baseJob.userId,
+    fileName: baseJob.fileName,
+    fileSize: baseJob.fileSize,
+    contentType: baseJob.contentType,
+    status,
+    translationStatus: status,
+    targetLanguage: baseJob.targetLanguage,
+    tone: baseJob.tone,
+    totalChunks: 0,
+    chunksTranslated: 0,
+    progressPercentage: 0,
+    createdAt: baseJob.createdAt,
+  });
+
   beforeEach(() => {
     vi.useFakeTimers();
     vi.clearAllMocks();
@@ -1297,9 +1323,7 @@ describe('TranslationService - uploadAndAwaitChunked', () => {
     });
     mockedAxios.put.mockResolvedValueOnce({ data: null });
 
-    mockedApiClient.get.mockResolvedValueOnce({
-      data: { data: { ...baseJob, status: 'CHUNKED' } },
-    });
+    mockedApiClient.get.mockResolvedValueOnce({ data: buildWireStatus('CHUNKED') });
 
     const result = await uploadAndAwaitChunked(
       { file: mockFile, legalAttestation: mockLegalAttestation },
@@ -1323,11 +1347,12 @@ describe('TranslationService - uploadAndAwaitChunked', () => {
     });
     mockedAxios.put.mockResolvedValueOnce({ data: null });
 
-    // Three polls: PENDING, CHUNKING, CHUNKED
+    // Three polls: PENDING, CHUNKING, CHUNKED — flat wire shape per
+    // TranslationStatusApiResponse (the 2026-05-09 hotfix contract).
     mockedApiClient.get
-      .mockResolvedValueOnce({ data: { data: { ...baseJob, status: 'PENDING' } } })
-      .mockResolvedValueOnce({ data: { data: { ...baseJob, status: 'CHUNKING' } } })
-      .mockResolvedValueOnce({ data: { data: { ...baseJob, status: 'CHUNKED' } } });
+      .mockResolvedValueOnce({ data: buildWireStatus('PENDING') })
+      .mockResolvedValueOnce({ data: buildWireStatus('CHUNKING') })
+      .mockResolvedValueOnce({ data: buildWireStatus('CHUNKED') });
 
     const resultPromise = uploadAndAwaitChunked(
       { file: mockFile, legalAttestation: mockLegalAttestation },
@@ -1356,7 +1381,7 @@ describe('TranslationService - uploadAndAwaitChunked', () => {
     mockedAxios.put.mockResolvedValueOnce({ data: null });
 
     mockedApiClient.get.mockResolvedValueOnce({
-      data: { data: { ...baseJob, status: 'CHUNKING_FAILED' } },
+      data: buildWireStatus('CHUNKING_FAILED'),
     });
 
     await expect(
@@ -1384,7 +1409,7 @@ describe('TranslationService - uploadAndAwaitChunked', () => {
     mockedAxios.put.mockResolvedValueOnce({ data: null });
 
     mockedApiClient.get.mockResolvedValueOnce({
-      data: { data: { ...baseJob, status: 'FAILED' } },
+      data: buildWireStatus('FAILED'),
     });
 
     await expect(
@@ -1410,7 +1435,7 @@ describe('TranslationService - uploadAndAwaitChunked', () => {
 
     // Always return PENDING so the loop never exits via success.
     mockedApiClient.get.mockResolvedValue({
-      data: { data: { ...baseJob, status: 'PENDING' } },
+      data: buildWireStatus('PENDING'),
     });
 
     const resultPromise = uploadAndAwaitChunked(
@@ -1443,8 +1468,8 @@ describe('TranslationService - uploadAndAwaitChunked', () => {
     mockedAxios.put.mockResolvedValueOnce({ data: null });
 
     mockedApiClient.get
-      .mockResolvedValueOnce({ data: { data: { ...baseJob, status: 'CHUNKING' } } })
-      .mockResolvedValueOnce({ data: { data: { ...baseJob, status: 'CHUNKED' } } });
+      .mockResolvedValueOnce({ data: buildWireStatus('CHUNKING') })
+      .mockResolvedValueOnce({ data: buildWireStatus('CHUNKED') });
 
     const onPollTick = vi.fn();
 

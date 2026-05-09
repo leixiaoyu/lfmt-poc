@@ -235,7 +235,10 @@ const authHandlers: HttpHandler[] = [
     return HttpResponse.json({ user, ...tokens }, { status: 200 });
   }),
 
-  // POST /auth/refresh
+  // POST /auth/refresh — mirrors the real Lambda's flat shape (no
+  // `{data: ...}` wrapper). The 2026-05-09 hotfix flattened the real
+  // backend's response so frontend reads `response.data.accessToken`
+  // directly; the mock matches that contract here.
   http.post(buildPath('/auth/refresh'), async ({ request }) => {
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
     const refreshToken = typeof body.refreshToken === 'string' ? body.refreshToken : undefined;
@@ -249,7 +252,10 @@ const authHandlers: HttpHandler[] = [
     // never get stuck behind a stale token from a previous page load.
     const user = sessions.get(refreshToken) ?? buildMockUser({});
     const tokens = issueTokens(user);
-    return HttpResponse.json(tokens, { status: 200 });
+    return HttpResponse.json(
+      { message: 'Tokens refreshed successfully', ...tokens },
+      { status: 200 }
+    );
   }),
 
   // POST /auth/logout
@@ -334,9 +340,17 @@ const authHandlers: HttpHandler[] = [
 //   GET  /jobs                                    — job history
 //   GET  /jobs/:jobId/download                    — download translated text
 //
-// All responses are wrapped in `{ data: T }` to match the existing
-// frontend contract (translationService.ts:175, 190, 203, 214 all
-// dereference `response.data.data`).
+// Wire-shape policy (2026-05-09 hotfix):
+//   Mock bodies MIRROR the real Lambda response shape, not the frontend's
+//   reader expectation. POST /jobs/upload uniquely returns
+//   `{message, data: PresignedUrlResponse}` because that is what the live
+//   `uploadRequest` Lambda emits; every other job-side endpoint returns
+//   a flat object — no `{data: ...}` wrapper. Previously the mock wrapped
+//   everything in `{data: ...}` to match a frontend bug, hiding the
+//   divergence until the bug surfaced on the deployed walkthrough. The
+//   mock is now the single source of truth for the wire contract: any
+//   future drift between the mock and the real backend will reproduce
+//   in vitest before it reaches production.
 //
 // On-demand simulation policy (Phase 4) lives inside the status
 // handler — there are NO setInterval/setTimeout calls. The status
@@ -448,10 +462,28 @@ function toWireStatus(state: JobState): string {
 }
 
 /**
- * Project the closure-scoped `JobState` to the wire shape the
- * frontend expects (`TranslationJob` from translationService.ts:14-38).
+ * Project the closure-scoped `JobState` to the wire shape the real
+ * `getTranslationStatus` Lambda returns (the canonical
+ * TranslationStatusApiResponse from @lfmt/shared-types).
+ *
+ * The shape MUST mirror the real Lambda — including the field-name
+ * choice `chunksTranslated` (NOT `completedChunks`). Mismatches here
+ * are exactly what the 2026-05-09 hotfix is preventing: the mock used
+ * to wrap responses in `{data: ...}` and use frontend-side field names,
+ * which masked a class of demo-blocking bugs.
  */
-function toWireJob(state: JobState): Record<string, unknown> {
+function toWireTranslationStatus(state: JobState): Record<string, unknown> {
+  const total = state.totalChunks;
+  const done = state.completedChunks;
+  const progressPercentage = total > 0 ? Math.round((done / total) * 100) : 0;
+  const wireStatus = toWireStatus(state);
+  // Mock translationStatus mirrors job.status for the simulated lifecycle:
+  //   uploaded → NOT_STARTED, translating → IN_PROGRESS, completed → COMPLETED.
+  let translationStatus = 'NOT_STARTED';
+  if (state.status === 'translating') translationStatus = 'IN_PROGRESS';
+  else if (state.status === 'completed') translationStatus = 'COMPLETED';
+  else if (state.status === 'failed') translationStatus = 'TRANSLATION_FAILED';
+
   return {
     jobId: state.jobId,
     // R1: echo the userId captured on the job at upload time. Do NOT
@@ -464,10 +496,40 @@ function toWireJob(state: JobState): Record<string, unknown> {
     // size instead of "0 Bytes".
     fileSize: state.fileSize,
     contentType: 'text/plain',
-    status: toWireStatus(state),
+    status: wireStatus,
+    translationStatus,
     targetLanguage: state.targetLang,
     // Issue #143: was hardcoded to 'neutral'; now echoes whatever the
     // translate request supplied (or the wizard's neutral default).
+    tone: state.tone,
+    totalChunks: total,
+    chunksTranslated: done,
+    progressPercentage,
+    createdAt: state.createdAt,
+    translationStartedAt: state.translateStartedAt
+      ? new Date(state.translateStartedAt).toISOString()
+      : undefined,
+    translationCompletedAt: state.completedAt,
+  };
+}
+
+/**
+ * Project the closure-scoped `JobState` to the History page's expected
+ * `TranslationJob` shape (the type defined in
+ * frontend/src/services/translationService.ts). The dashboard list
+ * endpoint does NOT exist on the live backend yet — this projection is
+ * only consumed by the in-memory mock; see the KNOWN-LIMITATION note on
+ * `getTranslationJobs` in translationService.ts.
+ */
+function toWireJobListItem(state: JobState): Record<string, unknown> {
+  return {
+    jobId: state.jobId,
+    userId: state.userId,
+    fileName: state.fileName,
+    fileSize: state.fileSize,
+    contentType: 'text/plain',
+    status: toWireStatus(state),
+    targetLanguage: state.targetLang,
     tone: state.tone,
     totalChunks: state.totalChunks,
     completedChunks: state.completedChunks,
@@ -608,8 +670,14 @@ const translationHandlers: HttpHandler[] = [
     }
     const uploadUrl = `${pageOrigin}/__mock-s3/${jobId}`;
 
+    // Mirrors the real PresignedUrlApiResponse envelope from
+    // @lfmt/shared-types: POST /jobs/upload is the ONLY job-side
+    // endpoint that wraps in `{message, data}`. Including the
+    // `message` field here keeps the mock the canonical contract for
+    // downstream consumers / contract tests.
     return HttpResponse.json(
       {
+        message: 'Upload URL generated successfully',
         data: {
           uploadUrl,
           fileId: jobId,
@@ -670,7 +738,21 @@ const translationHandlers: HttpHandler[] = [
     job.statusPollCount = 0;
     jobs.set(jobId, job);
 
-    return HttpResponse.json({ data: toWireJob(job) }, { status: 200 });
+    // Mirrors the real `startTranslation` Lambda's flat shape
+    // (StartTranslationApiResponse). Field names match exactly so a
+    // future wire-shape regression in the mock will surface in vitest
+    // before it reaches production.
+    return HttpResponse.json(
+      {
+        message: 'Translation started successfully',
+        jobId: job.jobId,
+        translationStatus: 'IN_PROGRESS',
+        targetLanguage: job.targetLang,
+        totalChunks: job.totalChunks,
+        chunksTranslated: 0,
+      },
+      { status: 200 }
+    );
   }),
 
   // GET /jobs/:jobId/translation-status — on-demand simulation tick.
@@ -701,13 +783,20 @@ const translationHandlers: HttpHandler[] = [
       }
       jobs.set(jobId, job);
     }
-    return HttpResponse.json({ data: toWireJob(job) }, { status: 200 });
+    // Flat envelope (no `data` wrapper) — mirrors the real
+    // getTranslationStatus Lambda. The response uses the canonical
+    // TranslationStatusApiResponse shape from @lfmt/shared-types.
+    return HttpResponse.json(toWireTranslationStatus(job), { status: 200 });
   }),
 
   // GET /jobs — list all jobs in the in-memory store.
+  // The real backend does not yet expose this route (see KNOWN-LIMITATION
+  // note on translationService.getTranslationJobs); the mock projects the
+  // History page's expected shape as a flat array so behaviour is
+  // demoable end-to-end.
   http.get(buildPath('/jobs'), () => {
-    const list = Array.from(jobs.values()).map(toWireJob);
-    return HttpResponse.json({ data: list }, { status: 200 });
+    const list = Array.from(jobs.values()).map(toWireJobListItem);
+    return HttpResponse.json(list, { status: 200 });
   }),
 
   // GET /jobs/:jobId/download — return simulated translated text.

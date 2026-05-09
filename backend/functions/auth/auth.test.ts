@@ -338,8 +338,13 @@ describe('Auth Service', () => {
       const result = await refreshTokenHandler(event);
       const body = JSON.parse(result.body);
       expect(result.statusCode).toBe(200);
-      expect(body.data.accessToken).toBe('newaccesstoken');
-      expect(body.data.idToken).toBe('newidtoken');
+      // Flat envelope (no `data` wrapper) — matches the rest of the auth
+      // handlers and the frontend reader (`authService.refreshToken`),
+      // which dereferences `response.data.accessToken` directly. The
+      // previous `{message, data: {...}}` shape was the inconsistency
+      // that the 2026-05-09 hotfix collapsed (see refreshToken.ts comment).
+      expect(body.accessToken).toBe('newaccesstoken');
+      expect(body.idToken).toBe('newidtoken');
     });
 
     it('should return 401 for an invalid refresh token', async () => {

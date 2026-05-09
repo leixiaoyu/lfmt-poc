@@ -10,7 +10,7 @@
  */
 
 import { apiClient } from '../utils/api';
-import type { PresignedUrlRequest, PresignedUrlResponse } from '@lfmt/shared-types';
+import type { PresignedUrlApiResponse, PresignedUrlRequest } from '@lfmt/shared-types';
 import { stripBrowserForbiddenHeaders } from '../utils/headerFilters';
 
 /**
@@ -68,7 +68,11 @@ export async function requestUploadUrl(file: File): Promise<UploadRequestResult>
     contentType: file.type,
   };
 
-  const response = await apiClient.post<{ data: PresignedUrlResponse }>('/jobs/upload', request);
+  // POST /jobs/upload returns the `{message, data: PresignedUrlResponse}`
+  // wrapper — see PresignedUrlApiResponse in @lfmt/shared-types for why
+  // this is the only job-side endpoint with an envelope. Using the shared
+  // DTO keeps backend and frontend wire shapes coupled at compile time.
+  const response = await apiClient.post<PresignedUrlApiResponse>('/jobs/upload', request);
 
   return response.data.data;
 }

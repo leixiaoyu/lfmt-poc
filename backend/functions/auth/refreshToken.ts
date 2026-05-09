@@ -75,15 +75,21 @@ export const handler = async (event: APIGatewayProxyEvent): Promise<APIGatewayPr
 
     logger.info('Tokens refreshed successfully', { requestId });
 
+    // Flat response shape (no `data` wrapper) so the frontend
+    // (`authService.refreshToken`) can read `response.data.accessToken`
+    // directly. This matches every other auth handler (login, register,
+    // getCurrentUser) — the previous `{message, data: {...}}` envelope
+    // was an inconsistency that would have surfaced the same wire-shape
+    // bug as the 2026-05-09 demo blocker the moment refresh was exercised
+    // against the real backend (the hotfix audit found that the frontend
+    // expected a flat shape, not the wrapped one this handler returned).
     return createSuccessResponse(
       200,
       {
         message: 'Tokens refreshed successfully',
-        data: {
-          accessToken: response.AuthenticationResult.AccessToken,
-          idToken: response.AuthenticationResult.IdToken,
-          expiresIn: response.AuthenticationResult.ExpiresIn,
-        },
+        accessToken: response.AuthenticationResult.AccessToken,
+        idToken: response.AuthenticationResult.IdToken,
+        expiresIn: response.AuthenticationResult.ExpiresIn,
       },
       requestId,
       requestOrigin

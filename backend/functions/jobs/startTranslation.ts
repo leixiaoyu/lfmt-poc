@@ -13,7 +13,12 @@ import {
 } from '@aws-sdk/client-dynamodb';
 import { SFNClient, StartExecutionCommand, StartExecutionCommandOutput } from '@aws-sdk/client-sfn';
 import { marshall, unmarshall } from '@aws-sdk/util-dynamodb';
-import { DynamoDBJob, TRANSLATION_TONE_VALUES, TranslationTone } from '@lfmt/shared-types';
+import {
+  DynamoDBJob,
+  StartTranslationApiResponse,
+  TRANSLATION_TONE_VALUES,
+  TranslationTone,
+} from '@lfmt/shared-types';
 import Logger from '../shared/logger';
 import { getRequiredEnv } from '../shared/env';
 import { createSuccessResponse, createErrorResponse } from '../shared/api-response';
@@ -198,22 +203,22 @@ export const handler = async (event: APIGatewayProxyEvent): Promise<APIGatewayPr
       executionArn,
     });
 
-    return createSuccessResponse(
-      200,
-      {
-        message: 'Translation started successfully',
-        jobId,
-        translationStatus: 'IN_PROGRESS',
-        targetLanguage: body.targetLanguage,
-        totalChunks: job.totalChunks,
-        chunksTranslated: 0,
-        estimatedCompletion,
-        estimatedCost: calculateEstimatedCost(job.totalChunks, 3500), // Assume 3500 tokens per chunk
-        executionArn, // Step Functions execution ARN for tracking
-      },
-      undefined,
-      requestOrigin
-    );
+    // Type the response with the shared DTO so any drift from the
+    // frontend reader (translationService.startTranslation) surfaces
+    // at compile time.
+    const responseBody: StartTranslationApiResponse = {
+      message: 'Translation started successfully',
+      jobId,
+      translationStatus: 'IN_PROGRESS',
+      targetLanguage: body.targetLanguage,
+      totalChunks: job.totalChunks,
+      chunksTranslated: 0,
+      estimatedCompletion,
+      estimatedCost: calculateEstimatedCost(job.totalChunks, 3500), // Assume 3500 tokens per chunk
+      executionArn, // Step Functions execution ARN for tracking
+    };
+
+    return createSuccessResponse(200, responseBody, undefined, requestOrigin);
   } catch (error) {
     logger.error('Failed to start translation', {
       error: error instanceof Error ? error.message : 'Unknown error',

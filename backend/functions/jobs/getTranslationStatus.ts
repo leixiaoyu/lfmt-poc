@@ -7,7 +7,7 @@
 import { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
 import { DynamoDBClient, GetItemCommand, GetItemCommandOutput } from '@aws-sdk/client-dynamodb';
 import { marshall, unmarshall } from '@aws-sdk/util-dynamodb';
-import { DynamoDBJob } from '@lfmt/shared-types';
+import { DynamoDBJob, TranslationStatusApiResponse } from '@lfmt/shared-types';
 import Logger from '../shared/logger';
 import { getRequiredEnv } from '../shared/env';
 import { createSuccessResponse, createErrorResponse } from '../shared/api-response';
@@ -23,45 +23,24 @@ const dynamoClient = new DynamoDBClient({});
 
 const JOBS_TABLE = getRequiredEnv('JOBS_TABLE');
 
-/**
- * Translation status response
- */
-interface TranslationStatusResponse {
-  jobId: string;
-  // R3 (OMC review follow-up): the frontend's `TranslationDetail.tsx`
-  // renders `userId`, `fileSize`, and `contentType` from this response
-  // (lines 239, 246 — fileSize and contentType in particular). They
-  // were absent from the real Lambda response, so the demo bug fixed
-  // by PR #166 on the mock side (Issue #144 — "0 Bytes") would have
-  // reappeared in production once the mock was disabled. The fields
-  // are already persisted on the DDB job record at upload time
-  // (uploadRequest.ts:124-126), so surfacing them here is a pure
-  // wire-shape catch-up with no schema migration needed.
-  userId?: string;
-  fileName?: string;
-  fileSize?: number;
-  contentType?: string;
-  status: string; // Overall job status (PENDING_UPLOAD, UPLOADED, CHUNKED, etc.)
-  translationStatus: string;
-  targetLanguage?: string;
-  tone?: string;
-  totalChunks: number;
-  chunksTranslated: number;
-  progressPercentage: number;
-  tokensUsed?: number;
-  estimatedCost?: number;
-  // createdAt is the server-side ISO timestamp recorded when the job record
-  // was first persisted (during upload/request). It represents the true start
-  // of a user's wait time, and benchmark tooling uses it as the anchor for
-  // end-to-end duration measurements so results aren't skewed by client-side
-  // clock drift or upload timing. See backend/tests/performance/performance-benchmark.ts.
-  createdAt?: string;
-  translationStartedAt?: string;
-  translationCompletedAt?: string;
-  estimatedCompletion?: string;
-  error?: string;
-  [key: string]: unknown;
-}
+// Translation status response shape now lives in @lfmt/shared-types
+// (TranslationStatusApiResponse) so the backend Lambda and the frontend
+// service (translationService.getJobStatus) share a single source of
+// truth. Drift between the two — like the 2026-05-09 demo blocker
+// where the frontend read response.data.data on a flat envelope — is
+// now caught at compile time on either side.
+//
+// History notes preserved from the previous local interface:
+//   - R3 (OMC review follow-up): userId, fileSize, contentType were
+//     surfaced here so TranslationDetail.tsx could render them. The
+//     fields are persisted on the DDB job record at upload time
+//     (uploadRequest.ts:124-126) so surfacing them is a pure wire-shape
+//     catch-up with no schema migration.
+//   - createdAt is the server-side ISO timestamp recorded when the job
+//     record was first persisted (during upload/request). Benchmark
+//     tooling uses it as the anchor for end-to-end duration measurements
+//     so results aren't skewed by client-side clock drift or upload
+//     timing. See backend/tests/performance/performance-benchmark.ts.
 
 /**
  * Lambda handler for getting translation status
@@ -101,8 +80,9 @@ export const handler = async (event: APIGatewayProxyEvent): Promise<APIGatewayPr
       );
     }
 
-    // Build response
-    const response: TranslationStatusResponse = {
+    // Build response — typed with the shared DTO so any drift between
+    // backend and frontend surfaces as a compile error.
+    const response: TranslationStatusApiResponse = {
       jobId,
       // R3: surface the file/owner metadata persisted at upload time so
       // the Translation Details view can render File Size, Content Type,
