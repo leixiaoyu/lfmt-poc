@@ -14,7 +14,7 @@ import {
   TooManyRequestsException,
 } from '@aws-sdk/client-cognito-identity-provider';
 import { loginRequestSchema } from '@lfmt/shared-types';
-import { createErrorResponse, getCorsHeaders } from '../shared/api-response';
+import { createErrorResponse, createFlatResponse } from '../shared/api-response';
 import Logger from '../shared/logger';
 import { getRequiredEnv } from '../shared/env';
 import { decodeJwtPayload } from '../shared/jwt-utils';
@@ -101,17 +101,21 @@ export const handler = async (event: APIGatewayProxyEvent): Promise<APIGatewayPr
       userId: user.id,
     });
 
-    // Return response matching AuthResponse interface using getCorsHeaders
-    return {
-      statusCode: 200,
-      headers: getCorsHeaders(requestOrigin),
-      body: JSON.stringify({
+    // Flat envelope (matches refreshToken/register/getCurrentUser); the reader
+    // in `frontend/src/services/authService.ts` accesses these fields directly
+    // off `response.data` (no `.data.data` wrapper). Convention enforced at
+    // compile time via `createFlatResponse` (see api-response.ts:108).
+    return createFlatResponse(
+      200,
+      {
         user,
         accessToken: response.AuthenticationResult.AccessToken,
         refreshToken: response.AuthenticationResult.RefreshToken,
         idToken: response.AuthenticationResult.IdToken,
-      }),
-    };
+      },
+      requestId,
+      requestOrigin
+    );
   } catch (error) {
     if (error instanceof NotAuthorizedException) {
       logger.warn('Login failed: invalid credentials', {
