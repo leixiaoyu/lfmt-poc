@@ -25,6 +25,8 @@ import { lazy, Suspense } from 'react';
 const LoginPage = lazy(() => import('./pages/LoginPage'));
 const RegisterPage = lazy(() => import('./pages/RegisterPage'));
 const ForgotPasswordPage = lazy(() => import('./pages/ForgotPasswordPage'));
+const TermsOfServicePage = lazy(() => import('./pages/TermsOfServicePage'));
+const PrivacyPolicyPage = lazy(() => import('./pages/PrivacyPolicyPage'));
 const DashboardPage = lazy(() => import('./pages/DashboardPage'));
 const TranslationUpload = lazy(() =>
   import('./pages/TranslationUpload').then((m) => ({ default: m.TranslationUpload }))
@@ -77,6 +79,10 @@ function App() {
                 <Route path={ROUTES.LOGIN} element={<LoginPage />} />
                 <Route path={ROUTES.REGISTER} element={<RegisterPage />} />
                 <Route path={ROUTES.FORGOT_PASSWORD} element={<ForgotPasswordPage />} />
+
+                {/* Legal pages (public, no auth required — issue #223) */}
+                <Route path={ROUTES.LEGAL_TERMS} element={<TermsOfServicePage />} />
+                <Route path={ROUTES.LEGAL_PRIVACY} element={<PrivacyPolicyPage />} />
 
                 {/* Protected routes */}
                 <Route

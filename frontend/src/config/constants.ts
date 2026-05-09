@@ -102,6 +102,10 @@ export const ROUTES = {
   REGISTER: '/register',
   FORGOT_PASSWORD: '/forgot-password',
 
+  // Legal pages (public, no auth required)
+  LEGAL_TERMS: '/legal/terms',
+  LEGAL_PRIVACY: '/legal/privacy',
+
   // Protected routes
   DASHBOARD: '/dashboard',
   NEW_TRANSLATION: '/translation/new',
