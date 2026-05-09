@@ -3,7 +3,10 @@
 
 import { App, Stack } from 'aws-cdk-lib';
 import { Template, Match } from 'aws-cdk-lib/assertions';
-import { LfmtInfrastructureStack } from '../lfmt-infrastructure-stack';
+import {
+  CLOUDFRONT_ORIGINS_BY_ENVIRONMENT,
+  LfmtInfrastructureStack,
+} from '../lfmt-infrastructure-stack';
 
 describe('LFMT Infrastructure Stack', () => {
   let app: App;
@@ -1438,6 +1441,156 @@ describe('LFMT Infrastructure Stack', () => {
       });
     });
 
+    test('CSP connect-src includes both API Gateway and document S3 bucket origins (Issue #98)', () => {
+      // Regression guard for the 2026-05-08 demo-blocking incident.
+      //
+      // The browser performs presigned-PUT uploads directly against the
+      // document S3 bucket; CSP `connect-src` must whitelist that origin
+      // alongside the API Gateway origin or the XHR is blocked and the
+      // wizard surfaces a misleading "Connection lost" error. The bucket
+      // is enumerated explicitly (not via a `*.s3.amazonaws.com` wildcard)
+      // per OWASP CSP guidance — see `buildCsp()` JSDoc.
+      //
+      // Both the initial response-headers policy AND the post-API
+      // "Updated" policy must include the bucket origin (the user's first
+      // upload may happen before the second policy is fully propagated to
+      // CloudFront edges).
+      const flattenCsp = (csp: unknown): string => {
+        if (typeof csp === 'string') return csp;
+        if (csp && typeof csp === 'object' && 'Fn::Join' in (csp as object)) {
+          const join = (csp as { 'Fn::Join': [string, unknown[]] })['Fn::Join'];
+          const parts = join[1];
+          return parts
+            .map((p) => {
+              if (typeof p === 'string') return p;
+              // Resolve common CFN intrinsics into a stable searchable
+              // marker. The bucket regional domain is a Fn::GetAtt on the
+              // DocumentBucket resource at synth time (CDK uses the
+              // logical id `DocumentBucket...`); we surface the full
+              // intrinsic so the test below can match on it deterministically.
+              return JSON.stringify(p);
+            })
+            .join('');
+        }
+        return JSON.stringify(csp);
+      };
+
+      const policies = template.findResources('AWS::CloudFront::ResponseHeadersPolicy');
+      const cspCarryingPolicies = Object.values(policies).filter((policy: any) => {
+        return !!policy?.Properties?.ResponseHeadersPolicyConfig?.SecurityHeadersConfig
+          ?.ContentSecurityPolicy?.ContentSecurityPolicy;
+      });
+      expect(cspCarryingPolicies.length).toBeGreaterThanOrEqual(2);
+
+      cspCarryingPolicies.forEach((policy: any) => {
+        const csp =
+          policy.Properties.ResponseHeadersPolicyConfig.SecurityHeadersConfig.ContentSecurityPolicy
+            .ContentSecurityPolicy;
+        const flat = flattenCsp(csp);
+
+        // 1. API Gateway origin must be present (wildcard form on the
+        //    initial policy, concrete domain on the updated policy — both
+        //    contain the literal substring 'execute-api').
+        expect(flat).toContain('execute-api');
+
+        // 2. Document-bucket origin must be present. CDK lowercases the
+        //    bucket name into `lfmt-documents-test`, then resolves the
+        //    regional domain at synth time; on a synthesized template
+        //    this surfaces as either:
+        //      a) Fn::GetAtt → ['DocumentBucket<hash>', 'RegionalDomainName']
+        //         (when used inside a string literal that doesn't already
+        //         resolve at synth time, like other CFN refs), OR
+        //      b) the literal string 'lfmt-documents-test.s3.<region>...'
+        //         (when CDK's tokenizer pre-resolves it, which is what
+        //         happens here because buildCsp interpolates into a plain
+        //         template literal that becomes a CloudFormation Fn::Join).
+        //    Either form is acceptable — we just need to prove the bucket
+        //    is enumerated, not that a particular CFN intrinsic was used.
+        const hasBucketLiteral = flat.includes('lfmt-documents-test');
+        const hasBucketGetAtt = flat.includes('DocumentBucket') && flat.includes('RegionalDomainName');
+        expect(hasBucketLiteral || hasBucketGetAtt).toBe(true);
+
+        // 3. connect-src directive must still start with 'self' and
+        //    must NOT use a generic `https://*.s3.amazonaws.com` wildcard
+        //    (OWASP — wildcards on S3 hosts let any compromised bucket
+        //    script exfiltrate the user's API Gateway Bearer credential).
+        expect(flat).toMatch(/connect-src\s+'self'/);
+        expect(flat).not.toContain('*.s3.amazonaws.com');
+      });
+    });
+
+    // -------------------------------------------------------------------------
+    // C-sec (PR #214 OMC): document bucket CORS must include CloudFront
+    // origin.
+    //
+    // Browser-side presigned-PUT uploads originate from the CloudFront-
+    // hosted SPA. Without the CloudFront domain in the bucket's CORS
+    // `AllowedOrigins`, the preflight OPTIONS is rejected and the PUT
+    // never fires. The CSP fix only solved one half of the demo-blocking
+    // incident; this test pins the other half so a future contributor
+    // can't drop the `addCorsRule` call without breaking the build.
+    //
+    // Implementation note: we use literal CloudFront domain strings
+    // (NOT `frontendDistribution.distributionDomainName`) to avoid a
+    // CFN cyclic dependency — see `addCloudFrontOriginToDocumentBucketCors`
+    // JSDoc. The test stack runs with `environment: 'test'`, which
+    // falls through to the `dev` literal list, so we assert on that
+    // domain (`d39xcun7144jgl.cloudfront.net`) — the same value that
+    // `getAllowedApiOrigins()` enumerates as the dev tier source of
+    // truth.
+    // -------------------------------------------------------------------------
+    test('Document bucket CORS includes CloudFront distribution origin', () => {
+      const buckets = template.findResources('AWS::S3::Bucket');
+      const docBucketEntry = Object.entries(buckets).find(([, bucket]) => {
+        const bucketName = (bucket as { Properties?: { BucketName?: unknown } })
+          .Properties?.BucketName;
+        // Document bucket has BucketName = `lfmt-documents-<stack>`.
+        if (typeof bucketName === 'string') return bucketName.includes('lfmt-documents');
+        // Token form (Fn::Join) — match on the literal segment.
+        const join = (bucketName as { 'Fn::Join'?: [string, unknown[]] })?.[
+          'Fn::Join'
+        ];
+        return Array.isArray(join?.[1])
+          ? join[1].some(
+              (part) => typeof part === 'string' && part.includes('lfmt-documents')
+            )
+          : false;
+      });
+
+      expect(docBucketEntry).toBeDefined();
+      const [, docBucket] = docBucketEntry!;
+      const corsRules =
+        (docBucket as { Properties?: { CorsConfiguration?: { CorsRules?: unknown[] } } })
+          .Properties?.CorsConfiguration?.CorsRules ?? [];
+      expect(Array.isArray(corsRules)).toBe(true);
+      // Two rules expected: (1) the initial localhost-dev rule from
+      // `createS3Buckets` and (2) the CloudFront-origin rule appended
+      // by `addCloudFrontOriginToDocumentBucketCors`. We assert
+      // `>= 2` so a future merge into a single rule (semantic equiv)
+      // doesn't break the test, but the current shape is two rules.
+      expect(corsRules.length).toBeGreaterThanOrEqual(2);
+
+      // Flatten every CORS rule's AllowedOrigins so the assertion is
+      // robust to the rule being either:
+      //   a) merged with the initial localhost rule (single CorsRule), or
+      //   b) appended via addCorsRule (second CorsRule entry).
+      // Either layout is correct as long as the CloudFront distribution
+      // domain ends up in the union.
+      const allOrigins: string[] = corsRules.flatMap((rule) =>
+        ((rule as { AllowedOrigins?: unknown[] }).AllowedOrigins ?? []).filter(
+          (o): o is string => typeof o === 'string'
+        )
+      );
+
+      // Use Match.arrayWith semantics — the CloudFront dev origin must
+      // be present somewhere in the union of CORS rules.
+      expect(allOrigins).toEqual(
+        expect.arrayContaining([
+          expect.stringMatching(/d39xcun7144jgl\.cloudfront\.net/),
+        ])
+      );
+    });
+
     test('Frontend S3 bucket has public access blocked', () => {
       const buckets = template.findResources('AWS::S3::Bucket');
       const frontendBucket = Object.values(buckets).find((bucket: any) => {
@@ -1843,5 +1996,236 @@ describe('LFMT Infrastructure Stack', () => {
       expect(downloadGetMethod).toBeDefined();
       expect((downloadGetMethod as any).Properties?.AuthorizationType).toBe('COGNITO_USER_POOLS');
     });
+  });
+});
+
+// ===========================================================================
+// PR #214 OMC R2 — Multi-environment CORS drift guard (H-1, M-1, code coverage)
+//
+// The PR's silent-drift defense was undefended in the prior test suite:
+// the original `'test'` stack falls through to the dev branch (so only the
+// dev CloudFront literal was ever exercised at synth). This block synthesizes
+// the stack for each of dev / staging / prod and asserts:
+//   1. The CloudFront origin literal for THAT environment appears in the
+//      document bucket's CORS `AllowedOrigins`.
+//   2. localhost is GATED to dev only — staging / prod must NOT allow it
+//      (security M finding: localhost exclusion).
+//   3. `AllowedMethods` includes PUT (test-coverage gap surfaced by the
+//      browser-upload regression class — without PUT in the bucket CORS,
+//      every presigned-PUT preflight fails).
+// ===========================================================================
+describe('LFMT Infrastructure Stack — multi-environment CORS (PR #214 OMC R2)', () => {
+  const synthForEnvironment = (environment: 'dev' | 'staging' | 'prod') => {
+    const app = new App({
+      context: {
+        skipLambdaBundling: 'true',
+        environment,
+      },
+    });
+    const stack = new LfmtInfrastructureStack(app, `Stack${environment}`, {
+      stackName: `lfmt-${environment}`,
+      environment,
+      enableLogging: true,
+      retainData: false,
+    });
+    return Template.fromStack(stack);
+  };
+
+  // Helper: collect every AllowedOrigins entry across every CORS rule on
+  // the document bucket so the assertion is robust to a future merge of
+  // the initial `cors:[]` rule and the appended `addCorsRule` entry.
+  const documentBucketCorsRules = (template: Template): unknown[] => {
+    const buckets = template.findResources('AWS::S3::Bucket');
+    const docBucketEntry = Object.entries(buckets).find(([, bucket]) => {
+      const bucketName = (bucket as { Properties?: { BucketName?: unknown } })
+        .Properties?.BucketName;
+      if (typeof bucketName === 'string') return bucketName.includes('lfmt-documents');
+      const join = (bucketName as { 'Fn::Join'?: [string, unknown[]] })?.['Fn::Join'];
+      return Array.isArray(join?.[1])
+        ? join[1].some((part) => typeof part === 'string' && part.includes('lfmt-documents'))
+        : false;
+    });
+    expect(docBucketEntry).toBeDefined();
+    const [, docBucket] = docBucketEntry!;
+    return (
+      (docBucket as { Properties?: { CorsConfiguration?: { CorsRules?: unknown[] } } })
+        .Properties?.CorsConfiguration?.CorsRules ?? []
+    );
+  };
+
+  const flattenAllowedOrigins = (corsRules: unknown[]): string[] =>
+    corsRules.flatMap((rule) =>
+      ((rule as { AllowedOrigins?: unknown[] }).AllowedOrigins ?? []).filter(
+        (o): o is string => typeof o === 'string'
+      )
+    );
+
+  const flattenAllowedMethods = (corsRules: unknown[]): string[] =>
+    corsRules.flatMap((rule) =>
+      ((rule as { AllowedMethods?: unknown[] }).AllowedMethods ?? []).filter(
+        (m): m is string => typeof m === 'string'
+      )
+    );
+
+  describe.each(['dev', 'staging', 'prod'] as const)(
+    'environment=%s',
+    (environment) => {
+      let template: Template;
+      beforeAll(() => {
+        template = synthForEnvironment(environment);
+      });
+
+      test(`document bucket CORS allows the ${environment} CloudFront origin`, () => {
+        const origins = flattenAllowedOrigins(documentBucketCorsRules(template));
+        const expectedOrigin = CLOUDFRONT_ORIGINS_BY_ENVIRONMENT[environment];
+        expect(origins).toEqual(expect.arrayContaining([expectedOrigin]));
+      });
+
+      test('document bucket CORS allows the PUT method (presigned uploads)', () => {
+        // Without PUT, every presigned upload preflight is rejected by
+        // the bucket's CORS policy and the browser blocks the request
+        // before any HTTP body is sent — same regression class as the
+        // 2026-05-08 demo blocker.
+        const methods = flattenAllowedMethods(documentBucketCorsRules(template));
+        expect(methods).toEqual(expect.arrayContaining(['PUT']));
+      });
+
+      if (environment === 'dev') {
+        test('localhost IS allowed on dev (developer experience)', () => {
+          const origins = flattenAllowedOrigins(documentBucketCorsRules(template));
+          // The initial `cors:[]` rule on the document bucket includes
+          // localhost for dev; this test pins that contract so a future
+          // refactor doesn't break local-machine wizard testing.
+          expect(origins).toEqual(expect.arrayContaining(['http://localhost:3000']));
+        });
+      } else {
+        test(`localhost is NOT allowed on ${environment} (security M)`, () => {
+          // Per security-M finding (PR #214 OMC R2): non-dev tiers must
+          // never allow `http://localhost:3000` on the production
+          // document bucket — a developer running a local wizard on
+          // their laptop must not be able to drive prod uploads.
+          const origins = flattenAllowedOrigins(documentBucketCorsRules(template));
+          expect(origins).not.toContain('http://localhost:3000');
+          expect(origins).not.toContain('https://localhost:3000');
+        });
+      }
+    }
+  );
+
+  // ---------------------------------------------------------------------
+  // Constant drift guard (PR #214 OMC R2 convergent — 2 agents).
+  //
+  // `CLOUDFRONT_ORIGINS_BY_ENVIRONMENT` is the single source of truth for
+  // both API Gateway CORS and document-bucket CORS. If a new environment
+  // ('preview', 'qa', etc.) is added to the stack switch but the
+  // contributor forgets to populate this constant, the bucket-CORS path
+  // silently falls back to the dev origin and prod-tier uploads start
+  // hitting the wrong origin. This test fails loudly on that drift.
+  // ---------------------------------------------------------------------
+  test('CLOUDFRONT_ORIGINS_BY_ENVIRONMENT has entries for every known tier', () => {
+    expect(Object.keys(CLOUDFRONT_ORIGINS_BY_ENVIRONMENT).sort()).toEqual([
+      'dev',
+      'prod',
+      'staging',
+    ]);
+    // Every value must be an https:// URL — the same gate `buildCsp`
+    // applies to `reportUri` (PR #214 OMC R2 H-3). This is a cheap
+    // sanity check that catches a typo at synth time. Wrap in a try
+    // so a failure surfaces the offending env name (Jest's `expect`
+    // doesn't accept a second message argument).
+    for (const [env, origin] of Object.entries(CLOUDFRONT_ORIGINS_BY_ENVIRONMENT)) {
+      if (!/^https:\/\//.test(origin)) {
+        throw new Error(`${env} origin must start with https:// (got: ${origin})`);
+      }
+    }
+  });
+});
+
+// ===========================================================================
+// buildCsp — H-3 reportUri sanitization (PR #214 OMC R2)
+//
+// `buildCsp({ reportUri })` from commit ea221f1 interpolates the value
+// directly into a CSP directive string. When issue #201 wires this
+// parameter, an attacker (or a misconfigured deploy) could inject a CSP
+// directive via a malformed URL. The validation is exercised here via
+// the static assertion helper so the unit test runs without a full stack
+// synth.
+// ===========================================================================
+describe('LFMT Infrastructure Stack — buildCsp reportUri sanitization (H-3)', () => {
+  // Access the private static assertion via a typed bracket-lookup so
+  // we don't widen the public API just for the test. The helper is
+  // marked `private static` on the class for encapsulation; this
+  // pattern (cast-to-record then index) is the standard Jest idiom
+  // for testing private statics without leaking them.
+  const assertValidCspReportUri = (
+    LfmtInfrastructureStack as unknown as {
+      assertValidCspReportUri: (reportUri: string) => void;
+    }
+  ).assertValidCspReportUri;
+
+  test('valid https:// URL passes', () => {
+    expect(() =>
+      assertValidCspReportUri('https://csp-report.lfmt.example.com/report')
+    ).not.toThrow();
+  });
+
+  test('throws on injected CSP directive via `;`', () => {
+    expect(() =>
+      assertValidCspReportUri('https://evil.com; script-src *')
+    ).toThrow(/must not contain whitespace/);
+  });
+
+  test('throws on injected CSP directive via `,`', () => {
+    expect(() =>
+      assertValidCspReportUri('https://evil.com,script-src *')
+    ).toThrow(/must not contain whitespace/);
+  });
+
+  test('throws on whitespace inside the URL', () => {
+    expect(() =>
+      assertValidCspReportUri('https://evil.com /report')
+    ).toThrow(/must not contain whitespace/);
+  });
+
+  test('throws on plain http:// (must be https)', () => {
+    expect(() =>
+      assertValidCspReportUri('http://csp-report.example.com/report')
+    ).toThrow(/protocol must be https:/);
+  });
+
+  test('throws on a malformed URL', () => {
+    expect(() => assertValidCspReportUri('not a url')).toThrow();
+  });
+
+  // Integration-flavoured assertion: the directive string emitted by
+  // buildCsp must contain `report-uri https://...` when the helper is
+  // given a valid URL. We synthesize a fresh stack so we can call the
+  // private buildCsp method via the same bracket-lookup idiom.
+  test('valid reportUri produces a `report-uri` directive in the emitted CSP string', () => {
+    const app = new App({ context: { skipLambdaBundling: 'true' } });
+    const stack = new LfmtInfrastructureStack(app, 'BuildCspStack', {
+      stackName: 'lfmt-buildcsp-test',
+      environment: 'test',
+      enableLogging: false,
+      retainData: false,
+    });
+    const buildCsp = (
+      stack as unknown as {
+        buildCsp: (opts: { connectSrc: string[]; reportUri?: string }) => string;
+      }
+    ).buildCsp.bind(stack);
+
+    const validUri = 'https://csp-report.lfmt.example.com/report';
+    const csp = buildCsp({
+      connectSrc: ['https://api.example.com'],
+      reportUri: validUri,
+    });
+    expect(csp).toContain(`report-uri ${validUri}`);
+    // Order matters per CSP grammar — report-uri must be the LAST
+    // directive so future tail-only directives can be appended cleanly.
+    // The directive must come at or near the end of the string.
+    const directives = csp.split(';').map((d) => d.trim()).filter(Boolean);
+    const lastDirective = directives[directives.length - 1];
+    expect(lastDirective).toBe(`report-uri ${validUri}`);
   });
 });

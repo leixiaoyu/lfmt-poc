@@ -38,26 +38,30 @@ vi.mock('react-router-dom', async () => {
 // layer so tests can stub the whole "upload + wait" operation as a single
 // mock. getJobStatus is kept in the mock because the Bug #2 polling tests
 // exercise the service internals via the separate describe block below.
-vi.mock('../../services/translationService', () => ({
-  translationService: {
-    createLegalAttestation: vi.fn(),
-    uploadAndAwaitChunked: vi.fn(),
-    startTranslation: vi.fn(),
-    getJobStatus: vi.fn(),
-  },
-  TranslationServiceError: class TranslationServiceError extends Error {
-    statusCode?: number;
-    constructor(message: string, statusCode?: number) {
-      super(message);
-      this.name = 'TranslationServiceError';
-      // Mirror the production constructor (translationService.ts:79-87) so
-      // tests that exercise HTTP-status-aware UX (Issue #147) get a real
-      // statusCode on the error instead of always falling through to the
-      // network-error branch of getTranslationErrorMessage.
-      this.statusCode = statusCode;
-    }
-  },
-}));
+//
+// PR #214 OMC C-test-1: pull the real `S3_UPLOAD_BLOCKED_MESSAGE` and
+// `TranslationServiceError` from the production module via
+// `vi.importActual`. Re-declaring those values inline here let the test
+// pass even when the production sentinel changed (the mock would still
+// surface the stale literal); routing through the actual module
+// guarantees the regression test breaks the moment production drifts.
+vi.mock('../../services/translationService', async () => {
+  const actual = await vi.importActual<typeof import('../../services/translationService')>(
+    '../../services/translationService'
+  );
+  return {
+    ...actual,
+    // Override only the methods the page calls — preserve every constant
+    // (including S3_UPLOAD_BLOCKED_MESSAGE) and class (including
+    // TranslationServiceError) at their real production identity.
+    translationService: {
+      createLegalAttestation: vi.fn(),
+      uploadAndAwaitChunked: vi.fn(),
+      startTranslation: vi.fn(),
+      getJobStatus: vi.fn(),
+    },
+  };
+});
 
 describe('TranslationUpload', () => {
   const renderComponent = () => {
@@ -517,6 +521,41 @@ describe('TranslationUpload', () => {
         const errorAlert = screen.getByRole('alert');
         expect(errorAlert).toBeInTheDocument();
         expect(errorAlert).toHaveTextContent(/Connection lost/i);
+      });
+    });
+
+    // -----------------------------------------------------------------------
+    // Issue #98 — accurate UI error when the S3 PUT is blocked (CSP / SW).
+    //
+    // The translation service surfaces a S3_UPLOAD_BLOCKED_MESSAGE for this
+    // case (see translationService.test.ts "throws TranslationServiceError
+    // (S3_UPLOAD_BLOCKED_MESSAGE) when S3 PUT has no response"). The error
+    // mapper passes the message through verbatim because statusCode is
+    // undefined and the message is non-generic. We assert here that the page
+    // surfaces the targeted phrase rather than the misleading generic
+    // "Connection lost" text that hid the original demo blocker.
+    // -----------------------------------------------------------------------
+    it('should display the S3-upload-blocked phrase when CSP/network blocks the PUT', async () => {
+      const user = userEvent.setup();
+      renderComponent();
+      await advanceToStep4(user);
+
+      const { S3_UPLOAD_BLOCKED_MESSAGE, TranslationServiceError } =
+        await import('../../services/translationService');
+      // statusCode left undefined to match the production wrap path.
+      vi.mocked(translationService.uploadAndAwaitChunked).mockRejectedValue(
+        new TranslationServiceError(S3_UPLOAD_BLOCKED_MESSAGE)
+      );
+
+      const submitButton = screen.getByRole('button', { name: /Submit & Start Translation/i });
+      await user.click(submitButton);
+
+      await waitFor(() => {
+        const errorAlert = screen.getByRole('alert');
+        expect(errorAlert).toBeInTheDocument();
+        expect(errorAlert).toHaveTextContent(/Upload was blocked/i);
+        // Negative assertion — the misleading generic phrase must NOT appear.
+        expect(errorAlert).not.toHaveTextContent(/Connection lost/i);
       });
     });
 

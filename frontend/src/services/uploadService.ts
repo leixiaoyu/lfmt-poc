@@ -11,6 +11,7 @@
 
 import { apiClient } from '../utils/api';
 import type { PresignedUrlRequest, PresignedUrlResponse } from '@lfmt/shared-types';
+import { stripBrowserForbiddenHeaders } from '../utils/headerFilters';
 
 /**
  * Upload progress callback
@@ -125,8 +126,17 @@ export async function uploadToS3(
     // Configure and send request
     xhr.open('PUT', uploadUrl);
 
-    // Set required headers
-    Object.entries(requiredHeaders).forEach(([key, value]) => {
+    // Set required headers — but filter out headers the browser refuses to
+    // accept via setRequestHeader (e.g. Content-Length). Per Fetch spec
+    // §forbidden-header-name, setting Content-Length emits
+    // "Refused to set unsafe header 'Content-Length'" and the call is a
+    // no-op. The browser ALWAYS sets Content-Length itself based on the
+    // body, so the S3 signature still matches as long as we don't try to
+    // set it manually. See `utils/headerFilters.stripBrowserForbiddenHeaders`
+    // for the canonical filter (and the 2026-05-08 demo-blocking incident
+    // post-mortem in this PR's body).
+    const browserSafeHeaders = stripBrowserForbiddenHeaders(requiredHeaders);
+    Object.entries(browserSafeHeaders).forEach(([key, value]) => {
       xhr.setRequestHeader(key, value);
     });
 

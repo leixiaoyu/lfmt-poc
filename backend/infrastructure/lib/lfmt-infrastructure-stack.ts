@@ -52,6 +52,38 @@ const LAMBDA_RUNTIME = lambda.Runtime.NODEJS_22_X;
 // constant will fail that test.
 const LAMBDA_ARCHITECTURE = lambda.Architecture.ARM_64;
 
+/**
+ * Per-environment CloudFront-distribution origin literals
+ * (PR #214 OMC R2, convergent: 2 agents).
+ *
+ * Single source of truth consumed by BOTH `getAllowedApiOrigins()`
+ * (API Gateway CORS) AND `addCloudFrontOriginToDocumentBucketCors()`
+ * (S3 document-bucket CORS). Before the unification both methods kept
+ * their own literal lists per environment and the two had to agree by
+ * manual care — drift surfaces at the worst possible time (browser
+ * upload silently rejected because the bucket-CORS list lagged the
+ * API-CORS list after a CloudFront re-create).
+ *
+ * IMPORTANT: these are LITERAL strings on purpose, NOT references to
+ * `frontendDistribution.distributionDomainName`. Using the live
+ * reference would create a CFN cyclic dependency (DocumentBucket →
+ * FrontendDistribution → response-headers policy → DocumentBucket).
+ * The literal approach is acceptable because CloudFront distribution
+ * domains are stable across deploys (CDK only re-creates the
+ * distribution on logical-id changes). See
+ * `addCloudFrontOriginToDocumentBucketCors` JSDoc and
+ * `docs/CLOUDFRONT-SETUP.md` runbook note.
+ *
+ * Drift guard: `infrastructure.test.ts` asserts every known
+ * environment has an entry, so adding a new tier without filling this
+ * table fails the build immediately.
+ */
+export const CLOUDFRONT_ORIGINS_BY_ENVIRONMENT: Record<'dev' | 'staging' | 'prod', string> = {
+  dev: 'https://d39xcun7144jgl.cloudfront.net',
+  staging: 'https://staging.lfmt.yourcompany.com',
+  prod: 'https://lfmt.yourcompany.com',
+};
+
 export interface LfmtInfrastructureStackProps extends StackProps {
   stackName: string;
   environment: string;
@@ -111,18 +143,22 @@ export class LfmtInfrastructureStack extends Stack {
   private getAllowedApiOrigins(): string[] {
     const origins: string[] = [];
 
+    // PR #214 OMC R2 (convergent): consume the unified per-environment
+    // CloudFront constant rather than carrying our own literal here.
+    // Drift between this list and the document-bucket CORS list (the
+    // other consumer of the same constant) is no longer possible.
     switch (this.node.tryGetContext('environment')) {
       case 'prod':
-        origins.push('https://lfmt.yourcompany.com'); // Replace with actual production domain
+        origins.push(CLOUDFRONT_ORIGINS_BY_ENVIRONMENT.prod);
         break;
       case 'staging':
-        origins.push('https://staging.lfmt.yourcompany.com'); // Replace with actual staging domain
+        origins.push(CLOUDFRONT_ORIGINS_BY_ENVIRONMENT.staging);
         break;
       default:
         // Dev environment: local development + CDK-managed CloudFront
         origins.push('http://localhost:3000');
         origins.push('https://localhost:3000');
-        origins.push('https://d39xcun7144jgl.cloudfront.net'); // CDK-managed CloudFront distribution
+        origins.push(CLOUDFRONT_ORIGINS_BY_ENVIRONMENT.dev);
     }
 
     // Add CloudFront distribution URL if it exists (after createFrontendHosting() is called)
@@ -188,6 +224,13 @@ export class LfmtInfrastructureStack extends Stack {
 
     // 6. Frontend Hosting (CloudFront + S3) - Create early to get CloudFront URL for CORS
     this.createFrontendHosting(removalPolicy);
+
+    // 6.5. Document-bucket CORS — append per-environment CloudFront
+    // origin so browser-side presigned-PUT uploads pass the bucket's
+    // OPTIONS preflight. Uses literal CloudFront domain strings (NOT
+    // `frontendDistribution.distributionDomainName`) to avoid a CFN
+    // cyclic dependency — see method JSDoc for details.
+    this.addCloudFrontOriginToDocumentBucketCors(props.environment);
 
     // 7. IAM Roles and Policies
     this.createIamRoles();
@@ -364,6 +407,77 @@ export class LfmtInfrastructureStack extends Stack {
           ],
         },
       ],
+    });
+  }
+
+  /**
+   * Append the CloudFront distribution origin to the document bucket's
+   * CORS `AllowedOrigins` (PR #214 OMC C-sec).
+   *
+   * Browser-side presigned-PUT uploads originate from the CloudFront-
+   * hosted SPA. The bucket's CORS preflight (OPTIONS /key) must echo
+   * `Access-Control-Allow-Origin: https://<cloudfront-domain>` or the
+   * browser blocks the subsequent PUT. The CSP fix in `buildCsp()`
+   * solved one half of the demo-blocking incident (CSP `connect-src`);
+   * this bucket-CORS entry solves the other half. Without both, a fresh
+   * deploy in a new region would still fail in a real browser even
+   * though curl-driven validation succeeds.
+   *
+   * IMPORTANT (cyclic-dependency avoidance): the response-headers
+   * policy used by `frontendDistribution` already references
+   * `documentBucket.bucketRegionalDomainName` (CSP `connect-src`). If
+   * we then made the bucket's CORS rule reference
+   * `frontendDistribution.distributionDomainName` we would create a
+   * CFN cycle (DocumentBucket → FrontendDistribution → policy →
+   * DocumentBucket). To break the cycle we use literal CloudFront
+   * domain strings per environment — the same approach that
+   * `getAllowedApiOrigins()` (dev tier) already takes for the API
+   * Gateway CORS list. This is acceptable because:
+   *   1. CloudFront distribution domains are stable across deploys
+   *      (CDK only re-creates the distribution on logical-id changes,
+   *      not on every `cdk deploy`).
+   *   2. The same value is already maintained as the source of truth
+   *      in `getAllowedApiOrigins()` — drift between the two would
+   *      surface immediately in the API CORS reference.
+   *
+   * Production gating: localhost origins are dev-only. We mirror the
+   * environment switch used by `getAllowedApiOrigins()` so prod-tier
+   * deploys don't accidentally allow `http://localhost:3000` to upload
+   * to the prod document bucket.
+   *
+   * @param environment - Stack environment ('dev' | 'staging' | 'prod')
+   *   from `LfmtInfrastructureStackProps`. Used to select the right
+   *   set of additional origins per tier.
+   */
+  private addCloudFrontOriginToDocumentBucketCors(environment: string) {
+    // PR #214 OMC R2 (convergent): consume the unified per-environment
+    // CloudFront constant `CLOUDFRONT_ORIGINS_BY_ENVIRONMENT` defined
+    // at module scope. The same constant feeds `getAllowedApiOrigins()`
+    // so the two CORS surfaces (API Gateway + S3 bucket) cannot drift
+    // independently — a single edit covers both. Drift via
+    // unrecognised environment label is also handled: known tiers
+    // (dev / staging / prod) get their concrete entry; anything else
+    // falls back to dev (matches the `default:` branch in
+    // `getAllowedApiOrigins()`).
+    const isKnown = (env: string): env is keyof typeof CLOUDFRONT_ORIGINS_BY_ENVIRONMENT =>
+      env === 'dev' || env === 'staging' || env === 'prod';
+    const additionalOrigins: string[] = [
+      isKnown(environment)
+        ? CLOUDFRONT_ORIGINS_BY_ENVIRONMENT[environment]
+        : CLOUDFRONT_ORIGINS_BY_ENVIRONMENT.dev,
+    ];
+
+    this.documentBucket.addCorsRule({
+      allowedMethods: [s3.HttpMethods.GET, s3.HttpMethods.PUT, s3.HttpMethods.POST],
+      allowedOrigins: additionalOrigins,
+      allowedHeaders: [
+        'Content-Type',
+        'x-amz-date',
+        'Authorization',
+        'x-api-key',
+        'x-amz-security-token',
+      ],
+      maxAge: 3000,
     });
   }
 
@@ -2059,11 +2173,20 @@ export class LfmtInfrastructureStack extends Stack {
         },
         contentSecurityPolicy: {
           // CSP body sourced from `buildCsp()` (Round 2 item 10).
-          // The `connect-src` argument is a region-wide wildcard at
-          // initial deploy time — `updateCloudFrontCSP()` swaps it for
-          // the concrete API Gateway domain once that resource exists.
+          // The `connect-src` arguments are region-wide wildcards at
+          // initial deploy time — `updateCloudFrontCSP()` swaps the API
+          // Gateway entry for the concrete domain once that resource
+          // exists. The document-bucket entry is included here too so
+          // browser-side presigned-PUT uploads succeed even before the
+          // updated policy is applied (preventing the same CSP-block
+          // class that caused the demo-blocking failure on 2026-05-08).
           // See `buildCsp()` JSDoc for the full hardening status.
-          contentSecurityPolicy: this.buildCsp('https://*.execute-api.us-east-1.amazonaws.com'),
+          contentSecurityPolicy: this.buildCsp({
+            connectSrc: [
+              'https://*.execute-api.us-east-1.amazonaws.com',
+              `https://${this.documentBucket.bucketRegionalDomainName}`,
+            ],
+          }),
           override: true,
         },
       },
@@ -2134,11 +2257,23 @@ export class LfmtInfrastructureStack extends Stack {
    * (e.g., Issue #197's `style-src` nonce work) now only edits ONE
    * place.
    *
-   * The only per-call variable is `connectSrc` — the wildcard
-   * `https://*.execute-api.us-east-1.amazonaws.com` is used at initial
-   * deploy time (before API Gateway exists), then replaced with the
-   * concrete `https://<apiId>.execute-api.<region>.amazonaws.com` once
-   * the API is provisioned.
+   * The per-call variable is `connectSrc` — a list of additional
+   * origins appended to `connect-src` alongside `'self'`. The list
+   * always includes:
+   *   1. The API Gateway origin (wildcard at initial deploy time, then
+   *      replaced with the concrete `https://<apiId>.execute-api.<region>.amazonaws.com`
+   *      once API Gateway is provisioned).
+   *   2. The S3 document-bucket regional domain
+   *      (`https://lfmt-documents-<stack>.s3.<region>.amazonaws.com`).
+   *      The browser performs presigned-PUT uploads directly against
+   *      this origin; without it the upload XHR is blocked by CSP and
+   *      the wizard surfaces a misleading "Connection lost" error
+   *      (root cause of the 2026-05-08 demo-blocking regression — the
+   *      curl validation path bypasses CSP, so this only manifests in
+   *      a real browser). The bucket origin is enumerated explicitly
+   *      (not via a `*.s3.amazonaws.com` wildcard) per OWASP CSP
+   *      guidance: a wildcard would let any compromised bucket script
+   *      exfiltrate the user's API Gateway Bearer credential.
    *
    * Hardening status (Issues #133, #194):
    *   - 'unsafe-eval' REMOVED from script-src.
@@ -2162,25 +2297,105 @@ export class LfmtInfrastructureStack extends Stack {
    *
    *   Issue #201 has the full implementation plan and acceptance
    *   criteria; when it lands, the activation here is a one-line
-   *   edit: append `report-uri ${reportUri}` to the directive list
-   *   below and pass the new endpoint URL through `updateCloudFrontCSP`.
-   *   Until then, every reviewer who looks at this code will see this
-   *   block and know exactly what to do (and why we didn't do it now).
+   *   edit: pass `reportUri` through to the options object below and
+   *   the directive is appended automatically. Until then, every
+   *   reviewer who looks at this code will see this block and know
+   *   exactly what to do (and why we didn't do it now).
+   *
+   * @param opts.connectSrc - Origins appended to `connect-src` alongside
+   *   `'self'`. Always pass an explicit list so reviewers can audit each
+   *   addition at the call site.
+   * @param opts.reportUri - Optional CSP `report-uri` endpoint. When set,
+   *   a `report-uri ${reportUri}` directive is appended (issue #201).
+   *   Left undefined today — see telemetry note above.
    */
-  private buildCsp(connectSrc: string): string {
-    return [
+  private buildCsp(opts: { connectSrc: string[]; reportUri?: string }): string {
+    const directives: string[] = [
       `default-src 'self'`,
       `script-src 'self'`,
       `style-src 'self' 'unsafe-inline'`,
       `img-src 'self' data: https:`,
       `font-src 'self' data:`,
-      `connect-src 'self' ${connectSrc}`,
+      `connect-src 'self' ${opts.connectSrc.join(' ')}`,
       `object-src 'none'`,
       `base-uri 'self'`,
       `form-action 'self'`,
       `frame-ancestors 'none'`,
       `upgrade-insecure-requests`,
-    ].join('; ') + ';';
+    ];
+
+    if (opts.reportUri) {
+      // H-3 (PR #214 OMC R2): sanitize `reportUri` BEFORE interpolating
+      // it into the CSP directive string. Without this, a malformed URL
+      // (or a misconfigured deploy) could inject arbitrary CSP
+      // directives — `;` and `,` both terminate directives in the CSP
+      // grammar, so a value like
+      //   `https://evil.com; script-src *`
+      // would silently downgrade `script-src` to allow ANY origin.
+      // Whitespace gets the same treatment because CSP source-list
+      // parsers split on whitespace; an injected token there would be
+      // treated as an additional source for the `report-uri` directive
+      // (which CSP3 ignores, but the legacy parser may not).
+      //
+      // The check is performed at synth time (not deploy time) so a
+      // misconfiguration fails fast in `cdk synth` / `cdk deploy` rather
+      // than reaching CloudFront. Issue #201 will wire this parameter;
+      // pinning the contract here means that PR can't accidentally
+      // forward an attacker-controlled URL.
+      LfmtInfrastructureStack.assertValidCspReportUri(opts.reportUri);
+      // CSP grammar requires `report-uri` to be the LAST directive so
+      // that any future tail-only directive (e.g. `report-to`) can be
+      // appended without breaking the value. Issue #201 will switch to
+      // `report-to` once the violation-receiver Lambda lands.
+      directives.push(`report-uri ${opts.reportUri}`);
+    }
+
+    return directives.join('; ') + ';';
+  }
+
+  /**
+   * Validate a CSP `report-uri` value before interpolating it into a
+   * directive string (H-3, PR #214 OMC R2).
+   *
+   * Rules (intentionally conservative — favour false-positive on synth
+   * over a false-negative that ships an injection):
+   *   1. Must parse as a valid URL.
+   *   2. Protocol MUST be `https:`. CSP report endpoints commonly POST
+   *      cross-origin with credentials, so plain HTTP would leak
+   *      violation reports (which contain blocked URIs that may include
+   *      session info) over the wire.
+   *   3. The raw string MUST NOT contain whitespace, `;`, or `,` —
+   *      these terminate / split CSP directives, so an injected
+   *      character there would let an attacker append a directive (e.g.
+   *      `https://x.com; script-src *`).
+   *
+   * Throws synchronously inside `cdk synth` so a bad value never
+   * reaches CloudFront. Static so the unit test can call it without
+   * instantiating the full stack.
+   */
+  private static assertValidCspReportUri(reportUri: string): void {
+    // Forbidden characters: whitespace + CSP-grammar separators.
+    if (/[\s;,]/.test(reportUri)) {
+      throw new Error(
+        `Invalid CSP reportUri: must not contain whitespace, ';' or ',' (got: ${JSON.stringify(reportUri)})`
+      );
+    }
+
+    // Must parse as a URL. URL constructor throws on malformed input.
+    let parsed: URL;
+    try {
+      parsed = new URL(reportUri);
+    } catch {
+      throw new Error(
+        `Invalid CSP reportUri: not a valid URL (got: ${JSON.stringify(reportUri)})`
+      );
+    }
+
+    if (parsed.protocol !== 'https:') {
+      throw new Error(
+        `Invalid CSP reportUri: protocol must be https: (got: ${parsed.protocol})`
+      );
+    }
   }
 
   private updateCloudFrontCSP() {
@@ -2227,10 +2442,18 @@ export class LfmtInfrastructureStack extends Stack {
         },
         contentSecurityPolicy: {
           // CSP body sourced from `buildCsp()` (Round 2 item 10) so the
-          // initial and updated policies cannot drift. `connect-src` is
-          // now the concrete API Gateway domain — see `buildCsp()`
+          // initial and updated policies cannot drift. `connect-src`
+          // now lists BOTH the concrete API Gateway domain AND the
+          // document-bucket regional domain — the latter is required
+          // for browser-side presigned-PUT uploads (root cause of the
+          // 2026-05-08 demo-blocking regression). See `buildCsp()`
           // JSDoc for the full hardening status (#133, #194, #197).
-          contentSecurityPolicy: this.buildCsp(`https://${apiDomain}`),
+          contentSecurityPolicy: this.buildCsp({
+            connectSrc: [
+              `https://${apiDomain}`,
+              `https://${this.documentBucket.bucketRegionalDomainName}`,
+            ],
+          }),
           override: true,
         },
       },

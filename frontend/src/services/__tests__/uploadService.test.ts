@@ -184,11 +184,55 @@ describe('uploadService', () => {
 
       await uploadPromise;
 
-      // Assert
+      // Assert — Content-Type is forwarded, but Content-Length is filtered
+      // (browser sets it itself; manually setting it triggers
+      // "Refused to set unsafe header" — see translationService
+      // .stripBrowserForbiddenHeaders + the 2026-05-08 demo-blocking
+      // post-mortem in this PR's body).
       expect(mockXHR.open).toHaveBeenCalledWith('PUT', uploadUrl);
       expect(mockXHR.setRequestHeader).toHaveBeenCalledWith('Content-Type', 'text/plain');
-      expect(mockXHR.setRequestHeader).toHaveBeenCalledWith('Content-Length', '7');
       expect(mockXHR.send).toHaveBeenCalledWith(mockFile);
+    });
+
+    // -----------------------------------------------------------------------
+    // Regression guard for the 2026-05-08 demo-blocking incident.
+    //
+    // Browsers refuse setRequestHeader('Content-Length', ...) per Fetch spec
+    // §forbidden-header-name and emit "Refused to set unsafe header
+    // 'Content-Length'" to the console. The XHR itself proceeds (the browser
+    // computes Content-Length from the body), but the noisy console error
+    // had previously been mistaken for the root cause of the upload failure.
+    // The actual root cause was CSP — see Fix 1 in this PR — but stripping
+    // Content-Length here removes the misleading console noise AND the
+    // (legitimate) "we shouldn't be trying to set this anyway" code smell.
+    // -----------------------------------------------------------------------
+    it('should NOT call setRequestHeader for Content-Length (browser-forbidden)', async () => {
+      // Arrange — the backend may include Content-Length in requiredHeaders
+      // for documentation / non-browser callers, but the browser path must
+      // skip it.
+      const mockFile = new File(['content'], 'test.txt', { type: 'text/plain' });
+      const uploadUrl = 'https://s3.amazonaws.com/bucket/key';
+      const requiredHeaders = {
+        'Content-Type': 'text/plain',
+        'Content-Length': '7',
+        'content-length': '7', // Lowercase variant — case-insensitive filter.
+      };
+
+      mockXHR.addEventListener.mockImplementation((event, handler) => {
+        if (event === 'load') {
+          setTimeout(() => handler(), 0);
+        }
+      });
+
+      // Act
+      await uploadService.uploadToS3(mockFile, uploadUrl, requiredHeaders);
+
+      // Assert — neither the canonical nor the lowercase form is forwarded.
+      const calls = mockXHR.setRequestHeader.mock.calls as Array<[string, string]>;
+      const headerNames = calls.map(([name]) => name.toLowerCase());
+      expect(headerNames).not.toContain('content-length');
+      // Content-Type still forwarded (not in the forbidden set).
+      expect(mockXHR.setRequestHeader).toHaveBeenCalledWith('Content-Type', 'text/plain');
     });
 
     it('should track upload progress', async () => {
