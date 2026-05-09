@@ -1,8 +1,18 @@
 // API Types - From Document 3 (API Gateway & Lambda Functions) and Document 5 (Claude API Integration)
 import { z } from 'zod';
 
-// Generic API Response
-export interface ApiResponse<T = any> {
+// Generic API Response.
+//
+// `T` defaults to `unknown` (not `any`) so that bare `ApiResponse` consumers
+// must narrow the payload before reading it — `unknown` won't sail blindly
+// into a runtime crash the way `any` does, which is precisely the failure
+// mode this PR is meant to prevent (see #221 / PR #218 review item 6).
+//
+// Note: this generic is currently superseded by the per-endpoint
+// `*ApiResponse` interfaces (TranslationStatusApiResponse, etc.). It is
+// kept as a fallback for endpoints without a dedicated DTO; new endpoints
+// should prefer a concrete `*ApiResponse` interface.
+export interface ApiResponse<T = unknown> {
   success: boolean;
   data?: T;
   error?: ApiError;

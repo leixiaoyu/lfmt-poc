@@ -9,13 +9,14 @@ import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { DynamoDBClient, PutItemCommand } from '@aws-sdk/client-dynamodb';
 import { marshall } from '@aws-sdk/util-dynamodb';
 import {
+  PresignedUrlApiResponse,
   PresignedUrlRequest,
   PresignedUrlResponse,
   fileValidationSchema,
   legalAttestationPayloadSchema,
   LegalAttestationPayload,
 } from '@lfmt/shared-types';
-import { createSuccessResponse, createErrorResponse } from '../shared/api-response';
+import { createWrappedResponse, createErrorResponse } from '../shared/api-response';
 import Logger from '../shared/logger';
 import { getRequiredEnv } from '../shared/env';
 import {
@@ -227,15 +228,23 @@ export const handler = async (event: APIGatewayProxyEvent): Promise<APIGatewayPr
       },
     };
 
-    return createSuccessResponse(
-      200,
-      {
-        message: 'Upload URL generated successfully',
-        data: response,
-      },
-      requestId,
-      requestOrigin
-    );
+    // Type the wire envelope with the shared DTO so any drift from the
+    // frontend reader (translationService.uploadDocument /
+    // uploadService.requestUploadUrl, both of which read
+    // `response.data.data`) surfaces at compile time.
+    //
+    // Note: this endpoint deliberately wraps the payload in `{message, data}`
+    // (uniquely among the job-side endpoints) — see PresignedUrlApiResponse
+    // in shared-types for the rationale. We use `createWrappedResponse`
+    // (PR #218 OMC R1 H1-arch) which enforces the `{message, data}` shape
+    // at the type level, so a future maintainer cannot accidentally drop
+    // either field and revert the endpoint to the dominant flat shape.
+    const envelope: PresignedUrlApiResponse = {
+      message: 'Upload URL generated successfully',
+      data: response,
+    };
+
+    return createWrappedResponse(200, envelope, requestId, requestOrigin);
   } catch (error) {
     logger.error('Unexpected error during upload request processing', {
       requestId,

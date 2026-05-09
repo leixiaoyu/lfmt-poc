@@ -88,6 +88,31 @@ export interface PresignedUrlResponse {
   requiredHeaders: Record<string, string>;
 }
 
+/**
+ * Wire envelope for POST /jobs/upload.
+ *
+ * This endpoint is the ONLY job-side endpoint that returns a `{message, data}`
+ * wrapper — every other handler returns a flat object. The wrapper is preserved
+ * because the message is shown verbatim in some operator tooling. Frontend
+ * callers MUST read `.data` (one wrapper level) to access `PresignedUrlResponse`.
+ *
+ * Documented as a SSoT type so the wire shape cannot drift between the Lambda
+ * (`backend/functions/jobs/uploadRequest.ts`) and the frontend services
+ * (`translationService.uploadDocument`, `uploadService.requestUploadUrl`).
+ */
+export interface PresignedUrlApiResponse {
+  message: string;
+  data: PresignedUrlResponse;
+  requestId?: string;
+  /**
+   * Index signature satisfies the `ApiSuccessResponse` constraint used by
+   * `createSuccessResponse` in the backend Lambda — required because the
+   * helper accepts `ApiSuccessResponse<T>` (which carries an index sig)
+   * and refuses to widen-and-spread otherwise.
+   */
+  [key: string]: unknown;
+}
+
 export interface FileValidationRequest {
   fileId: string;
   expectedHash?: string;

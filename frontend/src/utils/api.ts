@@ -577,23 +577,24 @@ async function responseErrorInterceptor(error: unknown): Promise<unknown> {
     try {
       // Call refresh endpoint.
       //
-      // The backend `/auth/refresh` response is shaped by `createSuccessResponse`:
-      //   { message, data: { accessToken, idToken, expiresIn }, requestId }
+      // The backend `/auth/refresh` response is FLAT (PR #218 hotfix
+      // flattened the previously-wrapped envelope so it matches every
+      // other auth handler):
+      //   { message, accessToken, idToken, expiresIn, requestId }
       //
-      // We also tolerate a flat shape `{ accessToken, idToken, refreshToken }`
-      // so that unit tests can mock a simpler payload without breaking.
+      // The dual-path extractor that previously also tolerated a nested
+      // `{ data: { ... } }` shape was deleted alongside the dead code
+      // branch in PR #218 OMC R1 C2 (YAGNI — the nested shape is no
+      // longer producible by any caller).
       const response = await axios.post<{
-        // Flat shape (unit-test mocks / forward-compat)
         accessToken?: string;
         idToken?: string;
         refreshToken?: string;
-        // Nested shape (actual backend via createSuccessResponse)
-        data?: { accessToken?: string; idToken?: string; expiresIn?: number };
       }>(`${API_CONFIG.BASE_URL}/auth/refresh`, { refreshToken });
 
       const payload = response.data;
-      const newAccessToken = payload.data?.accessToken ?? payload.accessToken ?? '';
-      const newIdToken = payload.data?.idToken ?? payload.idToken ?? '';
+      const newAccessToken = payload.accessToken ?? '';
+      const newIdToken = payload.idToken ?? '';
       // Cognito REFRESH_TOKEN_AUTH does not rotate the refresh token, so
       // `refreshToken` may be absent in the backend response. Fall back to
       // the existing value so we don't accidentally store an empty string.

@@ -345,6 +345,75 @@ export interface DeleteJobApiResponse {
 }
 
 /**
+ * Response body returned by GET /jobs/{jobId}/translation-status.
+ *
+ * Shape is intentionally flat (no `data` wrapper) so frontend callers can
+ * access `response.data.jobId` directly. This DTO is the SINGLE SOURCE OF
+ * TRUTH for the wire shape — both the Lambda handler
+ * (`backend/functions/jobs/getTranslationStatus.ts`) and the frontend
+ * service (`frontend/src/services/translationService.ts:getJobStatus`) MUST
+ * import this type so a wire-shape drift surfaces as a TypeScript error
+ * rather than a `Cannot read properties of undefined` runtime crash
+ * (the 2026-05-09 demo blocker).
+ *
+ * Field naming notes (preserved from the live Lambda response):
+ *   - `chunksTranslated` (NOT `completedChunks`) — the backend persists this
+ *     name in DDB and surfaces it as-is on the wire.
+ *   - `fileName` is camelCase here even though DDB stores `filename`
+ *     (lowercase n) — the Lambda translates at the response boundary.
+ *
+ * The index signature satisfies the `ApiSuccessResponse` constraint used by
+ * `createSuccessResponse` in the Lambda handler.
+ */
+export interface TranslationStatusApiResponse {
+  jobId: string;
+  /** Owning user (Cognito sub). */
+  userId?: string;
+  fileName?: string;
+  fileSize?: number;
+  contentType?: string;
+  /** Overall job status (PENDING_UPLOAD, UPLOADED, CHUNKED, etc.). */
+  status: string;
+  translationStatus: string;
+  targetLanguage?: string;
+  tone?: TranslationTone;
+  totalChunks: number;
+  /** Number of chunks translated so far (NOT named `completedChunks`). */
+  chunksTranslated: number;
+  progressPercentage: number;
+  tokensUsed?: number;
+  estimatedCost?: number;
+  createdAt?: string;
+  translationStartedAt?: string;
+  translationCompletedAt?: string;
+  estimatedCompletion?: string;
+  error?: string;
+  [key: string]: unknown;
+}
+
+/**
+ * Response body returned by POST /jobs/{jobId}/translate.
+ *
+ * Shape is intentionally flat (no `data` wrapper). Both the Lambda
+ * (`backend/functions/jobs/startTranslation.ts`) and the frontend
+ * (`translationService.ts:startTranslation`) MUST import this DTO so any
+ * future drift surfaces at compile time.
+ */
+export interface StartTranslationApiResponse {
+  message: string;
+  jobId: string;
+  translationStatus: string;
+  targetLanguage: string;
+  totalChunks: number;
+  chunksTranslated: number;
+  estimatedCompletion?: string;
+  estimatedCost?: number;
+  /** Step Functions execution ARN (for tracking / debugging). */
+  executionArn?: string;
+  [key: string]: unknown;
+}
+
+/**
  * Response body returned by GET /jobs/{jobId}/download.
  *
  * Note: The actual HTTP response from the Lambda is raw text/plain (not JSON).

@@ -138,14 +138,16 @@ describe('resetState()', () => {
     });
 
     // Confirm at least one job is in the store.
+    // GET /jobs returns a flat array (mirrors the mock contract — see
+    // 2026-05-09 hotfix). No `data` envelope to peel off.
     const before = await fetch(`${API_URL}/jobs`).then((r) => r.json());
-    expect(before.data.length).toBeGreaterThan(0);
+    expect(before.length).toBeGreaterThan(0);
 
     // Reset.
     resetState();
 
     const after = await fetch(`${API_URL}/jobs`).then((r) => r.json());
-    expect(after.data.length).toBe(0);
+    expect(after.length).toBe(0);
   });
 });
 
@@ -301,25 +303,31 @@ describe('Translation pipeline (msw/node)', () => {
     expect(put.headers.get('etag')).toMatch(/^"mock-etag-/);
 
     // 3. translate
+    // 3. translate — flat StartTranslationApiResponse envelope
+    // (no `data` wrapper). The 2026-05-09 hotfix flipped the mock to
+    // mirror the real Lambda's shape; tests assert directly on the
+    // top-level fields.
     const start = await fetch(`${API_URL}/jobs/${jobId}/translate`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ targetLanguage: 'es', tone: 'neutral' }),
     }).then((r) => r.json());
-    expect(start.data.status).toBe('IN_PROGRESS');
+    expect(start.translationStatus).toBe('IN_PROGRESS');
 
-    // 4. poll status — instant mode → 4 polls reach 100%.
+    // 4. poll status — flat TranslationStatusApiResponse, instant mode
+    // → 4 polls reach 100%.
     let lastStatus = '';
     for (let i = 0; i < 4; i++) {
       const s = await fetch(`${API_URL}/jobs/${jobId}/translation-status`).then((r) => r.json());
-      lastStatus = s.data.status;
+      lastStatus = s.status;
     }
     expect(lastStatus).toBe('COMPLETED');
 
-    // 5. history
+    // 5. history — flat array (no envelope) so the History page can
+    // dereference `response.data` directly.
     const hist = await fetch(`${API_URL}/jobs`).then((r) => r.json());
-    expect(hist.data.length).toBe(1);
-    expect(hist.data[0].jobId).toBe(jobId);
+    expect(hist.length).toBe(1);
+    expect(hist[0].jobId).toBe(jobId);
 
     // 6. download
     const dl = await fetch(`${API_URL}/jobs/${jobId}/download`);

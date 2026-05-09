@@ -403,17 +403,16 @@ describe('TranslationUpload', () => {
         updatedAt: new Date().toISOString(),
       });
 
+      // PR #218 OMC R1 H1-cq: startTranslation returns the narrow
+      // StartTranslationResult shape (no hollow sentinel TranslationJob
+      // fields). Mirror that contract in the mock.
       vi.mocked(translationService.startTranslation).mockResolvedValue({
         jobId: 'test-job-123',
-        userId: 'user-123',
-        fileName: 'test-document.txt',
-        fileSize: 12,
-        contentType: 'text/plain',
         status: 'IN_PROGRESS',
         targetLanguage: 'es',
-        tone: 'formal',
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
+        totalChunks: 1,
+        completedChunks: 0,
+        message: 'Translation started successfully',
       });
 
       const submitButton = screen.getByRole('button', { name: /Submit & Start Translation/i });
@@ -947,12 +946,14 @@ describe('TranslationUpload', () => {
         ...mockChunkedJob,
         jobId: 'await-job',
       });
+      // PR #218 OMC R1 H1-cq: narrow StartTranslationResult shape.
       vi.mocked(translationService.startTranslation).mockResolvedValue({
-        ...mockChunkedJob,
         jobId: 'await-job',
         status: 'IN_PROGRESS',
         targetLanguage: 'es',
-        tone: 'formal',
+        totalChunks: 1,
+        completedChunks: 0,
+        message: 'Translation started successfully',
       });
 
       await user.click(screen.getByRole('button', { name: /Submit & Start Translation/i }));
@@ -1032,11 +1033,14 @@ describe('TranslationUpload', () => {
           })
       );
 
+      // PR #218 OMC R1 H1-cq: narrow StartTranslationResult shape.
       vi.mocked(translationService.startTranslation).mockResolvedValue({
-        ...mockChunkedJob,
+        jobId: mockChunkedJob.jobId,
         status: 'IN_PROGRESS',
         targetLanguage: 'es',
-        tone: 'formal',
+        totalChunks: 1,
+        completedChunks: 0,
+        message: 'Translation started successfully',
       });
 
       await user.click(screen.getByRole('button', { name: /Submit & Start Translation/i }));

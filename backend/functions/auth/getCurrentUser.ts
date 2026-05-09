@@ -4,7 +4,7 @@
  */
 
 import { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
-import { createSuccessResponse, createErrorResponse } from '../shared/api-response';
+import { createFlatResponse, createErrorResponse } from '../shared/api-response';
 import Logger from '../shared/logger';
 
 const logger = new Logger('lfmt-auth-getCurrentUser');
@@ -51,7 +51,7 @@ export const handler = async (event: APIGatewayProxyEvent): Promise<APIGatewayPr
       lastName: authorizerClaims.family_name || '',
     };
 
-    return createSuccessResponse(
+    return createFlatResponse(
       200,
       {
         user,

@@ -8,8 +8,14 @@
 import axios from 'axios';
 import { apiClient } from '../utils/api';
 import { stripBrowserForbiddenHeaders } from '../utils/headerFilters';
-import type { TranslationJobStatus } from '@lfmt/shared-types';
+import type {
+  PresignedUrlApiResponse,
+  StartTranslationApiResponse,
+  TranslationJobStatus,
+  TranslationStatusApiResponse,
+} from '@lfmt/shared-types';
 import { CHUNKING_ERROR_STATUSES } from '@lfmt/shared-types';
+import { toTranslationJob } from './mappers/translationJobMapper';
 
 // N1 (PR #214 OMC R2): the back-compat re-export of
 // `stripBrowserForbiddenHeaders` from this module has been removed.
@@ -82,6 +88,34 @@ export interface UploadDocumentRequest {
 export interface StartTranslationRequest {
   targetLanguage: string;
   tone: string;
+}
+
+/**
+ * Narrow return type of `startTranslation`.
+ *
+ * Pre-PR-#218 the function fabricated a full `TranslationJob` shape with
+ * five hollow sentinel fields (`userId: ''`, `fileName: ''`,
+ * `fileSize: 0`, ...) because the real `POST /jobs/{jobId}/translate`
+ * Lambda only returns the fields enumerated below. The sentinels were a
+ * code-quality H1 risk (OMC R1 on PR #218): any optimistic UI / polling
+ * seed that read the result would render "0 Bytes" and an empty
+ * filename until the first `getJobStatus` resolved.
+ *
+ * Narrowing the return removes the lie at the type level — the wizard
+ * + `TranslationDetail` page already discard the return value (they
+ * either navigate or call `fetchJobDetails` immediately after), and the
+ * narrower type makes that contract explicit. Future callers MUST use
+ * `getJobStatus` to enrich with file metadata.
+ */
+export interface StartTranslationResult {
+  jobId: string;
+  status: TranslationJobStatus;
+  targetLanguage: string;
+  totalChunks: number;
+  completedChunks: number;
+  message: string;
+  /** Step Functions execution ARN — present in dev for tracing. */
+  executionArn?: string;
 }
 
 /**
@@ -237,16 +271,15 @@ const handleError = (error: unknown): never => {
  */
 export const uploadDocument = async (request: UploadDocumentRequest): Promise<TranslationJob> => {
   try {
-    // Step 1: Request presigned URL from backend
-    const presignedResponse = await apiClient.post<{
-      data: {
-        uploadUrl: string;
-        fileId: string;
-        jobId: string;
-        expiresIn: number;
-        requiredHeaders: Record<string, string>;
-      };
-    }>('/jobs/upload', {
+    // Step 1: Request presigned URL from backend.
+    //
+    // POST /jobs/upload is the ONLY job-side endpoint that wraps its payload
+    // in `{message, data}` — every other handler returns a flat object. We
+    // type the response with the shared `PresignedUrlApiResponse` DTO from
+    // @lfmt/shared-types so a wire-shape drift between the Lambda
+    // (`backend/functions/jobs/uploadRequest.ts`) and this reader fails at
+    // compile time rather than crashing the demo at runtime.
+    const presignedResponse = await apiClient.post<PresignedUrlApiResponse>('/jobs/upload', {
       fileName: request.file.name,
       fileSize: request.file.size,
       contentType: request.file.type,
@@ -406,47 +439,116 @@ export const uploadAndAwaitChunked = async (
 };
 
 /**
- * Start translation for a job
+ * Start translation for a job.
+ *
+ * The real Lambda (`backend/functions/jobs/startTranslation.ts`) returns a
+ * FLAT object — not `{data: ...}`. Reading `response.data.data` here was
+ * the demo blocker fixed in the 2026-05-09 hotfix; this version reads
+ * `response.data` directly and uses the shared `StartTranslationApiResponse`
+ * DTO so any future drift fails at compile time.
+ *
+ * Returns a narrow `StartTranslationResult` containing only the fields the
+ * Lambda actually echoes back (PR #218 OMC R1 H1-cq). Pre-fix this
+ * function fabricated a full `TranslationJob` with five hollow sentinels
+ * (`userId: ''`, `fileName: ''`, `fileSize: 0`, ...) which risked
+ * "0 Bytes / empty filename" UI flicker if any consumer treated the
+ * result as authoritative. Today's consumers (the upload wizard +
+ * `TranslationDetail` retry button) discard the return value and either
+ * navigate or call `fetchJobDetails` immediately after — narrowing makes
+ * that contract type-checkable.
  */
 export const startTranslation = async (
   jobId: string,
   config: TranslationConfig
-): Promise<TranslationJob> => {
+): Promise<StartTranslationResult> => {
   try {
-    const response = await apiClient.post<{ data: TranslationJob }>(`/jobs/${jobId}/translate`, {
+    const response = await apiClient.post<StartTranslationApiResponse>(`/jobs/${jobId}/translate`, {
       targetLanguage: config.targetLanguage,
       tone: config.tone,
     });
 
-    return response.data.data;
+    const body = response.data;
+    return {
+      jobId: body.jobId,
+      // The job has just been transitioned to IN_PROGRESS — the wire
+      // shape of `translationStatus` happens to be the same as
+      // TranslationJob.status for this code path.
+      status: body.translationStatus as TranslationJobStatus,
+      targetLanguage: body.targetLanguage,
+      totalChunks: body.totalChunks,
+      // Wire field name → frontend field name. Mirrors the
+      // translation done by `toTranslationJob` in the mapper module
+      // (M3-arch). Kept inline here because `StartTranslationResult`
+      // is a narrower shape than `TranslationJob`; using the full
+      // mapper would require silently inventing fields the wire never
+      // returned, which is the exact anti-pattern this refactor closes.
+      completedChunks: body.chunksTranslated,
+      message: body.message,
+      executionArn: body.executionArn,
+    };
   } catch (error) {
     return handleError(error);
   }
 };
 
 /**
- * Get job status
+ * Get job status.
+ *
+ * The real Lambda (`backend/functions/jobs/getTranslationStatus.ts`) returns
+ * a FLAT object, NOT `{data: ...}`. Reading `response.data.data` here was
+ * the root cause of the 2026-05-09 demo blocker:
+ *
+ *   "Cannot read properties of undefined (reading 'status')"
+ *
+ * — `response.data.data` was undefined, the polling loop in
+ * `uploadAndAwaitChunked` then dereferenced `.status` on undefined and
+ * crashed step 4 of the upload wizard.
+ *
+ * The shared `TranslationStatusApiResponse` DTO from @lfmt/shared-types
+ * is the single source of truth; both the Lambda and this reader import
+ * it so a future drift surfaces at compile time, not at the demo.
+ *
+ * Note on field-name mapping: the backend returns `chunksTranslated`
+ * (mirroring its DDB column) while the frontend's `TranslationJob` uses
+ * `completedChunks`. We translate at this seam.
  */
 export const getJobStatus = async (jobId: string): Promise<TranslationJob> => {
   try {
-    const response = await apiClient.get<{ data: TranslationJob }>(
+    const response = await apiClient.get<TranslationStatusApiResponse>(
       `/jobs/${jobId}/translation-status`
     );
 
-    return response.data.data;
+    // Project the wire shape into the frontend `TranslationJob` via the
+    // shared `toTranslationJob` mapper (architect M3 on PR #218). The
+    // mapper is the single audit point for "how does the SPA decode a
+    // backend job record?" — see frontend/src/services/mappers/.
+    return toTranslationJob(response.data);
   } catch (error) {
     return handleError(error);
   }
 };
 
 /**
- * Get all translation jobs for the current user
+ * Get all translation jobs for the current user.
+ *
+ * KNOWN-LIMITATION: as of 2026-05-09 there is NO `GET /jobs` route on the
+ * real backend (`backend/infrastructure/lib/lfmt-infrastructure-stack.ts`
+ * only exposes `GET /jobs/{jobId}` and `GET /jobs/{jobId}/translation-status`).
+ * The History page (`pages/TranslationHistory.tsx`) currently calls this
+ * method against the deployed backend and gets a 403/404 — the page
+ * surfaces an empty list, which is the "silently broken" behaviour
+ * flagged in the hotfix audit. This is a pre-existing gap, NOT a
+ * regression from this hotfix; tracked as a follow-up.
+ *
+ * For envelope correctness when the endpoint DOES exist (today only via
+ * the MSW mock): the convention across the rest of the API is a flat
+ * shape, so the reader expects `response.data` to BE the array.
  */
 export const getTranslationJobs = async (): Promise<TranslationJob[]> => {
   try {
-    const response = await apiClient.get<{ data: TranslationJob[] }>('/jobs');
+    const response = await apiClient.get<TranslationJob[]>('/jobs');
 
-    return response.data.data;
+    return response.data;
   } catch (error) {
     return handleError(error);
   }

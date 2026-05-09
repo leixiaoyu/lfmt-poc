@@ -45,7 +45,7 @@ import { marshall, unmarshall } from '@aws-sdk/util-dynamodb';
 import { DynamoDBJob, DeleteJobApiResponse } from '@lfmt/shared-types';
 import Logger from '../shared/logger';
 import { getRequiredEnv } from '../shared/env';
-import { createSuccessResponse, createErrorResponse } from '../shared/api-response';
+import { createFlatResponse, createErrorResponse } from '../shared/api-response';
 
 const logger = new Logger('lfmt-delete-job');
 const dynamoClient = new DynamoDBClient({});
@@ -206,7 +206,7 @@ export const handler = async (event: APIGatewayProxyEvent): Promise<APIGatewayPr
       ...(s3Warning ? { warning: s3Warning } : {}),
     };
 
-    return createSuccessResponse(200, responseBody, requestId, requestOrigin);
+    return createFlatResponse(200, responseBody, requestId, requestOrigin);
   } catch (error) {
     logger.error('Failed to delete job', {
       requestId,
