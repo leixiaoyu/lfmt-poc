@@ -12,7 +12,7 @@ import {
   LimitExceededException,
 } from '@aws-sdk/client-cognito-identity-provider';
 import { forgotPasswordRequestSchema } from '@lfmt/shared-types';
-import { createSuccessResponse, createErrorResponse } from '../shared/api-response';
+import { createFlatResponse, createErrorResponse } from '../shared/api-response';
 import Logger from '../shared/logger';
 import { getRequiredEnv } from '../shared/env';
 
@@ -65,7 +65,7 @@ export const handler = async (event: APIGatewayProxyEvent): Promise<APIGatewayPr
       email: email.toLowerCase(),
     });
 
-    return createSuccessResponse(
+    return createFlatResponse(
       200,
       {
         message: 'If an account with this email exists, a password reset link has been sent.',
@@ -80,7 +80,7 @@ export const handler = async (event: APIGatewayProxyEvent): Promise<APIGatewayPr
         error: error.message,
       });
 
-      return createSuccessResponse(
+      return createFlatResponse(
         200,
         {
           message: 'If an account with this email exists, a password reset link has been sent.',

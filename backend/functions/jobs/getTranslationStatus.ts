@@ -10,7 +10,7 @@ import { marshall, unmarshall } from '@aws-sdk/util-dynamodb';
 import { DynamoDBJob, TranslationStatusApiResponse } from '@lfmt/shared-types';
 import Logger from '../shared/logger';
 import { getRequiredEnv } from '../shared/env';
-import { createSuccessResponse, createErrorResponse } from '../shared/api-response';
+import { createFlatResponse, createErrorResponse } from '../shared/api-response';
 // Note: getTranslationStatus does NOT use loadJobForUser from jobRepository.ts.
 // It retains ConsistentRead: true (inline below) because it is polled tightly
 // during an active translation — the UI updates on every poll response, so a
@@ -128,7 +128,7 @@ export const handler = async (event: APIGatewayProxyEvent): Promise<APIGatewayPr
       progressPercentage: response.progressPercentage,
     });
 
-    return createSuccessResponse(200, response, undefined, requestOrigin);
+    return createFlatResponse(200, response, undefined, requestOrigin);
   } catch (error) {
     logger.error('Failed to get translation status', {
       error: error instanceof Error ? error.message : 'Unknown error',

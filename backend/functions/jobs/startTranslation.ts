@@ -21,7 +21,7 @@ import {
 } from '@lfmt/shared-types';
 import Logger from '../shared/logger';
 import { getRequiredEnv } from '../shared/env';
-import { createSuccessResponse, createErrorResponse } from '../shared/api-response';
+import { createFlatResponse, createErrorResponse } from '../shared/api-response';
 import { isValidTargetLanguage, TargetLanguage } from '../translation/types';
 
 const logger = new Logger('lfmt-start-translation');
@@ -218,7 +218,7 @@ export const handler = async (event: APIGatewayProxyEvent): Promise<APIGatewayPr
       executionArn, // Step Functions execution ARN for tracking
     };
 
-    return createSuccessResponse(200, responseBody, undefined, requestOrigin);
+    return createFlatResponse(200, responseBody, undefined, requestOrigin);
   } catch (error) {
     logger.error('Failed to start translation', {
       error: error instanceof Error ? error.message : 'Unknown error',

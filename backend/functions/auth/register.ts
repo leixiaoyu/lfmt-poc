@@ -21,7 +21,7 @@ import {
   NotAuthorizedException,
 } from '@aws-sdk/client-cognito-identity-provider';
 import { registerRequestSchema } from '@lfmt/shared-types';
-import { createSuccessResponse, createErrorResponse } from '../shared/api-response';
+import { createFlatResponse, createErrorResponse } from '../shared/api-response';
 import Logger from '../shared/logger';
 import { getRequiredEnv, getOptionalEnv } from '../shared/env';
 
@@ -162,7 +162,7 @@ export const handler = async (event: APIGatewayProxyEvent): Promise<APIGatewayPr
       autoConfirmed: AUTO_CONFIRM_USERS,
     });
 
-    return createSuccessResponse(
+    return createFlatResponse(
       201,
       {
         message: AUTO_CONFIRM_USERS

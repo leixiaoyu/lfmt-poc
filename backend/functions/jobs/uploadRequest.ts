@@ -16,7 +16,7 @@ import {
   legalAttestationPayloadSchema,
   LegalAttestationPayload,
 } from '@lfmt/shared-types';
-import { createSuccessResponse, createErrorResponse } from '../shared/api-response';
+import { createWrappedResponse, createErrorResponse } from '../shared/api-response';
 import Logger from '../shared/logger';
 import { getRequiredEnv } from '../shared/env';
 import {
@@ -235,13 +235,16 @@ export const handler = async (event: APIGatewayProxyEvent): Promise<APIGatewayPr
     //
     // Note: this endpoint deliberately wraps the payload in `{message, data}`
     // (uniquely among the job-side endpoints) — see PresignedUrlApiResponse
-    // in shared-types for the rationale.
+    // in shared-types for the rationale. We use `createWrappedResponse`
+    // (PR #218 OMC R1 H1-arch) which enforces the `{message, data}` shape
+    // at the type level, so a future maintainer cannot accidentally drop
+    // either field and revert the endpoint to the dominant flat shape.
     const envelope: PresignedUrlApiResponse = {
       message: 'Upload URL generated successfully',
       data: response,
     };
 
-    return createSuccessResponse(200, envelope, requestId, requestOrigin);
+    return createWrappedResponse(200, envelope, requestId, requestOrigin);
   } catch (error) {
     logger.error('Unexpected error during upload request processing', {
       requestId,

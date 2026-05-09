@@ -340,17 +340,25 @@ const authHandlers: HttpHandler[] = [
 //   GET  /jobs                                    — job history
 //   GET  /jobs/:jobId/download                    — download translated text
 //
-// Wire-shape policy (2026-05-09 hotfix):
+// Wire-shape policy (2026-05-09 hotfix, refined per OMC R1 M1-arch on PR #218):
 //   Mock bodies MIRROR the real Lambda response shape, not the frontend's
 //   reader expectation. POST /jobs/upload uniquely returns
 //   `{message, data: PresignedUrlResponse}` because that is what the live
 //   `uploadRequest` Lambda emits; every other job-side endpoint returns
 //   a flat object — no `{data: ...}` wrapper. Previously the mock wrapped
 //   everything in `{data: ...}` to match a frontend bug, hiding the
-//   divergence until the bug surfaced on the deployed walkthrough. The
-//   mock is now the single source of truth for the wire contract: any
-//   future drift between the mock and the real backend will reproduce
-//   in vitest before it reaches production.
+//   divergence until the bug surfaced on the deployed walkthrough.
+//
+//   The mock is NOT the source of truth — the SSoT for the wire contract
+//   is the set of `*ApiResponse` interfaces in `@lfmt/shared-types`
+//   (`TranslationStatusApiResponse`, `StartTranslationApiResponse`,
+//   `PresignedUrlApiResponse`, etc.). Both the real Lambda and the mock
+//   handlers below import those types so a single rename / addition flows
+//   to both implementations at compile time. The mock's job is to
+//   FAITHFULLY MIRROR that contract; the contract test in
+//   `frontend/src/__tests__/apiEnvelopeContract.test.ts` is what guards
+//   the mirror. If the mock and the real backend ever drift, that test
+//   will fail in vitest before the divergence reaches production.
 //
 // On-demand simulation policy (Phase 4) lives inside the status
 // handler — there are NO setInterval/setTimeout calls. The status

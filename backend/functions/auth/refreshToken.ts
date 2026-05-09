@@ -11,7 +11,7 @@ import {
   TooManyRequestsException,
 } from '@aws-sdk/client-cognito-identity-provider';
 import { refreshTokenRequestSchema } from '@lfmt/shared-types';
-import { createSuccessResponse, createErrorResponse } from '../shared/api-response';
+import { createFlatResponse, createErrorResponse } from '../shared/api-response';
 import Logger from '../shared/logger';
 import { getRequiredEnv } from '../shared/env';
 
@@ -83,7 +83,10 @@ export const handler = async (event: APIGatewayProxyEvent): Promise<APIGatewayPr
     // bug as the 2026-05-09 demo blocker the moment refresh was exercised
     // against the real backend (the hotfix audit found that the frontend
     // expected a flat shape, not the wrapped one this handler returned).
-    return createSuccessResponse(
+    //
+    // Convention enforced at the type level via `createFlatResponse`
+    // (PR #218 OMC R1 H1-arch).
+    return createFlatResponse(
       200,
       {
         message: 'Tokens refreshed successfully',

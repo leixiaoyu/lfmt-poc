@@ -109,46 +109,21 @@ describe('API Token Refresh Interceptor', () => {
       expect(response.data).toEqual({ message: 'Success with new token' });
     });
 
-    it('should extract idToken from the real backend wrapped response shape', async () => {
-      // This test uses the ACTUAL backend response shape produced by
-      // `createSuccessResponse()`:
-      //   { message, data: { accessToken, idToken, expiresIn }, requestId }
-      //
-      // The flat mock shape used by other tests exercises the compat path.
-      // This test ensures the interceptor extracts tokens from the nested
-      // `data` field — the absence of this test was the root cause that
-      // allowed the original wrong-token bug to ship undetected.
-      const newAccessToken = 'wrapped-access-token';
-      const newIdToken = 'wrapped-id-token'; // distinct value — must end up as Bearer
-
-      setStoredSession({
-        idToken: 'expired-id-token',
-        accessToken: 'expired-access',
-        refreshToken: 'some-refresh-token',
-      });
-
-      instanceMock.onGet('/protected').replyOnce(401, {});
-
-      // Wrapped shape — matches what the backend actually sends:
-      moduleMock.onPost(/\/auth\/refresh$/).replyOnce(200, {
-        message: 'Tokens refreshed successfully',
-        data: {
-          accessToken: newAccessToken,
-          idToken: newIdToken,
-          expiresIn: 3600,
-        },
-        requestId: 'req-abc-123',
-      });
-
-      moduleMock.onGet(/\/protected$/).replyOnce(200, { ok: true });
-
-      await apiClient.get('/protected');
-
-      // ID token extracted from response.data.data.idToken — the nested field.
-      const session = getStoredSession();
-      expect(session?.idToken).toBe(newIdToken);
-      expect(session?.accessToken).toBe(newAccessToken);
-    });
+    // The previous test "should extract idToken from the real backend
+    // wrapped response shape" was REMOVED in PR #218 OMC R1 C2.
+    //
+    // Background: the test exercised the legacy `payload.data?.accessToken
+    // ?? payload.accessToken` dual-path extractor inside `responseErrorInterceptor`.
+    // PR #218 flattened `auth/refreshToken.ts` so the real backend now ALWAYS
+    // emits `{message, accessToken, idToken, expiresIn, requestId}` — the
+    // nested `{data: {...}}` shape the test mocked is no longer possible to
+    // produce. The dead branch in the extractor was simplified at the same
+    // time (the dual-path reader → flat-only reader). YAGNI: delete the test
+    // AND the dead code path it covered, rather than rename the test to
+    // assert "rejects unexpected nested shape" — the runtime guard that
+    // matters (empty bearer → fail-closed) is exercised by
+    // `should treat an empty bearer from the refresh response as a failure
+    // and clear tokens` further down.
 
     it('should send the new idToken (not accessToken) as Authorization Bearer on the retried request', async () => {
       // Critical 2: assert the Authorization header on the RETRIED request
@@ -506,10 +481,14 @@ describe('API Token Refresh Interceptor', () => {
       // Step 2: API call → 401.
       instanceMock.onPost('/jobs/translate').replyOnce(401, { message: 'Token expired' });
 
-      // Step 3: refresh → new tokens (wrapped backend shape to also cover Critical 1).
+      // Step 3: refresh → new tokens. PR #218 OMC R1 C2 flattened the
+      // real backend's response shape; the mock now mirrors the live
+      // contract directly (no nested `data` wrapper).
       moduleMock.onPost(/\/auth\/refresh$/).replyOnce(200, {
         message: 'Tokens refreshed successfully',
-        data: { accessToken: newAccessToken, idToken: newIdToken, expiresIn: 3600 },
+        accessToken: newAccessToken,
+        idToken: newIdToken,
+        expiresIn: 3600,
         requestId: 'req-chain-test',
       });
 

@@ -15,6 +15,7 @@ import type {
   TranslationStatusApiResponse,
 } from '@lfmt/shared-types';
 import { CHUNKING_ERROR_STATUSES } from '@lfmt/shared-types';
+import { toTranslationJob } from './mappers/translationJobMapper';
 
 // N1 (PR #214 OMC R2): the back-compat re-export of
 // `stripBrowserForbiddenHeaders` from this module has been removed.
@@ -87,6 +88,34 @@ export interface UploadDocumentRequest {
 export interface StartTranslationRequest {
   targetLanguage: string;
   tone: string;
+}
+
+/**
+ * Narrow return type of `startTranslation`.
+ *
+ * Pre-PR-#218 the function fabricated a full `TranslationJob` shape with
+ * five hollow sentinel fields (`userId: ''`, `fileName: ''`,
+ * `fileSize: 0`, ...) because the real `POST /jobs/{jobId}/translate`
+ * Lambda only returns the fields enumerated below. The sentinels were a
+ * code-quality H1 risk (OMC R1 on PR #218): any optimistic UI / polling
+ * seed that read the result would render "0 Bytes" and an empty
+ * filename until the first `getJobStatus` resolved.
+ *
+ * Narrowing the return removes the lie at the type level — the wizard
+ * + `TranslationDetail` page already discard the return value (they
+ * either navigate or call `fetchJobDetails` immediately after), and the
+ * narrower type makes that contract explicit. Future callers MUST use
+ * `getJobStatus` to enrich with file metadata.
+ */
+export interface StartTranslationResult {
+  jobId: string;
+  status: TranslationJobStatus;
+  targetLanguage: string;
+  totalChunks: number;
+  completedChunks: number;
+  message: string;
+  /** Step Functions execution ARN — present in dev for tracing. */
+  executionArn?: string;
 }
 
 /**
@@ -418,14 +447,20 @@ export const uploadAndAwaitChunked = async (
  * `response.data` directly and uses the shared `StartTranslationApiResponse`
  * DTO so any future drift fails at compile time.
  *
- * The Lambda's response is a wider shape than `TranslationJob` (it also
- * carries `executionArn`, `estimatedCost`, etc.), but the wizard only
- * needs the `TranslationJob`-compatible fields, so we map at this seam.
+ * Returns a narrow `StartTranslationResult` containing only the fields the
+ * Lambda actually echoes back (PR #218 OMC R1 H1-cq). Pre-fix this
+ * function fabricated a full `TranslationJob` with five hollow sentinels
+ * (`userId: ''`, `fileName: ''`, `fileSize: 0`, ...) which risked
+ * "0 Bytes / empty filename" UI flicker if any consumer treated the
+ * result as authoritative. Today's consumers (the upload wizard +
+ * `TranslationDetail` retry button) discard the return value and either
+ * navigate or call `fetchJobDetails` immediately after — narrowing makes
+ * that contract type-checkable.
  */
 export const startTranslation = async (
   jobId: string,
   config: TranslationConfig
-): Promise<TranslationJob> => {
+): Promise<StartTranslationResult> => {
   try {
     const response = await apiClient.post<StartTranslationApiResponse>(`/jobs/${jobId}/translate`, {
       targetLanguage: config.targetLanguage,
@@ -435,23 +470,21 @@ export const startTranslation = async (
     const body = response.data;
     return {
       jobId: body.jobId,
-      // The backend response does not echo userId here; the field is
-      // tracked elsewhere (auth context / job detail endpoint). Default
-      // to '' to satisfy the TranslationJob shape; the value is not
-      // read on the post-startTranslation code paths today.
-      userId: '',
-      fileName: '',
-      fileSize: 0,
-      contentType: '',
       // The job has just been transitioned to IN_PROGRESS — the wire
       // shape of `translationStatus` happens to be the same as
       // TranslationJob.status for this code path.
       status: body.translationStatus as TranslationJobStatus,
       targetLanguage: body.targetLanguage,
       totalChunks: body.totalChunks,
+      // Wire field name → frontend field name. Mirrors the
+      // translation done by `toTranslationJob` in the mapper module
+      // (M3-arch). Kept inline here because `StartTranslationResult`
+      // is a narrower shape than `TranslationJob`; using the full
+      // mapper would require silently inventing fields the wire never
+      // returned, which is the exact anti-pattern this refactor closes.
       completedChunks: body.chunksTranslated,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
+      message: body.message,
+      executionArn: body.executionArn,
     };
   } catch (error) {
     return handleError(error);
@@ -485,23 +518,11 @@ export const getJobStatus = async (jobId: string): Promise<TranslationJob> => {
       `/jobs/${jobId}/translation-status`
     );
 
-    const body = response.data;
-    return {
-      jobId: body.jobId,
-      userId: body.userId ?? '',
-      fileName: body.fileName ?? '',
-      fileSize: body.fileSize ?? 0,
-      contentType: body.contentType ?? '',
-      status: body.status as TranslationJobStatus,
-      targetLanguage: body.targetLanguage,
-      tone: body.tone,
-      totalChunks: body.totalChunks,
-      completedChunks: body.chunksTranslated,
-      createdAt: body.createdAt ?? new Date().toISOString(),
-      updatedAt: body.translationCompletedAt ?? body.createdAt ?? new Date().toISOString(),
-      completedAt: body.translationCompletedAt,
-      errorMessage: body.error,
-    };
+    // Project the wire shape into the frontend `TranslationJob` via the
+    // shared `toTranslationJob` mapper (architect M3 on PR #218). The
+    // mapper is the single audit point for "how does the SPA decode a
+    // backend job record?" — see frontend/src/services/mappers/.
+    return toTranslationJob(response.data);
   } catch (error) {
     return handleError(error);
   }

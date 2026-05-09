@@ -19,7 +19,7 @@ import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { GetJobApiResponse } from '@lfmt/shared-types';
 import Logger from '../shared/logger';
 import { getRequiredEnv } from '../shared/env';
-import { createSuccessResponse, createErrorResponse } from '../shared/api-response';
+import { createFlatResponse, createErrorResponse } from '../shared/api-response';
 import { loadJobForUser } from '../shared/jobRepository';
 
 const logger = new Logger('lfmt-get-job');
@@ -80,7 +80,7 @@ export const handler = async (event: APIGatewayProxyEvent): Promise<APIGatewayPr
 
     logger.info('Job retrieved', { requestId, jobId, status: job.status });
 
-    return createSuccessResponse(200, responseBody, requestId, requestOrigin);
+    return createFlatResponse(200, responseBody, requestId, requestOrigin);
   } catch (error) {
     logger.error('Failed to get job', {
       requestId,

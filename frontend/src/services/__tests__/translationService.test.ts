@@ -1513,3 +1513,199 @@ describe('TranslationService - uploadAndAwaitChunked', () => {
     ).rejects.toThrow('Network Error');
   });
 });
+
+// ---------------------------------------------------------------------------
+// PR #218 OMC R1 follow-ups
+//
+// C1 (merge blocker): exhaustive coverage of the nullish-coalescing
+//   fallback paths inside `getJobStatus` (and the equivalent shape
+//   handling in `startTranslation`). The hotfix introduced these
+//   fallbacks and they were not branch-covered, dropping the per-file
+//   threshold below the project minimum.
+//
+// H1-cq: pin the narrow `StartTranslationResult` return shape to lock
+//   out a future regression that re-introduces hollow sentinel fields.
+//
+// C4-test: assert mid-translation (non-zero, non-terminal)
+//   `chunksTranslated → completedChunks` translation works correctly,
+//   so the seam doesn't drop intermediate progress.
+// ---------------------------------------------------------------------------
+
+describe('TranslationService - getJobStatus — wire fallback coverage (C1)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    (getAuthToken as ReturnType<typeof vi.fn>).mockReturnValue('mock-token-123');
+  });
+
+  // The wire shape the real Lambda emits is intentionally permissive:
+  // `userId`, `fileName`, `fileSize`, `contentType`, `tone`,
+  // `chunksTranslated`, `totalChunks`, `targetLanguage`, `createdAt`,
+  // `translationCompletedAt`, and `error` are all optional. The mapper
+  // (`toTranslationJob`) defends against each omission individually —
+  // each branch is covered below.
+
+  it('falls back to "" when wire omits userId / fileName / contentType', async () => {
+    mockedApiClient.get.mockResolvedValueOnce({
+      data: {
+        jobId: 'job-1',
+        status: 'PENDING',
+        // userId, fileName, contentType all absent.
+      },
+    });
+    const job = await getJobStatus('job-1');
+    expect(job.userId).toBe('');
+    expect(job.fileName).toBe('');
+    expect(job.contentType).toBe('');
+  });
+
+  it('falls back to 0 when wire omits fileSize', async () => {
+    mockedApiClient.get.mockResolvedValueOnce({
+      data: { jobId: 'job-1', status: 'PENDING' },
+    });
+    const job = await getJobStatus('job-1');
+    expect(job.fileSize).toBe(0);
+  });
+
+  it('falls back to a synthesized ISO timestamp when wire omits createdAt', async () => {
+    mockedApiClient.get.mockResolvedValueOnce({
+      data: { jobId: 'job-1', status: 'PENDING' },
+    });
+    const job = await getJobStatus('job-1');
+    // The exact value depends on wall-clock; assert shape only.
+    expect(job.createdAt).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
+    expect(job.updatedAt).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
+  });
+
+  it('uses createdAt as updatedAt when wire omits translationCompletedAt', async () => {
+    const created = '2026-05-08T20:00:00.000Z';
+    mockedApiClient.get.mockResolvedValueOnce({
+      data: { jobId: 'job-1', status: 'PENDING', createdAt: created },
+    });
+    const job = await getJobStatus('job-1');
+    expect(job.updatedAt).toBe(created);
+    expect(job.completedAt).toBeUndefined();
+  });
+
+  it('reads errorMessage from the wire `error` field when present', async () => {
+    mockedApiClient.get.mockResolvedValueOnce({
+      data: {
+        jobId: 'job-1',
+        status: 'TRANSLATION_FAILED',
+        error: 'Gemini API rate limit exceeded',
+      },
+    });
+    const job = await getJobStatus('job-1');
+    expect(job.errorMessage).toBe('Gemini API rate limit exceeded');
+  });
+
+  it('leaves errorMessage undefined when wire omits the error field', async () => {
+    mockedApiClient.get.mockResolvedValueOnce({
+      data: { jobId: 'job-1', status: 'COMPLETED' },
+    });
+    const job = await getJobStatus('job-1');
+    expect(job.errorMessage).toBeUndefined();
+  });
+
+  it('translates chunksTranslated → completedChunks for mid-translation values (C4)', async () => {
+    // Pre-fix C4: the seam was previously only exercised at the
+    // boundary values (0 and totalChunks). A regression that swapped
+    // the field names mid-translation (e.g. `body.completedChunks`)
+    // would silently render "Translating: 0 / 7" until the job hit
+    // 100%. Lock the intermediate-progress contract.
+    mockedApiClient.get.mockResolvedValueOnce({
+      data: {
+        jobId: 'job-1',
+        status: 'IN_PROGRESS',
+        translationStatus: 'IN_PROGRESS',
+        totalChunks: 7,
+        chunksTranslated: 3,
+      },
+    });
+    const job = await getJobStatus('job-1');
+    expect(job.completedChunks).toBe(3);
+    expect(job.totalChunks).toBe(7);
+    // Anti-assertion: the wire field name must NOT leak through onto
+    // the frontend type — that would be the regression we are guarding.
+    expect(job).not.toHaveProperty('chunksTranslated');
+  });
+});
+
+describe('TranslationService - startTranslation — narrow return shape (H1-cq)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    (getAuthToken as ReturnType<typeof vi.fn>).mockReturnValue('mock-token-123');
+  });
+
+  it('returns ONLY the narrow StartTranslationResult fields (no hollow sentinels)', async () => {
+    // Pre-fix H1-cq: the result was a fabricated TranslationJob with
+    // five hollow sentinel fields (`userId: ''`, `fileName: ''`,
+    // `fileSize: 0`, `contentType: ''`, ...). Narrowing the return type
+    // removes the lie at the type level — assert at runtime that the
+    // sentinels are gone so a future maintainer cannot bring them back
+    // without breaking this test.
+    mockedApiClient.post.mockResolvedValueOnce({
+      data: {
+        message: 'Translation started successfully',
+        jobId: 'job-abc',
+        translationStatus: 'IN_PROGRESS',
+        targetLanguage: 'es',
+        totalChunks: 5,
+        chunksTranslated: 0,
+        executionArn: 'arn:aws:states:us-east-1:000:execution:lfmt:abc',
+      },
+    });
+
+    const result = await startTranslation('job-abc', { targetLanguage: 'es', tone: 'neutral' });
+
+    // Exact-match contract: no hollow sentinels permitted.
+    expect(Object.keys(result).sort()).toEqual(
+      [
+        'jobId',
+        'status',
+        'targetLanguage',
+        'totalChunks',
+        'completedChunks',
+        'message',
+        'executionArn',
+      ].sort()
+    );
+    expect(result).not.toHaveProperty('userId');
+    expect(result).not.toHaveProperty('fileName');
+    expect(result).not.toHaveProperty('fileSize');
+    expect(result).not.toHaveProperty('contentType');
+    expect(result).not.toHaveProperty('createdAt');
+
+    // And the values themselves are the wire values, mapped by name.
+    expect(result.jobId).toBe('job-abc');
+    expect(result.status).toBe('IN_PROGRESS');
+    expect(result.targetLanguage).toBe('es');
+    expect(result.totalChunks).toBe(5);
+    expect(result.completedChunks).toBe(0);
+    expect(result.message).toBe('Translation started successfully');
+    expect(result.executionArn).toBe('arn:aws:states:us-east-1:000:execution:lfmt:abc');
+  });
+
+  it('omits executionArn when the wire response does not include it', async () => {
+    // The Lambda includes executionArn in dev for tracing but the field
+    // is optional in the shared DTO (StartTranslationApiResponse). The
+    // narrow result must not synthesize a placeholder value.
+    mockedApiClient.post.mockResolvedValueOnce({
+      data: {
+        message: 'Translation started successfully',
+        jobId: 'job-xyz',
+        translationStatus: 'IN_PROGRESS',
+        targetLanguage: 'fr',
+        totalChunks: 2,
+        chunksTranslated: 0,
+        // executionArn intentionally absent
+      },
+    });
+
+    const result = await startTranslation('job-xyz', {
+      targetLanguage: 'fr',
+      tone: 'neutral',
+    });
+
+    expect(result.executionArn).toBeUndefined();
+  });
+});
