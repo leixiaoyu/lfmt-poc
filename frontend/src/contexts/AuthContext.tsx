@@ -147,13 +147,19 @@ export function AuthProvider({ children }: AuthProviderProps) {
   }, []);
 
   /**
-   * Register new user
+   * Register new user.
+   *
+   * Only creates the account (POST /auth/register). The real backend
+   * returns 201 + { message } — no tokens. Setting the authenticated
+   * user is the caller's responsibility via a subsequent login() call
+   * (see RegisterPage and issue #222). This separation avoids silently
+   * swallowing a missing-user shape that would leave isAuthenticated
+   * stuck as false despite a successful API round-trip.
    */
   const register = useCallback(async (data: RegisterRequest) => {
     try {
       setError(null);
-      const response = await authService.register(data);
-      setUser(response.user);
+      await authService.register(data);
     } catch (err) {
       setError(err as ApiError);
       throw err;

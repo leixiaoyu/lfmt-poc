@@ -2,7 +2,15 @@
  * Register Page
  *
  * Provides the registration interface using the RegisterForm component.
- * Handles user registration flow and redirects to dashboard on success.
+ * Handles user registration flow with auto-login on success (issue #222).
+ *
+ * Post-registration flow (dev environment — Cognito auto-confirm enabled):
+ *   1. POST /auth/register succeeds (201, no tokens returned by real backend).
+ *   2. Silently attempt login with the same credentials via the shared login().
+ *   3a. Login succeeds  → navigate to /dashboard (user is already authenticated).
+ *   3b. Login fails     → navigate to /login with a friendly message in router
+ *       state so the user can sign in manually without losing their credentials.
+ *       The RegisterForm surfaces the error; this page does NOT crash.
  */
 
 import { useNavigate } from 'react-router-dom';
@@ -14,7 +22,7 @@ import type { RegisterRequest } from '../services/authService';
 
 export default function RegisterPage() {
   const navigate = useNavigate();
-  const { register } = useAuth();
+  const { register, login } = useAuth();
 
   const handleRegister = async (formData: {
     email: string;
@@ -29,8 +37,29 @@ export default function RegisterPage() {
       acceptedTerms: true,
       acceptedPrivacy: true,
     };
+
+    // Step 1: create the account (201; real backend does not return tokens).
     await register(registrationData);
-    navigate(ROUTES.DASHBOARD);
+
+    // Step 2: silently auto-login using the same credentials so the user
+    // lands on /dashboard without having to retype their password (issue #222).
+    // In dev, Cognito auto-confirms the account immediately after registration,
+    // so login succeeds synchronously. In prod (email verification required)
+    // this call will fail — we catch it and fall back to /login gracefully.
+    try {
+      await login({ email: formData.email, password: formData.password });
+      navigate(ROUTES.DASHBOARD);
+    } catch {
+      // Auto-login failed (e.g., prod env where email verification is still
+      // required, or a transient network error). Redirect to /login and pass
+      // a friendly hint so the user knows their account was created.
+      navigate(ROUTES.LOGIN, {
+        state: {
+          message:
+            'Account created! Please sign in — check your email if verification is required.',
+        },
+      });
+    }
   };
 
   return (

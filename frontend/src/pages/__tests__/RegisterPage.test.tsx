@@ -5,6 +5,7 @@
  * - Page rendering with AuthProvider and Router
  * - Form submission with mock API
  * - Navigation after successful registration
+ * - Auto-login after registration (issue #222)
  * - Error handling
  *
  * These tests catch integration issues that unit tests miss,
@@ -17,6 +18,7 @@ import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Routes, Route } from 'react-router-dom';
 import { http, HttpResponse, delay } from 'msw';
 import RegisterPage from '../RegisterPage';
+import LoginPage from '../LoginPage';
 import { AuthProvider } from '../../contexts/AuthContext';
 import { server } from '../../mocks/server';
 
@@ -39,6 +41,8 @@ function renderWithAppContext(initialRoute = '/register') {
         <Routes>
           <Route path="/register" element={<RegisterPage />} />
           <Route path="/dashboard" element={<MockDashboard />} />
+          {/* LoginPage included to test the auto-login fallback redirect */}
+          <Route path="/login" element={<LoginPage />} />
         </Routes>
       </AuthProvider>
     </MemoryRouter>
@@ -187,6 +191,76 @@ describe('RegisterPage - Integration Tests', () => {
 
       // Note: localStorage storage is tested in authService.test.ts
       // This integration test focuses on the navigation flow
+    });
+  });
+
+  /**
+   * Auto-Login After Registration (issue #222)
+   *
+   * Covers the two outcomes of the silent login attempt that follows a
+   * successful POST /auth/register in dev (Cognito auto-confirm enabled):
+   *
+   *   (a) register success + login success → /dashboard
+   *   (b) register success + login failure → /login with friendly message
+   */
+  describe('Auto-Login After Registration (issue #222)', () => {
+    /** Fill and submit the registration form with valid test data. */
+    async function fillAndSubmitForm(user: ReturnType<typeof userEvent.setup>) {
+      await user.type(screen.getByLabelText(/first name/i), 'Jane');
+      await user.type(screen.getByLabelText(/last name/i), 'Demo');
+      await user.type(screen.getByLabelText(/email/i), 'jane@example.com');
+      await user.type(screen.getByLabelText(/^password/i), 'Secure123!');
+      await user.type(screen.getByLabelText(/confirm password/i), 'Secure123!');
+      await user.click(screen.getByLabelText(/terms of service/i));
+      await user.click(screen.getByLabelText(/privacy policy/i));
+      await user.click(screen.getByRole('button', { name: /sign up/i }));
+    }
+
+    it('(a) register success → auto-login succeeds → navigates to /dashboard', async () => {
+      // Both /auth/register and /auth/login use the default MSW handlers
+      // which return a valid user + tokens — mirrors the dev auto-confirm flow.
+      const user = userEvent.setup();
+      renderWithAppContext();
+
+      await fillAndSubmitForm(user);
+
+      await waitFor(
+        () => {
+          expect(screen.getByRole('heading', { name: /dashboard/i })).toBeInTheDocument();
+        },
+        { timeout: 3000 }
+      );
+    });
+
+    it('(b) register success but auto-login fails → navigates to /login with friendly message', async () => {
+      // Override only the login handler to simulate a failure (e.g., prod env
+      // where email verification is still required, returning 403).
+      server.use(
+        http.post(/\/auth\/login$/, () => {
+          return HttpResponse.json(
+            { message: 'Please verify your email address before logging in.' },
+            { status: 403 }
+          );
+        })
+      );
+
+      const user = userEvent.setup();
+      renderWithAppContext();
+
+      await fillAndSubmitForm(user);
+
+      // Should redirect to /login (not crash, not stay on /register)
+      await waitFor(
+        () => {
+          expect(screen.getByRole('button', { name: /log in/i })).toBeInTheDocument();
+        },
+        { timeout: 3000 }
+      );
+
+      // Friendly message should be visible on the login page
+      expect(
+        screen.getByText(/account created/i)
+      ).toBeInTheDocument();
     });
   });
 
