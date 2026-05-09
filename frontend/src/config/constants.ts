@@ -21,12 +21,17 @@ function getRequiredEnv(key: string): string {
  */
 export const API_CONFIG = {
   /**
-   * Base URL for API requests
-   * REQUIRED: Must be set via VITE_API_URL environment variable
-   * In development: proxied through Vite dev server
-   * In production: direct API Gateway URL
+   * Base URL for API requests.
+   * REQUIRED: Must be set via VITE_API_URL environment variable.
+   * In development: proxied through Vite dev server.
+   * In production: direct API Gateway URL.
+   *
+   * Trailing slash is stripped so that every URL join — whether via
+   * axios baseURL + leading-slash path, or via explicit template-literal
+   * concatenation in the refresh interceptor — produces exactly one
+   * slash separator and never yields a double-slash (issue #224).
    */
-  BASE_URL: getRequiredEnv('VITE_API_URL'),
+  BASE_URL: getRequiredEnv('VITE_API_URL').replace(/\/+$/, ''),
 
   /**
    * Request timeout in milliseconds
