@@ -21,6 +21,7 @@ import { fileURLToPath } from 'node:url';
 import { test, expect } from '@playwright/test';
 import { TranslationUploadPage } from '../../pages/TranslationUploadPage';
 import { resolveApiUrl } from '../../fixtures/url';
+import { installNetworkProbes, readNetworkProbes, restoreXhr } from '../../utils/networkProbes';
 
 // Smoke tests use a longer timeout because they run against production.
 // 3 minutes is sufficient when we use the ~1 KB smoke-test-minimal.txt
@@ -355,74 +356,30 @@ test.describe('Production Smoke Tests @smoke', () => {
   // wiring step. It must NOT use MSW or any mock — the entire point is to
   // exercise the real CSP and the real S3 PUT.
   // ---------------------------------------------------------------------------
+  // PR #214 OMC R2 (convergent: 4 agents): the inline XHR + CSP probe
+  // block was extracted to `e2e/utils/networkProbes.ts`. The hygiene
+  // contract (restore prototype after each test) is enforced via this
+  // afterEach hook even though Playwright per-test BrowserContext
+  // isolation makes the leak path moot today — keeping it here means
+  // a future iframe / popup step can't silently inherit the patched
+  // prototype.
+  test.afterEach(async ({ page }) => {
+    await restoreXhr(page);
+  });
+
   test('CSP Regression: browser-side S3 PUT is not blocked by CSP @csp-regression', async ({
     page,
   }) => {
-    // Capture every CSP violation reported by the browser. In Chromium the
-    // `securitypolicyviolation` DOM event fires for each blocked resource;
-    // we mirror it onto the page for the test runner to inspect.
-    //
-    // R-perf-1 (PR #214 OMC): we ALSO surface the violations through a
-    // page-level flag (`__s3CspBlocked`) so the wizard-driving step can
-    // short-circuit the moment a CSP block is observed against the S3
-    // origin. Without this, the test waits for `getByText(...processing)`
-    // to time out (30 s) and — worse — the backend may have already
-    // initiated chunking + Gemini calls, burning daily quota for a run
-    // that's known to fail.
+    // R-perf-1 (PR #214 OMC R1): install the CSP + XHR probes BEFORE
+    // the first navigation so the init script lands on the root
+    // document. The probes surface S3-specific failure signatures via
+    // `window.__s3CspBlocked` / `window.__s3PutFailed` so the
+    // wizard-driving step can fail fast (avoiding 30 s of `getByText`
+    // wait AND — more importantly — avoiding the backend's S3-event
+    // pipeline burning Gemini quota on a run that's known to fail).
+    // Implementation lives in `e2e/utils/networkProbes.ts`.
     const cspViolations: string[] = [];
-    await page.addInitScript(() => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (window as any).__cspViolations = [];
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (window as any).__s3CspBlocked = null;
-      window.addEventListener('securitypolicyviolation', (e) => {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        (window as any).__cspViolations.push({
-          violatedDirective: e.violatedDirective,
-          blockedURI: e.blockedURI,
-        });
-        // Short-circuit signal: any CSP block whose blocked URI points
-        // at the document S3 bucket means the upload PUT was rejected
-        // and we can fail fast without waiting for translation kick-off.
-        if (
-          e.violatedDirective?.startsWith('connect-src') &&
-          /s3[.-][a-z0-9-]+\.amazonaws\.com/i.test(e.blockedURI || '')
-        ) {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          (window as any).__s3CspBlocked = {
-            violatedDirective: e.violatedDirective,
-            blockedURI: e.blockedURI,
-          };
-        }
-      });
-
-      // R-perf-1: instrument XHR to detect S3-PUT failures with status
-      // 0 (network-level / CSP block) — same fail-fast intent. We patch
-      // XMLHttpRequest.prototype.open to record the URL, then surface
-      // the failure via `__s3PutFailed` when the load event fires with
-      // status 0 against the document-bucket origin.
-      const OriginalXHR = window.XMLHttpRequest;
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (window as any).__s3PutFailed = null;
-      const originalOpen = OriginalXHR.prototype.open;
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      OriginalXHR.prototype.open = function (this: any, method: string, url: string) {
-        this.__lfmtUrl = url;
-        this.__lfmtMethod = method;
-        this.addEventListener('loadend', () => {
-          if (
-            this.__lfmtMethod === 'PUT' &&
-            this.status === 0 &&
-            /s3[.-][a-z0-9-]+\.amazonaws\.com/i.test(String(this.__lfmtUrl))
-          ) {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            (window as any).__s3PutFailed = { url: this.__lfmtUrl, status: this.status };
-          }
-        });
-        // eslint-disable-next-line prefer-rest-params
-        return originalOpen.apply(this, arguments as unknown as Parameters<typeof originalOpen>);
-      };
-    });
+    await installNetworkProbes(page);
 
     // Capture "Refused to set unsafe header" console errors — these
     // indicate someone re-introduced a forbidden header (Content-Length).
@@ -553,13 +510,12 @@ test.describe('Production Smoke Tests @smoke', () => {
 
     // Step 3: Assert no CSP violations were emitted by the browser.
     await test.step('No CSP violations emitted', async () => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const violations = await page.evaluate(() => (window as any).__cspViolations || []);
+      // PR #214 OMC R2 (convergent): use the typed helper from
+      // networkProbes.ts instead of an ad-hoc `page.evaluate` so the
+      // shape of `__cspViolations` lives in exactly one place.
+      const probes = await readNetworkProbes(page);
       cspViolations.push(
-        ...violations.map(
-          (v: { violatedDirective: string; blockedURI: string }) =>
-            `${v.violatedDirective} blocked ${v.blockedURI}`
-        )
+        ...probes.cspViolations.map((v) => `${v.violatedDirective} blocked ${v.blockedURI}`)
       );
       expect(
         cspViolations,

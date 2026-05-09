@@ -558,6 +558,39 @@ aws cloudfront get-invalidation \
 
 ## Known Issues & Fixes
 
+### Runbook: CloudFront distribution destroy + re-create
+
+If the CloudFront distribution is destroyed and re-created (logical ID
+changes, region migration, manual `cdk destroy` followed by re-deploy),
+the new distribution will be assigned a NEW domain (`d#######.cloudfront.net`).
+At that moment the literal in `CLOUDFRONT_ORIGINS_BY_ENVIRONMENT`
+(in `backend/infrastructure/lib/lfmt-infrastructure-stack.ts`) is stale.
+
+**Symptom**: API CORS preflight succeeds (it uses the live
+`distributionDomainName`), but browser-side presigned-PUT uploads silently
+fail because the document-bucket CORS policy still references the OLD
+CloudFront domain. The wizard surfaces a misleading "Connection lost"
+error and curl-based smoke tests pass (curl bypasses CORS).
+
+**Fix**: BEFORE re-deploying, update
+`CLOUDFRONT_ORIGINS_BY_ENVIRONMENT` in
+`backend/infrastructure/lib/lfmt-infrastructure-stack.ts` with the new
+domain for the affected environment. Both `getAllowedApiOrigins()`
+(API Gateway CORS) and `addCloudFrontOriginToDocumentBucketCors()` (S3
+bucket CORS) consume this single constant — a single edit covers both.
+The drift-guard test
+(`infrastructure.test.ts` → "CLOUDFRONT_ORIGINS_BY_ENVIRONMENT has
+entries for every known tier") will fail if a new environment is added
+without populating the constant, but it cannot detect that an existing
+entry has gone stale; that requires this manual runbook step.
+
+**Why a literal, not a CDK reference**: the bucket-CORS rule cannot
+consume `frontendDistribution.distributionDomainName` at synth time
+because `documentBucket` is referenced by the response-headers policy
+that `frontendDistribution` uses (CSP `connect-src`); a back-reference
+from bucket → distribution would create a CFN cycle. See the JSDoc on
+`addCloudFrontOriginToDocumentBucketCors` for the full discussion.
+
 ### Issue: CloudFront CSP Deployment Failure (Fixed in PR #66)
 
 **Error**:

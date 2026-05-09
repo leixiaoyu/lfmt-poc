@@ -5,17 +5,20 @@
  * file uploads, and status tracking.
  */
 
-import axios, { AxiosError } from 'axios';
+import axios from 'axios';
 import { apiClient } from '../utils/api';
 import { stripBrowserForbiddenHeaders } from '../utils/headerFilters';
 import type { TranslationJobStatus } from '@lfmt/shared-types';
 import { CHUNKING_ERROR_STATUSES } from '@lfmt/shared-types';
 
-// Re-export so callers that previously imported the helper from this
-// service module (and any test that mocks/asserts on it via the service
-// surface) keep working unchanged. The single source of truth lives in
-// utils/headerFilters.
-export { stripBrowserForbiddenHeaders } from '../utils/headerFilters';
+// N1 (PR #214 OMC R2): the back-compat re-export of
+// `stripBrowserForbiddenHeaders` from this module has been removed.
+// No live caller imports the helper through `translationService`
+// (verified via `grep -r "from '../services/translationService'"
+// frontend/src` for the symbol). Removing the shim breaks the
+// indirect coupling and lets the two modules truly decouple — anyone
+// who needs the helper must now import it directly from
+// `utils/headerFilters`, where the source of truth lives.
 
 // Re-export so callers can use the shared-types values without an extra import.
 export type { TranslationJobStatus };
@@ -103,13 +106,24 @@ export interface UploadAndAwaitChunkedOptions {
 }
 
 /**
- * Translation Service Error
+ * Translation Service Error.
+ *
+ * `originalError` is typed `Error | undefined` (NOT `AxiosError`) so
+ * the non-axios branch in `wrapS3UploadError` can preserve plain Error
+ * causes (disk-full, generic XHR failure, etc.) without a type cast.
+ * AxiosError extends Error, so axios-error code paths remain
+ * compatible — callers that need axios-specific fields (`.response`,
+ * `.request`) MUST narrow with `axios.isAxiosError(originalError)`
+ * before reading them. This matches the wider runtime contract
+ * ("preserve any underlying cause") and removes the `as unknown as
+ * AxiosError` lie that previously allowed the field to silently lose
+ * the cause shape (PR #214 OMC R2 M-1).
  */
 export class TranslationServiceError extends Error {
   constructor(
     message: string,
     public statusCode?: number,
-    public originalError?: AxiosError
+    public originalError?: Error
   ) {
     super(message);
     this.name = 'TranslationServiceError';
@@ -163,17 +177,18 @@ function wrapS3UploadError(error: unknown): TranslationServiceError {
   // a synthetic Error so `originalError.message` stays a string and the
   // cause chain remains inspectable downstream.
   //
-  // The `originalError` field is typed `AxiosError | undefined` on
-  // TranslationServiceError; we cast through `as unknown as AxiosError`
-  // here because the runtime contract ("preserve any cause") is wider
-  // than the compile-time type, which exists primarily to keep the
-  // axios-error code paths type-safe. Rather than widen the field's
-  // type (which would force every consumer to handle three cases), we
-  // narrow at this single call site — the cost is one cast, the benefit
-  // is monitoring tools see the cause regardless of its origin.
-  const originalError = error instanceof Error ? error : new Error(String(error));
+  // M-1 (PR #214 OMC R2): widen `originalError` to `Error | undefined`
+  // at the field level so the non-axios branch no longer needs a cast.
+  // The previous `as unknown as AxiosError` was a type-system lie —
+  // monitoring tools that read `.response` on a non-axios cause would
+  // hit `undefined`, but the compiler didn't warn. Treating the field
+  // as the broader `Error` type matches the runtime contract ("preserve
+  // ANY cause"); axios-error consumers narrow with `axios.isAxiosError`
+  // before reading axios-specific fields (which is what they should be
+  // doing anyway).
+  const originalError: Error = error instanceof Error ? error : new Error(String(error));
   const message = error instanceof Error ? error.message : 'S3 upload failed';
-  return new TranslationServiceError(message, undefined, originalError as unknown as AxiosError);
+  return new TranslationServiceError(message, undefined, originalError);
 }
 
 // ---------------------------------------------------------------------------

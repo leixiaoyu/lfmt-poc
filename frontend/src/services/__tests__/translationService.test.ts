@@ -495,6 +495,80 @@ describe('TranslationService - uploadDocument', () => {
           expect(original?.message).toBe('undefined');
         }
       });
+
+      // -----------------------------------------------------------------
+      // M-1 (PR #214 OMC R2): proper type-guard narrowing — no
+      // `as unknown as AxiosError` lie.
+      //
+      // Pre-fix, the non-axios branch cast its synthetic cause through
+      // `as unknown as AxiosError` to satisfy `originalError`'s field
+      // type. Post-fix, the field is widened to `Error | undefined`,
+      // and `axios.isAxiosError()` is the only narrowing path used
+      // inside the wrap. This test pins the contract: the narrowed
+      // branch (axios.isAxiosError() === true) IS reachable, AND the
+      // non-axios branch produces a plain Error instance whose
+      // properties (message, name) survive intact — i.e. the cast is
+      // structurally unnecessary because the runtime type already
+      // matches the (now-widened) compile-time type.
+      // -----------------------------------------------------------------
+      it('M-1: axios-error branch IS reachable (narrowed via axios.isAxiosError)', async () => {
+        const mockFile = new File(['content'], 'doc.txt', { type: 'text/plain' });
+        mockPresigned();
+
+        const axiosError: AxiosError = {
+          isAxiosError: true,
+          message: 'Request failed with status code 500',
+          response: {
+            status: 500,
+            statusText: 'Internal Server Error',
+            data: '<Error>InternalError</Error>',
+            headers: {},
+            config: {} as AxiosError['config'],
+          },
+        } as unknown as AxiosError;
+
+        mockedAxios.put.mockRejectedValueOnce(axiosError);
+
+        try {
+          await uploadDocument({ file: mockFile, legalAttestation: buildAttestation() });
+          expect.fail('Should have thrown TranslationServiceError');
+        } catch (err) {
+          expect(err).toBeInstanceOf(TranslationServiceError);
+          // Reaching this expectation proves the axios-narrowed branch
+          // executed (statusCode is set ONLY in that branch).
+          expect((err as TranslationServiceError).statusCode).toBe(500);
+          expect((err as TranslationServiceError).originalError).toBe(axiosError);
+        }
+      });
+
+      it('M-1: non-axios branch yields plain Error (no AxiosError cast)', async () => {
+        const mockFile = new File(['content'], 'doc.txt', { type: 'text/plain' });
+        mockPresigned();
+
+        // Use a TypeError to maximise the divergence from AxiosError —
+        // it has no `.response`, no `isAxiosError` flag, etc. The wrap
+        // must still preserve it byte-for-byte (instanceof + same
+        // reference) without coercing through AxiosError.
+        const typeError = new TypeError('cannot read property of undefined');
+        mockedAxios.put.mockRejectedValueOnce(typeError);
+
+        try {
+          await uploadDocument({ file: mockFile, legalAttestation: buildAttestation() });
+          expect.fail('Should have thrown TranslationServiceError');
+        } catch (err) {
+          expect(err).toBeInstanceOf(TranslationServiceError);
+          const original = (err as TranslationServiceError).originalError;
+          // Pre-fix: `originalError` was typed `AxiosError` and TS
+          // couldn't tell us the runtime type was actually TypeError.
+          // Post-fix: typed as `Error`, so the instanceof check is
+          // direct and reflects reality.
+          expect(original).toBeInstanceOf(TypeError);
+          expect(original).toBe(typeError);
+          // No `isAxiosError` flag — confirms we did NOT silently
+          // coerce the cause into the AxiosError shape.
+          expect((original as unknown as { isAxiosError?: unknown }).isAxiosError).toBeUndefined();
+        }
+      });
     });
 
     it('should include legal attestation in JSON payload to backend', async () => {

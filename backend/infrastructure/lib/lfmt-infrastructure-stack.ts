@@ -52,6 +52,38 @@ const LAMBDA_RUNTIME = lambda.Runtime.NODEJS_22_X;
 // constant will fail that test.
 const LAMBDA_ARCHITECTURE = lambda.Architecture.ARM_64;
 
+/**
+ * Per-environment CloudFront-distribution origin literals
+ * (PR #214 OMC R2, convergent: 2 agents).
+ *
+ * Single source of truth consumed by BOTH `getAllowedApiOrigins()`
+ * (API Gateway CORS) AND `addCloudFrontOriginToDocumentBucketCors()`
+ * (S3 document-bucket CORS). Before the unification both methods kept
+ * their own literal lists per environment and the two had to agree by
+ * manual care — drift surfaces at the worst possible time (browser
+ * upload silently rejected because the bucket-CORS list lagged the
+ * API-CORS list after a CloudFront re-create).
+ *
+ * IMPORTANT: these are LITERAL strings on purpose, NOT references to
+ * `frontendDistribution.distributionDomainName`. Using the live
+ * reference would create a CFN cyclic dependency (DocumentBucket →
+ * FrontendDistribution → response-headers policy → DocumentBucket).
+ * The literal approach is acceptable because CloudFront distribution
+ * domains are stable across deploys (CDK only re-creates the
+ * distribution on logical-id changes). See
+ * `addCloudFrontOriginToDocumentBucketCors` JSDoc and
+ * `docs/CLOUDFRONT-SETUP.md` runbook note.
+ *
+ * Drift guard: `infrastructure.test.ts` asserts every known
+ * environment has an entry, so adding a new tier without filling this
+ * table fails the build immediately.
+ */
+export const CLOUDFRONT_ORIGINS_BY_ENVIRONMENT: Record<'dev' | 'staging' | 'prod', string> = {
+  dev: 'https://d39xcun7144jgl.cloudfront.net',
+  staging: 'https://staging.lfmt.yourcompany.com',
+  prod: 'https://lfmt.yourcompany.com',
+};
+
 export interface LfmtInfrastructureStackProps extends StackProps {
   stackName: string;
   environment: string;
@@ -111,18 +143,22 @@ export class LfmtInfrastructureStack extends Stack {
   private getAllowedApiOrigins(): string[] {
     const origins: string[] = [];
 
+    // PR #214 OMC R2 (convergent): consume the unified per-environment
+    // CloudFront constant rather than carrying our own literal here.
+    // Drift between this list and the document-bucket CORS list (the
+    // other consumer of the same constant) is no longer possible.
     switch (this.node.tryGetContext('environment')) {
       case 'prod':
-        origins.push('https://lfmt.yourcompany.com'); // Replace with actual production domain
+        origins.push(CLOUDFRONT_ORIGINS_BY_ENVIRONMENT.prod);
         break;
       case 'staging':
-        origins.push('https://staging.lfmt.yourcompany.com'); // Replace with actual staging domain
+        origins.push(CLOUDFRONT_ORIGINS_BY_ENVIRONMENT.staging);
         break;
       default:
         // Dev environment: local development + CDK-managed CloudFront
         origins.push('http://localhost:3000');
         origins.push('https://localhost:3000');
-        origins.push('https://d39xcun7144jgl.cloudfront.net'); // CDK-managed CloudFront distribution
+        origins.push(CLOUDFRONT_ORIGINS_BY_ENVIRONMENT.dev);
     }
 
     // Add CloudFront distribution URL if it exists (after createFrontendHosting() is called)
@@ -414,22 +450,22 @@ export class LfmtInfrastructureStack extends Stack {
    *   set of additional origins per tier.
    */
   private addCloudFrontOriginToDocumentBucketCors(environment: string) {
-    // Per-environment CloudFront origin literals. The dev value is the
-    // CDK-managed CloudFront distribution domain — the same literal
-    // already enumerated in `getAllowedApiOrigins()` for the dev tier.
-    // Drift between the two would surface as a broken API CORS first
-    // (much louder failure mode than a broken upload), so the API list
-    // is the practical source of truth.
-    const cloudFrontOriginsByEnvironment: Record<string, string[]> = {
-      dev: ['https://d39xcun7144jgl.cloudfront.net'],
-      staging: ['https://staging.lfmt.yourcompany.com'],
-      prod: ['https://lfmt.yourcompany.com'],
-    };
-
-    // Default to the dev list for any unknown environment label
-    // (matches the `default:` branch in `getAllowedApiOrigins()`).
-    const additionalOrigins =
-      cloudFrontOriginsByEnvironment[environment] ?? cloudFrontOriginsByEnvironment.dev;
+    // PR #214 OMC R2 (convergent): consume the unified per-environment
+    // CloudFront constant `CLOUDFRONT_ORIGINS_BY_ENVIRONMENT` defined
+    // at module scope. The same constant feeds `getAllowedApiOrigins()`
+    // so the two CORS surfaces (API Gateway + S3 bucket) cannot drift
+    // independently — a single edit covers both. Drift via
+    // unrecognised environment label is also handled: known tiers
+    // (dev / staging / prod) get their concrete entry; anything else
+    // falls back to dev (matches the `default:` branch in
+    // `getAllowedApiOrigins()`).
+    const isKnown = (env: string): env is keyof typeof CLOUDFRONT_ORIGINS_BY_ENVIRONMENT =>
+      env === 'dev' || env === 'staging' || env === 'prod';
+    const additionalOrigins: string[] = [
+      isKnown(environment)
+        ? CLOUDFRONT_ORIGINS_BY_ENVIRONMENT[environment]
+        : CLOUDFRONT_ORIGINS_BY_ENVIRONMENT.dev,
+    ];
 
     this.documentBucket.addCorsRule({
       allowedMethods: [s3.HttpMethods.GET, s3.HttpMethods.PUT, s3.HttpMethods.POST],
@@ -2289,6 +2325,24 @@ export class LfmtInfrastructureStack extends Stack {
     ];
 
     if (opts.reportUri) {
+      // H-3 (PR #214 OMC R2): sanitize `reportUri` BEFORE interpolating
+      // it into the CSP directive string. Without this, a malformed URL
+      // (or a misconfigured deploy) could inject arbitrary CSP
+      // directives — `;` and `,` both terminate directives in the CSP
+      // grammar, so a value like
+      //   `https://evil.com; script-src *`
+      // would silently downgrade `script-src` to allow ANY origin.
+      // Whitespace gets the same treatment because CSP source-list
+      // parsers split on whitespace; an injected token there would be
+      // treated as an additional source for the `report-uri` directive
+      // (which CSP3 ignores, but the legacy parser may not).
+      //
+      // The check is performed at synth time (not deploy time) so a
+      // misconfiguration fails fast in `cdk synth` / `cdk deploy` rather
+      // than reaching CloudFront. Issue #201 will wire this parameter;
+      // pinning the contract here means that PR can't accidentally
+      // forward an attacker-controlled URL.
+      LfmtInfrastructureStack.assertValidCspReportUri(opts.reportUri);
       // CSP grammar requires `report-uri` to be the LAST directive so
       // that any future tail-only directive (e.g. `report-to`) can be
       // appended without breaking the value. Issue #201 will switch to
@@ -2297,6 +2351,51 @@ export class LfmtInfrastructureStack extends Stack {
     }
 
     return directives.join('; ') + ';';
+  }
+
+  /**
+   * Validate a CSP `report-uri` value before interpolating it into a
+   * directive string (H-3, PR #214 OMC R2).
+   *
+   * Rules (intentionally conservative — favour false-positive on synth
+   * over a false-negative that ships an injection):
+   *   1. Must parse as a valid URL.
+   *   2. Protocol MUST be `https:`. CSP report endpoints commonly POST
+   *      cross-origin with credentials, so plain HTTP would leak
+   *      violation reports (which contain blocked URIs that may include
+   *      session info) over the wire.
+   *   3. The raw string MUST NOT contain whitespace, `;`, or `,` —
+   *      these terminate / split CSP directives, so an injected
+   *      character there would let an attacker append a directive (e.g.
+   *      `https://x.com; script-src *`).
+   *
+   * Throws synchronously inside `cdk synth` so a bad value never
+   * reaches CloudFront. Static so the unit test can call it without
+   * instantiating the full stack.
+   */
+  private static assertValidCspReportUri(reportUri: string): void {
+    // Forbidden characters: whitespace + CSP-grammar separators.
+    if (/[\s;,]/.test(reportUri)) {
+      throw new Error(
+        `Invalid CSP reportUri: must not contain whitespace, ';' or ',' (got: ${JSON.stringify(reportUri)})`
+      );
+    }
+
+    // Must parse as a URL. URL constructor throws on malformed input.
+    let parsed: URL;
+    try {
+      parsed = new URL(reportUri);
+    } catch {
+      throw new Error(
+        `Invalid CSP reportUri: not a valid URL (got: ${JSON.stringify(reportUri)})`
+      );
+    }
+
+    if (parsed.protocol !== 'https:') {
+      throw new Error(
+        `Invalid CSP reportUri: protocol must be https: (got: ${parsed.protocol})`
+      );
+    }
   }
 
   private updateCloudFrontCSP() {
