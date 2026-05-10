@@ -103,10 +103,11 @@ export const handler = async (event: APIGatewayProxyEvent): Promise<APIGatewayPr
         ? rawTranslatedChunks
         : rawTranslatedChunks !== undefined && rawTranslatedChunks !== null
           ? (() => {
-              logger.warn(
-                'chunksTranslated read as non-number from DDB — coercing (#227)',
-                { jobId, rawType: typeof rawTranslatedChunks, rawValue: String(rawTranslatedChunks) }
-              );
+              logger.warn('chunksTranslated read as non-number from DDB — coercing (#227)', {
+                jobId,
+                rawType: typeof rawTranslatedChunks,
+                rawValue: String(rawTranslatedChunks),
+              });
               return Number(rawTranslatedChunks);
             })()
           : 0;

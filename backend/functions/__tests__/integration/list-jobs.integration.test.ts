@@ -104,7 +104,10 @@ async function listJobs(
 // Tests
 // ---------------------------------------------------------------------------
 
-// eslint-disable-next-line jest/no-disabled-tests
+// `describe.skip` here is gated on a runtime SKIP flag (no live integration
+// creds available locally) — not a permanently-disabled test. The
+// `jest/no-disabled-tests` ESLint rule is not loaded in this project's
+// config, so no disable directive is needed.
 (SKIP ? describe.skip : describe)('GET /jobs — integration', () => {
   let tokenA: string;
   let tokenB: string;
@@ -114,10 +117,7 @@ async function listJobs(
   beforeAll(async () => {
     // Register and authenticate two independent users.
     // Both registrations are kicked off in parallel to reduce wall-clock time.
-    [tokenA, tokenB] = await Promise.all([
-      registerAndLogin(emailA),
-      registerAndLogin(emailB),
-    ]);
+    [tokenA, tokenB] = await Promise.all([registerAndLogin(emailA), registerAndLogin(emailB)]);
   }, 30_000);
 
   it('returns 200 and an array for an authenticated user (even with 0 jobs)', async () => {

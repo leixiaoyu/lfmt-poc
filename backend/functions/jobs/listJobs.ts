@@ -25,11 +25,7 @@
  */
 
 import { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
-import {
-  DynamoDBClient,
-  QueryCommand,
-  QueryCommandOutput,
-} from '@aws-sdk/client-dynamodb';
+import { DynamoDBClient, QueryCommand, QueryCommandOutput } from '@aws-sdk/client-dynamodb';
 import { unmarshall } from '@aws-sdk/util-dynamodb';
 import { ListJobsApiResponse, ListJobsItem } from '@lfmt/shared-types';
 import Logger from '../shared/logger';
@@ -97,12 +93,7 @@ export const handler = async (event: APIGatewayProxyEvent): Promise<APIGatewayPr
     // `createFlatResponse` spreads the body object into the JSON payload; since
     // `ListJobsApiResponse` is an array (not an object) we wrap it in a carrier
     // object with a `jobs` key and also surface the count for convenience.
-    return createFlatResponse(
-      200,
-      { jobs: items, count: items.length },
-      requestId,
-      requestOrigin
-    );
+    return createFlatResponse(200, { jobs: items, count: items.length }, requestId, requestOrigin);
   } catch (error) {
     logger.error('Failed to list jobs', {
       requestId,
