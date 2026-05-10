@@ -108,6 +108,7 @@ export const ROUTES = {
 
   // Protected routes
   DASHBOARD: '/dashboard',
+  TRANSLATION_UPLOAD: '/translation/upload',
   NEW_TRANSLATION: '/translation/new',
   TRANSLATION_HISTORY: '/translation/history',
   TRANSLATION_DETAIL: '/translation/:jobId',
@@ -243,8 +244,10 @@ export const FEATURE_FLAGS = {
  * External Links
  */
 export const EXTERNAL_LINKS = {
-  PRIVACY_POLICY: '/privacy',
-  TERMS_OF_SERVICE: '/terms',
+  // Point to the real legal pages added in issue #223.
+  // The old /privacy and /terms stubs are superseded by ROUTES.LEGAL_PRIVACY / ROUTES.LEGAL_TERMS.
+  PRIVACY_POLICY: '/legal/privacy',
+  TERMS_OF_SERVICE: '/legal/terms',
   SUPPORT: 'mailto:support@lfmt.example.com',
   DOCUMENTATION: '/docs',
 } as const;

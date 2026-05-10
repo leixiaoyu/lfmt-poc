@@ -96,7 +96,7 @@ function App() {
 
                 {/* Translation routes */}
                 <Route
-                  path="/translation/upload"
+                  path={ROUTES.TRANSLATION_UPLOAD}
                   element={
                     <ProtectedRoute>
                       <TranslationUpload />
@@ -104,7 +104,7 @@ function App() {
                   }
                 />
                 <Route
-                  path="/translation/history"
+                  path={ROUTES.TRANSLATION_HISTORY}
                   element={
                     <ProtectedRoute>
                       <TranslationHistory />
@@ -112,7 +112,7 @@ function App() {
                   }
                 />
                 <Route
-                  path="/translation/:jobId"
+                  path={ROUTES.TRANSLATION_DETAIL}
                   element={
                     <ProtectedRoute>
                       <TranslationDetail />
@@ -125,7 +125,7 @@ function App() {
                 */}
                 {FEATURE_FLAGS.COMPARE_VIEW && (
                   <Route
-                    path="/translation/:jobId/compare"
+                    path={ROUTES.TRANSLATION_COMPARE}
                     element={
                       <ProtectedRoute>
                         <TranslationCompare />

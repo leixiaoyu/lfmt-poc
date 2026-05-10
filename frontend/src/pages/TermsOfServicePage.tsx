@@ -7,9 +7,8 @@
  * Linked from the registration form "Terms of Service" checkbox label (issue #223).
  */
 
-import { Container, Box, Typography, Alert, Divider, Paper } from '@mui/material';
+import { Container, Box, Typography, Alert, Divider, Paper, Link } from '@mui/material';
 import { Link as RouterLink } from 'react-router-dom';
-import { Link } from '@mui/material';
 import { ROUTES } from '../config/constants';
 
 export default function TermsOfServicePage() {
