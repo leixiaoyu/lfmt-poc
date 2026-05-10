@@ -544,7 +544,10 @@ export const getJobStatus = async (jobId: string): Promise<TranslationJob> => {
  */
 export const getTranslationJobs = async (): Promise<TranslationJob[]> => {
   try {
-    const response = await apiClient.get<{ jobs: Parameters<typeof toTranslationJob>[0][]; count: number }>('/jobs');
+    const response = await apiClient.get<{
+      jobs: Parameters<typeof toTranslationJob>[0][];
+      count: number;
+    }>('/jobs');
 
     return (response.data.jobs ?? []).map((item) => toTranslationJob(item));
   } catch (error) {
