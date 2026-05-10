@@ -538,4 +538,56 @@ describe('getTranslationStatus endpoint', () => {
       expect(body.userId).toBe('user-123');
     });
   });
+
+  // ---------------------------------------------------------------------------
+  // #227 contract — chunksTranslated MUST be a JS number on the wire
+  // ---------------------------------------------------------------------------
+
+  describe('#227 chunksTranslated wire type contract', () => {
+    it('chunksTranslated is typeof number when DDB stores it as N (normal Lambda write path)', async () => {
+      dynamoMock.on(GetItemCommand).resolves({
+        Item: {
+          jobId: { S: 'job-123' },
+          userId: { S: 'user-123' },
+          status: { S: 'IN_PROGRESS' },
+          translationStatus: { S: 'IN_PROGRESS' },
+          totalChunks: { N: '4' },
+          translatedChunks: { N: '1' },
+          createdAt: { S: new Date().toISOString() },
+        },
+      } as any);
+
+      const result = await handler(createEvent('job-123') as APIGatewayProxyEvent);
+      expect(result.statusCode).toBe(200);
+      const body = JSON.parse(result.body);
+      // The key contract: after JSON round-trip the field is a number, not a string
+      expect(typeof body.chunksTranslated).toBe('number');
+      expect(body.chunksTranslated).toBe(1);
+    });
+
+    it('chunksTranslated is coerced to number when DDB stores it as S (Step Functions write path)', async () => {
+      // Simulate the Step Functions UpdateJobCompleted bug: DynamoAttributeValue.fromString
+      // writes the attribute as { S: '1' } rather than { N: '1' }.
+      // unmarshall returns the JS string '1' in this case.
+      dynamoMock.on(GetItemCommand).resolves({
+        Item: {
+          jobId: { S: 'job-123' },
+          userId: { S: 'user-123' },
+          status: { S: 'COMPLETED' },
+          translationStatus: { S: 'COMPLETED' },
+          totalChunks: { N: '1' },
+          // Simulated Step Functions write: STRING type instead of NUMBER
+          translatedChunks: { S: '1' },
+          createdAt: { S: new Date().toISOString() },
+        },
+      } as any);
+
+      const result = await handler(createEvent('job-123') as APIGatewayProxyEvent);
+      expect(result.statusCode).toBe(200);
+      const body = JSON.parse(result.body);
+      // After coercion, wire value MUST be numeric
+      expect(typeof body.chunksTranslated).toBe('number');
+      expect(body.chunksTranslated).toBe(1);
+    });
+  });
 });

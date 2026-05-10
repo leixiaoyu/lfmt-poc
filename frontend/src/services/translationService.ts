@@ -531,24 +531,22 @@ export const getJobStatus = async (jobId: string): Promise<TranslationJob> => {
 /**
  * Get all translation jobs for the current user.
  *
- * KNOWN-LIMITATION: as of 2026-05-09 there is NO `GET /jobs` route on the
- * real backend (`backend/infrastructure/lib/lfmt-infrastructure-stack.ts`
- * only exposes `GET /jobs/{jobId}` and `GET /jobs/{jobId}/translation-status`).
- * The History page (`pages/TranslationHistory.tsx`) currently calls this
- * method against the deployed backend and gets a 403/404 — the page
- * surfaces an empty list, which is the "silently broken" behaviour
- * flagged in the hotfix audit. This is a pre-existing gap, NOT a
- * regression from this hotfix; tracked as a follow-up.
+ * Calls `GET /v1/jobs` — the endpoint added in PR #226/#220.
+ * The backend scopes the result exclusively to the Cognito-claim identity;
+ * any client-side `userId` override in the request is silently ignored by
+ * the Lambda (OWASP API1:2023 IDOR guard).
  *
- * For envelope correctness when the endpoint DOES exist (today only via
- * the MSW mock): the convention across the rest of the API is a flat
- * shape, so the reader expects `response.data` to BE the array.
+ * Wire shape: `{ jobs: TranslationJob[], count: number }`. The service
+ * projects the `jobs` array and discards `count` since the array length
+ * carries the same information. Each item passes through `toTranslationJob`
+ * so the `chunksTranslated` → `completedChunks` rename is applied
+ * consistently with `getJobStatus`.
  */
 export const getTranslationJobs = async (): Promise<TranslationJob[]> => {
   try {
-    const response = await apiClient.get<TranslationJob[]>('/jobs');
+    const response = await apiClient.get<{ jobs: Parameters<typeof toTranslationJob>[0][]; count: number }>('/jobs');
 
-    return response.data;
+    return (response.data.jobs ?? []).map((item) => toTranslationJob(item));
   } catch (error) {
     return handleError(error);
   }

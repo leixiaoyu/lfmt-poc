@@ -1002,41 +1002,28 @@ describe('TranslationService - getTranslationJobs', () => {
     (getAuthToken as ReturnType<typeof vi.fn>).mockReturnValue('mock-token-123');
   });
 
-  describe('Success Scenarios', () => {
-    it('should fetch all translation jobs successfully', async () => {
-      // Arrange
-      const mockJobs: TranslationJob[] = [
-        {
-          jobId: 'job-1',
-          userId: 'user-456',
-          status: 'COMPLETED',
-          fileName: 'test1.txt',
-          fileSize: 1024,
-          contentType: 'text/plain',
-          targetLanguage: 'es',
-          tone: 'neutral',
-          createdAt: '2024-10-31T12:00:00Z',
-          updatedAt: '2024-10-31T12:30:00Z',
-        },
-        {
-          jobId: 'job-2',
-          userId: 'user-456',
-          status: 'IN_PROGRESS',
-          fileName: 'test2.txt',
-          fileSize: 2048,
-          contentType: 'text/plain',
-          targetLanguage: 'fr',
-          tone: 'formal',
-          createdAt: '2024-10-31T13:00:00Z',
-          updatedAt: '2024-10-31T13:15:00Z',
-        },
-      ];
+  // Wire shape produced by GET /jobs (PR #226): { jobs: [...], count: N }
+  // Each item in `jobs` uses the backend field names (chunksTranslated, etc.)
+  // and gets mapped through toTranslationJob before returning.
+  const makeWireItem = (jobId: string, overrides: Record<string, unknown> = {}) => ({
+    jobId,
+    userId: 'user-456',
+    status: 'COMPLETED',
+    fileName: 'test.txt',
+    fileSize: 1024,
+    contentType: 'text/plain',
+    targetLanguage: 'es',
+    chunksTranslated: 2,
+    totalChunks: 4,
+    createdAt: '2024-10-31T12:00:00Z',
+    ...overrides,
+  });
 
-      // Wire shape mirrors the mock contract: a flat array, no
-      // `{data: ...}` wrapper. (As of 2026-05-09 the live backend has
-      // no GET /jobs route — see KNOWN-LIMITATION on
-      // translationService.getTranslationJobs.)
-      mockedApiClient.get.mockResolvedValueOnce({ data: mockJobs });
+  describe('Success Scenarios', () => {
+    it('projects flat { jobs, count } response into TranslationJob array', async () => {
+      // Arrange — new wire shape: { jobs: [...], count: N }
+      const wireItems = [makeWireItem('job-1'), makeWireItem('job-2', { status: 'IN_PROGRESS' })];
+      mockedApiClient.get.mockResolvedValueOnce({ data: { jobs: wireItems, count: 2 } });
 
       // Act
       const result = await getTranslationJobs();
@@ -1044,13 +1031,38 @@ describe('TranslationService - getTranslationJobs', () => {
       // Assert
       expect(mockedApiClient.get).toHaveBeenCalledTimes(1);
       expect(mockedApiClient.get).toHaveBeenCalledWith(expect.stringContaining('/jobs'));
-      expect(result).toEqual(mockJobs);
       expect(result).toHaveLength(2);
+      expect(result[0].jobId).toBe('job-1');
+      expect(result[1].jobId).toBe('job-2');
     });
 
-    it('should return empty array when no jobs exist', async () => {
-      // Arrange — flat array (no wrapper), per the contract above.
-      mockedApiClient.get.mockResolvedValueOnce({ data: [] });
+    it('maps chunksTranslated (wire) to completedChunks (frontend)', async () => {
+      // Contract test: the wire field `chunksTranslated` must be projected
+      // to `completedChunks` by the mapper, matching getJobStatus behaviour.
+      const wireItem = makeWireItem('job-x', { chunksTranslated: 3, totalChunks: 10 });
+      mockedApiClient.get.mockResolvedValueOnce({ data: { jobs: [wireItem], count: 1 } });
+
+      const result = await getTranslationJobs();
+
+      expect(result[0].completedChunks).toBe(3);
+      expect(result[0].totalChunks).toBe(10);
+    });
+
+    it('chunksTranslated: number is preserved as number through the mapper', async () => {
+      // Regression guard for #227: if the API returns chunksTranslated as a number,
+      // the mapper must not coerce it to a string.
+      const wireItem = makeWireItem('job-num', { chunksTranslated: 5 });
+      mockedApiClient.get.mockResolvedValueOnce({ data: { jobs: [wireItem], count: 1 } });
+
+      const result = await getTranslationJobs();
+
+      expect(typeof result[0].completedChunks).toBe('number');
+      expect(result[0].completedChunks).toBe(5);
+    });
+
+    it('returns empty array when jobs array is empty', async () => {
+      // Arrange
+      mockedApiClient.get.mockResolvedValueOnce({ data: { jobs: [], count: 0 } });
 
       // Act
       const result = await getTranslationJobs();
@@ -1058,6 +1070,16 @@ describe('TranslationService - getTranslationJobs', () => {
       // Assert
       expect(result).toEqual([]);
       expect(result).toHaveLength(0);
+    });
+
+    it('handles missing jobs key gracefully (defensive fallback)', async () => {
+      // If the backend omits the `jobs` key, the service should return []
+      // rather than crashing.
+      mockedApiClient.get.mockResolvedValueOnce({ data: { count: 0 } });
+
+      const result = await getTranslationJobs();
+
+      expect(result).toEqual([]);
     });
   });
 
