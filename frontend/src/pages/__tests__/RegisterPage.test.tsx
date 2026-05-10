@@ -258,9 +258,7 @@ describe('RegisterPage - Integration Tests', () => {
       );
 
       // Friendly message should be visible on the login page
-      expect(
-        screen.getByText(/account created/i)
-      ).toBeInTheDocument();
+      expect(screen.getByText(/account created/i)).toBeInTheDocument();
     });
   });
 
