@@ -19,8 +19,8 @@ export default function TermsOfServicePage() {
           {/* Demo disclosure banner */}
           <Alert severity="warning" sx={{ mb: 4 }}>
             <strong>Demo / POC Only.</strong> This is a placeholder document. Real Terms of Service
-            will be prepared by qualified legal counsel before any production launch. Nothing on this
-            page constitutes a binding legal agreement.
+            will be prepared by qualified legal counsel before any production launch. Nothing on
+            this page constitutes a binding legal agreement.
           </Alert>
 
           <Typography variant="h4" component="h1" gutterBottom>

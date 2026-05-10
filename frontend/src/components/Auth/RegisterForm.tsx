@@ -42,13 +42,7 @@ import { ROUTES } from '../../config/constants';
  * stopPropagation prevents the click from bubbling up to FormControlLabel
  * (issue #223).
  */
-function LabelLink({
-  to,
-  children,
-}: {
-  to: string;
-  children: React.ReactNode;
-}) {
+function LabelLink({ to, children }: { to: string; children: React.ReactNode }) {
   return (
     <Link
       component={RouterLink}
@@ -285,8 +279,7 @@ export function RegisterForm({ onSubmit }: RegisterFormProps) {
               }
               label={
                 <span>
-                  I agree to the{' '}
-                  <LabelLink to={ROUTES.LEGAL_TERMS}>Terms of Service</LabelLink>
+                  I agree to the <LabelLink to={ROUTES.LEGAL_TERMS}>Terms of Service</LabelLink>
                 </span>
               }
             />
@@ -316,8 +309,7 @@ export function RegisterForm({ onSubmit }: RegisterFormProps) {
               }
               label={
                 <span>
-                  I agree to the{' '}
-                  <LabelLink to={ROUTES.LEGAL_PRIVACY}>Privacy Policy</LabelLink>
+                  I agree to the <LabelLink to={ROUTES.LEGAL_PRIVACY}>Privacy Policy</LabelLink>
                 </span>
               }
             />

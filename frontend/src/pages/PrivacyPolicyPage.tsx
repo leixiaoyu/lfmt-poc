@@ -19,9 +19,9 @@ export default function PrivacyPolicyPage() {
           {/* Demo disclosure banner */}
           <Alert severity="warning" sx={{ mb: 4 }}>
             <strong>Demo / POC Only.</strong> This is a placeholder document. A real Privacy Policy
-            compliant with GDPR, CCPA, and other applicable regulations will be prepared by qualified
-            legal counsel before any production launch. Nothing on this page constitutes a binding
-            legal commitment.
+            compliant with GDPR, CCPA, and other applicable regulations will be prepared by
+            qualified legal counsel before any production launch. Nothing on this page constitutes a
+            binding legal commitment.
           </Alert>
 
           <Typography variant="h4" component="h1" gutterBottom>
@@ -47,9 +47,9 @@ export default function PrivacyPolicyPage() {
             2. How We Use Your Information
           </Typography>
           <Typography variant="body1" paragraph>
-            We use the information we collect to operate and improve the Service, authenticate users,
-            process translation jobs, comply with legal obligations (including copyright attestation
-            records retained for 7 years), and communicate service updates.
+            We use the information we collect to operate and improve the Service, authenticate
+            users, process translation jobs, comply with legal obligations (including copyright
+            attestation records retained for 7 years), and communicate service updates.
           </Typography>
 
           <Typography variant="h6" component="h2" gutterBottom>

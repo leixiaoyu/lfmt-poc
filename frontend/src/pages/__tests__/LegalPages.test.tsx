@@ -21,7 +21,9 @@ describe('TermsOfServicePage', () => {
   it('renders the canonical "Terms of Service" heading', () => {
     renderWithRouter(<TermsOfServicePage />);
 
-    expect(screen.getByRole('heading', { name: /terms of service/i, level: 1 })).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { name: /terms of service/i, level: 1 })
+    ).toBeInTheDocument();
   });
 
   it('renders the demo / POC disclosure banner', () => {
