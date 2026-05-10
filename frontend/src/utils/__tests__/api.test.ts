@@ -832,27 +832,21 @@ describe('API Client - No double-slash in constructed URLs (issue #224)', () => 
     vi.resetModules();
     const { API_CONFIG } = await import('../../config/constants');
     expect(API_CONFIG.BASE_URL).not.toMatch(/\/$/);
-    expect(API_CONFIG.BASE_URL).toBe(
-      'https://example.execute-api.us-east-1.amazonaws.com/v1'
-    );
+    expect(API_CONFIG.BASE_URL).toBe('https://example.execute-api.us-east-1.amazonaws.com/v1');
   });
 
   it('BASE_URL with multiple trailing slashes is fully stripped', async () => {
     vi.stubEnv('VITE_API_URL', 'https://example.execute-api.us-east-1.amazonaws.com/v1///');
     vi.resetModules();
     const { API_CONFIG } = await import('../../config/constants');
-    expect(API_CONFIG.BASE_URL).toBe(
-      'https://example.execute-api.us-east-1.amazonaws.com/v1'
-    );
+    expect(API_CONFIG.BASE_URL).toBe('https://example.execute-api.us-east-1.amazonaws.com/v1');
   });
 
   it('BASE_URL without trailing slash is left unchanged', async () => {
     vi.stubEnv('VITE_API_URL', 'https://example.execute-api.us-east-1.amazonaws.com/v1');
     vi.resetModules();
     const { API_CONFIG } = await import('../../config/constants');
-    expect(API_CONFIG.BASE_URL).toBe(
-      'https://example.execute-api.us-east-1.amazonaws.com/v1'
-    );
+    expect(API_CONFIG.BASE_URL).toBe('https://example.execute-api.us-east-1.amazonaws.com/v1');
   });
 });
 
