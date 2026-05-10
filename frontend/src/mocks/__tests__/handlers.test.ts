@@ -116,8 +116,11 @@ describe('computeProgress (simulation policy)', () => {
 
 describe('resetState()', () => {
   it('clears all jobs and sessions between tests', async () => {
-    // Seed: register a user (populates sessions) and upload a file
-    // (populates jobs).
+    // Seed: register a user (populates `registeredUsers`) and upload a
+    // file (populates jobs). Note: register no longer populates
+    // `sessions` — sessions are issued at login. This test asserts on
+    // jobs clearing; sessions clearing is exercised by the auth-handler
+    // login + /auth/me round-trip elsewhere in this suite.
     await fetch(`${API_URL}/auth/register`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -152,7 +155,10 @@ describe('resetState()', () => {
 });
 
 describe('Auth handlers (msw/node)', () => {
-  it('register returns user + tokens including idToken; /auth/me round-trip resolves the same email', async () => {
+  it('register returns flat MessageResponse (mirrors real backend); login + /auth/me round-trip resolves the same email', async () => {
+    // Real backend returns ONLY `{ message }` on /auth/register (Cognito
+    // does not issue tokens at registration). The mock now matches that
+    // shape — see Issue #222 R1 F-01 for the production-impact context.
     const reg = await fetch(`${API_URL}/auth/register`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -162,16 +168,32 @@ describe('Auth handlers (msw/node)', () => {
         lastName: 'Trip',
       }),
     }).then((r) => r.json());
-    expect(reg.user.email).toBe('roundtrip@test.dev');
-    expect(typeof reg.accessToken).toBe('string');
+    expect(typeof reg.message).toBe('string');
+    expect(reg.message.length).toBeGreaterThan(0);
+    // No tokens at registration — that's now /auth/login's job.
+    expect(reg.user).toBeUndefined();
+    expect(reg.accessToken).toBeUndefined();
+    expect(reg.idToken).toBeUndefined();
+
+    // Login establishes the session and issues tokens. The mock recovers
+    // firstName/lastName from `registeredUsers` keyed by email (Issue #142).
+    const login = await fetch(`${API_URL}/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: 'roundtrip@test.dev', password: 'TestPass123!' }),
+    }).then((r) => r.json());
+    expect(login.user.email).toBe('roundtrip@test.dev');
+    expect(login.user.firstName).toBe('Round');
+    expect(login.user.lastName).toBe('Trip');
+    expect(typeof login.accessToken).toBe('string');
     // idToken must be distinct from accessToken so the frontend's
     // `idToken ?? accessToken` preference is exercised on the production path.
-    expect(typeof reg.idToken).toBe('string');
-    expect(reg.idToken).not.toBe(reg.accessToken);
+    expect(typeof login.idToken).toBe('string');
+    expect(login.idToken).not.toBe(login.accessToken);
 
     // /auth/me using the idToken as Bearer (production code path).
     const me = await fetch(`${API_URL}/auth/me`, {
-      headers: { Authorization: `Bearer ${reg.idToken}` },
+      headers: { Authorization: `Bearer ${login.idToken}` },
     }).then((r) => r.json());
     // /auth/me MUST wrap the user in { user } per
     // services/authService.ts:185 — NOT a bare User object.
@@ -210,8 +232,10 @@ describe('Auth handlers (msw/node)', () => {
   // ----------------------------------------------------------------
 
   it('Issue #141: /auth/me falls back to lastIssuedUser when token is unknown but Bearer is present', async () => {
-    // Step 1: register so `lastIssuedUser` is populated.
-    const reg = await fetch(`${API_URL}/auth/register`, {
+    // Step 1: register the user (no tokens — Cognito doesn't issue at
+    // registration; mirrors the real backend per Issue #222 R1 F-01),
+    // then login to populate `lastIssuedUser` via `issueTokens`.
+    await fetch(`${API_URL}/auth/register`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -219,14 +243,19 @@ describe('Auth handlers (msw/node)', () => {
         firstName: 'SW',
         lastName: 'Restart',
       }),
+    });
+    const login = await fetch(`${API_URL}/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: 'sw-restart@test.dev', password: 'irrelevant-in-mock' }),
     }).then((r) => r.json());
-    expect(reg.user.email).toBe('sw-restart@test.dev');
+    expect(login.user.email).toBe('sw-restart@test.dev');
 
     // Step 2: simulate a Service-Worker restart by passing a Bearer
     // token the closure-scoped `sessions` Map has never seen. Pre-#141
     // this returned a hardcoded 'Mock User'; post-#141 the recovery
     // path should resolve to whoever was last issued tokens (i.e. the
-    // user we just registered).
+    // user we just logged in).
     const me = await fetch(`${API_URL}/auth/me`, {
       headers: { Authorization: 'Bearer mock-access-fake-token-the-sw-forgot' },
     });
@@ -252,7 +281,10 @@ describe('Auth handlers (msw/node)', () => {
   });
 
   it('Issue #142: /auth/login looks up registeredUsers and returns the registered firstName/lastName', async () => {
-    // Step 1: register with concrete identity fields.
+    // Step 1: register with concrete identity fields (no tokens
+    // returned — the real backend's flat MessageResponse contract).
+    // The handler still populates `registeredUsers` keyed by email so
+    // the subsequent login can recover identity.
     const reg = await fetch(`${API_URL}/auth/register`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -262,11 +294,12 @@ describe('Auth handlers (msw/node)', () => {
         lastName: 'Bar',
       }),
     }).then((r) => r.json());
-    expect(reg.user.firstName).toBe('Foo');
+    expect(typeof reg.message).toBe('string');
 
     // Step 2: log in with the same email but supply NO firstName/lastName.
     // Pre-#142 the handler fabricated a generic 'Mock User' here; post-#142
-    // it resolves the previously-registered identity by email.
+    // it resolves the previously-registered identity by email — this is
+    // the assertion that locks Issue #142.
     const login = await fetch(`${API_URL}/auth/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

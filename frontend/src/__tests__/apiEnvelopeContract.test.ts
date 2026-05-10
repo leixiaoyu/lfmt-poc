@@ -210,7 +210,14 @@ describe('API Envelope Contract — auth pipeline', () => {
   // The auth handlers all return the FLAT envelope. The mock matches
   // the real backend (post-PR-#218: refreshToken was flattened too).
 
-  it('authService.register returns flat AuthResponse with user + tokens', async () => {
+  it('authService.register returns a flat MessageResponse (no tokens — Cognito issues tokens at /auth/login)', async () => {
+    // Real backend (`backend/functions/auth/register.ts:165`) returns
+    // ONLY `{ message }` on 201. Cognito does not issue session tokens
+    // until /auth/login. Issue #222 R1 F-01 / F-06: the mock previously
+    // returned `{ user, ...tokens }` and the service layer's
+    // `storeAuthTokens` was writing `idToken: undefined` on every
+    // production registration — this contract test now locks the
+    // correct shape for both mock and live wire.
     const result = await authService.register({
       email: 'contract@example.com',
       password: 'TestPass123!',
@@ -220,12 +227,8 @@ describe('API Envelope Contract — auth pipeline', () => {
       acceptedTerms: true,
       acceptedPrivacy: true,
     });
-    // Flat: `user` is a top-level field, NOT `result.data.user`.
-    expect(result.user).toBeDefined();
-    expect(typeof result.user.email).toBe('string');
-    expect(typeof result.accessToken).toBe('string');
-    expect(typeof result.idToken).toBe('string');
-    expect(typeof result.refreshToken).toBe('string');
+    expect(typeof result.message).toBe('string');
+    expect(result.message.length).toBeGreaterThan(0);
   });
 
   it('authService.login returns flat AuthResponse with user + tokens', async () => {
@@ -252,7 +255,11 @@ describe('API Envelope Contract — auth pipeline', () => {
   });
 
   it('authService.getCurrentUser returns the user inside a flat `user` field', async () => {
-    const registered = await authService.register({
+    // Seed: register creates the account (no tokens), then login establishes
+    // the session and `storeAuthTokens` writes idToken/accessToken to
+    // localStorage so subsequent /auth/me requests are authenticated. This
+    // mirrors the real production flow exactly (Issue #222 R1).
+    await authService.register({
       email: 'me@example.com',
       password: 'TestPass123!',
       confirmPassword: 'TestPass123!',
@@ -261,8 +268,11 @@ describe('API Envelope Contract — auth pipeline', () => {
       acceptedTerms: true,
       acceptedPrivacy: true,
     });
-    // Tokens are auto-stored by `storeAuthTokens` inside the service.
-    expect(registered.user.email).toBe('me@example.com');
+    const session = await authService.login({
+      email: 'me@example.com',
+      password: 'TestPass123!',
+    });
+    expect(session.user.email).toBe('me@example.com');
 
     const me = await authService.getCurrentUser();
     // `getCurrentUser` reads `response.data.user` — the flat envelope.
@@ -289,8 +299,12 @@ describe('API Envelope Contract — auth pipeline', () => {
   });
 
   it('authService.refreshToken reads tokens from the FLAT refresh response', async () => {
-    // Ensure a session exists so getStoredRefreshToken() returns a value.
-    const registered = await authService.register({
+    // Seed: register creates the account, then login populates the session
+    // with a refreshToken that `storeAuthTokens` persists to localStorage.
+    // `getStoredRefreshToken()` (called inside `authService.refreshToken`)
+    // reads from that storage. Mirrors the real production seeding flow
+    // exactly — register no longer issues tokens (Issue #222 R1).
+    await authService.register({
       email: 'refresh@example.com',
       password: 'TestPass123!',
       confirmPassword: 'TestPass123!',
@@ -299,7 +313,11 @@ describe('API Envelope Contract — auth pipeline', () => {
       acceptedTerms: true,
       acceptedPrivacy: true,
     });
-    expect(registered.refreshToken).toBeDefined();
+    const session = await authService.login({
+      email: 'refresh@example.com',
+      password: 'TestPass123!',
+    });
+    expect(session.refreshToken).toBeDefined();
 
     // Override the mock to return the EXACT real-backend wire shape:
     //   { message, accessToken, idToken, expiresIn, requestId }

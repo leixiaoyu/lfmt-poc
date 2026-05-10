@@ -216,8 +216,18 @@ const authHandlers: HttpHandler[] = [
     // round-trip can recover firstName/lastName instead of fabricating a
     // generic "Mock User" (Issue #142).
     registeredUsers.set(user.email.toLowerCase(), user);
-    const tokens = issueTokens(user);
-    return HttpResponse.json({ user, ...tokens }, { status: 200 });
+    // Real backend (`backend/functions/auth/register.ts:165`) returns
+    // ONLY a flat `{ message }` envelope on 201 — Cognito does not
+    // issue tokens at registration. The mock must mirror that shape so
+    // the frontend's typed `MessageResponse` reader is exercised
+    // end-to-end. Issuing tokens here was the source of Issue #222 R1
+    // F-01: the service layer's `storeAuthTokens` was writing
+    // `idToken: undefined` into localStorage on every registration in
+    // production while tests continued to pass against the buggy mock.
+    return HttpResponse.json(
+      { message: 'User registered successfully. You can now log in.' },
+      { status: 201 }
+    );
   }),
 
   // POST /auth/login

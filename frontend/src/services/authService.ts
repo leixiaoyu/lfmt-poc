@@ -153,13 +153,19 @@ function storeAuthTokens(tokens: {
 /**
  * Register a new user
  *
+ * The real backend (register.ts) returns HTTP 201 + `{ message: string }` —
+ * no tokens, no user object. This function intentionally does NOT call
+ * storeAuthTokens; doing so would write empty/undefined values into
+ * localStorage and corrupt the session blob. The caller (RegisterPage via
+ * AuthContext.register) must call login() separately to obtain tokens
+ * (issue #222).
+ *
  * @param data - Registration details (email, password, name)
- * @returns User data and authentication tokens
+ * @returns Server message confirming account creation
  * @throws ApiError if registration fails
  */
-async function register(data: RegisterRequest): Promise<AuthResponse> {
-  const response = await apiClient.post<AuthResponse>('/auth/register', data);
-  storeAuthTokens(response.data);
+async function register(data: RegisterRequest): Promise<MessageResponse> {
+  const response = await apiClient.post<MessageResponse>('/auth/register', data);
   return response.data;
 }
 

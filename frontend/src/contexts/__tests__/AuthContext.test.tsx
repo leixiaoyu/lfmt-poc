@@ -233,19 +233,15 @@ describe('AuthContext - Register', () => {
     localStorage.clear();
   });
 
-  it('should register new user successfully', async () => {
-    const mockAuthResponse = {
-      user: {
-        id: 'new-user-123',
-        email: 'newuser@example.com',
-        firstName: 'New',
-        lastName: 'User',
-      },
-      accessToken: 'new-access-token',
-      refreshToken: 'new-refresh-token',
+  it('should register new user successfully without setting auth state (issue #222)', async () => {
+    // The real backend returns 201 + { message } — no tokens, no user.
+    // AuthContext.register() only creates the account; the caller (RegisterPage)
+    // is responsible for calling login() separately to set the authenticated user.
+    const mockRegisterResponse = {
+      message: 'User registered successfully. You can now log in.',
     };
 
-    vi.mocked(authService.register).mockResolvedValueOnce(mockAuthResponse);
+    vi.mocked(authService.register).mockResolvedValueOnce(mockRegisterResponse);
 
     const { result } = renderHook(() => useAuth(), {
       wrapper: createWrapper(),
@@ -264,10 +260,11 @@ describe('AuthContext - Register', () => {
       });
     });
 
-    // Verify user is registered and logged in
-    expect(result.current.user).toEqual(mockAuthResponse.user);
-    expect(result.current.isAuthenticated).toBe(true);
+    // register() does NOT set the authenticated user — that is login()'s job.
+    expect(result.current.user).toBeNull();
+    expect(result.current.isAuthenticated).toBe(false);
     expect(result.current.error).toBeNull();
+    expect(authService.register).toHaveBeenCalledOnce();
   });
 
   it('should handle registration errors', async () => {
