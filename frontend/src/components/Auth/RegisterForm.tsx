@@ -36,6 +36,28 @@ import { Link as RouterLink } from 'react-router-dom';
 import { ROUTES } from '../../config/constants';
 
 /**
+ * Inline link rendered inside a checkbox label.
+ *
+ * Clicking the link opens the target page without toggling the checkbox —
+ * stopPropagation prevents the click from bubbling up to FormControlLabel
+ * (issue #223).
+ */
+function LabelLink({ to, children }: { to: string; children: React.ReactNode }) {
+  return (
+    <Link
+      component={RouterLink}
+      to={to}
+      target="_blank"
+      rel="noopener noreferrer"
+      underline="hover"
+      onClick={(e: React.MouseEvent) => e.stopPropagation()}
+    >
+      {children}
+    </Link>
+  );
+}
+
+/**
  * Registration form validation schema
  */
 const registerSchema = z
@@ -255,7 +277,11 @@ export function RegisterForm({ onSubmit }: RegisterFormProps) {
                   disabled={isSubmitting}
                 />
               }
-              label="I agree to the Terms of Service"
+              label={
+                <span>
+                  I agree to the <LabelLink to={ROUTES.LEGAL_TERMS}>Terms of Service</LabelLink>
+                </span>
+              }
             />
           )}
         />
@@ -281,7 +307,11 @@ export function RegisterForm({ onSubmit }: RegisterFormProps) {
                   disabled={isSubmitting}
                 />
               }
-              label="I agree to the Privacy Policy"
+              label={
+                <span>
+                  I agree to the <LabelLink to={ROUTES.LEGAL_PRIVACY}>Privacy Policy</LabelLink>
+                </span>
+              }
             />
           )}
         />

@@ -25,6 +25,8 @@ import { lazy, Suspense } from 'react';
 const LoginPage = lazy(() => import('./pages/LoginPage'));
 const RegisterPage = lazy(() => import('./pages/RegisterPage'));
 const ForgotPasswordPage = lazy(() => import('./pages/ForgotPasswordPage'));
+const TermsOfServicePage = lazy(() => import('./pages/TermsOfServicePage'));
+const PrivacyPolicyPage = lazy(() => import('./pages/PrivacyPolicyPage'));
 const DashboardPage = lazy(() => import('./pages/DashboardPage'));
 const TranslationUpload = lazy(() =>
   import('./pages/TranslationUpload').then((m) => ({ default: m.TranslationUpload }))
@@ -78,6 +80,10 @@ function App() {
                 <Route path={ROUTES.REGISTER} element={<RegisterPage />} />
                 <Route path={ROUTES.FORGOT_PASSWORD} element={<ForgotPasswordPage />} />
 
+                {/* Legal pages (public, no auth required — issue #223) */}
+                <Route path={ROUTES.LEGAL_TERMS} element={<TermsOfServicePage />} />
+                <Route path={ROUTES.LEGAL_PRIVACY} element={<PrivacyPolicyPage />} />
+
                 {/* Protected routes */}
                 <Route
                   path={ROUTES.DASHBOARD}
@@ -90,7 +96,7 @@ function App() {
 
                 {/* Translation routes */}
                 <Route
-                  path="/translation/upload"
+                  path={ROUTES.TRANSLATION_UPLOAD}
                   element={
                     <ProtectedRoute>
                       <TranslationUpload />
@@ -98,7 +104,7 @@ function App() {
                   }
                 />
                 <Route
-                  path="/translation/history"
+                  path={ROUTES.TRANSLATION_HISTORY}
                   element={
                     <ProtectedRoute>
                       <TranslationHistory />
@@ -106,7 +112,7 @@ function App() {
                   }
                 />
                 <Route
-                  path="/translation/:jobId"
+                  path={ROUTES.TRANSLATION_DETAIL}
                   element={
                     <ProtectedRoute>
                       <TranslationDetail />
@@ -119,7 +125,7 @@ function App() {
                 */}
                 {FEATURE_FLAGS.COMPARE_VIEW && (
                   <Route
-                    path="/translation/:jobId/compare"
+                    path={ROUTES.TRANSLATION_COMPARE}
                     element={
                       <ProtectedRoute>
                         <TranslationCompare />

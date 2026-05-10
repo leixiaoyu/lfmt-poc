@@ -12,7 +12,7 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { RegisterForm } from '../RegisterForm';
@@ -743,5 +743,65 @@ describe('RegisterForm - Accessibility', () => {
 
     expect(screen.getByLabelText(/terms of service/i)).toHaveAccessibleName();
     expect(screen.getByLabelText(/privacy policy/i)).toHaveAccessibleName();
+  });
+});
+
+describe('RegisterForm - Legal Links (issue #223)', () => {
+  it('should render "Terms of Service" as a link with the correct href', () => {
+    renderWithRouter(<RegisterForm onSubmit={vi.fn()} />);
+
+    const link = screen.getByRole('link', { name: /terms of service/i });
+    expect(link).toBeInTheDocument();
+    expect(link).toHaveAttribute('href', '/legal/terms');
+  });
+
+  it('should render "Privacy Policy" as a link with the correct href', () => {
+    renderWithRouter(<RegisterForm onSubmit={vi.fn()} />);
+
+    const link = screen.getByRole('link', { name: /privacy policy/i });
+    expect(link).toBeInTheDocument();
+    expect(link).toHaveAttribute('href', '/legal/privacy');
+  });
+
+  it('Terms of Service link calls stopPropagation — click does not bubble to the label', () => {
+    // Verify the stopPropagation mechanism directly by spying on the method
+    // via the React synthetic event system (fireEvent fires React handlers
+    // synchronously in the capture/bubble chain, so we can check cancelBubble
+    // after the fact).
+    renderWithRouter(<RegisterForm onSubmit={vi.fn()} />);
+
+    const link = screen.getByRole('link', { name: /terms of service/i });
+    const stopPropSpy = vi.spyOn(Event.prototype, 'stopPropagation');
+
+    fireEvent.click(link);
+
+    expect(stopPropSpy).toHaveBeenCalled();
+
+    stopPropSpy.mockRestore();
+  });
+
+  it('Privacy Policy link calls stopPropagation — click does not bubble to the label', () => {
+    renderWithRouter(<RegisterForm onSubmit={vi.fn()} />);
+
+    const link = screen.getByRole('link', { name: /privacy policy/i });
+    const stopPropSpy = vi.spyOn(Event.prototype, 'stopPropagation');
+
+    fireEvent.click(link);
+
+    expect(stopPropSpy).toHaveBeenCalled();
+
+    stopPropSpy.mockRestore();
+  });
+
+  it('clicking the checkbox itself still toggles the checkbox state', async () => {
+    const user = userEvent.setup();
+    renderWithRouter(<RegisterForm onSubmit={vi.fn()} />);
+
+    const checkbox = screen.getByLabelText(/terms of service/i) as HTMLInputElement;
+    expect(checkbox.checked).toBe(false);
+
+    // Click the checkbox itself (not the link)
+    await user.click(checkbox);
+    expect(checkbox.checked).toBe(true);
   });
 });
