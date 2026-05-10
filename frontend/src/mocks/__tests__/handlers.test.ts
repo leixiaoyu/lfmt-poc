@@ -141,16 +141,18 @@ describe('resetState()', () => {
     });
 
     // Confirm at least one job is in the store.
-    // GET /jobs returns a flat array (mirrors the mock contract — see
-    // 2026-05-09 hotfix). No `data` envelope to peel off.
+    // GET /jobs returns the `{ jobs, count }` envelope from PR #239's
+    // listJobs Lambda (the mock mirrors the real wire shape).
     const before = await fetch(`${API_URL}/jobs`).then((r) => r.json());
-    expect(before.length).toBeGreaterThan(0);
+    expect(before.jobs.length).toBeGreaterThan(0);
+    expect(before.count).toBeGreaterThan(0);
 
     // Reset.
     resetState();
 
     const after = await fetch(`${API_URL}/jobs`).then((r) => r.json());
-    expect(after.length).toBe(0);
+    expect(after.jobs.length).toBe(0);
+    expect(after.count).toBe(0);
   });
 });
 
@@ -356,11 +358,12 @@ describe('Translation pipeline (msw/node)', () => {
     }
     expect(lastStatus).toBe('COMPLETED');
 
-    // 5. history — flat array (no envelope) so the History page can
-    // dereference `response.data` directly.
+    // 5. history — `{ jobs, count }` envelope (PR #239 ListJobs).
+    // The History page reads `response.data.jobs` via getTranslationJobs.
     const hist = await fetch(`${API_URL}/jobs`).then((r) => r.json());
-    expect(hist.length).toBe(1);
-    expect(hist[0].jobId).toBe(jobId);
+    expect(hist.jobs.length).toBe(1);
+    expect(hist.count).toBe(1);
+    expect(hist.jobs[0].jobId).toBe(jobId);
 
     // 6. download
     const dl = await fetch(`${API_URL}/jobs/${jobId}/download`);

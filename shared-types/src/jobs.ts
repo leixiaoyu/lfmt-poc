@@ -303,8 +303,41 @@ export interface CancelJobResponse {
 }
 
 // ---------------------------------------------------------------------------
-// REST API response DTOs — GET /jobs/{jobId} and DELETE /jobs/{jobId}
+// REST API response DTOs — GET /jobs, GET /jobs/{jobId}, DELETE /jobs/{jobId}
 // ---------------------------------------------------------------------------
+
+/**
+ * A single job summary item returned by GET /jobs.
+ *
+ * Mirrors the `GetJobApiResponse` shape but is used as an element of the
+ * list endpoint — named separately so the two wire contracts can diverge
+ * independently if a future version adds list-specific projections.
+ */
+export interface ListJobsItem {
+  jobId: string;
+  userId: string;
+  status: string;
+  filename?: string;
+  fileSize?: number;
+  createdAt: string;
+  updatedAt?: string;
+  translationStatus?: string;
+  targetLanguage?: string;
+  [key: string]: unknown;
+}
+
+/**
+ * Array element type for the GET /jobs response.
+ *
+ * The actual wire body is `{ jobs: ListJobsApiResponse, count: number }` —
+ * this type describes the element shape of the `jobs` array. Frontend callers
+ * access `response.data.jobs` after the axios get resolves.
+ *
+ * Authorization: the array MUST be scoped to the Cognito-claim identity
+ * (`event.requestContext.authorizer.claims.sub`). Any client-supplied
+ * `userId` query parameter MUST be silently ignored.
+ */
+export type ListJobsApiResponse = ListJobsItem[];
 
 /**
  * Response body returned by GET /jobs/{jobId}.

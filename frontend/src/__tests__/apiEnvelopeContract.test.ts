@@ -165,12 +165,17 @@ describe('API Envelope Contract — translation pipeline', () => {
     expect(typeof job.completedChunks).toBe('number');
   });
 
-  it('GET /jobs returns a flat array (no envelope wrapper)', async () => {
-    // Seed two jobs so the list returns something non-trivial.
-    // We only assert "at least the seeds" rather than an exact count
-    // because earlier tests in the same file may have left jobs in
-    // the closure-scoped store; that's an acceptable cross-test leak
-    // for a contract test (we care about the SHAPE, not the count).
+  it('GET /jobs returns the {jobs, count} envelope (PR #239 ListJobs)', async () => {
+    // PR #239 introduced the listJobs Lambda which returns the FLAT-but-keyed
+    // envelope `{ jobs: [...], count: N }` (NOT a bare array, NOT the
+    // `{ data: [...] }` wrapper used elsewhere). The frontend service
+    // dereferences `response.data.jobs`; if the wire ever flips back to a
+    // bare array, the service returns `[]` and the History page silently
+    // shows empty.
+    //
+    // Seed two jobs first. We assert "at least the seeds" because earlier
+    // tests in the same file may leave jobs in the closure-scoped store;
+    // a contract test cares about SHAPE, not exact count.
     await apiClient.post<PresignedUrlApiResponse>('/jobs/upload', {
       fileName: 'a.txt',
       fileSize: 50,
@@ -182,11 +187,18 @@ describe('API Envelope Contract — translation pipeline', () => {
       contentType: 'text/plain',
     });
 
+    // First, hit the wire directly via apiClient to assert the envelope.
+    const wire = await apiClient.get<{ jobs: unknown[]; count: number }>('/jobs');
+    expect(Array.isArray(wire.data.jobs)).toBe(true);
+    expect(typeof wire.data.count).toBe('number');
+    expect(wire.data.jobs.length).toBeGreaterThanOrEqual(2);
+    expect(wire.data.count).toBeGreaterThanOrEqual(2);
+
+    // Second, drive the service-level reader and confirm it projects the
+    // envelope into a TranslationJob[] without crashing on `undefined.jobs`.
     const list = await translationService.getTranslationJobs();
     expect(Array.isArray(list)).toBe(true);
     expect(list.length).toBeGreaterThanOrEqual(2);
-    // Per-item contract: each entry is the flat TranslationJob shape
-    // the History page expects.
     expect(typeof list[0].jobId).toBe('string');
     expect(typeof list[0].status).toBe('string');
     expect(typeof list[0].fileSize).toBe('number');

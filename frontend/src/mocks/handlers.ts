@@ -808,13 +808,15 @@ const translationHandlers: HttpHandler[] = [
   }),
 
   // GET /jobs — list all jobs in the in-memory store.
-  // The real backend does not yet expose this route (see KNOWN-LIMITATION
-  // note on translationService.getTranslationJobs); the mock projects the
-  // History page's expected shape as a flat array so behaviour is
-  // demoable end-to-end.
+  // PR #239 introduced the real backend's `listJobs` Lambda which returns
+  // the envelope `{ jobs: [...], count: N }`. The mock mirrors that wire
+  // shape so the frontend reader at `translationService.getTranslationJobs`
+  // (which dereferences `response.data.jobs`) is exercised end-to-end —
+  // returning a bare array here would silently re-introduce the same
+  // class of mock-vs-real-backend drift PR #218 fought.
   http.get(buildPath('/jobs'), () => {
     const list = Array.from(jobs.values()).map(toWireJobListItem);
-    return HttpResponse.json(list, { status: 200 });
+    return HttpResponse.json({ jobs: list, count: list.length }, { status: 200 });
   }),
 
   // GET /jobs/:jobId/download — return simulated translated text.

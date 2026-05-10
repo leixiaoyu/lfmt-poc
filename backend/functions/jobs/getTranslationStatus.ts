@@ -80,6 +80,46 @@ export const handler = async (event: APIGatewayProxyEvent): Promise<APIGatewayPr
       );
     }
 
+    // #227 fix — coerce translatedChunks to a JS number at the response boundary.
+    //
+    // Root cause: the Step Functions `UpdateJobCompleted` task uses
+    // `DynamoAttributeValue.fromString(States.Format('{}', ...))` to write
+    // `translatedChunks` — DynamoDB stores the attribute as a NUMBER type when
+    // written by Lambda (via `marshall`) but as a STRING type when written by the
+    // Step Functions DynamoUpdateItem task.  When `@aws-sdk/util-dynamodb`
+    // `unmarshall` reads a `{ S: '1' }` attribute it returns the JS string `'1'`,
+    // not the number `1`.  JSON.stringify then serialises it as `"chunksTranslated":"1"`
+    // (quoted) instead of `"chunksTranslated":1` (numeric).
+    //
+    // The fix: call Number() at this seam so the wire always carries a number.
+    // The WARN log makes the bug observable in CloudWatch until every write site
+    // is confirmed to use a numeric DDB attribute type.
+    //
+    // NOTE: `totalChunks` has the same exposure via the Step Functions write,
+    // so it receives the same coercion guard.
+    const rawTranslatedChunks = job.translatedChunks;
+    const chunksTranslated =
+      typeof rawTranslatedChunks === 'number'
+        ? rawTranslatedChunks
+        : rawTranslatedChunks !== undefined && rawTranslatedChunks !== null
+          ? (() => {
+              logger.warn('chunksTranslated read as non-number from DDB — coercing (#227)', {
+                jobId,
+                rawType: typeof rawTranslatedChunks,
+                rawValue: String(rawTranslatedChunks),
+              });
+              return Number(rawTranslatedChunks);
+            })()
+          : 0;
+
+    const rawTotalChunks = job.totalChunks;
+    const totalChunks =
+      typeof rawTotalChunks === 'number'
+        ? rawTotalChunks
+        : rawTotalChunks !== undefined && rawTotalChunks !== null
+          ? Number(rawTotalChunks)
+          : 0;
+
     // Build response — typed with the shared DTO so any drift between
     // backend and frontend surfaces as a compile error.
     const response: TranslationStatusApiResponse = {
@@ -98,9 +138,9 @@ export const handler = async (event: APIGatewayProxyEvent): Promise<APIGatewayPr
       translationStatus: job.translationStatus || 'NOT_STARTED',
       targetLanguage: job.targetLanguage,
       tone: job.translationTone,
-      totalChunks: job.totalChunks || 0,
-      chunksTranslated: job.translatedChunks || 0,
-      progressPercentage: calculateProgress(job.translatedChunks || 0, job.totalChunks || 0),
+      totalChunks,
+      chunksTranslated,
+      progressPercentage: calculateProgress(chunksTranslated, totalChunks),
       tokensUsed: job.tokensUsed,
       estimatedCost: job.estimatedCost,
       createdAt: job.createdAt,
@@ -111,8 +151,8 @@ export const handler = async (event: APIGatewayProxyEvent): Promise<APIGatewayPr
     // Add estimated completion for in-progress translations
     if (job.translationStatus === 'IN_PROGRESS') {
       response.estimatedCompletion = calculateEstimatedCompletion(
-        job.translatedChunks || 0,
-        job.totalChunks || 0,
+        chunksTranslated,
+        totalChunks,
         job.translationStartedAt
       );
     }

@@ -1658,8 +1658,8 @@ describe('LFMT Infrastructure Stack', () => {
   // 'test' stackName used by these tests.
   // Update this constant + the PR body whenever a Lambda is added or removed
   // (PR #208: +2 for GetJob + DeleteJob, 11 → 13; demo-readiness: +1 for
-  // DownloadTranslation, 13 → 14).
-  const EXPECTED_APPLICATION_LAMBDA_COUNT = 14;
+  // DownloadTranslation, 13 → 14; PR #239: +1 for ListJobs, 14 → 15).
+  const EXPECTED_APPLICATION_LAMBDA_COUNT = 15;
 
   describe('Lambda Runtime Drift Guard (PR #203 R2)', () => {
     // Regression guard mirroring the CSP/'unsafe-eval' pattern (PR #198):

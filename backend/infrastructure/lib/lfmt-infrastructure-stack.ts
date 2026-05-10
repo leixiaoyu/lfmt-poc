@@ -119,6 +119,7 @@ export class LfmtInfrastructureStack extends Stack {
   private getTranslationStatusFunction?: lambda.Function;
   private getJobFunction?: lambda.Function;
   private deleteJobFunction?: lambda.Function;
+  private listJobsFunction?: lambda.Function;
   private downloadTranslationFunction?: lambda.Function;
 
   // IAM role for Lambda functions
@@ -126,6 +127,10 @@ export class LfmtInfrastructureStack extends Stack {
   // Dedicated role for the delete-job Lambda — isolated from translationRole so
   // that only this one function gets DeleteItem + s3:DeleteObject permissions.
   private deleteJobRole?: iam.Role;
+  // Dedicated role for the list-jobs Lambda — scoped to dynamodb:Query on the
+  // UserJobsIndex GSI ARN only. Using translationRole would grant Query on all
+  // indexes which violates least-privilege for a read-only list endpoint.
+  private listJobsRole?: iam.Role;
   // Dedicated role for the download-translation Lambda — scoped to GetItem on
   // JobsTable and GetObject on the translated/* prefix only.
   private downloadTranslationRole?: iam.Role;
@@ -1084,6 +1089,49 @@ export class LfmtInfrastructureStack extends Stack {
       ],
     });
 
+    // ===================================================================
+    // Role 7: List Jobs Lambda Function Role (isolated, minimal permissions)
+    //
+    // This role is EXCLUSIVELY for the list-jobs Lambda.  It grants
+    // ONLY `dynamodb:Query` on the `UserJobsIndex` GSI ARN — NOT on
+    // the base table ARN — so the Lambda cannot perform GetItem, PutItem,
+    // UpdateItem, DeleteItem, or Scan.
+    //
+    // Why not reuse translationRole: translationRole is shared across
+    // ~5 Lambdas and grants Query on all indexes (`tableArn/index/*`).
+    // Scoping to a single GSI ARN is the minimum necessary for this
+    // read-only list endpoint and matches least-privilege per OWASP
+    // API1:2023 (BOLA / IDOR).
+    //
+    // Authorization: the Lambda reads userId from the Cognito authorizer
+    // claim; the GSI partition key in the DDB Query is ALWAYS set from
+    // that claim.  There is no secondary authorization check needed at
+    // the IAM level because every item returned by the GSI query already
+    // belongs to the queried userId.
+    // ===================================================================
+    this.listJobsRole = new iam.Role(this, 'ListJobsLambdaRole', {
+      assumedBy: new iam.ServicePrincipal('lambda.amazonaws.com'),
+      description: 'Isolated execution role for list-jobs Lambda: Query on UserJobsIndex GSI only',
+      managedPolicies: [
+        iam.ManagedPolicy.fromAwsManagedPolicyName('service-role/AWSLambdaBasicExecutionRole'),
+      ],
+    });
+
+    new iam.ManagedPolicy(this, 'ListJobsPolicy', {
+      roles: [this.listJobsRole],
+      statements: [
+        // DynamoDB: Query on the UserJobsIndex GSI ARN only.
+        // This is strictly narrower than `tableArn/index/*` — the Lambda
+        // can only query this one index and cannot touch the base table
+        // or any other index.
+        new iam.PolicyStatement({
+          effect: iam.Effect.ALLOW,
+          actions: ['dynamodb:Query'],
+          resources: [`${this.jobsTable.tableArn}/index/UserJobsIndex`],
+        }),
+      ],
+    });
+
     // Step Functions Execution Role
     // SECURITY: Changed wildcard to specific function (only translate-chunk is invoked by Step Functions)
     const stepFunctionsRole = new iam.Role(this, 'StepFunctionsExecutionRole', {
@@ -1427,6 +1475,24 @@ export class LfmtInfrastructureStack extends Stack {
       entry: '../functions/jobs/deleteJob.ts',
       description: 'Delete a job record and cascade S3 cleanup (authenticated owner only)',
       role: this.deleteJobRole,
+      environment: commonEnv,
+    });
+
+    // List Jobs Lambda Function — GET /jobs
+    // Returns all jobs owned by the authenticated caller.
+    // Uses DEDICATED role (listJobsRole, Role 7) with Query on UserJobsIndex GSI
+    // only — the narrowest possible scope for this read-only endpoint.
+    // SECURITY: userId is read from event.requestContext.authorizer.claims.sub;
+    // any client-supplied ?userId query param is silently ignored.
+    if (!this.listJobsRole) {
+      throw new Error('listJobsRole must be created before createLambdaFunctions');
+    }
+    this.listJobsFunction = this.createJobLambda({
+      id: 'ListJobsFunction',
+      functionName: `lfmt-list-jobs-${this.stackName}`,
+      entry: '../functions/jobs/listJobs.ts',
+      description: 'List all jobs for the authenticated caller (Cognito-claim scoped, IDOR-safe)',
+      role: this.listJobsRole,
       environment: commonEnv,
     });
 
@@ -1888,6 +1954,8 @@ export class LfmtInfrastructureStack extends Stack {
       !this.getJobFunction ||
       !this.deleteJobFunction ||
       !this.deleteJobRole ||
+      !this.listJobsFunction ||
+      !this.listJobsRole ||
       !this.downloadTranslationFunction ||
       !this.downloadTranslationRole
     ) {
@@ -1982,6 +2050,22 @@ export class LfmtInfrastructureStack extends Stack {
         validateRequestBody: true,
         validateRequestParameters: false,
       }),
+    });
+
+    // GET /jobs - List all jobs for the authenticated caller (requires authentication)
+    //
+    // SECURITY (OWASP API1:2023 — BOLA / IDOR):
+    // The Lambda reads userId EXCLUSIVELY from the Cognito authorizer claim.
+    // Any ?userId query-string override is silently ignored at the Lambda level.
+    // API Gateway does NOT need a query-string validator here — ignoring is safer
+    // than rejecting (a 400 on an unsupported param would be a breaking change if
+    // clients accidentally include it, and the Lambda already ignores it securely).
+    //
+    // IAM: listJobsRole (Role 7) grants dynamodb:Query on UserJobsIndex GSI ARN
+    // only — NOT on the base table or any other index.
+    jobsResource.addMethod('GET', new apigateway.LambdaIntegration(this.listJobsFunction), {
+      authorizationType: apigateway.AuthorizationType.COGNITO,
+      authorizer: authorizer,
     });
 
     // POST /jobs/{jobId}/translate - Start Translation (requires authentication)
