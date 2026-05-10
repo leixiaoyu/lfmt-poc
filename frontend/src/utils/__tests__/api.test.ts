@@ -744,6 +744,112 @@ describe('API Client - legacy access-only migration → first request (Round 2 i
   });
 });
 
+// =====================================================================
+// Issue #224: double-slash URL regression guard.
+//
+// VITE_API_URL may arrive with a trailing slash (e.g. when copy-pasted
+// from the CloudFormation output). Every request URL constructed from
+// BASE_URL must contain at most one slash at the join point — i.e., no
+// `//` anywhere except the protocol (`https://`).
+//
+// The test captures the raw URL via a custom axios adapter and checks
+// every callsite that constructs a path:
+//   - apiClient.get/post paths (prefix slash on path, handled by axios)
+//   - inline template literal in the refresh interceptor:
+//     `${API_CONFIG.BASE_URL}/auth/refresh`
+// =====================================================================
+
+describe('API Client - No double-slash in constructed URLs (issue #224)', () => {
+  beforeEach(() => {
+    fullReset();
+  });
+
+  afterEach(() => {
+    fullReset();
+    // Unstub env vars AND reset the module registry so that stubs set inside
+    // individual tests (vi.stubEnv + vi.resetModules) do not leak into
+    // subsequent test files or describe blocks.
+    vi.unstubAllEnvs();
+    vi.resetModules();
+  });
+
+  /**
+   * Strip the protocol scheme so assertions on `https://…` don't
+   * false-positive on the `://` in the scheme itself.
+   */
+  function pathAfterScheme(url: string): string {
+    return url.replace(/^https?:\/\//, '');
+  }
+
+  it('apiClient.get path should not produce // in the final URL when VITE_API_URL has trailing slash', async () => {
+    // Simulate the copy-paste scenario: VITE_API_URL arrives with a trailing
+    // slash. Without vi.stubEnv + vi.resetModules the test uses the cached
+    // .env.test value (http://localhost:3000/v1 — no slash) and would pass
+    // even if the fix in constants.ts were reverted. This is the actual
+    // regression guard for issue #224.
+    vi.stubEnv('VITE_API_URL', 'http://localhost:3000/v1/');
+    vi.resetModules();
+    const { createApiClient } = await import('../api');
+    const client = createApiClient();
+    const captured: string[] = [];
+    client.defaults.adapter = async (config) => {
+      captured.push(config.url ?? '');
+      return { data: {}, status: 200, statusText: 'OK', headers: {}, config };
+    };
+
+    await client.get('/auth/me');
+
+    // There must be exactly one captured URL and it must not contain //
+    // outside of the protocol scheme.
+    expect(captured).toHaveLength(1);
+    expect(pathAfterScheme(captured[0])).not.toContain('//');
+  });
+
+  it('apiClient.post path should not produce // in the final URL when VITE_API_URL has trailing slash', async () => {
+    // Same rationale as the .get test above: stub with a trailing-slash value
+    // so this test fails when the constants.ts fix is absent.
+    vi.stubEnv('VITE_API_URL', 'http://localhost:3000/v1/');
+    vi.resetModules();
+    const { createApiClient } = await import('../api');
+    const client = createApiClient();
+    const captured: string[] = [];
+    client.defaults.adapter = async (config) => {
+      captured.push(config.url ?? '');
+      return { data: {}, status: 200, statusText: 'OK', headers: {}, config };
+    };
+
+    await client.post('/auth/refresh', { refreshToken: 'rt' });
+
+    expect(captured).toHaveLength(1);
+    expect(pathAfterScheme(captured[0])).not.toContain('//');
+  });
+
+  it('BASE_URL constant itself must not have a trailing slash', async () => {
+    // vi.stubEnv + vi.resetModules is required to force constants.ts to
+    // re-evaluate with a different VITE_API_URL value. Without the module
+    // reset the cached module instance is returned regardless of the stub.
+    vi.stubEnv('VITE_API_URL', 'https://example.execute-api.us-east-1.amazonaws.com/v1/');
+    vi.resetModules();
+    const { API_CONFIG } = await import('../../config/constants');
+    expect(API_CONFIG.BASE_URL).not.toMatch(/\/$/);
+    expect(API_CONFIG.BASE_URL).toBe('https://example.execute-api.us-east-1.amazonaws.com/v1');
+  });
+
+  it('BASE_URL with multiple trailing slashes is fully stripped', async () => {
+    vi.stubEnv('VITE_API_URL', 'https://example.execute-api.us-east-1.amazonaws.com/v1///');
+    vi.resetModules();
+    const { API_CONFIG } = await import('../../config/constants');
+    expect(API_CONFIG.BASE_URL).toBe('https://example.execute-api.us-east-1.amazonaws.com/v1');
+  });
+
+  it('BASE_URL without trailing slash is left unchanged', async () => {
+    vi.stubEnv('VITE_API_URL', 'https://example.execute-api.us-east-1.amazonaws.com/v1');
+    vi.resetModules();
+    const { API_CONFIG } = await import('../../config/constants');
+    expect(API_CONFIG.BASE_URL).toBe('https://example.execute-api.us-east-1.amazonaws.com/v1');
+  });
+});
+
 describe('API Client - Configuration', () => {
   it('should export createApiClient function', async () => {
     const { createApiClient } = await import('../api');
