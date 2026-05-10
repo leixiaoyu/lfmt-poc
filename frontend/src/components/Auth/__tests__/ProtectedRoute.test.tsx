@@ -307,4 +307,39 @@ describe('ProtectedRoute - Security Tests', () => {
       expect(screen.queryByText('Protected Dashboard Content')).not.toBeInTheDocument();
     });
   });
+
+  // -------------------------------------------------------------------------
+  // Issue #228 regression — auth hydration race on hard-reload
+  // -------------------------------------------------------------------------
+
+  describe('Issue #228 — Auth hydration race on hard-reload', () => {
+    it('shows a loading spinner (not /login redirect) when isLoading=true and user=null', () => {
+      // This is the exact state emitted by AuthProvider on the FIRST render
+      // when a token IS present in localStorage: isLoading=true, user=null.
+      // Before the fix AuthProvider initialized isLoading=false, causing
+      // ProtectedRoute to redirect immediately.
+      renderProtectedRoute({ user: null, isLoading: true });
+
+      expect(screen.getByRole('progressbar')).toBeInTheDocument();
+      expect(screen.queryByTestId('login-page')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('protected-content')).not.toBeInTheDocument();
+    });
+
+    it('renders protected content after hydration completes (isLoading flips false with user set)', () => {
+      // Simulate the second render: /auth/me resolved, user is populated.
+      renderProtectedRoute({ user: mockUser, isLoading: false });
+
+      expect(screen.getByTestId('protected-content')).toBeInTheDocument();
+      expect(screen.queryByTestId('login-page')).not.toBeInTheDocument();
+      expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
+    });
+
+    it('redirects to login after hydration completes with no user (expired token)', () => {
+      // /auth/me returned 401 → AuthProvider sets user=null, isLoading=false.
+      renderProtectedRoute({ user: null, isLoading: false });
+
+      expect(screen.getByTestId('login-page')).toBeInTheDocument();
+      expect(screen.queryByTestId('protected-content')).not.toBeInTheDocument();
+    });
+  });
 });

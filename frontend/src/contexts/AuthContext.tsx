@@ -96,7 +96,17 @@ interface AuthProviderProps {
  */
 export function AuthProvider({ children }: AuthProviderProps) {
   const [user, setUser] = useState<User | null>(null);
-  const [isLoading, setIsLoading] = useState<boolean>(false);
+  // Issue #228: initialise isLoading to `true` when a session token already
+  // exists in localStorage, so ProtectedRoute sees a loading state on the
+  // very first render (before the async /auth/me probe completes) rather
+  // than `isLoading=false + user=null`, which caused an immediate redirect
+  // to /login on hard-reload of any protected route.
+  //
+  // Option A chosen over Option B (synchronous localStorage read) because
+  // the session might be stale/expired — we still want the /auth/me probe
+  // to validate it before declaring the user authenticated. isLoading=true
+  // is the correct signal: "we have a token, we are verifying it, hold on."
+  const [isLoading, setIsLoading] = useState<boolean>(() => getAuthToken() !== null);
   const [error, setError] = useState<ApiError | null>(null);
 
   /**
@@ -107,13 +117,15 @@ export function AuthProvider({ children }: AuthProviderProps) {
     async function loadUser() {
       const token = getAuthToken();
 
-      // If no token, user is not authenticated
+      // If no token, user is not authenticated; isLoading was initialised
+      // false (no token path), so no state update needed.
       if (!token) {
         return;
       }
 
-      // If token exists, try to load user profile
-      setIsLoading(true);
+      // Token exists — isLoading was already set to true by the useState
+      // initialiser above, so we skip the redundant setIsLoading(true) call.
+      // We go straight to the /auth/me probe.
 
       try {
         const currentUser = await authService.getCurrentUser();

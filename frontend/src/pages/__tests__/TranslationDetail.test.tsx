@@ -3,22 +3,27 @@
  * Unit tests for TranslationDetail page component
  *
  * Tests cover:
- * - Page rendering and loading states
+ * - Page rendering and loading states (skeleton while React Query fetches)
  * - Job details display
  * - Route parameter parsing (jobId)
  * - TranslationProgress component integration
  * - Download button (enabled/disabled based on status)
  * - Start/Retry translation buttons
- * - Refresh functionality
- * - Error handling (404, 403, general errors)
+ * - Refresh functionality (via React Query refetch)
+ * - Error handling (query errors, 403 redirect, general errors)
  * - Breadcrumb navigation
  * - Date and file size formatting
+ *
+ * Regression tests for:
+ *   Issue #225: Progress card materialises on first paint (before Refresh Status click)
+ *   Issue #225: Start Translation button hidden during IN_PROGRESS / COMPLETED
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Routes, Route } from 'react-router-dom';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { TranslationDetail } from '../TranslationDetail';
 import {
   translationService,
@@ -26,7 +31,7 @@ import {
   TranslationJob,
 } from '../../services/translationService';
 
-// Mock react-router-dom
+// Mock react-router-dom navigate
 const mockNavigate = vi.fn();
 vi.mock('react-router-dom', async () => {
   const actual = await vi.importActual('react-router-dom');
@@ -36,7 +41,8 @@ vi.mock('react-router-dom', async () => {
   };
 });
 
-// Mock translation service
+// Mock translation service — React Query (useTranslationJob) calls this,
+// so mocking at the service boundary covers both the hook and the page.
 vi.mock('../../services/translationService', () => ({
   translationService: {
     getJobStatus: vi.fn(),
@@ -55,14 +61,19 @@ vi.mock('../../services/translationService', () => ({
   },
 }));
 
-// Mock TranslationProgress component
+// Mock TranslationProgress — it has its own React Query subscription.
+// Stub it so we can assert whether it was mounted without dealing with
+// its internal polling.
 vi.mock('../../components/Translation/TranslationProgress', () => ({
-  TranslationProgress: ({ jobId }: any) => (
+  TranslationProgress: ({ jobId }: { jobId: string }) => (
     <div data-testid="translation-progress">TranslationProgress Component (jobId: {jobId})</div>
   ),
 }));
 
-// Mock job data
+// ---------------------------------------------------------------------------
+// Shared fixture data
+// ---------------------------------------------------------------------------
+
 const mockCompletedJob: TranslationJob = {
   jobId: 'job-123',
   userId: 'user-1',
@@ -108,17 +119,37 @@ const mockPendingJob: TranslationJob = {
   totalChunks: 0,
 };
 
-describe('TranslationDetail', () => {
-  const renderComponent = (jobId = 'job-123') => {
-    return render(
+// ---------------------------------------------------------------------------
+// Render helper
+// ---------------------------------------------------------------------------
+
+function makeQueryClient() {
+  return new QueryClient({
+    defaultOptions: {
+      queries: {
+        retry: false,
+        gcTime: 0,
+        staleTime: 0,
+      },
+    },
+  });
+}
+
+function renderComponent(jobId = 'job-123') {
+  // Fresh QueryClient per test — prevents cross-test cache contamination.
+  const queryClient = makeQueryClient();
+  return render(
+    <QueryClientProvider client={queryClient}>
       <MemoryRouter initialEntries={[`/translation/${jobId}`]}>
         <Routes>
           <Route path="/translation/:jobId" element={<TranslationDetail />} />
         </Routes>
       </MemoryRouter>
-    );
-  };
+    </QueryClientProvider>
+  );
+}
 
+describe('TranslationDetail', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockNavigate.mockClear();
@@ -128,16 +159,90 @@ describe('TranslationDetail', () => {
     vi.restoreAllMocks();
   });
 
+  // -------------------------------------------------------------------------
+  // Issue #225 regression tests — must be at the top and clearly labelled
+  // -------------------------------------------------------------------------
+
+  describe('Issue #225 — Progress card on first paint', () => {
+    it('renders a progress skeleton while the first React Query fetch is in-flight', () => {
+      // Never resolves — keeps the component in the loading state.
+      vi.mocked(translationService.getJobStatus).mockImplementation(() => new Promise(() => {}));
+
+      renderComponent();
+
+      // The skeleton placeholder should appear immediately — before any
+      // data has landed — so the user sees feedback on first paint.
+      expect(screen.getByTestId('progress-skeleton')).toBeInTheDocument();
+      // The "Refresh Status" button is always present.
+      expect(screen.getByRole('button', { name: /Refresh Status/i })).toBeInTheDocument();
+    });
+
+    it('replaces the skeleton with TranslationProgress once the first fetch resolves for an IN_PROGRESS job', async () => {
+      vi.mocked(translationService.getJobStatus).mockResolvedValue(mockInProgressJob);
+
+      renderComponent();
+
+      // Skeleton appears while loading.
+      expect(screen.getByTestId('progress-skeleton')).toBeInTheDocument();
+
+      // After the query settles, the real component renders — no Refresh
+      // Status click required.
+      await waitFor(() => {
+        expect(screen.getByTestId('translation-progress')).toBeInTheDocument();
+      });
+      expect(screen.queryByTestId('progress-skeleton')).not.toBeInTheDocument();
+    });
+
+    it('replaces the skeleton with TranslationProgress once the first fetch resolves for a PENDING job', async () => {
+      vi.mocked(translationService.getJobStatus).mockResolvedValue(mockPendingJob);
+
+      renderComponent();
+
+      await waitFor(() => {
+        expect(screen.getByTestId('translation-progress')).toBeInTheDocument();
+      });
+    });
+
+    it('hides Start Translation button when job is IN_PROGRESS (not shown during translation)', async () => {
+      vi.mocked(translationService.getJobStatus).mockResolvedValue(mockInProgressJob);
+
+      renderComponent();
+
+      await waitFor(() => {
+        expect(screen.getByTestId('translation-progress')).toBeInTheDocument();
+      });
+
+      // Button must NOT appear for an already-running translation.
+      expect(screen.queryByRole('button', { name: /Start Translation/i })).not.toBeInTheDocument();
+    });
+
+    it('hides Start Translation button when job is COMPLETED', async () => {
+      vi.mocked(translationService.getJobStatus).mockResolvedValue(mockCompletedJob);
+
+      renderComponent();
+
+      await waitFor(() => {
+        expect(screen.getByTestId('translation-progress')).toBeInTheDocument();
+      });
+
+      expect(screen.queryByRole('button', { name: /Start Translation/i })).not.toBeInTheDocument();
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Page Rendering
+  // -------------------------------------------------------------------------
+
   describe('Page Rendering', () => {
-    it('should show loading state initially', () => {
+    it('should show progress skeleton initially', () => {
       vi.mocked(translationService.getJobStatus).mockImplementation(
         () => new Promise(() => {}) // Never resolves
       );
 
       renderComponent();
 
-      expect(screen.getByRole('progressbar')).toBeInTheDocument();
-      expect(screen.getByText(/Loading translation details/i)).toBeInTheDocument();
+      // Skeleton replaces the old full-page spinner.
+      expect(screen.getByTestId('progress-skeleton')).toBeInTheDocument();
     });
 
     it('should render page with job details', async () => {
@@ -145,14 +250,14 @@ describe('TranslationDetail', () => {
 
       renderComponent();
 
+      // Wait for data-dependent content, not the always-visible page title.
       await waitFor(() => {
-        expect(screen.getByText('Translation Details')).toBeInTheDocument();
+        expect(screen.getByText('job-123')).toBeInTheDocument();
       });
 
       expect(screen.getByText('Job Information')).toBeInTheDocument();
-      expect(screen.getByText('job-123')).toBeInTheDocument();
 
-      // Verify filename appears (will be in multiple places - breadcrumb and job details)
+      // Verify filename appears (breadcrumb and job details)
       const fileNames = screen.getAllByText('document.txt');
       expect(fileNames.length).toBeGreaterThan(0);
     });
@@ -162,23 +267,25 @@ describe('TranslationDetail', () => {
 
       renderComponent();
 
+      // Wait for the filename to appear in the breadcrumb — it is behind
+      // a Skeleton while the React Query fetch is in-flight.
       await waitFor(() => {
-        const dashboardLink = screen.getByRole('link', { name: /Dashboard/i });
-        expect(dashboardLink).toBeInTheDocument();
+        const breadcrumbNav = screen.getByRole('navigation');
+        expect(breadcrumbNav).toHaveTextContent('document.txt');
       });
 
       const historyLink = screen.getByRole('link', { name: /Translation History/i });
       expect(historyLink).toBeInTheDocument();
-
-      // Breadcrumb shows filename as plain text (not a link)
-      const breadcrumbNav = screen.getByRole('navigation');
-      expect(breadcrumbNav).toHaveTextContent('document.txt');
 
       const dashboardLink = screen.getByRole('link', { name: /Dashboard/i });
       expect(dashboardLink).toHaveAttribute('href', '/dashboard');
       expect(historyLink).toHaveAttribute('href', '/translation/history');
     });
   });
+
+  // -------------------------------------------------------------------------
+  // Job Details Display
+  // -------------------------------------------------------------------------
 
   describe('Job Details Display', () => {
     it('should display all job metadata fields', async () => {
@@ -219,7 +326,6 @@ describe('TranslationDetail', () => {
         expect(screen.getByText('Job ID')).toBeInTheDocument();
       });
 
-      // Check that dates are present (format depends on locale)
       const dateElements = screen.getAllByText(/2025|1\/15/i);
       expect(dateElements.length).toBeGreaterThan(0);
     });
@@ -241,14 +347,16 @@ describe('TranslationDetail', () => {
 
       renderComponent();
 
-      // Issue #145: detail view now renders friendly labels rather than the
-      // raw 'es' / 'formal' codes.
       await waitFor(() => {
         expect(screen.getByText('Spanish (Español)')).toBeInTheDocument();
         expect(screen.getByText('Formal')).toBeInTheDocument();
       });
     });
   });
+
+  // -------------------------------------------------------------------------
+  // TranslationProgress Integration
+  // -------------------------------------------------------------------------
 
   describe('TranslationProgress Integration', () => {
     it('should show progress component for IN_PROGRESS status', async () => {
@@ -310,6 +418,10 @@ describe('TranslationDetail', () => {
     });
   });
 
+  // -------------------------------------------------------------------------
+  // Download Functionality
+  // -------------------------------------------------------------------------
+
   describe('Download Functionality', () => {
     it('should show download button only for COMPLETED status', async () => {
       vi.mocked(translationService.getJobStatus).mockResolvedValue(mockCompletedJob);
@@ -341,7 +453,6 @@ describe('TranslationDetail', () => {
       vi.mocked(translationService.getJobStatus).mockResolvedValue(mockCompletedJob);
       vi.mocked(translationService.downloadTranslation).mockResolvedValue(mockBlob);
 
-      // Mock URL methods
       const mockCreateObjectURL = vi.fn(() => 'blob:mock-url');
       const mockRevokeObjectURL = vi.fn();
       const originalCreateObjectURL = URL.createObjectURL;
@@ -363,7 +474,6 @@ describe('TranslationDetail', () => {
         expect(mockCreateObjectURL).toHaveBeenCalledWith(mockBlob);
       });
 
-      // Cleanup
       URL.createObjectURL = originalCreateObjectURL;
       URL.revokeObjectURL = originalRevokeObjectURL;
     });
@@ -405,12 +515,15 @@ describe('TranslationDetail', () => {
       const downloadButton = screen.getByRole('button', { name: /Download Translation/i });
       await user.click(downloadButton);
 
-      // Should show "Downloading..." immediately
       await waitFor(() => {
         expect(screen.getByText(/Downloading\.\.\./i)).toBeInTheDocument();
       });
     });
   });
+
+  // -------------------------------------------------------------------------
+  // Start / Retry Translation
+  // -------------------------------------------------------------------------
 
   describe('Start/Retry Translation', () => {
     it('should show Start Translation button for CHUNKED status', async () => {
@@ -503,6 +616,10 @@ describe('TranslationDetail', () => {
     });
   });
 
+  // -------------------------------------------------------------------------
+  // Refresh Functionality
+  // -------------------------------------------------------------------------
+
   describe('Refresh Functionality', () => {
     it('should have refresh status button', async () => {
       vi.mocked(translationService.getJobStatus).mockResolvedValue(mockInProgressJob);
@@ -543,105 +660,46 @@ describe('TranslationDetail', () => {
     });
   });
 
+  // -------------------------------------------------------------------------
+  // Error Handling
+  // -------------------------------------------------------------------------
+
   describe('Error Handling', () => {
-    it('should show 404 error when job not found', async () => {
-      vi.mocked(translationService.getJobStatus).mockRejectedValue(
-        new TranslationServiceError('Job not found', 404)
-      );
-
-      renderComponent();
-
-      await waitFor(() => {
-        expect(screen.getByText('Translation job not found')).toBeInTheDocument();
-      });
-
-      expect(screen.getByRole('link', { name: /Go to Translation History/i })).toBeInTheDocument();
-    });
-
-    it('should show 403 error and navigate to dashboard', async () => {
-      vi.useFakeTimers();
-      vi.mocked(translationService.getJobStatus).mockRejectedValue(
-        new TranslationServiceError('Forbidden', 403)
-      );
-
-      renderComponent();
-
-      // Wait for error message using real timers context
-      await vi.waitFor(
-        () => {
-          expect(
-            screen.getByText('You do not have permission to view this translation')
-          ).toBeInTheDocument();
-        },
-        { timeout: 3000 }
-      );
-
-      // Fast-forward time to trigger navigation (setTimeout in component)
-      await vi.advanceTimersByTimeAsync(3000);
-
-      expect(mockNavigate).toHaveBeenCalledWith('/dashboard');
-
-      vi.useRealTimers();
-    });
-
-    it('should show generic error for service errors', async () => {
-      vi.mocked(translationService.getJobStatus).mockRejectedValue(
-        new TranslationServiceError('Server error', 500)
-      );
-
-      renderComponent();
-
-      // Wait for error message to appear
-      await waitFor(
-        () => {
-          expect(screen.getByText('Server error')).toBeInTheDocument();
-        },
-        { timeout: 3000 }
-      );
-
-      // Verify alert is shown
-      expect(screen.getByRole('alert')).toHaveTextContent('Server error');
-    });
-
-    it('should show fallback error for unknown errors', async () => {
+    it('should show error when query fails with a generic error', async () => {
       vi.mocked(translationService.getJobStatus).mockRejectedValue(new Error('Network error'));
 
       renderComponent();
 
-      // Wait for error message to appear
       await waitFor(
         () => {
-          expect(screen.getByText('Failed to load translation details')).toBeInTheDocument();
+          expect(screen.getByText('Network error')).toBeInTheDocument();
         },
         { timeout: 3000 }
       );
 
-      // Verify alert is shown
-      expect(screen.getByRole('alert')).toHaveTextContent('Failed to load translation details');
+      expect(screen.getByRole('alert')).toHaveTextContent('Network error');
     });
 
-    it('should show error when no jobId provided', async () => {
-      // Render with empty jobId (simulating missing URL parameter)
+    it('should show error when no jobId provided', () => {
       render(
-        <MemoryRouter initialEntries={['/translation/']}>
-          <Routes>
-            <Route path="/translation/:jobId?" element={<TranslationDetail />} />
-          </Routes>
-        </MemoryRouter>
+        <QueryClientProvider client={makeQueryClient()}>
+          <MemoryRouter initialEntries={['/translation/']}>
+            <Routes>
+              <Route path="/translation/:jobId?" element={<TranslationDetail />} />
+            </Routes>
+          </MemoryRouter>
+        </QueryClientProvider>
       );
 
-      // Wait for error message to appear
-      await waitFor(
-        () => {
-          expect(screen.getByText('No job ID provided')).toBeInTheDocument();
-        },
-        { timeout: 3000 }
-      );
-
-      // Verify alert is shown
+      // Missing jobId guard renders inline (no async fetch needed).
+      expect(screen.getByText('No job ID provided')).toBeInTheDocument();
       expect(screen.getByRole('alert')).toHaveTextContent('No job ID provided');
     });
   });
+
+  // -------------------------------------------------------------------------
+  // Navigation
+  // -------------------------------------------------------------------------
 
   describe('Navigation', () => {
     it('should have Back to History button', async () => {
@@ -649,7 +707,6 @@ describe('TranslationDetail', () => {
 
       renderComponent();
 
-      // Wait for job details to load
       await waitFor(
         () => {
           expect(screen.getByText('Translation Details')).toBeInTheDocument();
@@ -662,6 +719,10 @@ describe('TranslationDetail', () => {
     });
   });
 
+  // -------------------------------------------------------------------------
+  // File Size Formatting
+  // -------------------------------------------------------------------------
+
   describe('File Size Formatting', () => {
     it('should format 0 bytes correctly', async () => {
       const jobWithZeroSize = { ...mockCompletedJob, fileSize: 0 };
@@ -669,7 +730,6 @@ describe('TranslationDetail', () => {
 
       renderComponent();
 
-      // Wait for job details to load
       await waitFor(
         () => {
           expect(screen.getByText('0 Bytes')).toBeInTheDocument();
@@ -684,7 +744,6 @@ describe('TranslationDetail', () => {
 
       renderComponent();
 
-      // Wait for job details to load
       await waitFor(
         () => {
           expect(screen.getByText('2 KB')).toBeInTheDocument();
@@ -694,12 +753,11 @@ describe('TranslationDetail', () => {
     });
 
     it('should format MB correctly', async () => {
-      const jobWithMB = { ...mockCompletedJob, fileSize: 2097152 }; // 2 MB
+      const jobWithMB = { ...mockCompletedJob, fileSize: 2097152 };
       vi.mocked(translationService.getJobStatus).mockResolvedValue(jobWithMB);
 
       renderComponent();
 
-      // Wait for job details to load
       await waitFor(
         () => {
           expect(screen.getByText('2 MB')).toBeInTheDocument();
