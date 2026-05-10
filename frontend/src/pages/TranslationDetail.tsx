@@ -34,15 +34,27 @@ import DownloadIcon from '@mui/icons-material/Download';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import CompareArrowsIcon from '@mui/icons-material/CompareArrows';
-import {
-  translationService,
-  TranslationServiceError,
-  TranslationJob,
-} from '../services/translationService';
+import { translationService, TranslationServiceError } from '../services/translationService';
 import { TranslationProgress } from '../components/Translation/TranslationProgress';
 import { useTranslationJob } from '../hooks/useTranslationJob';
 import { getLanguageLabel, getToneLabel } from '../utils/translationLabels';
 import { FEATURE_FLAGS } from '../config/constants';
+
+// ---------------------------------------------------------------------------
+// Pure helpers — module-level so they are not recreated on every render.
+// ---------------------------------------------------------------------------
+
+function formatDate(dateString: string): string {
+  return new Date(dateString).toLocaleString();
+}
+
+function formatFileSize(bytes: number): string {
+  if (bytes === 0) return '0 Bytes';
+  const k = 1024;
+  const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return Math.round((bytes / Math.pow(k, i)) * 100) / 100 + ' ' + sizes[i];
+}
 
 export const TranslationDetail: React.FC = () => {
   const { jobId } = useParams<{ jobId: string }>();
@@ -103,11 +115,19 @@ export const TranslationDetail: React.FC = () => {
   const handleStartTranslation = useCallback(async () => {
     if (!jobId || !job) return;
 
+    // OMC R1 C2: targetLanguage and tone are optional on TranslationJob.
+    // Guard both before calling startTranslation — passing undefined would
+    // send a malformed request to the API.
+    if (!job.targetLanguage || !job.tone) {
+      setActionError('Translation configuration is incomplete — cannot start.');
+      return;
+    }
+
     setActionError(null);
     try {
       await translationService.startTranslation(jobId, {
-        targetLanguage: job.targetLanguage as TranslationJob['targetLanguage'] & string,
-        tone: job.tone as TranslationJob['tone'] & string,
+        targetLanguage: job.targetLanguage,
+        tone: job.tone,
       });
       // Invalidate the React Query cache so the progress card picks up the
       // new IN_PROGRESS state immediately.
@@ -120,18 +140,6 @@ export const TranslationDetail: React.FC = () => {
       }
     }
   }, [jobId, job, refetch]);
-
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleString();
-  };
-
-  const formatFileSize = (bytes: number): string => {
-    if (bytes === 0) return '0 Bytes';
-    const k = 1024;
-    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return Math.round((bytes / Math.pow(k, i)) * 100) / 100 + ' ' + sizes[i];
-  };
 
   // ------------------------------------------------------------------
   // Derived status booleans — computed from the React Query job, not
@@ -254,12 +262,9 @@ export const TranslationDetail: React.FC = () => {
           ) : (
             <TranslationProgress
               jobId={jobId}
-              onComplete={(updatedJob) => {
-                // React Query cache is the authoritative source — the hook
-                // will already have the COMPLETED data at this point. We
-                // keep this callback for any side-effects callers need.
-                void updatedJob; // suppress unused-var lint
-              }}
+              // onComplete is intentionally omitted: React Query is the
+              // authoritative source and will already carry the COMPLETED
+              // state by the time this fires. No local reconciliation needed.
               onError={(err) => setActionError(err)}
             />
           )}
