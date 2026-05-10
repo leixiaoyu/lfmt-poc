@@ -766,6 +766,11 @@ describe('API Client - No double-slash in constructed URLs (issue #224)', () => 
 
   afterEach(() => {
     fullReset();
+    // Unstub env vars AND reset the module registry so that stubs set inside
+    // individual tests (vi.stubEnv + vi.resetModules) do not leak into
+    // subsequent test files or describe blocks.
+    vi.unstubAllEnvs();
+    vi.resetModules();
   });
 
   /**
@@ -776,7 +781,14 @@ describe('API Client - No double-slash in constructed URLs (issue #224)', () => 
     return url.replace(/^https?:\/\//, '');
   }
 
-  it('apiClient.get path should not produce // in the final URL', async () => {
+  it('apiClient.get path should not produce // in the final URL when VITE_API_URL has trailing slash', async () => {
+    // Simulate the copy-paste scenario: VITE_API_URL arrives with a trailing
+    // slash. Without vi.stubEnv + vi.resetModules the test uses the cached
+    // .env.test value (http://localhost:3000/v1 — no slash) and would pass
+    // even if the fix in constants.ts were reverted. This is the actual
+    // regression guard for issue #224.
+    vi.stubEnv('VITE_API_URL', 'http://localhost:3000/v1/');
+    vi.resetModules();
     const { createApiClient } = await import('../api');
     const client = createApiClient();
     const captured: string[] = [];
@@ -793,7 +805,11 @@ describe('API Client - No double-slash in constructed URLs (issue #224)', () => 
     expect(pathAfterScheme(captured[0])).not.toContain('//');
   });
 
-  it('apiClient.post path should not produce // in the final URL', async () => {
+  it('apiClient.post path should not produce // in the final URL when VITE_API_URL has trailing slash', async () => {
+    // Same rationale as the .get test above: stub with a trailing-slash value
+    // so this test fails when the constants.ts fix is absent.
+    vi.stubEnv('VITE_API_URL', 'http://localhost:3000/v1/');
+    vi.resetModules();
     const { createApiClient } = await import('../api');
     const client = createApiClient();
     const captured: string[] = [];
