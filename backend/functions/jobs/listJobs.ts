@@ -17,9 +17,11 @@
  * `ListJobsLambdaRole` — do NOT switch this Lambda to `translationRole`,
  * which is a broader shared role.
  *
- * Response envelope: flat array (dominant convention). Frontend callers access
- * `response.data` directly — no `data` wrapper. Consistent with every other
- * LFMT job endpoint except `POST /jobs/upload`.
+ * Response envelope: `{ jobs: ListJobsItem[], count: number }`. Frontend
+ * callers access `response.data.jobs` directly — no extra `data` wrapper.
+ * The `count` field mirrors the array length for convenience. Consistent with
+ * the flat-envelope convention (no `{message, data}` nesting) except
+ * `POST /jobs/upload` which retains the wrapped shape for historical reasons.
  */
 
 import { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';

@@ -327,11 +327,11 @@ export interface ListJobsItem {
 }
 
 /**
- * Response body returned by GET /jobs.
+ * Array element type for the GET /jobs response.
  *
- * Shape is a flat JSON array of `ListJobsItem` records — consistent with the
- * dominant flat-envelope convention across the LFMT API. Frontend callers
- * access `response.data` (an array) directly without a `data` wrapper.
+ * The actual wire body is `{ jobs: ListJobsApiResponse, count: number }` —
+ * this type describes the element shape of the `jobs` array. Frontend callers
+ * access `response.data.jobs` after the axios get resolves.
  *
  * Authorization: the array MUST be scoped to the Cognito-claim identity
  * (`event.requestContext.authorizer.claims.sub`). Any client-supplied
