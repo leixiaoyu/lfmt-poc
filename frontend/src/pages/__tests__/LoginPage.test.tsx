@@ -57,6 +57,37 @@ describe('LoginPage - Integration Tests', () => {
       expect(screen.getByRole('button', { name: /log in/i })).toBeInTheDocument();
     });
 
+    it('should render inbound message from router state (post-register fallback)', () => {
+      // LoginPage reads location.state.message and renders it in an Alert.
+      // This path is exercised when RegisterPage catches a failed auto-login
+      // and redirects here with a friendly hint (issue #222).
+      render(
+        <MemoryRouter
+          initialEntries={[
+            {
+              pathname: '/login',
+              state: { message: 'Account created! Please sign in.' },
+            },
+          ]}
+        >
+          <AuthProvider>
+            <Routes>
+              <Route path="/login" element={<LoginPage />} />
+              <Route path="/dashboard" element={<MockDashboard />} />
+            </Routes>
+          </AuthProvider>
+        </MemoryRouter>
+      );
+
+      expect(screen.getByText(/account created/i)).toBeInTheDocument();
+    });
+
+    it('should not render an alert when there is no inbound router state', () => {
+      renderWithAppContext();
+
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    });
+
     it('should render navigation links', () => {
       renderWithAppContext();
 

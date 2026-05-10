@@ -50,17 +50,14 @@ describe('AuthService - Registration', () => {
     localStorage.clear();
   });
 
-  it('should register new user successfully', async () => {
+  it('should register new user successfully and NOT store tokens (issue #222)', async () => {
+    // The real backend (register.ts) returns HTTP 201 + { message } only —
+    // no user object, no tokens. authService.register() must NOT call
+    // storeAuthTokens; doing so would write empty/undefined fields into the
+    // session blob and corrupt any existing session.
     const mockResponse: Partial<AxiosResponse> = {
       data: {
-        user: {
-          id: 'user-123',
-          email: 'test@example.com',
-          firstName: 'John',
-          lastName: 'Doe',
-        },
-        accessToken: 'mock-access-token',
-        refreshToken: 'mock-refresh-token',
+        message: 'User registered successfully. You can now log in.',
       },
       status: 201,
     };
@@ -88,41 +85,21 @@ describe('AuthService - Registration', () => {
       acceptedPrivacy: true,
     });
 
-    // Without an idToken in the mock response, storeAuthTokens falls back
-    // to the accessToken at the ingest seam so existing behaviour is
-    // preserved. The blob persists both fields atomically.
+    // Confirm the server message is returned to the caller.
+    expect(result.message).toBe('User registered successfully. You can now log in.');
+
+    // The session blob must be untouched — registration does not log the user in.
+    // The caller (RegisterPage → AuthContext.login) is responsible for that step.
     const session = getStoredSession();
-    expect(session).toEqual({
-      idToken: 'mock-access-token',
-      accessToken: 'mock-access-token',
-      refreshToken: 'mock-refresh-token',
-      user: {
-        id: 'user-123',
-        email: 'test@example.com',
-        firstName: 'John',
-        lastName: 'Doe',
-      },
-    });
-
-    // Verify user data is returned
-    expect(result.user).toEqual({
-      id: 'user-123',
-      email: 'test@example.com',
-      firstName: 'John',
-      lastName: 'Doe',
-    });
-
-    expect(result.accessToken).toBe('mock-access-token');
+    expect(session).toBeNull();
   });
 
-  it('should use idToken as Bearer credential when present in register response', async () => {
+  it('should not write tokens to localStorage on registration (regression guard)', async () => {
+    // Explicit guard: even if the mock accidentally returns token-shaped data,
+    // authService.register() must never call storeAuthTokens. This test will
+    // fail if someone re-introduces the storeAuthTokens call in register().
     const mockResponse: Partial<AxiosResponse> = {
-      data: {
-        user: { id: 'user-123', email: 'test@example.com', firstName: 'John', lastName: 'Doe' },
-        accessToken: 'mock-access-token',
-        idToken: 'mock-id-token',
-        refreshToken: 'mock-refresh-token',
-      },
+      data: { message: 'User registered successfully. You can now log in.' },
       status: 201,
     };
 
@@ -138,12 +115,7 @@ describe('AuthService - Registration', () => {
       acceptedPrivacy: true,
     });
 
-    // API Gateway CognitoUserPoolsAuthorizer requires the ID token.
-    // The session blob preserves both tokens distinctly.
-    const session = getStoredSession();
-    expect(session?.idToken).toBe('mock-id-token');
-    expect(session?.accessToken).toBe('mock-access-token');
-    expect(session?.refreshToken).toBe('mock-refresh-token');
+    expect(localStorage.getItem('lfmt_session')).toBeNull();
   });
 
   it('should handle registration errors', async () => {

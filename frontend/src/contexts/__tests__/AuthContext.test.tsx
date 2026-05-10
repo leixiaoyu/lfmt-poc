@@ -238,9 +238,7 @@ describe('AuthContext - Register', () => {
     // AuthContext.register() only creates the account; the caller (RegisterPage)
     // is responsible for calling login() separately to set the authenticated user.
     const mockRegisterResponse = {
-      user: { id: '', email: '', firstName: '', lastName: '' },
-      accessToken: '',
-      refreshToken: '',
+      message: 'User registered successfully. You can now log in.',
     };
 
     vi.mocked(authService.register).mockResolvedValueOnce(mockRegisterResponse);
