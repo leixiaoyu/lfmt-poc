@@ -34,7 +34,11 @@ import DownloadIcon from '@mui/icons-material/Download';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import CompareArrowsIcon from '@mui/icons-material/CompareArrows';
-import { translationService, TranslationServiceError } from '../services/translationService';
+import {
+  translationService,
+  TranslationServiceError,
+  type TranslationConfig,
+} from '../services/translationService';
 import { TranslationProgress } from '../components/Translation/TranslationProgress';
 import { useTranslationJob } from '../hooks/useTranslationJob';
 import { getLanguageLabel, getToneLabel } from '../utils/translationLabels';
@@ -54,6 +58,26 @@ function formatFileSize(bytes: number): string {
   const sizes = ['Bytes', 'KB', 'MB', 'GB'];
   const i = Math.floor(Math.log(bytes) / Math.log(k));
   return Math.round((bytes / Math.pow(k, i)) * 100) / 100 + ' ' + sizes[i];
+}
+
+// Type predicates that narrow the wire's `string` shape into the strict
+// `TranslationConfig` union before we hand the value to startTranslation.
+// Keeps the `any`-cast pattern out of this file (#225 / #228 OMC R1 C2).
+const SUPPORTED_LANGUAGES: ReadonlyArray<TranslationConfig['targetLanguage']> = [
+  'es',
+  'fr',
+  'de',
+  'it',
+  'zh',
+];
+const SUPPORTED_TONES: ReadonlyArray<TranslationConfig['tone']> = ['formal', 'informal', 'neutral'];
+
+function isSupportedLanguage(value: string): value is TranslationConfig['targetLanguage'] {
+  return (SUPPORTED_LANGUAGES as readonly string[]).includes(value);
+}
+
+function isSupportedTone(value: string): value is TranslationConfig['tone'] {
+  return (SUPPORTED_TONES as readonly string[]).includes(value);
 }
 
 export const TranslationDetail: React.FC = () => {
@@ -115,11 +139,17 @@ export const TranslationDetail: React.FC = () => {
   const handleStartTranslation = useCallback(async () => {
     if (!jobId || !job) return;
 
-    // OMC R1 C2: targetLanguage and tone are optional on TranslationJob.
-    // Guard both before calling startTranslation — passing undefined would
-    // send a malformed request to the API.
-    if (!job.targetLanguage || !job.tone) {
-      setActionError('Translation configuration is incomplete — cannot start.');
+    // OMC R1 C2: targetLanguage and tone are optional on TranslationJob and
+    // typed as `string` on the wire. Guard for presence AND narrow to the
+    // typed union before calling startTranslation — passing undefined or an
+    // out-of-vocab value would send a malformed request to the API.
+    if (
+      !job.targetLanguage ||
+      !isSupportedLanguage(job.targetLanguage) ||
+      !job.tone ||
+      !isSupportedTone(job.tone)
+    ) {
+      setActionError('Translation configuration is incomplete or invalid — cannot start.');
       return;
     }
 
