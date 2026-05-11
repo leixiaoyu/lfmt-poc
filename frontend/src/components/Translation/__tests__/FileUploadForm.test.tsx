@@ -14,7 +14,7 @@ import * as uploadService from '../../../services/uploadService';
 // Mock upload service
 vi.mock('../../../services/uploadService', () => ({
   uploadService: {
-    uploadDocument: vi.fn(),
+    uploadFile: vi.fn(),
   },
 }));
 
@@ -273,7 +273,7 @@ describe('FileUploadForm', () => {
     it('should upload file successfully', async () => {
       const user = userEvent.setup();
 
-      vi.spyOn(uploadService.uploadService, 'uploadDocument').mockResolvedValue({
+      vi.spyOn(uploadService.uploadService, 'uploadFile').mockResolvedValue({
         fileId: 'test-file-id-123',
         jobId: 'test-job-id-123',
         success: true,
@@ -290,7 +290,7 @@ describe('FileUploadForm', () => {
       await user.click(uploadButton);
 
       await waitFor(() => {
-        expect(uploadService.uploadService.uploadDocument).toHaveBeenCalledWith(
+        expect(uploadService.uploadService.uploadFile).toHaveBeenCalledWith(
           file,
           expect.any(Function)
         );
@@ -306,7 +306,7 @@ describe('FileUploadForm', () => {
     it.skip('should display progress during upload', async () => {
       const user = userEvent.setup();
 
-      vi.spyOn(uploadService.uploadService, 'uploadDocument').mockImplementation(
+      vi.spyOn(uploadService.uploadService, 'uploadFile').mockImplementation(
         async (_file, onProgress) => {
           // Simulate progress
           if (onProgress) {
@@ -335,7 +335,7 @@ describe('FileUploadForm', () => {
     it('should handle upload errors', async () => {
       const user = userEvent.setup();
 
-      vi.spyOn(uploadService.uploadService, 'uploadDocument').mockResolvedValue({
+      vi.spyOn(uploadService.uploadService, 'uploadFile').mockResolvedValue({
         fileId: '',
         jobId: '',
         success: false,
@@ -365,7 +365,7 @@ describe('FileUploadForm', () => {
     it('should allow uploading another file after success', async () => {
       const user = userEvent.setup();
 
-      vi.spyOn(uploadService.uploadService, 'uploadDocument').mockResolvedValue({
+      vi.spyOn(uploadService.uploadService, 'uploadFile').mockResolvedValue({
         fileId: 'test-id',
         jobId: 'test-job-id',
         success: true,

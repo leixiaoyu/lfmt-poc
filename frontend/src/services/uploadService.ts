@@ -44,7 +44,7 @@ export interface UploadRequestResult {
  * `PresignedUrlResponse` (shared-types/src/documents.ts:83). PR #184's main
  * fix added it to the type + service-layer plumbing for translationService;
  * we propagate it here too so this service stays consistent and any future
- * caller of `uploadDocument` can correlate the upload with its job record
+ * caller of `uploadFile` can correlate the upload with its job record
  * without a second round-trip.
  */
 export interface UploadResult {
@@ -155,8 +155,14 @@ export async function uploadToS3(
  * @param onProgress - Optional progress callback
  * @returns Upload result with fileId
  * @throws Error if any step fails
+ *
+ * NOTE (PR #241 OMC R2 F-1): formerly named `uploadDocument`, which collided
+ * with `translationService.uploadDocument` (different signature, different
+ * return type, different callers). Renamed to `uploadFile` to disambiguate.
+ * The translation-pipeline coordinator keeps the `uploadDocument` name on
+ * `translationService` — that's the verb the wizard caller uses.
  */
-export async function uploadDocument(
+export async function uploadFile(
   file: File,
   onProgress?: UploadProgressCallback
 ): Promise<UploadResult> {
@@ -192,5 +198,5 @@ export async function uploadDocument(
 export const uploadService = {
   requestUploadUrl,
   uploadToS3,
-  uploadDocument,
+  uploadFile,
 };

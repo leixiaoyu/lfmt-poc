@@ -329,7 +329,7 @@ describe('uploadService', () => {
     });
   });
 
-  describe('uploadDocument', () => {
+  describe('uploadFile', () => {
     let mockXHR: {
       open: ReturnType<typeof vi.fn>;
       send: ReturnType<typeof vi.fn>;
@@ -393,7 +393,7 @@ describe('uploadService', () => {
       });
 
       // Act
-      const result = await uploadService.uploadDocument(mockFile);
+      const result = await uploadService.uploadFile(mockFile);
 
       // Assert — both fileId and jobId must be propagated end-to-end
       // (PR #184 follow-up: jobId previously dropped silently in this seam).
@@ -446,7 +446,7 @@ describe('uploadService', () => {
       });
 
       // Act
-      await uploadService.uploadDocument(mockFile, onProgress);
+      await uploadService.uploadFile(mockFile, onProgress);
 
       // Assert
       expect(onProgress).toHaveBeenCalledWith({
@@ -464,7 +464,7 @@ describe('uploadService', () => {
       vi.spyOn(api.apiClient, 'post').mockRejectedValue(mockError);
 
       // Act
-      const result = await uploadService.uploadDocument(mockFile);
+      const result = await uploadService.uploadFile(mockFile);
 
       // Assert
       expect(result).toEqual({
@@ -500,7 +500,7 @@ describe('uploadService', () => {
       });
 
       // Act
-      const result = await uploadService.uploadDocument(mockFile);
+      const result = await uploadService.uploadFile(mockFile);
 
       // Assert
       expect(result).toEqual({
