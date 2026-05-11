@@ -2,9 +2,10 @@
  * Translation job wire ↔ frontend mapper.
  *
  * The backend persists chunk progress under the field name
- * `chunksTranslated` (mirroring the DDB column) while the frontend's
- * `TranslationJob` shape uses `completedChunks`. Both seams need the
- * same translation; pre-PR-#218 the logic was duplicated:
+ * `translatedChunks` (matching the DDB column — renamed from
+ * `chunksTranslated` in issue #229) while the frontend's `TranslationJob`
+ * shape uses `completedChunks`. Both seams need the same translation;
+ * pre-PR-#218 the logic was duplicated:
  *
  *   - `translationService.getJobStatus` (wire → TranslationJob)
  *   - `mocks/handlers.ts.toWireJobListItem` and `toWireTranslationStatus`
@@ -36,8 +37,11 @@ export interface TranslationJobWire {
   fileSize?: number;
   contentType?: string;
   status: string;
-  /** Backend field name — DDB column. Must NOT be renamed without coordinated frontend update. */
-  chunksTranslated?: number;
+  /**
+   * Backend wire field name (#229: renamed from `chunksTranslated` to match DDB column).
+   * Frontend model uses `completedChunks` — the ACL translation happens in toTranslationJob.
+   */
+  translatedChunks?: number;
   totalChunks?: number;
   failedChunks?: number;
   targetLanguage?: string;
@@ -76,9 +80,10 @@ export function toTranslationJob(
     targetLanguage: wire.targetLanguage,
     tone: wire.tone,
     totalChunks: wire.totalChunks,
-    // The renamed seam — `chunksTranslated` (wire) → `completedChunks` (frontend).
+    // The ACL seam — `translatedChunks` (wire, DDB column) → `completedChunks` (frontend model).
+    // `translatedChunks` was renamed from `chunksTranslated` in issue #229.
     // This translation is the architectural reason the mapper exists.
-    completedChunks: wire.chunksTranslated,
+    completedChunks: wire.translatedChunks,
     failedChunks: wire.failedChunks,
     createdAt: wire.createdAt ?? now,
     updatedAt: wire.translationCompletedAt ?? wire.updatedAt ?? wire.createdAt ?? now,

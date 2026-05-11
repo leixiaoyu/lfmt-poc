@@ -86,7 +86,10 @@ describe('startTranslation endpoint', () => {
       expect(body.translationStatus).toBe('IN_PROGRESS');
       expect(body.targetLanguage).toBe('es');
       expect(body.totalChunks).toBe(10);
-      expect(body.chunksTranslated).toBe(0);
+      // #229: renamed from `chunksTranslated` → `translatedChunks` to match DDB column.
+      expect(body.translatedChunks).toBe(0);
+      // Regression guard: old field name MUST NOT appear on the wire.
+      expect(body).not.toHaveProperty('chunksTranslated');
       expect(body.estimatedCompletion).toBeDefined();
       expect(body.estimatedCost).toBeGreaterThan(0);
       expect(body.executionArn).toBeDefined();

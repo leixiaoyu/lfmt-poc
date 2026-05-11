@@ -13,6 +13,7 @@ import type {
   StartTranslationApiResponse,
   TranslationJobStatus,
   TranslationStatusApiResponse,
+  ListJobsEnvelope,
 } from '@lfmt/shared-types';
 import { CHUNKING_ERROR_STATUSES } from '@lfmt/shared-types';
 import { toTranslationJob } from './mappers/translationJobMapper';
@@ -482,7 +483,8 @@ export const startTranslation = async (
       // is a narrower shape than `TranslationJob`; using the full
       // mapper would require silently inventing fields the wire never
       // returned, which is the exact anti-pattern this refactor closes.
-      completedChunks: body.chunksTranslated,
+      // #229: wire field renamed from `chunksTranslated` → `translatedChunks`.
+      completedChunks: body.translatedChunks,
       message: body.message,
       executionArn: body.executionArn,
     };
@@ -508,9 +510,10 @@ export const startTranslation = async (
  * is the single source of truth; both the Lambda and this reader import
  * it so a future drift surfaces at compile time, not at the demo.
  *
- * Note on field-name mapping: the backend returns `chunksTranslated`
- * (mirroring its DDB column) while the frontend's `TranslationJob` uses
- * `completedChunks`. We translate at this seam.
+ * Note on field-name mapping: the backend returns `translatedChunks`
+ * (the DDB column name — renamed from `chunksTranslated` in issue #229)
+ * while the frontend's `TranslationJob` uses `completedChunks`. The
+ * `toTranslationJob` mapper translates at this ACL seam.
  */
 export const getJobStatus = async (jobId: string): Promise<TranslationJob> => {
   try {
@@ -529,25 +532,32 @@ export const getJobStatus = async (jobId: string): Promise<TranslationJob> => {
 };
 
 /**
- * Get all translation jobs for the current user.
+ * Get all translation jobs for the current user (first page only).
  *
  * Calls `GET /v1/jobs` — the endpoint added in PR #226/#220.
  * The backend scopes the result exclusively to the Cognito-claim identity;
  * any client-side `userId` override in the request is silently ignored by
  * the Lambda (OWASP API1:2023 IDOR guard).
  *
- * Wire shape: `{ jobs: TranslationJob[], count: number }`. The service
- * projects the `jobs` array and discards `count` since the array length
- * carries the same information. Each item passes through `toTranslationJob`
- * so the `chunksTranslated` → `completedChunks` rename is applied
- * consistently with `getJobStatus`.
+ * Wire shape (post-#237): `{ jobs: ListJobsItem[], count: number,
+ * nextCursor?: string }`. The service projects the `jobs` array and
+ * discards `count` and `nextCursor` — the array length carries the same
+ * information as `count`, and pagination UI is deferred for the POC
+ * (tracked in issue #237). Each item passes through `toTranslationJob`
+ * so the field-name mapping at the ACL boundary is applied consistently
+ * with `getJobStatus`.
+ *
+ * GAP (#237 POC): only the first page (up to 100 jobs) is returned.
+ * Accounts with >100 jobs will see truncated history until a paginator
+ * UI is added. The backend emits `nextCursor` when more pages exist;
+ * this function intentionally ignores it for now.
  */
 export const getTranslationJobs = async (): Promise<TranslationJob[]> => {
   try {
-    const response = await apiClient.get<{
-      jobs: Parameters<typeof toTranslationJob>[0][];
-      count: number;
-    }>('/jobs');
+    // Use ListJobsEnvelope from shared-types so any future wire-shape
+    // change to the GET /jobs envelope surfaces as a TypeScript error here.
+    type WireItem = Parameters<typeof toTranslationJob>[0];
+    const response = await apiClient.get<ListJobsEnvelope & { jobs: WireItem[] }>('/jobs');
 
     return (response.data.jobs ?? []).map((item) => toTranslationJob(item));
   } catch (error) {

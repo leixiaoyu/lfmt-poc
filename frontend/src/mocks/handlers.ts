@@ -485,10 +485,11 @@ function toWireStatus(state: JobState): string {
  * TranslationStatusApiResponse from @lfmt/shared-types).
  *
  * The shape MUST mirror the real Lambda — including the field-name
- * choice `chunksTranslated` (NOT `completedChunks`). Mismatches here
- * are exactly what the 2026-05-09 hotfix is preventing: the mock used
- * to wrap responses in `{data: ...}` and use frontend-side field names,
- * which masked a class of demo-blocking bugs.
+ * `translatedChunks` (NOT `completedChunks`, NOT `chunksTranslated` —
+ * renamed in issue #229). Mismatches here are exactly what the
+ * 2026-05-09 hotfix is preventing: the mock used to wrap responses in
+ * `{data: ...}` and use frontend-side field names, which masked a class
+ * of demo-blocking bugs.
  */
 function toWireTranslationStatus(state: JobState): Record<string, unknown> {
   const total = state.totalChunks;
@@ -521,7 +522,8 @@ function toWireTranslationStatus(state: JobState): Record<string, unknown> {
     // translate request supplied (or the wizard's neutral default).
     tone: state.tone,
     totalChunks: total,
-    chunksTranslated: done,
+    // #229: renamed from `chunksTranslated` to `translatedChunks` to match DDB column.
+    translatedChunks: done,
     progressPercentage,
     createdAt: state.createdAt,
     translationStartedAt: state.translateStartedAt
@@ -760,6 +762,7 @@ const translationHandlers: HttpHandler[] = [
     // (StartTranslationApiResponse). Field names match exactly so a
     // future wire-shape regression in the mock will surface in vitest
     // before it reaches production.
+    // #229: field renamed from `chunksTranslated` → `translatedChunks`.
     return HttpResponse.json(
       {
         message: 'Translation started successfully',
@@ -767,7 +770,7 @@ const translationHandlers: HttpHandler[] = [
         translationStatus: 'IN_PROGRESS',
         targetLanguage: job.targetLang,
         totalChunks: job.totalChunks,
-        chunksTranslated: 0,
+        translatedChunks: 0,
       },
       { status: 200 }
     );

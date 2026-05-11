@@ -804,9 +804,10 @@ describe('TranslationService - startTranslation', () => {
       };
 
       // Wire shape mirrors the real `startTranslation` Lambda
-      // (StartTranslationApiResponse): FLAT body, no `data` wrapper, and
-      // the field name is `chunksTranslated` rather than the
-      // frontend-side `completedChunks`.
+      // (StartTranslationApiResponse): FLAT body, no `data` wrapper.
+      // #229: field renamed from `chunksTranslated` → `translatedChunks`
+      // to match DDB column. Frontend model uses `completedChunks` — the
+      // mapper translates at the ACL seam.
       const mockResponse = {
         data: {
           message: 'Translation started successfully',
@@ -814,7 +815,7 @@ describe('TranslationService - startTranslation', () => {
           translationStatus: 'IN_PROGRESS',
           targetLanguage: 'es',
           totalChunks: 4,
-          chunksTranslated: 0,
+          translatedChunks: 0,
         },
       };
 
@@ -903,9 +904,9 @@ describe('TranslationService - getJobStatus', () => {
     it('should fetch job status successfully', async () => {
       // Arrange — wire shape mirrors the real getTranslationStatus Lambda
       // (TranslationStatusApiResponse from @lfmt/shared-types): FLAT body
-      // (no `data` wrapper) and the field name is `chunksTranslated`,
-      // not `completedChunks`. The frontend service translates at the
-      // boundary back into the local `TranslationJob` shape.
+      // (no `data` wrapper). #229: field renamed from `chunksTranslated` →
+      // `translatedChunks` to match DDB column. Frontend service projects to
+      // `completedChunks` at the ACL seam (toTranslationJob).
       const jobId = 'job-123';
       const mockWire = {
         jobId: 'job-123',
@@ -918,7 +919,7 @@ describe('TranslationService - getJobStatus', () => {
         targetLanguage: 'es',
         tone: 'neutral' as const,
         totalChunks: 10,
-        chunksTranslated: 5,
+        translatedChunks: 5,
         progressPercentage: 50,
         createdAt: '2024-10-31T12:00:00Z',
       };
@@ -955,7 +956,7 @@ describe('TranslationService - getJobStatus', () => {
         targetLanguage: 'es',
         tone: 'neutral' as const,
         totalChunks: 10,
-        chunksTranslated: 10,
+        translatedChunks: 10,
         progressPercentage: 100,
         createdAt: '2024-10-31T12:00:00Z',
         translationCompletedAt: '2024-10-31T12:30:00Z',
@@ -1002,9 +1003,10 @@ describe('TranslationService - getTranslationJobs', () => {
     (getAuthToken as ReturnType<typeof vi.fn>).mockReturnValue('mock-token-123');
   });
 
-  // Wire shape produced by GET /jobs (PR #226): { jobs: [...], count: N }
-  // Each item in `jobs` uses the backend field names (chunksTranslated, etc.)
-  // and gets mapped through toTranslationJob before returning.
+  // Wire shape produced by GET /jobs (PR #226+#229): { jobs: [...], count: N }
+  // Each item in `jobs` uses the backend field names (`translatedChunks` — DDB
+  // column name, renamed from `chunksTranslated` in issue #229) and gets
+  // mapped through toTranslationJob before returning.
   const makeWireItem = (jobId: string, overrides: Record<string, unknown> = {}) => ({
     jobId,
     userId: 'user-456',
@@ -1013,7 +1015,7 @@ describe('TranslationService - getTranslationJobs', () => {
     fileSize: 1024,
     contentType: 'text/plain',
     targetLanguage: 'es',
-    chunksTranslated: 2,
+    translatedChunks: 2,
     totalChunks: 4,
     createdAt: '2024-10-31T12:00:00Z',
     ...overrides,
@@ -1036,10 +1038,10 @@ describe('TranslationService - getTranslationJobs', () => {
       expect(result[1].jobId).toBe('job-2');
     });
 
-    it('maps chunksTranslated (wire) to completedChunks (frontend)', async () => {
-      // Contract test: the wire field `chunksTranslated` must be projected
+    it('maps translatedChunks (wire, DDB column) to completedChunks (frontend)', async () => {
+      // Contract test (#229): the wire field `translatedChunks` must be projected
       // to `completedChunks` by the mapper, matching getJobStatus behaviour.
-      const wireItem = makeWireItem('job-x', { chunksTranslated: 3, totalChunks: 10 });
+      const wireItem = makeWireItem('job-x', { translatedChunks: 3, totalChunks: 10 });
       mockedApiClient.get.mockResolvedValueOnce({ data: { jobs: [wireItem], count: 1 } });
 
       const result = await getTranslationJobs();
@@ -1048,10 +1050,10 @@ describe('TranslationService - getTranslationJobs', () => {
       expect(result[0].totalChunks).toBe(10);
     });
 
-    it('chunksTranslated: number is preserved as number through the mapper', async () => {
-      // Regression guard for #227: if the API returns chunksTranslated as a number,
+    it('translatedChunks: number is preserved as number through the mapper', async () => {
+      // Regression guard for #227/#229: if the API returns translatedChunks as a number,
       // the mapper must not coerce it to a string.
-      const wireItem = makeWireItem('job-num', { chunksTranslated: 5 });
+      const wireItem = makeWireItem('job-num', { translatedChunks: 5 });
       mockedApiClient.get.mockResolvedValueOnce({ data: { jobs: [wireItem], count: 1 } });
 
       const result = await getTranslationJobs();
@@ -1293,8 +1295,8 @@ describe('TranslationService - uploadAndAwaitChunked', () => {
   // Build the flat TranslationStatusApiResponse wire shape that the real
   // `getTranslationStatus` Lambda emits. The 2026-05-09 hotfix collapsed
   // the previous `{data: { data: TranslationJob }}` envelope to a flat
-  // body and mapped `chunksTranslated` (DDB column) ↔ `completedChunks`
-  // (frontend type) at the service seam — all of which is exercised here.
+  // body. #229: field renamed from `chunksTranslated` → `translatedChunks`
+  // to match the DDB column; mapped to `completedChunks` at the ACL seam.
   const buildWireStatus = (status: string) => ({
     jobId: baseJob.jobId,
     userId: baseJob.userId,
@@ -1306,7 +1308,7 @@ describe('TranslationService - uploadAndAwaitChunked', () => {
     targetLanguage: baseJob.targetLanguage,
     tone: baseJob.tone,
     totalChunks: 0,
-    chunksTranslated: 0,
+    translatedChunks: 0,
     progressPercentage: 0,
     createdAt: baseJob.createdAt,
   });
@@ -1549,7 +1551,8 @@ describe('TranslationService - uploadAndAwaitChunked', () => {
 //   out a future regression that re-introduces hollow sentinel fields.
 //
 // C4-test: assert mid-translation (non-zero, non-terminal)
-//   `chunksTranslated → completedChunks` translation works correctly,
+//   `translatedChunks → completedChunks` translation works correctly
+//   (field renamed from `chunksTranslated` in issue #229),
 //   so the seam doesn't drop intermediate progress.
 // ---------------------------------------------------------------------------
 
@@ -1561,7 +1564,7 @@ describe('TranslationService - getJobStatus — wire fallback coverage (C1)', ()
 
   // The wire shape the real Lambda emits is intentionally permissive:
   // `userId`, `fileName`, `fileSize`, `contentType`, `tone`,
-  // `chunksTranslated`, `totalChunks`, `targetLanguage`, `createdAt`,
+  // `translatedChunks` (renamed from `chunksTranslated` in #229), `totalChunks`, `targetLanguage`, `createdAt`,
   // `translationCompletedAt`, and `error` are all optional. The mapper
   // (`toTranslationJob`) defends against each omission individually —
   // each branch is covered below.
@@ -1628,26 +1631,27 @@ describe('TranslationService - getJobStatus — wire fallback coverage (C1)', ()
     expect(job.errorMessage).toBeUndefined();
   });
 
-  it('translates chunksTranslated → completedChunks for mid-translation values (C4)', async () => {
+  it('translates translatedChunks (wire, DDB) → completedChunks (frontend) for mid-translation values (C4)', async () => {
     // Pre-fix C4: the seam was previously only exercised at the
     // boundary values (0 and totalChunks). A regression that swapped
-    // the field names mid-translation (e.g. `body.completedChunks`)
-    // would silently render "Translating: 0 / 7" until the job hit
-    // 100%. Lock the intermediate-progress contract.
+    // the field names mid-translation would silently render
+    // "Translating: 0 / 7" until the job hit 100%. Lock the
+    // intermediate-progress contract. #229: renamed from `chunksTranslated`.
     mockedApiClient.get.mockResolvedValueOnce({
       data: {
         jobId: 'job-1',
         status: 'IN_PROGRESS',
         translationStatus: 'IN_PROGRESS',
         totalChunks: 7,
-        chunksTranslated: 3,
+        translatedChunks: 3,
       },
     });
     const job = await getJobStatus('job-1');
     expect(job.completedChunks).toBe(3);
     expect(job.totalChunks).toBe(7);
-    // Anti-assertion: the wire field name must NOT leak through onto
-    // the frontend type — that would be the regression we are guarding.
+    // Anti-assertions: neither backend field name must leak through to the
+    // frontend type — that would be the regression we are guarding.
+    expect(job).not.toHaveProperty('translatedChunks');
     expect(job).not.toHaveProperty('chunksTranslated');
   });
 });
@@ -1672,7 +1676,8 @@ describe('TranslationService - startTranslation — narrow return shape (H1-cq)'
         translationStatus: 'IN_PROGRESS',
         targetLanguage: 'es',
         totalChunks: 5,
-        chunksTranslated: 0,
+        // #229: renamed from `chunksTranslated` → `translatedChunks`.
+        translatedChunks: 0,
         executionArn: 'arn:aws:states:us-east-1:000:execution:lfmt:abc',
       },
     });
@@ -1718,7 +1723,8 @@ describe('TranslationService - startTranslation — narrow return shape (H1-cq)'
         translationStatus: 'IN_PROGRESS',
         targetLanguage: 'fr',
         totalChunks: 2,
-        chunksTranslated: 0,
+        // #229: renamed from `chunksTranslated` → `translatedChunks`.
+        translatedChunks: 0,
         // executionArn intentionally absent
       },
     });

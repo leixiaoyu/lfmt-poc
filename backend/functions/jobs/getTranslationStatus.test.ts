@@ -60,7 +60,7 @@ describe('getTranslationStatus endpoint', () => {
       expect(body.status).toBe('CHUNKED');
       expect(body.translationStatus).toBe('NOT_STARTED');
       expect(body.totalChunks).toBe(10);
-      expect(body.chunksTranslated).toBe(0);
+      expect(body.translatedChunks).toBe(0);
       expect(body.progressPercentage).toBe(0);
       expect(body.estimatedCompletion).toBeUndefined();
       expect(body.createdAt).toBe(createdAt);
@@ -99,7 +99,7 @@ describe('getTranslationStatus endpoint', () => {
       expect(body.targetLanguage).toBe('es');
       expect(body.tone).toBe('formal');
       expect(body.totalChunks).toBe(10);
-      expect(body.chunksTranslated).toBe(5);
+      expect(body.translatedChunks).toBe(5);
       expect(body.progressPercentage).toBe(50);
       expect(body.tokensUsed).toBe(15000);
       expect(body.estimatedCost).toBe(0.001125);
@@ -141,7 +141,7 @@ describe('getTranslationStatus endpoint', () => {
       expect(body.translationStatus).toBe('COMPLETED');
       expect(body.targetLanguage).toBe('fr');
       expect(body.totalChunks).toBe(10);
-      expect(body.chunksTranslated).toBe(10);
+      expect(body.translatedChunks).toBe(10);
       expect(body.progressPercentage).toBe(100);
       expect(body.tokensUsed).toBe(35000);
       expect(body.estimatedCost).toBe(0.002625);
@@ -176,7 +176,7 @@ describe('getTranslationStatus endpoint', () => {
       expect(body.translationStatus).toBe('TRANSLATION_FAILED');
       expect(body.targetLanguage).toBe('de');
       expect(body.totalChunks).toBe(10);
-      expect(body.chunksTranslated).toBe(3);
+      expect(body.translatedChunks).toBe(3);
       expect(body.progressPercentage).toBe(30);
       expect(body.error).toBe('API rate limit exceeded');
     });
@@ -402,7 +402,7 @@ describe('getTranslationStatus endpoint', () => {
       expect(body).toHaveProperty('targetLanguage');
       expect(body).toHaveProperty('tone');
       expect(body).toHaveProperty('totalChunks');
-      expect(body).toHaveProperty('chunksTranslated');
+      expect(body).toHaveProperty('translatedChunks');
       expect(body).toHaveProperty('progressPercentage');
       expect(body).toHaveProperty('tokensUsed');
       expect(body).toHaveProperty('estimatedCost');
@@ -540,11 +540,11 @@ describe('getTranslationStatus endpoint', () => {
   });
 
   // ---------------------------------------------------------------------------
-  // #227 contract — chunksTranslated MUST be a JS number on the wire
+  // #227 / #229 contract — translatedChunks MUST be a JS number on the wire
   // ---------------------------------------------------------------------------
 
-  describe('#227 chunksTranslated wire type contract', () => {
-    it('chunksTranslated is typeof number when DDB stores it as N (normal Lambda write path)', async () => {
+  describe('#227/#229 translatedChunks wire type contract', () => {
+    it('translatedChunks is typeof number when DDB stores it as N (normal Lambda write path)', async () => {
       dynamoMock.on(GetItemCommand).resolves({
         Item: {
           jobId: { S: 'job-123' },
@@ -561,11 +561,13 @@ describe('getTranslationStatus endpoint', () => {
       expect(result.statusCode).toBe(200);
       const body = JSON.parse(result.body);
       // The key contract: after JSON round-trip the field is a number, not a string
-      expect(typeof body.chunksTranslated).toBe('number');
-      expect(body.chunksTranslated).toBe(1);
+      expect(typeof body.translatedChunks).toBe('number');
+      expect(body.translatedChunks).toBe(1);
+      // Regression guard (#229): old field name MUST NOT appear on the wire.
+      expect(body).not.toHaveProperty('chunksTranslated');
     });
 
-    it('chunksTranslated is coerced to number when DDB stores it as S (Step Functions write path)', async () => {
+    it('translatedChunks is coerced to number when DDB stores it as S (Step Functions write path)', async () => {
       // Simulate the Step Functions UpdateJobCompleted bug: DynamoAttributeValue.fromString
       // writes the attribute as { S: '1' } rather than { N: '1' }.
       // unmarshall returns the JS string '1' in this case.
@@ -586,8 +588,10 @@ describe('getTranslationStatus endpoint', () => {
       expect(result.statusCode).toBe(200);
       const body = JSON.parse(result.body);
       // After coercion, wire value MUST be numeric
-      expect(typeof body.chunksTranslated).toBe('number');
-      expect(body.chunksTranslated).toBe(1);
+      expect(typeof body.translatedChunks).toBe('number');
+      expect(body.translatedChunks).toBe(1);
+      // Regression guard (#229): old field name MUST NOT appear on the wire.
+      expect(body).not.toHaveProperty('chunksTranslated');
     });
   });
 });

@@ -508,6 +508,11 @@ jobs:
     name: Run E2E Tests
     runs-on: ubuntu-latest
     needs: deploy-dev-frontend
+    # Issue #240: bound the budget. GitHub Actions defaults to 6 hours; a hung
+    # Playwright run on 2026-05-10 held the deploy-${ref} concurrency lock
+    # for 40+ minutes, blocking both frontend and backend deploy queues.
+    # 25 minutes gives generous headroom over a normal ~5-10 min run.
+    timeout-minutes: 25
     if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'dev'))
 
     steps:

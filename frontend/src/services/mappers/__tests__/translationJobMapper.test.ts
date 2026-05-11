@@ -12,11 +12,12 @@ import { toTranslationJob, type TranslationJobWire } from '../translationJobMapp
 describe('translationJobMapper.toTranslationJob', () => {
   const FIXED_NOW = '2026-05-09T00:00:00.000Z';
 
-  it('translates `chunksTranslated` (wire) into `completedChunks` (frontend)', () => {
+  it('translates `translatedChunks` (wire, DDB column) into `completedChunks` (frontend)', () => {
+    // #229: wire field renamed from `chunksTranslated` → `translatedChunks`.
     const wire: TranslationJobWire = {
       jobId: 'job-1',
       status: 'IN_PROGRESS',
-      chunksTranslated: 7,
+      translatedChunks: 7,
       totalChunks: 10,
     };
     const job = toTranslationJob(wire, FIXED_NOW);
@@ -24,9 +25,10 @@ describe('translationJobMapper.toTranslationJob', () => {
     // The architectural reason this mapper exists — lock it.
     expect(job.completedChunks).toBe(7);
     expect(job.totalChunks).toBe(10);
-    // Frontend type does not surface the legacy backend field name —
-    // a future regression that re-introduces `chunksTranslated` on the
-    // frontend type would break this anti-assertion.
+    // Frontend type does not surface either backend field name —
+    // a future regression that leaks `translatedChunks` or `chunksTranslated`
+    // onto the frontend type would break these anti-assertions.
+    expect(job).not.toHaveProperty('translatedChunks');
     expect(job).not.toHaveProperty('chunksTranslated');
   });
 
@@ -95,7 +97,7 @@ describe('translationJobMapper.toTranslationJob', () => {
         targetLanguage: 'es',
         tone: 'formal',
         failedChunks: 2,
-        chunksTranslated: 0,
+        translatedChunks: 0,
         totalChunks: 5,
       },
       FIXED_NOW
