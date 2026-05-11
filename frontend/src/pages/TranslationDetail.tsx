@@ -16,7 +16,7 @@
  *   duplicated fetch path.
  */
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { useParams, useNavigate, Link as RouterLink } from 'react-router-dom';
 import {
   Box,
@@ -200,18 +200,29 @@ export const TranslationDetail: React.FC = () => {
 
   // ------------------------------------------------------------------
   // Fatal error state: query errored AND we have no job data at all.
+  // Derived outside the conditional return so hooks are called
+  // unconditionally (Rules of Hooks).
   // ------------------------------------------------------------------
+  const is403 = queryError instanceof TranslationServiceError && queryError.statusCode === 403;
+
+  // #236: move the 403 navigation side-effect into useEffect so the timer
+  // is cleared if the component unmounts before the 3 s elapse (avoids the
+  // stale-closure navigate call on manual early navigation).
+  useEffect(() => {
+    if (!is403) return;
+    const timer = setTimeout(() => navigate('/dashboard'), 3000);
+    return () => clearTimeout(timer);
+  }, [is403, navigate]);
+
   if (queryError && !job && !isLoading) {
     let errorMessage = 'Failed to load translation details';
     if (queryError instanceof Error) {
       errorMessage = queryError.message;
     }
 
-    // Special-case: navigate away from 403 (access denied) after a delay.
-    // We detect this by checking TranslationServiceError statusCode.
-    if (queryError instanceof TranslationServiceError && queryError.statusCode === 403) {
+    // Special-case: 403 error message override (navigation handled by useEffect above).
+    if (is403) {
       errorMessage = 'You do not have permission to view this translation';
-      setTimeout(() => navigate('/dashboard'), 3000);
     }
 
     return (

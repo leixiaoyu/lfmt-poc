@@ -20,7 +20,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Routes, Route } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -157,6 +157,7 @@ describe('TranslationDetail', () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
+    vi.useRealTimers(); // safety net: restore real timers even if a test throws
   });
 
   // -------------------------------------------------------------------------
@@ -678,6 +679,60 @@ describe('TranslationDetail', () => {
       );
 
       expect(screen.getByRole('alert')).toHaveTextContent('Network error');
+    });
+
+    // ----- #236 regression tests -----
+
+    it('shows 403 message and navigates to /dashboard after 3 s', async () => {
+      // shouldAdvanceTime: true lets real async code (React Query, Promises)
+      // proceed normally while still giving us control over setTimeout/clearTimeout.
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+
+      vi.mocked(translationService.getJobStatus).mockRejectedValue(
+        new TranslationServiceError('Forbidden', 403)
+      );
+
+      renderComponent();
+
+      // Wait for the 403 error UI to appear.
+      await waitFor(() => {
+        expect(screen.getByText(/do not have permission/i)).toBeInTheDocument();
+      });
+
+      // Timer has not fired yet.
+      expect(mockNavigate).not.toHaveBeenCalled();
+
+      // Advance the 3-second redirect timer.
+      await act(async () => {
+        vi.advanceTimersByTime(3000);
+      });
+
+      expect(mockNavigate).toHaveBeenCalledWith('/dashboard');
+    });
+
+    it('does NOT navigate when unmounted before the 3 s 403 timer fires (#236)', async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+
+      vi.mocked(translationService.getJobStatus).mockRejectedValue(
+        new TranslationServiceError('Forbidden', 403)
+      );
+
+      const { unmount } = renderComponent();
+
+      // Wait for the 403 error UI.
+      await waitFor(() => {
+        expect(screen.getByText(/do not have permission/i)).toBeInTheDocument();
+      });
+
+      // Unmount before the timer fires — clearTimeout cleanup cancels it.
+      unmount();
+
+      await act(async () => {
+        vi.advanceTimersByTime(3000);
+      });
+
+      // navigate must NOT have been called after unmount.
+      expect(mockNavigate).not.toHaveBeenCalled();
     });
 
     it('should show error when no jobId provided', () => {

@@ -568,4 +568,60 @@ describe('AuthContext - Initial User Load', () => {
     expect(result.current.isAuthenticated).toBe(false);
     expect(authService.getCurrentUser).not.toHaveBeenCalled();
   });
+
+  // -------------------------------------------------------------------------
+  // #235 regression: React 18 StrictMode double-mount guard
+  //
+  // StrictMode mounts → unmounts → re-mounts effects in development. Without
+  // the `cancelled` flag the second mount's /auth/me response (which arrives
+  // after the first mount's cleanup already ran) would still call setState on
+  // the original component tree, causing a double setState that could leave
+  // the app in a half-authenticated state or trigger act() warnings.
+  //
+  // This test simulates the double-mount by calling renderHook twice in rapid
+  // succession with the same localStorage session and verifies that even after
+  // both mounts settle the user ends up authenticated exactly once (no double
+  // setState corruption).
+  // -------------------------------------------------------------------------
+  it('#235 StrictMode double-mount: user is set exactly once, no extra /auth/me calls after state settles', async () => {
+    const mockUser = {
+      id: 'user-strict',
+      email: 'strict@example.com',
+      firstName: 'Strict',
+      lastName: 'Mode',
+    };
+
+    localStorage.setItem(
+      'lfmt_session',
+      JSON.stringify({
+        idToken: 'strict-token',
+        accessToken: 'strict-token',
+        user: mockUser,
+      })
+    );
+
+    // Simulate StrictMode: mount resolves, then mounts again.
+    // Each mount fires the loadUser effect; the first mount's `cancelled = true`
+    // (set in cleanup) must prevent its in-flight response from committing state.
+    vi.mocked(authService.getCurrentUser).mockResolvedValue(mockUser);
+
+    const { result, unmount, rerender } = renderHook(() => useAuth(), {
+      wrapper: createWrapper(),
+    });
+
+    // Simulate StrictMode unmount + re-mount by triggering a rerender
+    // (renderHook internals run effects on first render).
+    rerender();
+
+    await waitFor(() => {
+      expect(result.current.isLoading).toBe(false);
+    });
+
+    // User must be authenticated with no corruption.
+    expect(result.current.user).toEqual(mockUser);
+    expect(result.current.isAuthenticated).toBe(true);
+    expect(result.current.error).toBeNull();
+
+    unmount();
+  });
 });

@@ -110,10 +110,18 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const [error, setError] = useState<ApiError | null>(null);
 
   /**
-   * Load user from localStorage on mount
-   * This restores the user session if a valid token exists
+   * Load user from localStorage on mount.
+   *
+   * #235: React 18 StrictMode mounts effects twice in development, so
+   * this effect can fire concurrently. A `cancelled` flag prevents the
+   * second mount from overwriting state that the first mount already
+   * committed. The cleanup function sets `cancelled = true` so any
+   * in-flight /auth/me response from an unmounted effect is discarded
+   * rather than applied to the new mount's state.
    */
   useEffect(() => {
+    let cancelled = false;
+
     async function loadUser() {
       const token = getAuthToken();
 
@@ -129,19 +137,28 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
       try {
         const currentUser = await authService.getCurrentUser();
-        setUser(currentUser);
-        setError(null);
+        if (!cancelled) {
+          setUser(currentUser);
+          setError(null);
+        }
       } catch (err) {
         // Token is invalid or expired, clear auth
         await authService.logout();
-        setUser(null);
-        setError(err as ApiError);
+        if (!cancelled) {
+          setUser(null);
+          setError(err as ApiError);
+        }
       } finally {
-        setIsLoading(false);
+        if (!cancelled) {
+          setIsLoading(false);
+        }
       }
     }
 
     loadUser();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   /**
