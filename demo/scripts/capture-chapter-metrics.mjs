@@ -435,7 +435,10 @@ async function processChapter(chapter, auth) {
     },
     chunks: {
       totalChunks: finalStatus.totalChunks ?? totalChunks,
-      chunksTranslated: finalStatus.chunksTranslated,
+      // #229: read renamed field `translatedChunks` (was `chunksTranslated`).
+      // The output key is also renamed so downstream demo-metrics consumers
+      // see the canonical name.
+      translatedChunks: finalStatus.translatedChunks,
       progressPercentage: finalStatus.progressPercentage,
     },
     geminiRequestsAttributed: finalStatus.totalChunks ?? totalChunks ?? null,
@@ -566,7 +569,7 @@ async function pollUntilComplete(jobId, idToken) {
       const body = res.body || {};
       const ts = body?.translationStatus;
       console.log(
-        `[poll] job=${jobId} translationStatus=${ts} progress=${body?.progressPercentage}% ${body?.chunksTranslated}/${body?.totalChunks}`
+        `[poll] job=${jobId} translationStatus=${ts} progress=${body?.progressPercentage}% ${body?.translatedChunks}/${body?.totalChunks}`
       );
       // R6: short-circuit on either terminal state — after PR #165 the API
       // reliably reports TRANSLATION_FAILED, so we should fast-fail rather

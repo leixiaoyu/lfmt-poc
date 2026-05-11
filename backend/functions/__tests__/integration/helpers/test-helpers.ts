@@ -44,7 +44,9 @@ export interface TranslationStatus {
   targetLanguage?: string;
   tone?: string;
   totalChunks?: number;
-  chunksTranslated?: number;
+  // #229: renamed from `chunksTranslated` → `translatedChunks` to match the
+  // DDB column name. R2 catch — original cross-cutting sweep missed this.
+  translatedChunks?: number;
   progressPercentage?: number;
   tokensUsed?: number;
   estimatedCost?: number;

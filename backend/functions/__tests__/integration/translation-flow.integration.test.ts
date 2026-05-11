@@ -83,7 +83,10 @@ interface TranslationStatus {
   status: string;
   translationStatus?: string;
   totalChunks?: number;
-  chunksTranslated?: number;
+  // #229: renamed from `chunksTranslated` → `translatedChunks` to match the
+  // DDB column name. The wire shape was flipped in PR #242; the integration
+  // test type was missed in the original cross-cutting sweep — R2 catch.
+  translatedChunks?: number;
   progressPercentage?: number;
   targetLanguage?: string;
   tone?: string;
@@ -425,7 +428,7 @@ describe('End-to-End Translation Flow Integration Tests', () => {
         expect(finalStatus.translationStatus).toBe('COMPLETED');
         expect(finalStatus.progressPercentage).toBe(100);
         // DynamoDB NUMBER fields are returned as strings (correct format for NUMBER type)
-        expect(Number(finalStatus.chunksTranslated)).toBe(Number(finalStatus.totalChunks));
+        expect(Number(finalStatus.translatedChunks)).toBe(Number(finalStatus.totalChunks));
         expect(finalStatus.translationCompletedAt).toBeTruthy();
         // Token usage and cost may be 0 for test documents
         expect(finalStatus.tokensUsed).toBeGreaterThanOrEqual(0);
@@ -668,7 +671,7 @@ describe('End-to-End Translation Flow Integration Tests', () => {
         const totalTime = Date.now() - startTime;
 
         console.log(`Translation completed in ${totalTime}ms`);
-        console.log(`Chunks translated: ${finalStatus.chunksTranslated}`);
+        console.log(`Chunks translated: ${finalStatus.translatedChunks}`);
         console.log(`Tokens used: ${finalStatus.tokensUsed}`);
 
         // For a small test document, should complete in under 3 minutes
