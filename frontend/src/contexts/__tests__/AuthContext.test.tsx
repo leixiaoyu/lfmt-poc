@@ -13,6 +13,7 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { renderHook, waitFor, act } from '@testing-library/react';
+import { StrictMode } from 'react';
 import { AuthProvider, useAuth } from '../AuthContext';
 import { authService } from '../../services/authService';
 import type { ReactNode } from 'react';
@@ -583,18 +584,28 @@ describe('AuthContext - Initial User Load', () => {
   // both mounts settle the user ends up authenticated exactly once (no double
   // setState corruption).
   // -------------------------------------------------------------------------
-  it('#235 StrictMode double-mount: stale /auth/me response from the first mount does NOT overwrite the second mount state', async () => {
-    // OMC R2 F-2 rewrite: the original test called `rerender()` which does NOT
-    // unmount the component, so the cleanup function never fired and the
-    // `cancelled` flag was never set. The test passed even when the guard was
-    // removed — a vacuous regression guard.
+  it('#235 StrictMode double-mount: stale getCurrentUser resolution does NOT overwrite the live mount state', async () => {
+    // OMC R2-RERUN F-2 fix (Option B): the first rewrite mounted two
+    // INDEPENDENT React trees via two `renderHook` calls. Because each tree
+    // has its own state setter, the stale promise resolving in tree-1's
+    // closure could never have observably corrupted tree-2's state — the
+    // guard's removal was not falsifiable.
     //
-    // This rewrite exercises the guard intentionally: hold the first mount's
-    // /auth/me promise open, unmount (which triggers cleanup → cancelled=true
-    // on that effect's closure), then resolve the held promise with a STALE
-    // user. If the guard works, the stale resolution is silently discarded.
-    // Then mount again with a FRESH user; the second mount's state must be
-    // the fresh user, never overwritten by the stale promise resolving.
+    // This rewrite wraps a SINGLE `renderHook` in `<React.StrictMode>`. In
+    // React 18 dev mode, StrictMode mounts → cleans up → re-mounts the
+    // component in the SAME parent tree, sharing the same state setter
+    // across the cycle. Mount-1's effect captures a `cancelled` flag in its
+    // closure. Cleanup sets that flag to `true` (this is the guard). Mount-2
+    // captures a NEW `cancelled` flag (false). Both effects fire their
+    // `getCurrentUser` call.
+    //
+    // Critical observation: in StrictMode, the SAME `setUser` state setter
+    // is used by both mounts. If Mount-1's stale promise resolves AFTER
+    // Mount-2 has already setState'd the fresh user, Mount-1's `setUser`
+    // call (if not gated by `!cancelled`) WOULD observably overwrite the
+    // fresh-user state with the stale user. The cancellation guard prevents
+    // that overwrite. Removing the guard from `AuthContext.tsx` makes this
+    // test fail with `result.current.user === staleUser`.
     const staleUser = {
       id: 'user-stale',
       email: 'stale@example.com',
@@ -617,54 +628,59 @@ describe('AuthContext - Initial User Load', () => {
       })
     );
 
-    // Step 1: hold the first mount's /auth/me promise open so we control when
-    // it resolves. We need to resolve it AFTER the unmount to prove the guard.
+    // Mount-1's promise: held open so we control when it resolves. Must
+    // resolve AFTER Mount-2 has settled, so we can verify the guard skips
+    // Mount-1's setState rather than allowing it to overwrite the live state.
     let resolveStale: (u: typeof staleUser) => void = () => {};
     const stalePromise = new Promise<typeof staleUser>((resolve) => {
       resolveStale = resolve;
     });
-    vi.mocked(authService.getCurrentUser).mockReturnValueOnce(
-      stalePromise as unknown as Promise<typeof staleUser>
+
+    vi.mocked(authService.getCurrentUser)
+      // StrictMode calls the effect twice on initial render. First call
+      // (Mount-1) gets the held promise; second call (Mount-2 after the
+      // synthetic cleanup-remount) resolves immediately with the fresh user.
+      .mockReturnValueOnce(stalePromise as unknown as Promise<typeof staleUser>)
+      .mockResolvedValueOnce(freshUser);
+
+    // Wrap AuthProvider inside React.StrictMode so the double-mount fires
+    // on a SINGLE shared state setter — this is what makes the guard
+    // observably falsifiable.
+    const StrictWrapper = ({ children }: { children: ReactNode }) => (
+      <StrictMode>
+        <AuthProvider>{children}</AuthProvider>
+      </StrictMode>
     );
 
-    const firstMount = renderHook(() => useAuth(), { wrapper: createWrapper() });
+    const { result } = renderHook(() => useAuth(), { wrapper: StrictWrapper });
 
-    // Step 2: unmount the first mount BEFORE the stale promise resolves.
-    // This fires the effect cleanup → `cancelled = true` for that closure.
-    firstMount.unmount();
-
-    // Step 3: now resolve the stale promise. The setState inside the first
-    // mount's effect should be skipped because `cancelled` is true. If the
-    // guard were missing, this would attempt a setState on an unmounted
-    // component (which React 18 logs as a warning AND, more importantly,
-    // the state-update wouldn't apply to the second mount because they're
-    // different React trees — but the test below specifically rules out the
-    // alternative failure mode where the stale promise's setState corrupts
-    // shared module-level state via, e.g., a localStorage write).
-    resolveStale(staleUser);
-
-    // Step 4: mount fresh — this is the StrictMode-second-mount equivalent.
-    vi.mocked(authService.getCurrentUser).mockResolvedValueOnce(freshUser);
-
-    const secondMount = renderHook(() => useAuth(), { wrapper: createWrapper() });
-
+    // Wait for Mount-2 to settle (fresh user committed to state). At this
+    // point Mount-1's promise is still pending; cleanup has already set its
+    // `cancelled = true`.
     await waitFor(() => {
-      expect(secondMount.result.current.isLoading).toBe(false);
+      expect(result.current.user).toEqual(freshUser);
     });
 
-    // The second mount's state MUST be the fresh user — never the stale one.
-    // If the guard ever regresses, the stale promise's setState path would
-    // run AFTER unmount and could leak into shared state (e.g., AuthContext
-    // bus, localStorage writes inside authService.logout error paths).
-    expect(secondMount.result.current.user).toEqual(freshUser);
-    expect(secondMount.result.current.isAuthenticated).toBe(true);
-    expect(secondMount.result.current.error).toBeNull();
+    // Now resolve Mount-1's stale promise. The setState inside that closure
+    // must be skipped because the closure's `cancelled` is now `true`.
+    await act(async () => {
+      resolveStale(staleUser);
+      // Yield so the resolution's microtask + any subsequent setState runs.
+      await Promise.resolve();
+    });
 
-    // Behavioural assertion the original test missed: the stale call did fire,
-    // proving we exercised the cancellation path (not just the no-op-on-no-token
+    // CRITICAL ASSERTION (this is what falsifies guard removal):
+    //   state must still be the freshUser, NOT corrupted by the stale
+    //   resolution. Without the `if (!cancelled)` guard, the stale
+    //   promise's `setUser(staleUser)` would run on the SAME setter that
+    //   committed `freshUser` and overwrite it.
+    expect(result.current.user).toEqual(freshUser);
+    expect(result.current.isAuthenticated).toBe(true);
+    expect(result.current.error).toBeNull();
+
+    // Behavioural assertion: StrictMode actually fired the effect twice
+    // (proving we exercised the double-mount path, not the no-op no-token
     // path).
     expect(vi.mocked(authService.getCurrentUser)).toHaveBeenCalledTimes(2);
-
-    secondMount.unmount();
   });
 });
