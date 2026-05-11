@@ -310,6 +310,30 @@ describe('listJobs endpoint', () => {
       const body = JSON.parse(result.body);
       expect(body.message).toMatch(/mismatch/i);
     });
+
+    it('returns 400 when cursor body lacks a userId key (#244 — defense-in-depth)', async () => {
+      // A cursor crafted without a `userId` key must NOT silently bypass the
+      // cross-user guard. Pre-#244 the truthy check on `cursorUserId`
+      // short-circuited when the key was absent, leaving only the DDB GSI
+      // partition as defense. This test locks the fail-fast contract.
+      const keyWithoutUserId = {
+        jobId: { S: 'job-x' },
+        createdAt: { S: '2026-01-01T00:00:00.000Z' },
+        // Intentionally NO `userId` key.
+      };
+      const cursor = encodeCursor(keyWithoutUserId);
+
+      const event: Partial<APIGatewayProxyEvent> = {
+        ...createEvent('user-123'),
+        queryStringParameters: { cursor },
+      };
+
+      const result = await handler(event as APIGatewayProxyEvent);
+
+      expect(result.statusCode).toBe(400);
+      const body = JSON.parse(result.body);
+      expect(body.message).toMatch(/missing userid/i);
+    });
   });
 
   // -------------------------------------------------------------------------

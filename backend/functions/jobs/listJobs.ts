@@ -114,10 +114,25 @@ export const handler = async (event: APIGatewayProxyEvent): Promise<APIGatewayPr
       }
       // Defense-in-depth: the GSI query is already scoped by userId, so a
       // mismatched cursor would yield an empty result rather than leaking data.
-      // We additionally validate the cursor carries the caller's own userId to
-      // prevent confusion from stale or cross-user cursors.
+      // We additionally validate the cursor carries the caller's own userId
+      // (#244): if the key is missing OR mismatched, reject with 400. A
+      // truthy-only check is insufficient — a crafted cursor without a
+      // `userId` key would have skipped the guard entirely (`cursorUserId`
+      // would be `undefined`, falsy), leaving defense-in-depth to the GSI
+      // partition alone. By failing fast on a missing key, we keep the
+      // guard's intent (fail-fast on malformed cursors) regardless of
+      // future code paths that might break the GSI assumption.
       const cursorUserId = (decoded['userId'] as { S?: string })?.S;
-      if (cursorUserId && cursorUserId !== userId) {
+      if (!cursorUserId) {
+        return createErrorResponse(
+          400,
+          'Cursor missing userId',
+          requestId,
+          undefined,
+          requestOrigin
+        );
+      }
+      if (cursorUserId !== userId) {
         return createErrorResponse(
           400,
           'Cursor userId mismatch',
