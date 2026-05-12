@@ -31,6 +31,26 @@ Related to #
 - [ ] All tests passing locally
 - [ ] Tested in dev environment
 
+## Smoke Test Status (Issue #211)
+
+<!-- Smoke tests run post-deploy and are NOT a required merge gate.
+     Complete this section to document their status. -->
+
+- [ ] All post-deploy smoke tests green after merging this PR
+- [ ] OR: smoke test failures are known and tracked — fill in below:
+
+<!-- If any smoke test is red after this PR lands, paste the GitHub Actions
+     run URL and a one-line rationale for each failing test. This suppression
+     is auditable (visible in PR history) and tracked until the test is fixed.
+     Example:
+       - `POST /jobs/{id}/start smoke test` — RATIONALE: endpoint not yet deployed,
+         tracked in #NNN
+-->
+
+Smoke test failure rationale (if applicable):
+<!-- Replace N/A with issue links and rationale for any known failures -->
+N/A
+
 ## Infrastructure/CDK Changes Checklist
 
 <!-- Complete this section if your PR modifies AWS infrastructure or CDK code -->

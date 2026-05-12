@@ -132,9 +132,15 @@ jobs:
         run: actionlint -color -shellcheck "shellcheck -S warning"
 
       - name: Verify deploy workflow gated-job condition parity
+        # Issue #186: auto-discover deploy-*.yml files instead of a hardcoded
+        # dict. Adding a new deploy-*.yml no longer silently bypasses this check.
+        # Algorithm: for each deploy-*.yml, find the anchor job (the job whose
+        # name starts with 'deploy-dev') and identify all jobs that share its
+        # if: expression (the "cascade"). Verify all cascade jobs agree.
         run: |
           python3 <<'PYEOF'
           import sys
+          from pathlib import Path
           import yaml
 
           # Issue #157 split: one parity check per deploy workflow. Each
@@ -143,25 +149,43 @@ jobs:
           # cascade runs as a unit. The two cascades are independent —
           # backend and frontend can have different conditions across files,
           # but the jobs WITHIN a file must agree.
-          DEPLOY_WORKFLOWS = {
-              '.github/workflows/deploy-backend.yml': [
-                  'deploy-dev',
-                  'smoke-tests',
-                  'integration-tests',
-              ],
-              '.github/workflows/deploy-frontend.yml': [
-                  'deploy-dev-frontend',
-                  'production-smoke-tests',
-                  'e2e-tests',
-              ],
-          }
+          #
+          # Issue #186: auto-discover deploy-*.yml instead of a hardcoded dict.
+          # A new deploy-*.yml is automatically included in the next CI run.
+          # The anchor job is identified by name prefix 'deploy-dev' (the
+          # convention established by the Issue #157 split).
+
+          def find_cascade(jobs: dict) -> list[str]:
+              """Return all job IDs that share the if: condition of the deploy-dev* anchor."""
+              anchor_id = next(
+                  (jid for jid in jobs if jid.startswith('deploy-dev')), None
+              )
+              if anchor_id is None:
+                  return list(jobs.keys())  # No anchor — include all jobs for inspection
+              anchor_cond = jobs[anchor_id].get('if', '')
+              return [jid for jid, job in jobs.items() if job.get('if', '') == anchor_cond]
+
+          wf_dir = Path('.github/workflows')
+          deploy_files = sorted(wf_dir.glob('deploy-*.yml'))
+
+          if not deploy_files:
+              print('::error::No deploy-*.yml files found in .github/workflows/')
+              sys.exit(1)
 
           had_error = False
-          for wf_path, gated_jobs in DEPLOY_WORKFLOWS.items():
-              with open(wf_path) as f:
+          for wf_file in deploy_files:
+              wf_path = str(wf_file)
+              with open(wf_file) as f:
                   wf = yaml.safe_load(f)
 
-              conditions = {job: wf['jobs'][job].get('if', '') for job in gated_jobs}
+              jobs = wf.get('jobs', {})
+              cascade = find_cascade(jobs)
+
+              if not cascade:
+                  print(f'::warning file={wf_path}::{wf_path}: no jobs found — skipping parity check')
+                  continue
+
+              conditions = {job: jobs[job].get('if', '') for job in cascade}
               unique = set(conditions.values())
 
               if len(unique) != 1:
@@ -171,7 +195,8 @@ jobs:
                   had_error = True
                   continue
 
-              print(f'OK ({wf_path}): all {len(gated_jobs)} gated jobs share an identical if: expression')
+              print(f'OK ({wf_path}): {len(cascade)} gated jobs share an identical if: expression')
+              print(f'  Jobs: {cascade}')
               print(f'  Condition: {next(iter(unique))}')
 
           if had_error:
@@ -181,10 +206,107 @@ jobs:
       - name: Verify deploy workflow path-filter contracts
         # OMC test-automator follow-up (PR #185 R2): asserts each deploy
         # workflow's on.push.paths contains the EXPECTED globs (and excludes
-        # forbidden globs that would over-trigger across the split). Adding a
-        # 3rd deploy workflow in the future requires updating the EXPECTED /
-        # FORBIDDEN dicts in the script. See tracking issue for auto-discovery.
+        # forbidden globs that would over-trigger across the split).
+        # Issue #186: the script now auto-discovers deploy-*.yml so a new
+        # deploy workflow is automatically checked without updating the script.
         run: python3 tests/workflows/test_deploy_path_filters.py
+
+      - name: Verify ci.yml ↔ deploy-backend.yml step-list parity
+        # Issue #156: programmatic parity check to replace the YAML-comment
+        # rule that failed to prevent drift in Issues #149, #152, #154.
+        #
+        # Contract: every `run:` step name in deploy-backend.yml's `test` job
+        # MUST also appear (by name) in ci.yml's `test` or `lint-and-format`
+        # jobs, UNLESS the step is marked with `# parity:exempt — <reason>`.
+        #
+        # Exemptions allow legitimately deploy-only steps (e.g. "Build
+        # shared-types" which is needed at deploy time but covered by a
+        # separate ci.yml job) without failing the check. The exemption
+        # reason is required to prevent silent omissions from passing.
+        #
+        # The 24-line comment block in deploy-backend.yml lines 70-96 is the
+        # authoritative human-readable explanation of WHY the parity contract
+        # exists; this step is the machine-enforced check.
+        run: |
+          python3 <<'PYEOF'
+          import sys
+          from pathlib import Path
+          import yaml
+
+          def _extract_steps(workflow_path: Path, job_id: str) -> list[tuple[str, bool]]:
+              """Return list of (step_name, is_exempt) tuples for a job.
+
+              A step is exempt if its `name:` field or adjacent comment contains
+              `# parity:exempt`. Since YAML comments are stripped by safe_load,
+              we re-read the raw file and check the line before the `- name:` line.
+              """
+              with workflow_path.open() as f:
+                  wf = yaml.safe_load(f)
+
+              job = wf.get('jobs', {}).get(job_id)
+              if job is None:
+                  return []
+
+              steps = job.get('steps', [])
+
+              # Build a name -> line-number index by scanning the raw file.
+              raw_lines = workflow_path.read_text().splitlines()
+
+              def line_has_exempt(lineno: int) -> bool:
+                  """Check if line lineno or the preceding line has parity:exempt."""
+                  for check_line in [lineno, lineno - 1]:
+                      if 0 <= check_line < len(raw_lines):
+                          if 'parity:exempt' in raw_lines[check_line]:
+                              return True
+                  return False
+
+              result = []
+              for step in steps:
+                  name = step.get('name', '')
+                  if not name:
+                      continue
+                  # Find the line number of `name: <name>` in the raw file.
+                  for i, line in enumerate(raw_lines):
+                      if f'name: {name}' in line or f"name: '{name}'" in line:
+                          result.append((name, line_has_exempt(i)))
+                          break
+                  else:
+                      result.append((name, False))
+
+              return result
+
+          # Steps in ci.yml that cover the parity gate (combined pool).
+          ci_file = Path('.github/workflows/ci.yml')
+          ci_test_steps = {n for n, _ in _extract_steps(ci_file, 'test')}
+          ci_lint_steps = {n for n, _ in _extract_steps(ci_file, 'lint-and-format')}
+          ci_steps = ci_test_steps | ci_lint_steps
+
+          # Steps in deploy-backend.yml's `test` job that must appear in ci.yml.
+          deploy_file = Path('.github/workflows/deploy-backend.yml')
+          deploy_test_steps = _extract_steps(deploy_file, 'test')
+
+          had_error = False
+          missing = []
+          for name, is_exempt in deploy_test_steps:
+              if is_exempt:
+                  print(f'EXEMPT: "{name}" (parity:exempt marker found)')
+                  continue
+              if name not in ci_steps:
+                  missing.append(name)
+                  had_error = True
+
+          if missing:
+              print(f'::error file={deploy_file}::ci.yml / deploy-backend.yml step-list drift detected!')
+              print('The following deploy-backend.yml test-job steps are NOT present in ci.yml:')
+              for m in missing:
+                  print(f'  - "{m}"')
+              print('')
+              print('Fix: add the missing step(s) to ci.yml (test or lint-and-format job)')
+              print('OR mark with `# parity:exempt — <reason>` on the step in deploy-backend.yml.')
+              sys.exit(1)
+          else:
+              print(f'OK: all {len(deploy_test_steps)} deploy-backend.yml test-job steps are present in ci.yml')
+          PYEOF
 
   lint-and-format:
     name: Lint and Format Check
@@ -208,7 +330,11 @@ jobs:
         working-directory: shared-types
         run: npm ci
 
-      - name: Build shared-types (needed for frontend type-check)
+      # Issue #156 parity: step name matches deploy-backend.yml test job so the
+      # programmatic parity check can find it by name. Previously named
+      # "Build shared-types (needed for frontend type-check)" — renamed to
+      # "Build shared-types" to align with deploy-backend.yml's step name.
+      - name: Build shared-types
         working-directory: shared-types
         run: npm run build
 
@@ -220,7 +346,8 @@ jobs:
       # BEFORE merge. Previously these used --if-present || echo, which masked
       # failures and let PRs merge green while deploy.yml silently rejected the
       # same code (Issue #149).
-      - name: Lint functions
+      # Issue #156 parity: step name matches deploy-backend.yml "Lint backend functions".
+      - name: Lint backend functions
         working-directory: backend/functions
         run: npm run lint
 

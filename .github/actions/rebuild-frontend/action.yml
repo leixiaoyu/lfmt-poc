@@ -1,0 +1,133 @@
+name: Rebuild and deploy frontend
+description: >
+  Read CFN outputs for the given stack, rebuild the frontend bundle with the
+  live API URL baked in (VITE_API_URL), sync to S3, and invalidate CloudFront.
+  Returns when the invalidation reaches Completed status.
+
+  Issue #187: extracted from four copy-paste sites in deploy-backend.yml and
+  deploy-frontend.yml. A bug fix or flag change (e.g. --cache-control header,
+  CSP nonce injection, new CFN output key) now only needs to land here.
+
+inputs:
+  stack-name:
+    description: CloudFormation stack name (e.g. LfmtPocDev, LfmtPocStaging, LfmtPocProd)
+    required: true
+  aws-region:
+    description: AWS region
+    required: true
+    default: us-east-1
+  node-version:
+    description: Node.js version for the build step
+    required: true
+    default: '22'
+
+outputs:
+  api_url:
+    description: API Gateway URL read from CFN outputs
+    value: ${{ steps.cfn.outputs.api_url }}
+  frontend_url:
+    description: CloudFront distribution URL read from CFN outputs
+    value: ${{ steps.cfn.outputs.frontend_url }}
+
+runs:
+  using: composite
+  steps:
+    # Single describe-stacks call to get all four outputs at once.
+    # Cheaper than 4 separate calls (~500ms each) and reduces CFN API pressure.
+    - name: Read CloudFormation outputs
+      id: cfn
+      shell: bash
+      run: |
+        OUTPUTS=$(aws cloudformation describe-stacks \
+          --stack-name ${{ inputs.stack-name }} \
+          --region ${{ inputs.aws-region }} \
+          --query 'Stacks[0].Outputs' \
+          --output json)
+        API_URL=$(echo "$OUTPUTS" | jq -r '.[] | select(.OutputKey=="ApiUrl") | .OutputValue')
+        BUCKET=$(echo "$OUTPUTS" | jq -r '.[] | select(.OutputKey=="FrontendBucketName") | .OutputValue')
+        DIST_ID=$(echo "$OUTPUTS" | jq -r '.[] | select(.OutputKey=="CloudFrontDistributionId") | .OutputValue')
+        FRONTEND_URL=$(echo "$OUTPUTS" | jq -r '.[] | select(.OutputKey=="FrontendUrl") | .OutputValue')
+        # OMC R2 L-2: guard against empty outputs. jq returns empty string (not
+        # an error) when a key is absent — e.g. if CDK deploy failed mid-way and
+        # the stack is in a partial state. An empty VITE_API_URL would bake a
+        # broken bundle into S3; fail loudly here instead.
+        if [ -z "$API_URL" ]; then
+          echo "::error::ApiUrl not found in CFN outputs for stack ${{ inputs.stack-name }} — was the CDK deploy successful?"
+          exit 1
+        fi
+        if [ -z "$BUCKET" ]; then
+          echo "::error::FrontendBucketName not found in CFN outputs for stack ${{ inputs.stack-name }}"
+          exit 1
+        fi
+        if [ -z "$DIST_ID" ]; then
+          echo "::error::CloudFrontDistributionId not found in CFN outputs for stack ${{ inputs.stack-name }}"
+          exit 1
+        fi
+        echo "api_url=$API_URL" >> $GITHUB_OUTPUT
+        echo "bucket_name=$BUCKET" >> $GITHUB_OUTPUT
+        echo "distribution_id=$DIST_ID" >> $GITHUB_OUTPUT
+        echo "frontend_url=$FRONTEND_URL" >> $GITHUB_OUTPUT
+        echo "API URL: $API_URL"
+        echo "Bucket: $BUCKET"
+        echo "CloudFront Distribution: $DIST_ID"
+        echo "Frontend URL: $FRONTEND_URL"
+
+    - name: Install shared-types dependencies
+      shell: bash
+      working-directory: shared-types
+      run: npm ci
+
+    - name: Build shared-types
+      shell: bash
+      working-directory: shared-types
+      run: npm run build
+
+    - name: Install frontend dependencies
+      shell: bash
+      working-directory: frontend
+      run: npm ci
+
+    - name: Build frontend with live API URL
+      shell: bash
+      working-directory: frontend
+      run: npm run build
+      env:
+        NODE_ENV: production
+        VITE_API_URL: ${{ steps.cfn.outputs.api_url }}
+
+    - name: Sync frontend bundle to S3
+      shell: bash
+      run: |
+        # Hashed assets (JS/CSS) get long-lived immutable cache.
+        # index.html gets no-cache so browsers always fetch the latest entry-point.
+        aws s3 sync frontend/dist/ s3://${{ steps.cfn.outputs.bucket_name }}/ \
+          --delete \
+          --cache-control "public, max-age=31536000, immutable" \
+          --exclude "index.html"
+        aws s3 cp frontend/dist/index.html \
+          s3://${{ steps.cfn.outputs.bucket_name }}/index.html \
+          --cache-control "public, max-age=0, must-revalidate"
+
+    - name: Create CloudFront invalidation
+      id: invalidation
+      shell: bash
+      run: |
+        INVALIDATION_ID=$(aws cloudfront create-invalidation \
+          --distribution-id ${{ steps.cfn.outputs.distribution_id }} \
+          --paths "/*" \
+          --query 'Invalidation.Id' \
+          --output text)
+        echo "invalidation_id=$INVALIDATION_ID" >> $GITHUB_OUTPUT
+        echo "CloudFront invalidation started: $INVALIDATION_ID"
+
+    # `aws cloudfront wait invalidation-completed` polls every 5s and returns
+    # as soon as the invalidation reaches Completed (typically 10-30s).
+    # Replaces the former unconditional `sleep 30` (Issue #163 bonus).
+    - name: Wait for CloudFront invalidation to complete
+      shell: bash
+      run: |
+        echo "Waiting for invalidation ${{ steps.invalidation.outputs.invalidation_id }} to complete..."
+        aws cloudfront wait invalidation-completed \
+          --distribution-id ${{ steps.cfn.outputs.distribution_id }} \
+          --id ${{ steps.invalidation.outputs.invalidation_id }}
+        echo "CloudFront invalidation completed"
