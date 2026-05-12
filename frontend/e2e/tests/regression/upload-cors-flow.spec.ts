@@ -47,6 +47,10 @@ function writeTempFile(name: string, content: string): string {
   return filePath;
 }
 
+// Module-level afterAll: intentional — both describe blocks share the
+// same `createdTempDirs` pool so cleanup fires once per worker after ALL
+// tests in this file complete. Any future describe block that calls
+// `writeTempFile` automatically participates in cleanup.
 test.afterAll(() => {
   for (const dir of createdTempDirs) {
     try {
@@ -55,7 +59,9 @@ test.afterAll(() => {
       // Best-effort cleanup; OS reclaims temp dirs on reboot regardless.
     }
   }
-  createdTempDirs.length = 0;
+  // OMC R2 M-3: `createdTempDirs.length = 0` reset removed — afterAll fires
+  // once per worker; the array goes out of scope immediately after, so the
+  // reset was dead code.
 });
 
 test.describe('Upload Flow - CORS and Authentication Regression', () => {
