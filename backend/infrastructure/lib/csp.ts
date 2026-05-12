@@ -103,6 +103,16 @@ const DEFAULT_DIRECTIVES: Required<Pick<
 >> = {
   'default-src': ["'self'"],
   'script-src': ["'self'"],
+  // 'unsafe-inline' is RETAINED on style-src for now (Issue #254 — split
+  // from the original #197). MUI/Emotion injects runtime styles via
+  // `document.head.appendChild('<style>')` and removing this directive
+  // requires a Lambda@Edge per-response nonce pipeline. The CSP builder
+  // already SUPPORTS the nonce path (caller passes
+  //   'style-src': ["'self'", "'nonce-...'"]
+  // and a unit test pins the output) so #254 is a one-line change at the
+  // caller plus the Lambda@Edge function. Until that lands, the
+  // #201 violation-report endpoint catches any regression that introduces
+  // a NEW source of inline styles outside MUI/Emotion.
   'style-src': ["'self'", "'unsafe-inline'"],
   'img-src': ["'self'", 'data:', 'https:'],
   'font-src': ["'self'", 'data:'],
