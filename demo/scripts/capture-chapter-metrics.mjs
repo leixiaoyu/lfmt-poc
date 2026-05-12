@@ -71,7 +71,12 @@ const CHUNKING_TERMINAL_STATES = new Set(['VALIDATION_FAILED', 'CHUNKING_FAILED'
 const TRANSLATION_TERMINAL_STATES = new Set(['COMPLETED', 'TRANSLATION_FAILED']);
 
 // Fresh test account per the Track B brief. Auto-confirmed in dev env.
-const TEST_EMAIL = process.env.LFMT_TEST_EMAIL || 'claude-track-b-2026-04-25@lfmt-poc.dev';
+// The default regenerates daily so each day's run gets a new Cognito account;
+// same-day re-runs reuse the per-day account (matches the RPD guard's intent).
+// Set LFMT_TEST_EMAIL explicitly to override (e.g. when re-running a specific
+// day's capture without creating a new account).
+const TODAY = new Date().toISOString().slice(0, 10); // e.g. '2026-05-09'
+const TEST_EMAIL = process.env.LFMT_TEST_EMAIL || `claude-track-b-${TODAY}@lfmt-poc.dev`;
 // R7: TEST_PASSWORD MUST come from the environment — the previous literal
 // default ('TrackBDemo!2026') was a known-burned credential. We prefer
 // TEST_PASSWORD but accept the legacy LFMT_TEST_PASSWORD name during the
