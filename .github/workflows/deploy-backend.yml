@@ -247,11 +247,15 @@ jobs:
       # Typical savings per noop deploy: ~10 min wall-clock + 1 CloudFront
       # invalidation slot (3000/month free, then $0.005/path).
       #
-      # Safety note: `|| true` is intentional. `cdk diff --fail` exits 1 when
-      # differences ARE present (the opposite of what we want here — we want to
-      # catch the no-diff case). Using `|| true` avoids failing the step on a
-      # non-zero exit from diff in edge cases (e.g. stack does not exist yet on
-      # first deploy). The DIFF_OUTPUT grep is the authoritative gate.
+      # Safety note: `|| true` is intentional. `cdk diff` exits 1 when real
+      # differences ARE present (i.e. the diff case — not the no-diff case).
+      # Without `|| true`, the step would fail on every real infrastructure
+      # change, which is exactly the wrong behaviour. The "There were no
+      # differences" grep on DIFF_OUTPUT is the authoritative no-op gate;
+      # `|| true` simply ensures the step never hard-fails regardless of exit
+      # code. On first-ever deploy, `cdk diff` exits non-zero AND prints no
+      # "no differences" message, so has_changes=true fires correctly — no
+      # special handling needed.
       - name: Check for CDK infrastructure changes
         id: cdk-diff
         working-directory: backend/infrastructure
@@ -461,23 +465,18 @@ jobs:
         working-directory: backend/functions
         run: npm ci
 
-      - name: Get API URL
-        id: get-api-url
-        run: |
-          API_URL=$(aws cloudformation describe-stacks \
-            --stack-name LfmtPocDev \
-            --query "Stacks[0].Outputs[?OutputKey=='ApiUrl'].OutputValue" \
-            --output text \
-            --region ${{ env.AWS_REGION }})
-          echo "api_url=$API_URL" >> $GITHUB_OUTPUT
-          echo "Using API URL: $API_URL"
-
+      # Issue #248 / OMC R2 F-1: the former `Get API URL` step made a standalone
+      # describe-stacks call against LfmtPocDev — the same stack that deploy-dev
+      # already queried 30 seconds earlier. That is pure CFN API waste and a
+      # second drift point (two invocations with different --query shapes).
+      # deploy-dev already exports `api_url` as a job output; consume it here
+      # directly, mirroring the pattern the `smoke-tests` job above uses.
       - name: Wait for API to be ready
         run: |
           echo "Waiting for API to be ready..."
           for i in {1..30}; do
             # Check if API Gateway responds (any HTTP status including 401 is acceptable)
-            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" ${{ steps.get-api-url.outputs.api_url }}auth/me 2>/dev/null || echo "000")
+            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" ${{ needs.deploy-dev.outputs.api_url }}auth/me 2>/dev/null || echo "000")
             if [[ "$HTTP_CODE" != "000" && "$HTTP_CODE" != "502" && "$HTTP_CODE" != "503" && "$HTTP_CODE" != "504" ]]; then
               echo "API is ready! (HTTP $HTTP_CODE)"
               exit 0
@@ -492,19 +491,19 @@ jobs:
         working-directory: backend/functions
         run: npm run test:integration -- health-check.integration.test.ts
         env:
-          API_BASE_URL: ${{ steps.get-api-url.outputs.api_url }}
+          API_BASE_URL: ${{ needs.deploy-dev.outputs.api_url }}
 
       - name: Run API Integration Tests
         working-directory: backend/functions
         run: npm run test:integration -- api-integration.test.ts
         env:
-          API_BASE_URL: ${{ steps.get-api-url.outputs.api_url }}
+          API_BASE_URL: ${{ needs.deploy-dev.outputs.api_url }}
 
       - name: Run Translation Flow Integration Tests
         working-directory: backend/functions
         run: npm run test:integration -- translation-flow.integration.test.ts --testTimeout=600000
         env:
-          API_BASE_URL: ${{ steps.get-api-url.outputs.api_url }}
+          API_BASE_URL: ${{ needs.deploy-dev.outputs.api_url }}
           TEST_TIMEOUT: 600000
 
       - name: Backend Integration Test Summary
@@ -513,7 +512,7 @@ jobs:
           echo "========================================="
           echo "Backend Integration Test Summary"
           echo "========================================="
-          echo "API URL: ${{ steps.get-api-url.outputs.api_url }}"
+          echo "API URL: ${{ needs.deploy-dev.outputs.api_url }}"
           echo "Tests completed at: $(date -u +"%Y-%m-%d %H:%M:%S UTC")"
           echo "========================================="
 
