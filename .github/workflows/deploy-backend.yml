@@ -487,7 +487,17 @@ jobs:
     name: Deploy Backend to Staging
     runs-on: ubuntu-latest
     needs: test
-    if: github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'staging'
+    # Issue #160 (branch-guard asymmetry): previously only checked environment
+    # input but not github.ref, allowing any branch to deploy to staging via
+    # `gh workflow run deploy-backend.yml --ref feature/foo -f environment=staging`.
+    # deploy-dev already required main — staging and prod now mirror that guard.
+    # Defense-in-depth: enforce main-only at the workflow level in addition to
+    # any GitHub Environment protection rules.
+    # IMPORTANT: do NOT remove the `github.ref == 'refs/heads/main'` clause
+    # without adding an equivalent carve-out (e.g. hotfix/* branches) and
+    # documenting it here. Three incidents in one quarter traced back to
+    # insufficient branch-ref guards (Issues #149, #152, #160).
+    if: github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'staging'
     environment:
       name: staging
       url: https://staging.lfmt.yourcompany.com
@@ -616,7 +626,9 @@ jobs:
     name: Deploy Backend to Production
     runs-on: ubuntu-latest
     needs: test
-    if: github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'prod'
+    # Issue #160 (branch-guard asymmetry): mirrors the fix applied to
+    # deploy-staging above. See that job's comment block for rationale.
+    if: github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'prod'
     environment:
       name: production
       url: https://lfmt.yourcompany.com
