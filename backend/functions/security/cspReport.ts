@@ -108,10 +108,7 @@ const MAX_BODY_BYTES = 64 * 1024;
 const MAX_FIELD_CHARS = 2048;
 
 /** Allowed Content-Type values for incoming reports. Matches RFC + WHATWG. */
-const ALLOWED_CONTENT_TYPES = [
-  'application/csp-report',
-  'application/reports+json',
-] as const;
+const ALLOWED_CONTENT_TYPES = ['application/csp-report', 'application/reports+json'] as const;
 
 /** Allowed disposition values for the structured log record. */
 const ALLOWED_DISPOSITIONS = ['enforce', 'report'] as const;
@@ -217,8 +214,7 @@ export function parseReportsApiBody(payload: unknown): SanitizedCspReport[] {
     // `effectiveDirective` is REQUIRED per the W3C CSP3 Reporting
     // spec; we still tolerate `violatedDirective` as a fallback for
     // browsers that emit the older field name.
-    const directive =
-      safeString(b['effectiveDirective']) ?? safeString(b['violatedDirective']);
+    const directive = safeString(b['effectiveDirective']) ?? safeString(b['violatedDirective']);
     if (!directive) continue;
 
     out.push({
@@ -291,9 +287,7 @@ function badRequest(): APIGatewayProxyResult {
  * every malformed POST would let an attacker fill CloudWatch with noise.
  * Successful reports log at WARN level (one entry per sanitized record).
  */
-export const handler = async (
-  event: APIGatewayProxyEvent
-): Promise<APIGatewayProxyResult> => {
+export const handler = async (event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> => {
   // CORS preflight — answered without parsing, no logging.
   if (event.httpMethod === 'OPTIONS') {
     return noContent();

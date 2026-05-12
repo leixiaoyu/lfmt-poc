@@ -50,9 +50,7 @@ describe('cspReport — normalizeContentType', () => {
     expect(normalizeContentType('Application/CSP-Report; charset=utf-8')).toBe(
       'application/csp-report'
     );
-    expect(normalizeContentType('application/reports+json')).toBe(
-      'application/reports+json'
-    );
+    expect(normalizeContentType('application/reports+json')).toBe('application/reports+json');
   });
 
   it('returns empty string on non-string input', () => {
