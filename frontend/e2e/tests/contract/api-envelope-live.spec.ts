@@ -201,9 +201,7 @@ test.describe('Live-backend API envelope contract @contract-live', () => {
   // 1. POST /jobs/upload — WRAPPED envelope (the only one that uses
   //    `createWrappedResponse`; every other endpoint is flat).
   // -----------------------------------------------------------------------
-  test('POST /jobs/upload returns {message, data: PresignedUrlResponse}', async ({
-    request,
-  }) => {
+  test('POST /jobs/upload returns {message, data: PresignedUrlResponse}', async ({ request }) => {
     const res = await request.post(`${normalizedApiUrl}/jobs/upload`, {
       headers: authHeaders(),
       data: {
@@ -257,14 +255,11 @@ test.describe('Live-backend API envelope contract @contract-live', () => {
     const uploadBody = (await upload.json()) as PresignedUrlApiResponse;
     const { jobId } = uploadBody.data;
 
-    const res = await request.post(
-      `${normalizedApiUrl}/jobs/${jobId}/translate`,
-      {
-        headers: authHeaders(),
-        data: { targetLanguage: 'es', tone: 'neutral' },
-        failOnStatusCode: false,
-      }
-    );
+    const res = await request.post(`${normalizedApiUrl}/jobs/${jobId}/translate`, {
+      headers: authHeaders(),
+      data: { targetLanguage: 'es', tone: 'neutral' },
+      failOnStatusCode: false,
+    });
 
     // Even if the underlying job state is invalid (we didn't actually
     // upload the bytes), a 4xx response body must still carry the
@@ -310,10 +305,10 @@ test.describe('Live-backend API envelope contract @contract-live', () => {
     expect(upload.ok(), await upload.text()).toBe(true);
     const { jobId } = ((await upload.json()) as PresignedUrlApiResponse).data;
 
-    const res = await request.get(
-      `${normalizedApiUrl}/jobs/${jobId}/translation-status`,
-      { headers: authHeaders(), failOnStatusCode: false }
-    );
+    const res = await request.get(`${normalizedApiUrl}/jobs/${jobId}/translation-status`, {
+      headers: authHeaders(),
+      failOnStatusCode: false,
+    });
     expect(res.status(), await res.text()).toBe(200);
     const body = (await res.json()) as TranslationStatusApiResponse;
 
@@ -383,9 +378,7 @@ test.describe('Live-backend API envelope contract @contract-live', () => {
   // 6. DELETE /jobs/{jobId} — flat DeleteJobApiResponse. Done LAST so the
   //    cleanup also exercises the wire contract.
   // -----------------------------------------------------------------------
-  test('DELETE /jobs/{jobId} returns flat DeleteJobApiResponse', async ({
-    request,
-  }) => {
+  test('DELETE /jobs/{jobId} returns flat DeleteJobApiResponse', async ({ request }) => {
     const upload = await request.post(`${normalizedApiUrl}/jobs/upload`, {
       headers: authHeaders(),
       data: {
