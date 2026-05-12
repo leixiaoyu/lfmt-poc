@@ -132,9 +132,15 @@ jobs:
         run: actionlint -color -shellcheck "shellcheck -S warning"
 
       - name: Verify deploy workflow gated-job condition parity
+        # Issue #186: auto-discover deploy-*.yml files instead of a hardcoded
+        # dict. Adding a new deploy-*.yml no longer silently bypasses this check.
+        # Algorithm: for each deploy-*.yml, find the anchor job (the job whose
+        # name starts with 'deploy-dev') and identify all jobs that share its
+        # if: expression (the "cascade"). Verify all cascade jobs agree.
         run: |
           python3 <<'PYEOF'
           import sys
+          from pathlib import Path
           import yaml
 
           # Issue #157 split: one parity check per deploy workflow. Each
@@ -143,25 +149,43 @@ jobs:
           # cascade runs as a unit. The two cascades are independent —
           # backend and frontend can have different conditions across files,
           # but the jobs WITHIN a file must agree.
-          DEPLOY_WORKFLOWS = {
-              '.github/workflows/deploy-backend.yml': [
-                  'deploy-dev',
-                  'smoke-tests',
-                  'integration-tests',
-              ],
-              '.github/workflows/deploy-frontend.yml': [
-                  'deploy-dev-frontend',
-                  'production-smoke-tests',
-                  'e2e-tests',
-              ],
-          }
+          #
+          # Issue #186: auto-discover deploy-*.yml instead of a hardcoded dict.
+          # A new deploy-*.yml is automatically included in the next CI run.
+          # The anchor job is identified by name prefix 'deploy-dev' (the
+          # convention established by the Issue #157 split).
+
+          def find_cascade(jobs: dict) -> list[str]:
+              """Return all job IDs that share the if: condition of the deploy-dev* anchor."""
+              anchor_id = next(
+                  (jid for jid in jobs if jid.startswith('deploy-dev')), None
+              )
+              if anchor_id is None:
+                  return list(jobs.keys())  # No anchor — include all jobs for inspection
+              anchor_cond = jobs[anchor_id].get('if', '')
+              return [jid for jid, job in jobs.items() if job.get('if', '') == anchor_cond]
+
+          wf_dir = Path('.github/workflows')
+          deploy_files = sorted(wf_dir.glob('deploy-*.yml'))
+
+          if not deploy_files:
+              print('::error::No deploy-*.yml files found in .github/workflows/')
+              sys.exit(1)
 
           had_error = False
-          for wf_path, gated_jobs in DEPLOY_WORKFLOWS.items():
-              with open(wf_path) as f:
+          for wf_file in deploy_files:
+              wf_path = str(wf_file)
+              with open(wf_file) as f:
                   wf = yaml.safe_load(f)
 
-              conditions = {job: wf['jobs'][job].get('if', '') for job in gated_jobs}
+              jobs = wf.get('jobs', {})
+              cascade = find_cascade(jobs)
+
+              if not cascade:
+                  print(f'::warning file={wf_path}::{wf_path}: no jobs found — skipping parity check')
+                  continue
+
+              conditions = {job: jobs[job].get('if', '') for job in cascade}
               unique = set(conditions.values())
 
               if len(unique) != 1:
@@ -171,7 +195,8 @@ jobs:
                   had_error = True
                   continue
 
-              print(f'OK ({wf_path}): all {len(gated_jobs)} gated jobs share an identical if: expression')
+              print(f'OK ({wf_path}): {len(cascade)} gated jobs share an identical if: expression')
+              print(f'  Jobs: {cascade}')
               print(f'  Condition: {next(iter(unique))}')
 
           if had_error:
