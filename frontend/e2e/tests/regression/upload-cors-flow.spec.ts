@@ -70,7 +70,10 @@ test.describe('Upload Flow - CORS and Authentication Regression', () => {
     await uploadPage.completeTranslationConfig('es', 'formal');
 
     // Upload file
-    const testFilePath = writeTempFile('test-document.txt', 'This is a test document for translation.');
+    const testFilePath = writeTempFile(
+      'test-document.txt',
+      'This is a test document for translation.'
+    );
     await uploadPage.uploadFile(testFilePath);
     await uploadPage.clickNext();
 
