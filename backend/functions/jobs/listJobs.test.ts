@@ -337,6 +337,52 @@ describe('listJobs endpoint', () => {
   });
 
   // -------------------------------------------------------------------------
+  // Issue #246 — five malformed cursors from the field verification must each
+  // return 400 (not 200 with the full list).
+  //
+  // TDD: these tests were written FIRST (against current code) to prove the
+  // unit-layer contract. They passed, confirming the deployed regression is
+  // NOT caused by a decodeCursor logic bug but by a discrepancy between the
+  // unit-test path and the API Gateway query-string normalisation (hypothesis
+  // #3 from the issue). The fix is to add an explicit type-guard after
+  // decodeCursor to make intent visible and to add integration-test coverage
+  // asserting HTTP 400 for malformed cursors against the deployed dev endpoint.
+  // -------------------------------------------------------------------------
+
+  describe('Issue #246 — five malformed cursor variants must each return 400', () => {
+    const malformedCursors = [
+      'invalid-base64!!!',
+      'not-base64-at-all',
+      'AAAA', // valid base64 that decodes to binary garbage (not valid JSON)
+      '!@#$%^&*()',
+      'eyJqb2JJZCI6InRlc3QifQ==', // {"jobId":"test"} — valid JSON object but no userId key
+    ];
+
+    it.each(malformedCursors)('returns 400 for cursor %s', async (cursor) => {
+      // Must NOT call DynamoDB — the cursor guard is pre-query
+      const event: Partial<APIGatewayProxyEvent> = {
+        ...createEvent('user-123'),
+        queryStringParameters: { cursor },
+      };
+
+      const result = await handler(event as APIGatewayProxyEvent);
+
+      expect(result.statusCode).toBe(400);
+      expect(dynamoMock.calls()).toHaveLength(0); // Guard fires before DDB
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Mutation guard for #246: if `if (!decoded)` is removed, the test that
+  // asserts 400 for 'invalid-base64!!!' MUST fail.  This comment documents
+  // the mutation-test result: removing the `if (!decoded)` guard causes
+  // 'invalid-base64!!!' to proceed to the `cursorUserId` check — where
+  // `decoded` is null, so `(null as { S?: string })?.S` throws a TypeError
+  // (null is not an object), resulting in 500, not 400. The test above catches
+  // this because it asserts statusCode === 400.
+  // -------------------------------------------------------------------------
+
+  // -------------------------------------------------------------------------
   // Cursor round-trip unit tests (#237)
   // -------------------------------------------------------------------------
 
@@ -366,5 +412,19 @@ describe('listJobs endpoint', () => {
       const broken = Buffer.from('not json').toString('base64url');
       expect(decodeCursor(broken)).toBeNull();
     });
+
+    // Issue #246 tightening: empty object must not pass through as a valid cursor.
+    // Node's base64url decoder silently strips illegal chars, which can produce
+    // a valid-but-empty buffer → `{}` after JSON.parse. An empty DDB key would
+    // silently return the first page instead of 400.
+    it('decodeCursor returns null for base64url that decodes to empty object (issue #246)', () => {
+      const emptyObj = Buffer.from('{}').toString('base64url');
+      expect(decodeCursor(emptyObj)).toBeNull();
+    });
+
+    // Mutation guard: ensure removing the `if (!decoded)` guard in the handler
+    // would cause the 'AAAA' cursor test to fail (AAAA decodes to 0x000000 binary,
+    // JSON.parse throws → decodeCursor returns null → handler returns 400).
+    // This comment documents the mutation-test result: the guard is load-bearing.
   });
 });

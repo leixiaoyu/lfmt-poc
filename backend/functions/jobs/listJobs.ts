@@ -69,12 +69,25 @@ export function encodeCursor(key: Record<string, AttributeValue>): string {
 /**
  * Decode a cursor string back to a DynamoDB `ExclusiveStartKey`.
  * Returns `null` when the cursor is malformed (not valid JSON after decode).
+ *
+ * Issue #246: tightened to reject any decoded value that is not a non-empty
+ * plain object. Base64 decoding is inherently tolerant — Node's
+ * `Buffer.from(s, 'base64url')` silently ignores unrecognised characters,
+ * which can produce valid-but-empty buffers from garbage input. The
+ * additional `Object.keys(parsed).length > 0` guard catches the empty-object
+ * case that would otherwise pass through the truthy check in the handler and
+ * silently produce an empty DDB page instead of a 400.
  */
 export function decodeCursor(cursor: string): Record<string, AttributeValue> | null {
   try {
     const json = Buffer.from(cursor, 'base64url').toString('utf8');
     const parsed: unknown = JSON.parse(json);
-    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+    if (
+      typeof parsed !== 'object' ||
+      parsed === null ||
+      Array.isArray(parsed) ||
+      Object.keys(parsed as object).length === 0
+    ) {
       return null;
     }
     return parsed as Record<string, AttributeValue>;

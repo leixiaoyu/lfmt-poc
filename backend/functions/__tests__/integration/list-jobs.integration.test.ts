@@ -183,4 +183,28 @@ async function listJobs(
     const result = await jsonFetch('/jobs', { method: 'GET' });
     expect(result.status).toBe(401);
   });
+
+  // Issue #246 — five malformed cursor variants must each return 400 against
+  // the deployed Lambda (not just the unit-test path). This locks the
+  // validator's deployed behaviour to close the loop on the R2 catch.
+  describe('malformed cursor must return 400 (issue #246)', () => {
+    const malformedCursors = [
+      'invalid-base64!!!',
+      'not-base64-at-all',
+      'AAAA', // valid base64 that decodes to 0x000000 binary, not valid JSON
+      '!@#$%^&*()',
+      'eyJqb2JJZCI6InRlc3QifQ==', // {"jobId":"test"} — valid JSON object but no userId key
+    ];
+
+    it.each(malformedCursors)(
+      'returns 400 for malformed cursor: %s',
+      async (cursor) => {
+        const result = await listJobs(tokenA, { cursor });
+        // The cursor guard must fire before DynamoDB — response must be 400,
+        // not 200 (which would indicate the validator was bypassed).
+        expect(result.status).toBe(400);
+      },
+      15_000
+    );
+  });
 });
