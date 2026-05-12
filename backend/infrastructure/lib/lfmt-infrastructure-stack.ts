@@ -24,6 +24,10 @@ import * as origins from 'aws-cdk-lib/aws-cloudfront-origins';
 import * as route53 from 'aws-cdk-lib/aws-route53';
 import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
 
+// CSP builder — extracted into its own module (#216) so the directive
+// shape is testable in isolation and re-usable from non-stack constructs.
+import { buildCsp } from './csp';
+
 // Centralized Lambda runtime version — single source of truth (DRY).
 // Bump here whenever AWS deprecates the current runtime; CI workflow
 // runners and the root package.json `engines.node` constraint should be
@@ -2265,11 +2269,18 @@ export class LfmtInfrastructureStack extends Stack {
           // updated policy is applied (preventing the same CSP-block
           // class that caused the demo-blocking failure on 2026-05-08).
           // See `buildCsp()` JSDoc for the full hardening status.
-          contentSecurityPolicy: this.buildCsp({
-            connectSrc: [
-              'https://*.execute-api.us-east-1.amazonaws.com',
-              `https://${this.documentBucket.bucketRegionalDomainName}`,
-            ],
+          contentSecurityPolicy: buildCsp({
+            directives: {
+              // Source-list REPLACEMENT (not merge) — caller must include
+              // 'self' explicitly. The wildcard execute-api host is the
+              // initial-deploy placeholder; updateCloudFrontCSP() replaces
+              // it with the concrete API Gateway domain once provisioned.
+              'connect-src': [
+                "'self'",
+                'https://*.execute-api.us-east-1.amazonaws.com',
+                `https://${this.documentBucket.bucketRegionalDomainName}`,
+              ],
+            },
           }),
           override: true,
         },
@@ -2331,156 +2342,11 @@ export class LfmtInfrastructureStack extends Stack {
     }));
   }
 
-  /**
-   * Build the Content-Security-Policy header string (Round 2 item 10).
-   *
-   * Single source of truth for the CSP — previously the policy string
-   * was duplicated between the initial response-headers policy (line
-   * ~1815) and the post-API-Gateway "Updated" policy (line ~1941).
-   * Drift between the two would have been a real risk; future hardening
-   * (e.g., Issue #197's `style-src` nonce work) now only edits ONE
-   * place.
-   *
-   * The per-call variable is `connectSrc` — a list of additional
-   * origins appended to `connect-src` alongside `'self'`. The list
-   * always includes:
-   *   1. The API Gateway origin (wildcard at initial deploy time, then
-   *      replaced with the concrete `https://<apiId>.execute-api.<region>.amazonaws.com`
-   *      once API Gateway is provisioned).
-   *   2. The S3 document-bucket regional domain
-   *      (`https://lfmt-documents-<stack>.s3.<region>.amazonaws.com`).
-   *      The browser performs presigned-PUT uploads directly against
-   *      this origin; without it the upload XHR is blocked by CSP and
-   *      the wizard surfaces a misleading "Connection lost" error
-   *      (root cause of the 2026-05-08 demo-blocking regression — the
-   *      curl validation path bypasses CSP, so this only manifests in
-   *      a real browser). The bucket origin is enumerated explicitly
-   *      (not via a `*.s3.amazonaws.com` wildcard) per OWASP CSP
-   *      guidance: a wildcard would let any compromised bucket script
-   *      exfiltrate the user's API Gateway Bearer credential.
-   *
-   * Hardening status (Issues #133, #194):
-   *   - 'unsafe-eval' REMOVED from script-src.
-   *   - 'unsafe-inline' REMOVED from script-src — Vite's built
-   *     `dist/index.html` has no inline `<script>` blocks.
-   *   - 'unsafe-inline' RETAINED on style-src — MUI/Emotion injects
-   *     runtime styles via `document.head.appendChild('<style>')`,
-   *     removal blocked on the Lambda@Edge nonce pipeline tracked in
-   *     issue #197.
-   *
-   * Telemetry (Round 2 item 9 — DEFERRED to issue #201):
-   *
-   *   The `report-uri` directive is INTENTIONALLY OMITTED from this
-   *   build. Implementing it correctly requires (1) a new Lambda
-   *   function to receive POST /csp-report; (2) a new API Gateway
-   *   route with no auth and request-size limits; (3) CORS
-   *   configuration since browsers send violation reports
-   *   cross-origin. That is a meaningful infrastructure change which
-   *   the OMC reviewer's "out of scope" guard for this PR specifically
-   *   excluded.
-   *
-   *   Issue #201 has the full implementation plan and acceptance
-   *   criteria; when it lands, the activation here is a one-line
-   *   edit: pass `reportUri` through to the options object below and
-   *   the directive is appended automatically. Until then, every
-   *   reviewer who looks at this code will see this block and know
-   *   exactly what to do (and why we didn't do it now).
-   *
-   * @param opts.connectSrc - Origins appended to `connect-src` alongside
-   *   `'self'`. Always pass an explicit list so reviewers can audit each
-   *   addition at the call site.
-   * @param opts.reportUri - Optional CSP `report-uri` endpoint. When set,
-   *   a `report-uri ${reportUri}` directive is appended (issue #201).
-   *   Left undefined today — see telemetry note above.
-   */
-  private buildCsp(opts: { connectSrc: string[]; reportUri?: string }): string {
-    const directives: string[] = [
-      `default-src 'self'`,
-      `script-src 'self'`,
-      `style-src 'self' 'unsafe-inline'`,
-      `img-src 'self' data: https:`,
-      `font-src 'self' data:`,
-      `connect-src 'self' ${opts.connectSrc.join(' ')}`,
-      `object-src 'none'`,
-      `base-uri 'self'`,
-      `form-action 'self'`,
-      `frame-ancestors 'none'`,
-      `upgrade-insecure-requests`,
-    ];
-
-    if (opts.reportUri) {
-      // H-3 (PR #214 OMC R2): sanitize `reportUri` BEFORE interpolating
-      // it into the CSP directive string. Without this, a malformed URL
-      // (or a misconfigured deploy) could inject arbitrary CSP
-      // directives — `;` and `,` both terminate directives in the CSP
-      // grammar, so a value like
-      //   `https://evil.com; script-src *`
-      // would silently downgrade `script-src` to allow ANY origin.
-      // Whitespace gets the same treatment because CSP source-list
-      // parsers split on whitespace; an injected token there would be
-      // treated as an additional source for the `report-uri` directive
-      // (which CSP3 ignores, but the legacy parser may not).
-      //
-      // The check is performed at synth time (not deploy time) so a
-      // misconfiguration fails fast in `cdk synth` / `cdk deploy` rather
-      // than reaching CloudFront. Issue #201 will wire this parameter;
-      // pinning the contract here means that PR can't accidentally
-      // forward an attacker-controlled URL.
-      LfmtInfrastructureStack.assertValidCspReportUri(opts.reportUri);
-      // CSP grammar requires `report-uri` to be the LAST directive so
-      // that any future tail-only directive (e.g. `report-to`) can be
-      // appended without breaking the value. Issue #201 will switch to
-      // `report-to` once the violation-receiver Lambda lands.
-      directives.push(`report-uri ${opts.reportUri}`);
-    }
-
-    return directives.join('; ') + ';';
-  }
-
-  /**
-   * Validate a CSP `report-uri` value before interpolating it into a
-   * directive string (H-3, PR #214 OMC R2).
-   *
-   * Rules (intentionally conservative — favour false-positive on synth
-   * over a false-negative that ships an injection):
-   *   1. Must parse as a valid URL.
-   *   2. Protocol MUST be `https:`. CSP report endpoints commonly POST
-   *      cross-origin with credentials, so plain HTTP would leak
-   *      violation reports (which contain blocked URIs that may include
-   *      session info) over the wire.
-   *   3. The raw string MUST NOT contain whitespace, `;`, or `,` —
-   *      these terminate / split CSP directives, so an injected
-   *      character there would let an attacker append a directive (e.g.
-   *      `https://x.com; script-src *`).
-   *
-   * Throws synchronously inside `cdk synth` so a bad value never
-   * reaches CloudFront. Static so the unit test can call it without
-   * instantiating the full stack.
-   */
-  private static assertValidCspReportUri(reportUri: string): void {
-    // Forbidden characters: whitespace + CSP-grammar separators.
-    if (/[\s;,]/.test(reportUri)) {
-      throw new Error(
-        `Invalid CSP reportUri: must not contain whitespace, ';' or ',' (got: ${JSON.stringify(reportUri)})`
-      );
-    }
-
-    // Must parse as a URL. URL constructor throws on malformed input.
-    let parsed: URL;
-    try {
-      parsed = new URL(reportUri);
-    } catch {
-      throw new Error(
-        `Invalid CSP reportUri: not a valid URL (got: ${JSON.stringify(reportUri)})`
-      );
-    }
-
-    if (parsed.protocol !== 'https:') {
-      throw new Error(
-        `Invalid CSP reportUri: protocol must be https: (got: ${parsed.protocol})`
-      );
-    }
-  }
+  // -------------------------------------------------------------------------
+  // CSP construction: extracted to `./csp.ts` (#216). Call `buildCsp({...})`
+  // directly — no class wrapper is needed. The `assertValidCspReportUri`
+  // helper is re-exported alongside it for the H-3 sanitization tests.
+  // -------------------------------------------------------------------------
 
   private updateCloudFrontCSP() {
     /**
@@ -2532,11 +2398,17 @@ export class LfmtInfrastructureStack extends Stack {
           // for browser-side presigned-PUT uploads (root cause of the
           // 2026-05-08 demo-blocking regression). See `buildCsp()`
           // JSDoc for the full hardening status (#133, #194, #197).
-          contentSecurityPolicy: this.buildCsp({
-            connectSrc: [
-              `https://${apiDomain}`,
-              `https://${this.documentBucket.bucketRegionalDomainName}`,
-            ],
+          contentSecurityPolicy: buildCsp({
+            directives: {
+              // Source-list REPLACEMENT (not merge) — caller must include
+              // 'self' explicitly. After API Gateway exists we swap the
+              // wildcard `*.execute-api` host for the concrete API domain.
+              'connect-src': [
+                "'self'",
+                `https://${apiDomain}`,
+                `https://${this.documentBucket.bucketRegionalDomainName}`,
+              ],
+            },
           }),
           override: true,
         },
