@@ -32,8 +32,17 @@ export const handler = async (event: APIGatewayProxyEvent): Promise<APIGatewayPr
   logger.info('Processing login request', { requestId, requestOrigin });
 
   try {
-    // Handle both string and object body (API Gateway integration differences)
-    const body = typeof event.body === 'string' ? JSON.parse(event.body) : event.body || {};
+    // Handle both string and object body (API Gateway integration differences).
+    // A SyntaxError from JSON.parse must return 400 (client error), not 500.
+    // Wrapping in a dedicated try/catch isolates parse failures before Zod
+    // validation so the catch-all Cognito error handler never sees them.
+    let body: unknown;
+    try {
+      body = typeof event.body === 'string' ? JSON.parse(event.body) : event.body || {};
+    } catch {
+      logger.warn('Login request body is not valid JSON', { requestId });
+      return createErrorResponse(400, 'Malformed JSON body', requestId, undefined, requestOrigin);
+    }
     const validationResult = loginRequestSchema.safeParse(body);
 
     if (!validationResult.success) {

@@ -52,7 +52,13 @@ export const handler = async (event: APIGatewayProxyEvent): Promise<APIGatewayPr
       bodyPreview: event.body ? event.body.substring(0, 100) : 'null',
     });
 
-    const body = typeof event.body === 'string' ? JSON.parse(event.body) : event.body || {};
+    let body: unknown;
+    try {
+      body = typeof event.body === 'string' ? JSON.parse(event.body) : event.body || {};
+    } catch {
+      logger.warn('Registration request body is not valid JSON', { requestId });
+      return createErrorResponse(400, 'Malformed JSON body', requestId, undefined, requestOrigin);
+    }
     const validationResult = registerRequestSchema.safeParse(body);
 
     if (!validationResult.success) {

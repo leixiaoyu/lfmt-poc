@@ -321,6 +321,19 @@ describe('Auth Service', () => {
         'Too many login attempts. Please try again later.'
       );
     });
+
+    // Regression guard for issue #180: malformed JSON must return 400, not 500.
+    it('should return 400 for a malformed JSON body (issue #180)', async () => {
+      const event: any = {
+        body: '{invalid-json',
+        headers: { origin: 'http://localhost:3000' },
+        requestContext: { requestId: 'test-request-id' },
+      };
+      const result = await loginHandler(event);
+      expect(result.statusCode).toBe(400);
+      const body = JSON.parse(result.body);
+      expect(body.message).toMatch(/malformed json/i);
+    });
   });
 
   describe('Refresh Token', () => {
