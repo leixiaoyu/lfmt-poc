@@ -14,14 +14,14 @@
 // Set environment before importing handler
 process.env.ENVIRONMENT = 'test';
 process.env.COGNITO_CLIENT_ID = 'test-client-id';
-process.env.COGNITO_USER_POOL_ID = 'test-user-pool-id';
+// COGNITO_USER_POOL_ID not needed: AdminConfirmSignUp removed (#178).
 
 import { APIGatewayProxyEvent } from 'aws-lambda';
 import { handler } from '../register';
 import {
   CognitoIdentityProviderClient,
   SignUpCommand,
-  AdminConfirmSignUpCommand,
+  AdminConfirmSignUpCommand, // kept for the zero-call assertion in prod path
   UsernameExistsException,
   InvalidPasswordException,
   InvalidParameterException,

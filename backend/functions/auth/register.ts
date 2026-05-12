@@ -8,17 +8,24 @@
  * - Structured logging with request correlation
  * - CORS headers on all responses
  * - Type-safe error handling
+ *
+ * Issue #178: AdminConfirmSignUp call removed.
+ * The dev User Pool is configured with `autoVerify: { email: true }` PLUS a
+ * PreSignUp Lambda trigger that sets `autoConfirmUser = true` and
+ * `autoVerifyEmail = true` (lfmt-infrastructure-stack.ts:321 + 365-368).
+ * Cognito confirms the user as part of SignUp itself, so a separate
+ * AdminConfirmSignUp call is a no-op that races and fails with
+ * "Current status is CONFIRMED". Keeping it required `cognito-idp:AdminConfirmSignUp`
+ * on the authRole IAM policy — an unnecessary privileged grant. Both are removed.
  */
 
 import { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
 import {
   CognitoIdentityProviderClient,
   SignUpCommand,
-  AdminConfirmSignUpCommand,
   UsernameExistsException,
   InvalidPasswordException,
   InvalidParameterException,
-  NotAuthorizedException,
 } from '@aws-sdk/client-cognito-identity-provider';
 import { registerRequestSchema } from '@lfmt/shared-types';
 import { createFlatResponse, createErrorResponse } from '../shared/api-response';
@@ -30,11 +37,11 @@ const cognitoClient = new CognitoIdentityProviderClient({});
 
 // Validate environment variables at cold start
 const COGNITO_CLIENT_ID = getRequiredEnv('COGNITO_CLIENT_ID');
-const COGNITO_USER_POOL_ID = getRequiredEnv('COGNITO_USER_POOL_ID');
 const ENVIRONMENT = getOptionalEnv('ENVIRONMENT', 'dev');
 
-// Auto-confirm users in dev environment (email verification disabled)
-const AUTO_CONFIRM_USERS = ENVIRONMENT.includes('Dev');
+// Determines which success message to return; auto-confirm is handled by
+// the Cognito PreSignUp trigger and pool configuration — no Lambda call needed.
+const IS_DEV = ENVIRONMENT.includes('Dev');
 
 export const handler = async (event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> => {
   const requestId = event.requestContext.requestId;
@@ -43,8 +50,8 @@ export const handler = async (event: APIGatewayProxyEvent): Promise<APIGatewayPr
   logger.info('Processing registration request', { requestId });
 
   try {
-    // Parse and validate request body
-    // Handle both string and object body (API Gateway integration differences)
+    // Parse and validate request body.
+    // A SyntaxError from JSON.parse must return 400 (client error), not 500.
     logger.info('Request body debug', {
       requestId,
       bodyType: typeof event.body,
@@ -83,8 +90,9 @@ export const handler = async (event: APIGatewayProxyEvent): Promise<APIGatewayPr
       email: email.toLowerCase(),
     });
 
-    // Register user with Cognito
-    // Map frontend field names (firstName, lastName) to Cognito attributes (given_name, family_name)
+    // Register user with Cognito.
+    // Map frontend field names (firstName, lastName) to Cognito attributes (given_name, family_name).
+    // In dev, the PreSignUp Lambda trigger auto-confirms the user — no extra API call required.
     const command = new SignUpCommand({
       ClientId: COGNITO_CLIENT_ID,
       Username: email,
@@ -107,71 +115,16 @@ export const handler = async (event: APIGatewayProxyEvent): Promise<APIGatewayPr
 
     await cognitoClient.send(command);
 
-    // Auto-confirm user in dev environment (no email verification required).
-    //
-    // ISSUE #169: The dev User Pool is already configured with
-    // `autoVerify: { email: true }` PLUS a PreSignUp Lambda trigger that
-    // sets `autoConfirmUser = true` and `autoVerifyEmail = true`
-    // (lfmt-infrastructure-stack.ts:321 + 365-368). Cognito therefore
-    // confirms the user as part of SignUp itself, so this AdminConfirmSignUp
-    // call races with the auto-confirmation and frequently fails with
-    // `NotAuthorizedException: User cannot be confirmed. Current status is
-    // CONFIRMED`. The user IS created — only the redundant confirm step
-    // throws — but the catch-all below was turning that into a 500 to the
-    // client.
-    //
-    // Fix: keep the call (defense-in-depth for older deployments where the
-    // PreSignUp trigger may not be wired up yet) but swallow the
-    // already-confirmed NotAuthorizedException as a non-error.
-    if (AUTO_CONFIRM_USERS) {
-      logger.info('Auto-confirming user (dev environment)', {
-        requestId,
-        email: email.toLowerCase(),
-      });
-
-      const confirmCommand = new AdminConfirmSignUpCommand({
-        UserPoolId: COGNITO_USER_POOL_ID,
-        Username: email,
-      });
-
-      try {
-        await cognitoClient.send(confirmCommand);
-        logger.info('User auto-confirmed successfully', {
-          requestId,
-          email: email.toLowerCase(),
-        });
-      } catch (confirmError) {
-        // Cognito's PreSignUp trigger / AutoVerifiedAttributes already
-        // confirmed the user — the error is benign. Match by name AND
-        // message because NotAuthorizedException is also raised for
-        // legitimately disabled users, and we MUST NOT swallow that case.
-        if (
-          confirmError instanceof NotAuthorizedException &&
-          /already confirmed|status is CONFIRMED/i.test(confirmError.message)
-        ) {
-          logger.info(
-            'User already auto-confirmed by Cognito (PreSignUp/AutoVerifiedAttributes); skipping AdminConfirmSignUp',
-            {
-              requestId,
-              email: email.toLowerCase(),
-            }
-          );
-        } else {
-          throw confirmError;
-        }
-      }
-    }
-
     logger.info('User registered successfully', {
       requestId,
       email: email.toLowerCase(),
-      autoConfirmed: AUTO_CONFIRM_USERS,
+      isDev: IS_DEV,
     });
 
     return createFlatResponse(
       201,
       {
-        message: AUTO_CONFIRM_USERS
+        message: IS_DEV
           ? 'User registered successfully. You can now log in.'
           : 'User registered successfully. Please check your email to verify your account.',
       },

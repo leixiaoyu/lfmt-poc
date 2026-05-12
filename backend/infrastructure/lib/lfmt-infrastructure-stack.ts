@@ -758,7 +758,10 @@ export class LfmtInfrastructureStack extends Stack {
             'cognito-idp:AdminSetUserPassword',
             'cognito-idp:AdminGetUser',
             'cognito-idp:AdminUpdateUserAttributes',
-            'cognito-idp:AdminConfirmSignUp',
+            // cognito-idp:AdminConfirmSignUp removed (#178): the PreSignUp Lambda
+            // trigger + autoVerifiedAttributes in the dev User Pool auto-confirm
+            // users as part of SignUp. The AdminConfirmSignUp call in register.ts
+            // was a no-op that required a privileged IAM grant. Both removed.
           ],
           resources: [this.userPool.userPoolArn],
         }),
