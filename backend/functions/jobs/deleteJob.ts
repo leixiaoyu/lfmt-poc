@@ -25,13 +25,15 @@
  *    as a non-fatal warning in the response. The user's intent (delete the job)
  *    is honored at the DB level; S3 cleanup is operations' responsibility.
  *
- * 3. Step Functions trade-off (item #8):
+ * 3. Step Functions stop-on-delete (item #8, issue #210):
  *    If the job is deleted while its translation Step Functions execution is
- *    still IN_PROGRESS, that execution will fail downstream when it tries to
- *    update the now-missing DDB record. This is a known operational gap for
- *    the current POC scope. See follow-up issue:
- *    "feat(infra): StopExecution on Step Functions if job DELETE while
- *    translation in progress"
+ *    still RUNNING, deleteJob now calls StopExecutionCommand after the DDB
+ *    delete succeeds. If the execution is already terminal (SUCCEEDED, FAILED,
+ *    ABORTED, TIMED_OUT) the StopExecution call is skipped. If the stop call
+ *    itself fails (e.g. execution ID is stale), the error is logged and the
+ *    delete still returns 200 — the user's intent is honored at the DB level.
+ *    The deleteJobRole gains states:StopExecution + states:DescribeExecution
+ *    scoped to the translation state machine ARN.
  */
 
 import { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
@@ -41,6 +43,11 @@ import {
   ConditionalCheckFailedException,
 } from '@aws-sdk/client-dynamodb';
 import { S3Client, DeleteObjectCommand } from '@aws-sdk/client-s3';
+import {
+  SFNClient,
+  DescribeExecutionCommand,
+  StopExecutionCommand,
+} from '@aws-sdk/client-sfn';
 import { marshall, unmarshall } from '@aws-sdk/util-dynamodb';
 import { DynamoDBJob, DeleteJobApiResponse } from '@lfmt/shared-types';
 import Logger from '../shared/logger';
@@ -50,6 +57,7 @@ import { createFlatResponse, createErrorResponse } from '../shared/api-response'
 const logger = new Logger('lfmt-delete-job');
 const dynamoClient = new DynamoDBClient({});
 const s3Client = new S3Client({});
+const sfnClient = new SFNClient({});
 
 const JOBS_TABLE = getRequiredEnv('JOBS_TABLE');
 const DOCUMENT_BUCKET = getRequiredEnv('DOCUMENT_BUCKET');
@@ -137,6 +145,53 @@ async function deleteS3Objects(job: DynamoDBJob): Promise<string | null> {
     : null;
 }
 
+/**
+ * Stop a Step Functions execution if it is still RUNNING.
+ *
+ * Issue #210: called after DDB delete succeeds so in-flight translations do not
+ * burn Gemini API quota and fail with ConditionalCheckFailedException (the job
+ * record no longer exists). Non-fatal: if the execution is already terminal or
+ * the stop call fails, we log and continue — the user's delete is still honored.
+ *
+ * IAM required on deleteJobRole:
+ *   states:DescribeExecution  — to check current status before stopping
+ *   states:StopExecution      — to terminate a RUNNING execution
+ * Both are scoped to the translation state machine ARN in the CDK stack.
+ */
+async function stopExecutionIfRunning(executionArn: string, jobId: string): Promise<void> {
+  try {
+    const described = await sfnClient.send(new DescribeExecutionCommand({ executionArn }));
+    if (described.status !== 'RUNNING') {
+      logger.info('Step Functions execution already terminal — no stop needed', {
+        jobId,
+        executionArn,
+        status: described.status,
+      });
+      return;
+    }
+
+    await sfnClient.send(
+      new StopExecutionCommand({
+        executionArn,
+        cause: 'Job deleted by owner',
+      })
+    );
+
+    logger.info('Step Functions execution stopped after job delete', {
+      jobId,
+      executionArn,
+    });
+  } catch (err) {
+    // Non-fatal: log and continue — the DDB record is already deleted.
+    // Common benign cases: execution already finished between describe and stop.
+    logger.warn('Could not stop Step Functions execution after job delete', {
+      jobId,
+      executionArn,
+      error: err instanceof Error ? err.message : 'Unknown error',
+    });
+  }
+}
+
 /** Lambda handler */
 export const handler = async (event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> => {
   const requestId = event.requestContext.requestId;
@@ -188,6 +243,13 @@ export const handler = async (event: APIGatewayProxyEvent): Promise<APIGatewayPr
       userId,
       previousStatus: deletedJob.status,
     });
+
+    // Issue #210: stop an in-flight Step Functions execution to avoid wasting
+    // Gemini quota and producing a noisy ConditionalCheckFailedException downstream.
+    // Best-effort — failure is non-fatal (stopExecutionIfRunning swallows errors).
+    if (typeof deletedJob.executionArn === 'string' && deletedJob.executionArn.length > 0) {
+      await stopExecutionIfRunning(deletedJob.executionArn, jobId);
+    }
 
     // Best-effort S3 cleanup — failure is non-fatal (see file-level comment)
     const s3Warning = await deleteS3Objects(deletedJob);

@@ -15,15 +15,18 @@ import {
   ConditionalCheckFailedException,
 } from '@aws-sdk/client-dynamodb';
 import { S3Client, DeleteObjectCommand } from '@aws-sdk/client-s3';
+import { SFNClient, DescribeExecutionCommand, StopExecutionCommand } from '@aws-sdk/client-sfn';
 import { handler } from './deleteJob';
 
 const dynamoMock = mockClient(DynamoDBClient);
 const s3Mock = mockClient(S3Client);
+const sfnMock = mockClient(SFNClient);
 
 describe('deleteJob endpoint', () => {
   beforeEach(() => {
     dynamoMock.reset();
     s3Mock.reset();
+    sfnMock.reset();
     jest.clearAllMocks();
   });
 
@@ -48,6 +51,13 @@ describe('deleteJob endpoint', () => {
     status: { S: 'PENDING_UPLOAD' },
     s3Key: { S: 'uploads/user-123/file-001/document.txt' },
     createdAt: { S: '2026-01-01T00:00:00.000Z' },
+  };
+
+  /** DynamoDB Attributes for a job with an in-flight Step Functions execution */
+  const deletedJobWithExecutionAttributes = {
+    ...deletedJobAttributes,
+    status: { S: 'IN_PROGRESS' },
+    executionArn: { S: 'arn:aws:states:us-east-1:123456789012:execution:lfmt-translation-workflow-LfmtPocDev:exec-001' },
   };
 
   // ---------------------------------------------------------------------------
@@ -208,5 +218,78 @@ describe('deleteJob endpoint', () => {
     expect(result.statusCode).toBe(500);
     const body = JSON.parse(result.body);
     expect(body.message).toBe('Failed to delete job');
+  });
+
+  // ---------------------------------------------------------------------------
+  // Issue #210 — Step Functions StopExecution on in-flight job delete
+  // ---------------------------------------------------------------------------
+
+  it('calls StopExecution when the deleted job has a RUNNING execution (issue #210)', async () => {
+    dynamoMock.on(DeleteItemCommand).resolves({
+      Attributes: deletedJobWithExecutionAttributes,
+    } as any);
+    s3Mock.on(DeleteObjectCommand).resolves({});
+    sfnMock.on(DescribeExecutionCommand).resolves({ status: 'RUNNING' } as any);
+    sfnMock.on(StopExecutionCommand).resolves({});
+
+    const result = await handler(createEvent('job-abc') as APIGatewayProxyEvent);
+
+    expect(result.statusCode).toBe(200);
+
+    // DescribeExecution + StopExecution must each be called exactly once
+    const describeCalls = sfnMock.commandCalls(DescribeExecutionCommand);
+    expect(describeCalls).toHaveLength(1);
+    expect(describeCalls[0].args[0].input.executionArn).toBe(
+      deletedJobWithExecutionAttributes.executionArn.S
+    );
+
+    const stopCalls = sfnMock.commandCalls(StopExecutionCommand);
+    expect(stopCalls).toHaveLength(1);
+    expect(stopCalls[0].args[0].input.executionArn).toBe(
+      deletedJobWithExecutionAttributes.executionArn.S
+    );
+    expect(stopCalls[0].args[0].input.cause).toBe('Job deleted by owner');
+  });
+
+  it('skips StopExecution when the execution is already SUCCEEDED (issue #210)', async () => {
+    dynamoMock.on(DeleteItemCommand).resolves({
+      Attributes: deletedJobWithExecutionAttributes,
+    } as any);
+    s3Mock.on(DeleteObjectCommand).resolves({});
+    sfnMock.on(DescribeExecutionCommand).resolves({ status: 'SUCCEEDED' } as any);
+
+    const result = await handler(createEvent('job-abc') as APIGatewayProxyEvent);
+
+    expect(result.statusCode).toBe(200);
+    // DescribeExecution called to check status, StopExecution NOT called
+    expect(sfnMock.commandCalls(DescribeExecutionCommand)).toHaveLength(1);
+    expect(sfnMock.commandCalls(StopExecutionCommand)).toHaveLength(0);
+  });
+
+  it('returns 200 (not 500) when StopExecution fails — delete is still honored (issue #210)', async () => {
+    dynamoMock.on(DeleteItemCommand).resolves({
+      Attributes: deletedJobWithExecutionAttributes,
+    } as any);
+    s3Mock.on(DeleteObjectCommand).resolves({});
+    sfnMock.on(DescribeExecutionCommand).resolves({ status: 'RUNNING' } as any);
+    sfnMock.on(StopExecutionCommand).rejects(new Error('SFN unavailable'));
+
+    const result = await handler(createEvent('job-abc') as APIGatewayProxyEvent);
+
+    // Non-fatal: the user's intent (delete the job) is honored at the DB level
+    expect(result.statusCode).toBe(200);
+    const body = JSON.parse(result.body);
+    expect(body.jobId).toBe('job-abc');
+  });
+
+  it('does NOT call SFN when the job has no executionArn (no active translation)', async () => {
+    dynamoMock.on(DeleteItemCommand).resolves({ Attributes: deletedJobAttributes } as any);
+    s3Mock.on(DeleteObjectCommand).resolves({});
+
+    await handler(createEvent('job-abc') as APIGatewayProxyEvent);
+
+    // No SFN calls when executionArn is absent
+    expect(sfnMock.commandCalls(DescribeExecutionCommand)).toHaveLength(0);
+    expect(sfnMock.commandCalls(StopExecutionCommand)).toHaveLength(0);
   });
 });
