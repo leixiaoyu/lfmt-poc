@@ -431,6 +431,22 @@ smoke suite caught it at runtime.
 > round-trip the body through `JSON.parse` and assert each contract field is
 > present and correctly typed.**
 
+**Enforcement mechanism (already in place):**
+
+`createSuccessResponse<T extends ApiFlatResponseBody>` in
+`backend/functions/shared/api-response.ts` is already generic and bounded.
+Omitting the type parameter (`createSuccessResponse(200, ...)`) does NOT bypass
+enforcement — TypeScript infers `T` from the literal object, but silently accepts
+any shape because the object type is too wide. To trigger a compile-time error on
+missing fields you MUST supply the explicit type parameter:
+`createSuccessResponse<PresignedUrlResponse>(200, ...)`. The unit-test
+round-trip catches runtime mismatches that TypeScript's structural typing cannot
+see (e.g. serialization drops `undefined` fields).
+
+No new ESLint infrastructure is needed: the pattern is enforceable today via
+the type parameter + round-trip test. Future Lambda authors can copy the template
+in the **Example** block below.
+
 **Reviewer checklist for HTTP boundaries:**
 
 - [ ] Does the handler's `createSuccessResponse` call carry a type parameter
