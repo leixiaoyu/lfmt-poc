@@ -353,6 +353,29 @@ jobs:
     # hold the deploy-${ref} concurrency lock indefinitely. Smoke tests
     # typically finish in under 2 minutes; 15 gives headroom.
     timeout-minutes: 15
+    # Issue #211 — smoke test policy decision:
+    #
+    # Smoke tests are NOT in branch-protection required checks because they
+    # run post-deploy (they need a live stack) and cannot block the CURRENT
+    # merge — they would block the NEXT merge. Option B (suppression-with-
+    # rationale) is the chosen policy instead of Option A (required gate):
+    #
+    #   Option A (required gate): promotes this job to a branch-protection
+    #     required check. Rejected because the timing is wrong — a failed
+    #     smoke test after merging PR N blocks PR N+1, not N. This creates
+    #     confusing UX where a deploy of one PR blocks an unrelated PR.
+    #     Re-evaluate once ephemeral dev stacks support pre-merge smoke tests.
+    #
+    #   Option B (suppression-with-rationale, CHOSEN): keep smoke tests as
+    #     informational. PR authors must check the smoke-test status after their
+    #     PR is deployed and either confirm green OR document known failures via
+    #     the PR template checklist (Issue #211 section added to PR template).
+    #
+    # RATIONALE comment convention: if a smoke test step must be skipped or
+    # is expected to fail for a known reason, add a comment to that step:
+    #   # RATIONALE: <reason> — tracked in #<issue>
+    # The workflow-lint job will flag steps that have `continue-on-error: true`
+    # without a RATIONALE comment (enforcement added in Issue #211 follow-up).
     if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'dev'))
 
     steps:
