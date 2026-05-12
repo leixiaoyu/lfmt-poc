@@ -40,11 +40,13 @@ vi.mock('../../services/translationService', () => ({
     getTranslationJobs: vi.fn(),
     downloadTranslation: vi.fn(),
   },
+  // Issue #215: updated to match new 4-arg constructor (message, errorCode, statusCode?, originalError?).
   TranslationServiceError: class TranslationServiceError extends Error {
     constructor(
       message: string,
+      public errorCode: string,
       public statusCode?: number,
-      public code?: string
+      public originalError?: Error
     ) {
       super(message);
       this.name = 'TranslationServiceError';
@@ -501,7 +503,7 @@ describe('TranslationHistory', () => {
       const user = userEvent.setup();
       vi.mocked(translationService.getTranslationJobs).mockResolvedValue(mockJobs);
       vi.mocked(translationService.downloadTranslation).mockRejectedValue(
-        new TranslationServiceError('Download failed', 500)
+        new TranslationServiceError('Download failed', 'API_GENERIC', 500)
       );
 
       renderComponent();
@@ -550,7 +552,7 @@ describe('TranslationHistory', () => {
   describe('Error Handling', () => {
     it('should show error message when loading jobs fails', async () => {
       vi.mocked(translationService.getTranslationJobs).mockRejectedValue(
-        new TranslationServiceError('Failed to fetch jobs', 500)
+        new TranslationServiceError('Failed to fetch jobs', 'API_GENERIC', 500)
       );
 
       renderComponent();
@@ -575,7 +577,7 @@ describe('TranslationHistory', () => {
     it('should clear error when clicking close button', async () => {
       const user = userEvent.setup();
       vi.mocked(translationService.getTranslationJobs).mockRejectedValue(
-        new TranslationServiceError('Failed to fetch jobs', 500)
+        new TranslationServiceError('Failed to fetch jobs', 'API_GENERIC', 500)
       );
 
       renderComponent();

@@ -1,26 +1,54 @@
 /**
  * Map translation-API errors to user-facing messages (Issue #147).
  *
+ * Dispatch order (issue #215 refactor):
+ *   0. `errorCode === 'S3_UPLOAD_BLOCKED'` → targeted upload-blocked phrase.
+ *   1. Known HTTP status → curated phrase.
+ *   2. statusCode is undefined AND the error has a specific, non-generic
+ *      `message` string → surface that message directly. This handles errors
+ *      thrown by the polling loop (e.g. "Document processing timed out…")
+ *      which are plain `Error` objects with descriptive messages but no HTTP
+ *      status code.
+ *   3. statusCode is undefined AND message is generic / absent → treat as a
+ *      pure network error (axios sets `error.response = undefined` for
+ *      ERR_NETWORK).
+ *   4. Backend-provided message that is non-empty and non-generic →
+ *      pass through (handles spec-driven errors we haven't enumerated).
+ *   5. Final fallback.
+ *
  * The wizard's submit flow used to surface either a raw backend message
  * (which can be terse, e.g. "Rate limit exceeded") or the catch-all
  * "An unexpected error occurred. Please try again." regardless of
  * cause. Demos kept showing the catch-all on 429 / 500, which makes the
  * product look unfinished even when the underlying behavior is correct.
  *
- * We map well-known HTTP statuses to phrases the user can act on, fall
- * back to the backend-provided message when it's specific enough, and
- * only ever land on a generic catch-all when neither path applies.
- *
  * Inputs are typed loosely so this helper can be called both with a
- * `TranslationServiceError` (carries `statusCode`) and a bare `Error`
- * (carries only `message`). The caller doesn't need to import any axios
- * types.
+ * `TranslationServiceError` (carries `statusCode` and `errorCode`) and
+ * a bare `Error` (carries only `message`). The caller doesn't need to
+ * import any axios types.
  */
+
+import type { TranslationErrorCode } from '../services/translationService';
 
 export interface TranslationErrorLike {
   message?: string;
   statusCode?: number;
+  /** Typed discriminator introduced in issue #215. */
+  errorCode?: TranslationErrorCode;
 }
+
+/**
+ * User-visible copy indexed by TranslationErrorCode (issue #215).
+ *
+ * Exhaustiveness is enforced at the type level: adding a new
+ * TranslationErrorCode without adding a row here is a compile error.
+ * 'API_GENERIC' is intentionally absent from this table — those errors
+ * fall through to the status-code map / message pass-through logic below.
+ */
+const COPY_BY_CODE: Partial<Record<TranslationErrorCode, string>> = {
+  S3_UPLOAD_BLOCKED:
+    'Upload was blocked. This is likely a configuration issue — please refresh and try again, or contact support if it persists.',
+};
 
 const STATUS_MESSAGES: Record<number, string> = {
   400: 'Translation could not start because the request was invalid. Please review your selections and try again.',
@@ -52,26 +80,20 @@ const GENERIC_MESSAGES = new Set(
 
 /**
  * Resolve a user-facing message for a translation-submit failure.
- *
- * Precedence:
- *   1. Known HTTP status → curated phrase.
- *   2. statusCode is undefined AND the error has a specific, non-generic
- *      `message` string → surface that message directly. This handles errors
- *      thrown by the polling loop (e.g. "Document processing timed out…")
- *      which are plain `Error` objects with descriptive messages but no HTTP
- *      status code.
- *   3. statusCode is undefined AND message is generic / absent → treat as a
- *      pure network error (axios sets `error.response = undefined` for
- *      ERR_NETWORK).
- *   4. Backend-provided message that is non-empty and non-generic →
- *      pass through (handles spec-driven errors we haven't enumerated).
- *   5. Final fallback.
  */
 export function getTranslationErrorMessage(error: unknown): string {
   if (!error || typeof error !== 'object') {
     return FALLBACK_MESSAGE;
   }
   const e = error as TranslationErrorLike;
+
+  // 0. Typed errorCode discriminator (issue #215). Short-circuits before
+  //    the status-code table so copy can be edited independently of the
+  //    wire signal and the HTTP status.
+  if (e.errorCode && e.errorCode in COPY_BY_CODE) {
+    const copy = COPY_BY_CODE[e.errorCode];
+    if (copy) return copy;
+  }
 
   // 1. Known HTTP status → curated phrase.
   if (typeof e.statusCode === 'number' && STATUS_MESSAGES[e.statusCode]) {
