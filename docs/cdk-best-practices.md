@@ -408,12 +408,69 @@ See `backend/infrastructure/lib/__tests__/infrastructure.test.ts` —
 UpdateJobFailed — Bug B regression" for the canonical example in this
 codebase.
 
+### Extension: HTTP-Boundary Contract Tests (Issue #183 follow-up)
+
+The same principle extends beyond Step Functions to **every typed cross-process
+boundary**. The HTTP seam between a Lambda handler and its shared-types
+interface is equally invisible to topology-only review.
+
+**Case study: PR #184 (`uploadRequest.ts` dropped `jobId`)**
+
+The upload Lambda constructed a `jobId` UUID, used it in DynamoDB, then
+silently omitted it from the response object. `PresignedUrlResponse` in
+`shared-types/src/documents.ts` had no `jobId` field; TypeScript accepted
+both sides because `createSuccessResponse` accepted `any`. The frontend
+compensated by aliasing `fileId` as `jobId` — masking the gap until the
+smoke suite caught it at runtime.
+
+**The boundary contract rule:**
+
+> **For every Lambda whose response body has a typed counterpart in
+> `@lfmt/shared-types`, the handler's `createSuccessResponse` call MUST be
+> statically constrained to that type (via generic), AND a unit test MUST
+> round-trip the body through `JSON.parse` and assert each contract field is
+> present and correctly typed.**
+
+**Reviewer checklist for HTTP boundaries:**
+
+- [ ] Does the handler's `createSuccessResponse` call carry a type parameter
+      matching the `shared-types` interface? (e.g. `createSuccessResponse<PresignedUrlResponse>(200, ...)`)
+- [ ] Is there a unit test that serialises the handler's return value, parses
+      it, and asserts every required field is present with the right type?
+- [ ] Does the consuming service (frontend or downstream Lambda) read the field
+      by its interface-declared name — not an alias or workaround?
+
+**Example:**
+
+```typescript
+// ❌ Handler accepts any shape — gap is invisible to TypeScript
+return createSuccessResponse(200, { data: { uploadUrl, fileId } }, requestId);
+
+// ✅ Handler is constrained to the shared-types interface
+return createSuccessResponse<PresignedUrlResponse>(
+  200,
+  { data: { uploadUrl, fileId, jobId } }, // TypeScript errors if jobId missing
+  requestId
+);
+```
+
+```typescript
+// ✅ Unit test round-trips the wire shape
+const raw = JSON.stringify(result.body);
+const parsed: PresignedUrlResponse = JSON.parse(raw).data;
+expect(parsed.uploadUrl).toBeDefined();
+expect(parsed.fileId).toBeDefined();
+expect(parsed.jobId).toBeDefined(); // would have caught the PR #184 gap
+```
+
 ### When This Rule Applies
 
 - Step Functions tasks that have multiple `.next()` predecessors
 - Step Functions tasks reached via both a Choice rule AND a Catch handler
 - Lambdas invoked from multiple Step Functions tasks
 - Lambdas invoked from both Step Functions AND API Gateway
+- Lambda response bodies that have a typed counterpart in `@lfmt/shared-types`
+- Any cross-process boundary where both sides are "trust by convention"
 
 ---
 
