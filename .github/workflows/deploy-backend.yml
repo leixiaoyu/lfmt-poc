@@ -163,10 +163,15 @@ jobs:
     if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'dev'))
     environment:
       name: development
-      url: ${{ steps.get-frontend-url.outputs.frontend_url }}
+      url: ${{ steps.cfn-outputs.outputs.frontend_url }}
+    # Issue #248: outputs were previously sourced from `steps.get-*.outputs.*`
+    # alias steps that just echoed `steps.cfn-outputs.outputs.*`. The aliases
+    # existed during the #163/#187 refactor to avoid a mass find-replace; now
+    # that all callers reference `cfn-outputs` directly, the aliases are dead
+    # weight and have been removed (4 echo steps deleted).
     outputs:
-      api_url: ${{ steps.get-url.outputs.api_url }}
-      frontend_url: ${{ steps.get-frontend-url.outputs.frontend_url }}
+      api_url: ${{ steps.cfn-outputs.outputs.api_url }}
+      frontend_url: ${{ steps.cfn-outputs.outputs.frontend_url }}
 
     permissions:
       id-token: write # Required for OIDC authentication
@@ -294,24 +299,11 @@ jobs:
           echo "CloudFront Distribution: $DIST_ID"
           echo "Frontend URL: $FRONTEND_URL"
 
-      # Keep legacy step IDs as pass-through aliases so downstream steps that
-      # reference steps.get-url.outputs.api_url, steps.get-bucket-name, etc.
-      # continue to work without a mass find-replace across this file.
-      - name: Get API URL
-        id: get-url
-        run: echo "api_url=${{ steps.cfn-outputs.outputs.api_url }}" >> $GITHUB_OUTPUT
-
-      - name: Get Frontend Bucket Name from CDK
-        id: get-bucket-name
-        run: echo "bucket_name=${{ steps.cfn-outputs.outputs.bucket_name }}" >> $GITHUB_OUTPUT
-
-      - name: Get CloudFront Distribution ID
-        id: get-cf-dist
-        run: echo "distribution_id=${{ steps.cfn-outputs.outputs.distribution_id }}" >> $GITHUB_OUTPUT
-
-      - name: Get CloudFront URL
-        id: get-frontend-url
-        run: echo "frontend_url=${{ steps.cfn-outputs.outputs.frontend_url }}" >> $GITHUB_OUTPUT
+      # Issue #248: 4 legacy alias steps (`Get API URL`, `Get Frontend Bucket
+      # Name from CDK`, `Get CloudFront Distribution ID`, `Get CloudFront URL`)
+      # that echoed `steps.cfn-outputs.outputs.*` removed. All downstream
+      # callers (job outputs, environment URL, Backend Deployment Summary,
+      # Test API Health) now reference `steps.cfn-outputs.outputs.*` directly.
 
       - name: Test API Health
         run: |
@@ -556,6 +548,18 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          # Issue #247: staging runs `npm ci` in the same four directories as
+          # deploy-dev (shared-types, backend/functions, backend/infrastructure,
+          # frontend via the rebuild-frontend composite action below). Without
+          # `cache-dependency-path` listed, the setup-node cache key isn't seeded
+          # and the four installs each cold-fetch from the registry — adding ~60s
+          # to every staging deploy. Mirror deploy-dev's list so the cache hits.
+          cache-dependency-path: |
+            shared-types/package-lock.json
+            backend/functions/package-lock.json
+            backend/infrastructure/package-lock.json
+            frontend/package-lock.json
 
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
@@ -622,6 +626,15 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          # Issue #247: mirror deploy-staging's cache-dependency-path. The prod
+          # job runs `npm ci` in the same four directories; without seeding the
+          # cache key the four installs each cold-fetch from the registry.
+          cache-dependency-path: |
+            shared-types/package-lock.json
+            backend/functions/package-lock.json
+            backend/infrastructure/package-lock.json
+            frontend/package-lock.json
 
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4

@@ -29,13 +29,34 @@ import { TranslationUploadPage } from '../../pages/TranslationUploadPage';
 // ---------------------------------------------------------------------------
 // Helper: write a temp file and return its path. Playwright's setInputFiles
 // requires an actual file path on disk, not an in-memory Buffer.
+//
+// Issue #249: each `mkdtempSync` creates a NEW directory in OS temp. On
+// long-running CI runners (or local dev loops) these accumulate. We track
+// every created temp dir in `createdTempDirs` and remove them in an
+// `afterAll` hook below — keeps the OS temp dir clean and lets `process`
+// snapshot tools (e.g. Playwright trace inspection) actually find a temp
+// dir that's not buried under hundreds of stale lfmt-e2e-* siblings.
 // ---------------------------------------------------------------------------
+const createdTempDirs: string[] = [];
+
 function writeTempFile(name: string, content: string): string {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'lfmt-e2e-'));
+  createdTempDirs.push(tmpDir);
   const filePath = path.join(tmpDir, name);
   fs.writeFileSync(filePath, content);
   return filePath;
 }
+
+test.afterAll(() => {
+  for (const dir of createdTempDirs) {
+    try {
+      fs.rmSync(dir, { recursive: true, force: true });
+    } catch {
+      // Best-effort cleanup; OS reclaims temp dirs on reboot regardless.
+    }
+  }
+  createdTempDirs.length = 0;
+});
 
 test.describe('Upload Flow - CORS and Authentication Regression', () => {
   let loginPage: LoginPage;
