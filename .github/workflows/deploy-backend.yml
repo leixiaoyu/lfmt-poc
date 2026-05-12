@@ -224,106 +224,170 @@ jobs:
             echo "CDKToolkit already exists, skipping bootstrap"
           fi
 
+      # Issue #163 — CDK diff short-circuit.
+      #
+      # `cdk diff` is informational: it exits 0 whether or not there are
+      # differences. The string "There were no differences" only appears when
+      # the diff is truly empty. We capture both stdout and stderr (CDK writes
+      # to stderr on some versions) and check both.
+      #
+      # When has_changes=false the CDK deploy, S3 sync, CloudFront invalidation,
+      # and CF-wait steps are all skipped. The CFN describe-stacks call below
+      # still runs (needed to populate step outputs for smoke/integration tests),
+      # but that is cheap (~500ms) versus the ~5-8 min CDK deploy.
+      #
+      # Typical savings per noop deploy: ~10 min wall-clock + 1 CloudFront
+      # invalidation slot (3000/month free, then $0.005/path).
+      #
+      # Safety note: `|| true` is intentional. `cdk diff --fail` exits 1 when
+      # differences ARE present (the opposite of what we want here — we want to
+      # catch the no-diff case). Using `|| true` avoids failing the step on a
+      # non-zero exit from diff in edge cases (e.g. stack does not exist yet on
+      # first deploy). The DIFF_OUTPUT grep is the authoritative gate.
+      - name: Check for CDK infrastructure changes
+        id: cdk-diff
+        working-directory: backend/infrastructure
+        run: |
+          DIFF_OUTPUT=$(npx cdk diff --context environment=dev 2>&1) || true
+          echo "--- CDK diff output ---"
+          echo "$DIFF_OUTPUT"
+          echo "--- end diff output ---"
+          if echo "$DIFF_OUTPUT" | grep -q "There were no differences"; then
+            echo "has_changes=false" >> $GITHUB_OUTPUT
+            echo "::notice::No CDK infrastructure changes detected — skipping cdk deploy, S3 sync, and CloudFront invalidation"
+          else
+            echo "has_changes=true" >> $GITHUB_OUTPUT
+            echo "::notice::CDK infrastructure changes detected — proceeding with full deploy"
+          fi
+
       - name: CDK Deploy to Dev
+        if: steps.cdk-diff.outputs.has_changes == 'true'
         working-directory: backend/infrastructure
         run: npx cdk deploy --context environment=dev --require-approval never
 
+      # Collapse 4 separate describe-stacks calls (Issue #163 bonus) into one
+      # jq parse. Each call was ~500ms-1s; this saves ~2-3s per deploy and
+      # reduces CFN API pressure. All four outputs are populated regardless of
+      # whether a CDK deploy ran — downstream steps (smoke, integration) need
+      # the outputs unconditionally.
+      - name: Get CloudFormation outputs
+        id: cfn-outputs
+        run: |
+          OUTPUTS=$(aws cloudformation describe-stacks \
+            --stack-name LfmtPocDev \
+            --region ${{ env.AWS_REGION }} \
+            --query 'Stacks[0].Outputs' \
+            --output json)
+          API_URL=$(echo "$OUTPUTS" | jq -r '.[] | select(.OutputKey=="ApiUrl") | .OutputValue')
+          BUCKET=$(echo "$OUTPUTS" | jq -r '.[] | select(.OutputKey=="FrontendBucketName") | .OutputValue')
+          DIST_ID=$(echo "$OUTPUTS" | jq -r '.[] | select(.OutputKey=="CloudFrontDistributionId") | .OutputValue')
+          FRONTEND_URL=$(echo "$OUTPUTS" | jq -r '.[] | select(.OutputKey=="FrontendUrl") | .OutputValue')
+          echo "api_url=$API_URL" >> $GITHUB_OUTPUT
+          echo "bucket_name=$BUCKET" >> $GITHUB_OUTPUT
+          echo "distribution_id=$DIST_ID" >> $GITHUB_OUTPUT
+          echo "frontend_url=$FRONTEND_URL" >> $GITHUB_OUTPUT
+          echo "API URL: $API_URL"
+          echo "Bucket: $BUCKET"
+          echo "CloudFront Distribution: $DIST_ID"
+          echo "Frontend URL: $FRONTEND_URL"
+
+      # Keep legacy step IDs as pass-through aliases so downstream steps that
+      # reference steps.get-url.outputs.api_url, steps.get-bucket-name, etc.
+      # continue to work without a mass find-replace across this file.
       - name: Get API URL
         id: get-url
-        run: |
-          API_URL=$(aws cloudformation describe-stacks \
-            --stack-name LfmtPocDev \
-            --query "Stacks[0].Outputs[?OutputKey=='ApiUrl'].OutputValue" \
-            --output text \
-            --region ${{ env.AWS_REGION }})
-          echo "api_url=$API_URL" >> $GITHUB_OUTPUT
-          echo "API URL: $API_URL"
+        run: echo "api_url=${{ steps.cfn-outputs.outputs.api_url }}" >> $GITHUB_OUTPUT
+
+      - name: Get Frontend Bucket Name from CDK
+        id: get-bucket-name
+        run: echo "bucket_name=${{ steps.cfn-outputs.outputs.bucket_name }}" >> $GITHUB_OUTPUT
+
+      - name: Get CloudFront Distribution ID
+        id: get-cf-dist
+        run: echo "distribution_id=${{ steps.cfn-outputs.outputs.distribution_id }}" >> $GITHUB_OUTPUT
+
+      - name: Get CloudFront URL
+        id: get-frontend-url
+        run: echo "frontend_url=${{ steps.cfn-outputs.outputs.frontend_url }}" >> $GITHUB_OUTPUT
 
       - name: Test API Health
         run: |
-          curl -f ${{ steps.get-url.outputs.api_url }}/v1/auth || echo "API not yet ready, may need warm-up"
+          curl -f ${{ steps.cfn-outputs.outputs.api_url }}/v1/auth || echo "API not yet ready, may need warm-up"
 
       # Backend deploys still rebuild + sync the frontend because the
       # newly-deployed API URL must be baked into the frontend bundle
       # (VITE_API_URL is build-time, not runtime). Frontend-only commits
       # take the lighter `deploy-frontend.yml` path which reads the existing
       # API URL from CFN outputs without a CDK deploy.
+      # These steps are gated on has_changes=true — when the CDK diff was empty,
+      # the frontend bundle from the last real deploy is still valid (the API URL
+      # has not changed) and a re-sync would be a no-op that wastes ~1 min.
       - name: Install shared-types for frontend rebuild
+        if: steps.cdk-diff.outputs.has_changes == 'true'
         working-directory: shared-types
         run: npm ci
 
       - name: Build shared-types for frontend rebuild
+        if: steps.cdk-diff.outputs.has_changes == 'true'
         working-directory: shared-types
         run: npm run build
 
       - name: Install frontend dependencies for rebuild
+        if: steps.cdk-diff.outputs.has_changes == 'true'
         working-directory: frontend
         run: npm ci
 
       - name: Rebuild frontend with correct API URL
+        if: steps.cdk-diff.outputs.has_changes == 'true'
         working-directory: frontend
         run: npm run build
         env:
           NODE_ENV: production
-          VITE_API_URL: ${{ steps.get-url.outputs.api_url }}
-
-      - name: Get Frontend Bucket Name from CDK
-        id: get-bucket-name
-        run: |
-          FRONTEND_BUCKET=$(aws cloudformation describe-stacks \
-            --stack-name LfmtPocDev \
-            --query "Stacks[0].Outputs[?OutputKey=='FrontendBucketName'].OutputValue" \
-            --output text \
-            --region ${{ env.AWS_REGION }})
-          echo "bucket_name=$FRONTEND_BUCKET" >> $GITHUB_OUTPUT
-          echo "Frontend Bucket: $FRONTEND_BUCKET"
+          VITE_API_URL: ${{ steps.cfn-outputs.outputs.api_url }}
 
       - name: Deploy frontend to S3
+        if: steps.cdk-diff.outputs.has_changes == 'true'
         run: |
-          aws s3 sync frontend/dist/ s3://${{ steps.get-bucket-name.outputs.bucket_name }}/ --delete --cache-control "public, max-age=31536000, immutable" --exclude "index.html"
-          aws s3 cp frontend/dist/index.html s3://${{ steps.get-bucket-name.outputs.bucket_name }}/index.html --cache-control "public, max-age=0, must-revalidate"
-
-      - name: Get CloudFront Distribution ID
-        id: get-cf-dist
-        run: |
-          DIST_ID=$(aws cloudformation describe-stacks \
-            --stack-name LfmtPocDev \
-            --query "Stacks[0].Outputs[?OutputKey=='CloudFrontDistributionId'].OutputValue" \
-            --output text \
-            --region ${{ env.AWS_REGION }})
-          echo "distribution_id=$DIST_ID" >> $GITHUB_OUTPUT
-          echo "CloudFront Distribution ID: $DIST_ID"
-
-      - name: Get CloudFront URL
-        id: get-frontend-url
-        run: |
-          FRONTEND_URL=$(aws cloudformation describe-stacks \
-            --stack-name LfmtPocDev \
-            --query "Stacks[0].Outputs[?OutputKey=='FrontendUrl'].OutputValue" \
-            --output text \
-            --region ${{ env.AWS_REGION }})
-          echo "frontend_url=$FRONTEND_URL" >> $GITHUB_OUTPUT
-          echo "Frontend URL: $FRONTEND_URL"
+          aws s3 sync frontend/dist/ s3://${{ steps.cfn-outputs.outputs.bucket_name }}/ --delete --cache-control "public, max-age=31536000, immutable" --exclude "index.html"
+          aws s3 cp frontend/dist/index.html s3://${{ steps.cfn-outputs.outputs.bucket_name }}/index.html --cache-control "public, max-age=0, must-revalidate"
 
       - name: Invalidate CloudFront cache
+        if: steps.cdk-diff.outputs.has_changes == 'true'
+        id: cf-invalidation
         run: |
-          aws cloudfront create-invalidation --distribution-id ${{ steps.get-cf-dist.outputs.distribution_id }} --paths "/*"
-          echo "CloudFront cache invalidation initiated"
+          INVALIDATION_ID=$(aws cloudfront create-invalidation \
+            --distribution-id ${{ steps.cfn-outputs.outputs.distribution_id }} \
+            --paths "/*" \
+            --query 'Invalidation.Id' \
+            --output text)
+          echo "invalidation_id=$INVALIDATION_ID" >> $GITHUB_OUTPUT
+          echo "CloudFront invalidation started: $INVALIDATION_ID"
 
-      - name: Wait for CloudFront cache invalidation
+      # Issue #163 bonus: replace unconditional `sleep 30` with a proper
+      # CloudFront wait. `aws cloudfront wait invalidation-completed` polls
+      # every 5s and returns as soon as the invalidation reaches Completed
+      # (typically 10-30s). The 30s sleep always burned 30s; the wait burns
+      # only the actual propagation time. Also gated on has_changes so a noop
+      # run skips this entirely.
+      - name: Wait for CloudFront invalidation to complete
+        if: steps.cdk-diff.outputs.has_changes == 'true'
         run: |
-          echo "Waiting for CloudFront invalidation to complete..."
-          sleep 30
+          echo "Waiting for CloudFront invalidation ${{ steps.cf-invalidation.outputs.invalidation_id }} to complete..."
+          aws cloudfront wait invalidation-completed \
+            --distribution-id ${{ steps.cfn-outputs.outputs.distribution_id }} \
+            --id ${{ steps.cf-invalidation.outputs.invalidation_id }}
+          echo "CloudFront invalidation completed"
 
       - name: Backend Deployment Summary
         run: |
           echo "========================================="
           echo "Backend Deployment Summary"
           echo "========================================="
-          echo "S3 Bucket: ${{ steps.get-bucket-name.outputs.bucket_name }}"
-          echo "CloudFront Distribution: ${{ steps.get-cf-dist.outputs.distribution_id }}"
-          echo "Frontend URL: ${{ steps.get-frontend-url.outputs.frontend_url }}"
-          echo "API URL: ${{ steps.get-url.outputs.api_url }}"
+          echo "CDK changes deployed: ${{ steps.cdk-diff.outputs.has_changes }}"
+          echo "S3 Bucket: ${{ steps.cfn-outputs.outputs.bucket_name }}"
+          echo "CloudFront Distribution: ${{ steps.cfn-outputs.outputs.distribution_id }}"
+          echo "Frontend URL: ${{ steps.cfn-outputs.outputs.frontend_url }}"
+          echo "API URL: ${{ steps.cfn-outputs.outputs.api_url }}"
           echo "========================================="
 
   smoke-tests:
