@@ -38,6 +38,7 @@ import axios from 'axios';
 import MockAdapter from 'axios-mock-adapter';
 import { createApiClient, getStoredSession, setStoredSession } from '../api';
 import { AUTH_CONFIG } from '../../config/constants';
+import type { UserProfile } from '@lfmt/shared-types';
 
 describe('API Token Refresh Interceptor', () => {
   let apiClient: ReturnType<typeof createApiClient>;
@@ -246,7 +247,7 @@ describe('API Token Refresh Interceptor', () => {
         idToken: 'expired-id',
         accessToken: 'expired-access',
         refreshToken: 'valid-refresh-token',
-        user: { id: 'u1' },
+        user: { id: 'u1' } as unknown as UserProfile,
       });
 
       instanceMock.onGet('/auth/me').replyOnce(401, {});

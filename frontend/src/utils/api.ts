@@ -11,7 +11,7 @@
  */
 
 import axios, { AxiosInstance, AxiosError, InternalAxiosRequestConfig, AxiosResponse } from 'axios';
-import type { StoredSession } from '@lfmt/shared-types';
+import type { StoredSession, UserProfile } from '@lfmt/shared-types';
 import { API_CONFIG, AUTH_CONFIG, ERROR_MESSAGES } from '../config/constants';
 
 /**
@@ -106,10 +106,18 @@ function readLegacySession(): StoredSession | null {
     return null;
   }
 
-  let user: unknown;
+  // The stored user JSON may be the legacy `{ id, ... }` shape (pre-#200)
+  // or the canonical `UserProfile` shape (post-#200). Both are valid
+  // inputs for `narrowStoredUser()` at read time. Casting the raw parse
+  // result to `UserProfile` is safe here because: (a) all new UserProfile
+  // fields beyond the core four are optional, so a legacy `{ id, email,
+  // firstName, lastName }` object satisfies the type structurally; (b)
+  // `narrowStoredUser()` validates and normalises the actual value at every
+  // read, so a malformed blob can never propagate to a consumer.
+  let user: UserProfile | undefined;
   if (rawUser) {
     try {
-      user = JSON.parse(rawUser);
+      user = JSON.parse(rawUser) as UserProfile;
     } catch {
       // Corrupted user JSON — discard rather than fail the whole
       // migration. The user will be re-fetched via `/auth/me`.
@@ -359,14 +367,16 @@ export function getStoredRefreshToken(): string | null {
 }
 
 /**
- * Minimal user shape the SPA renders. Mirrors `User` in
- * `services/authService.ts` (which we cannot import here without
- * creating a circular dependency: authService → api → authService).
+ * Minimal user shape the SPA renders. Unified with the canonical
+ * `UserProfile` in `@lfmt/shared-types` via issue #200.
+ *
+ * `id` is the normalised identity key used by all SPA consumers (e.g.
+ * DashboardPage). New sessions store `userId` (UserProfile canonical
+ * field); legacy sessions stored `id` (pre-#200 `User` shape). The
+ * `narrowStoredUser()` helper accepts both spellings and always returns
+ * `id` so consumers are insulated from the migration.
  *
  * Field-set MUST stay aligned with `narrowStoredUser()` below.
- *
- * The unification of this shape with the canonical `UserProfile`
- * (in `@lfmt/shared-types`) is tracked in issue #200.
  */
 export interface NarrowedStoredUser {
   id: string;
@@ -379,12 +389,13 @@ export interface NarrowedStoredUser {
 
 /**
  * Runtime narrowing helper for the persisted user object (OMC Round 2
- * item 8). The `StoredSession.user` field is typed as `unknown` because
- * the SPA persists a narrower shape than canonical `UserProfile`
- * (see #200). This helper performs the narrowing safely:
+ * item 8, issue #200). Accepts both the legacy `{ id, ... }` shape
+ * (pre-#200 `User`) and the canonical `UserProfile` shape (`userId`),
+ * normalising to `NarrowedStoredUser` with `id` so SPA consumers are
+ * insulated from the migration.
  *
- *   - Returns the value cast to `NarrowedStoredUser` if it has the
- *     required string fields (`id`, `email`, `firstName`, `lastName`).
+ *   - Returns `NarrowedStoredUser` when all required string fields are
+ *     present (`id` OR `userId`, `email`, `firstName`, `lastName`).
  *   - Returns `null` otherwise (no session, malformed user, etc.).
  *
  * Consumers MUST NOT bare-cast the return of `getStoredUser()` — call
@@ -396,8 +407,17 @@ export function narrowStoredUser(value: unknown): NarrowedStoredUser | null {
     return null;
   }
   const candidate = value as Record<string, unknown>;
+  // Accept `userId` (UserProfile canonical field, issue #200) OR `id`
+  // (legacy User shape, pre-#200 sessions). Normalise to `id` in the
+  // returned value so all SPA consumers continue to work unchanged.
+  const resolvedId =
+    typeof candidate.userId === 'string'
+      ? candidate.userId
+      : typeof candidate.id === 'string'
+        ? candidate.id
+        : undefined;
   if (
-    typeof candidate.id !== 'string' ||
+    !resolvedId ||
     typeof candidate.email !== 'string' ||
     typeof candidate.firstName !== 'string' ||
     typeof candidate.lastName !== 'string'
@@ -408,13 +428,18 @@ export function narrowStoredUser(value: unknown): NarrowedStoredUser | null {
   // deliberately do NOT widen the type — the consumer signed up for
   // `NarrowedStoredUser`, that's what they get.
   const narrowed: NarrowedStoredUser = {
-    id: candidate.id,
+    id: resolvedId,
     email: candidate.email,
     firstName: candidate.firstName,
     lastName: candidate.lastName,
   };
   if (typeof candidate.emailVerified === 'boolean') {
     narrowed.emailVerified = candidate.emailVerified;
+  }
+  // `isEmailVerified` is the canonical UserProfile field (issue #200);
+  // fall back to `emailVerified` for legacy sessions.
+  if (narrowed.emailVerified === undefined && typeof candidate.isEmailVerified === 'boolean') {
+    narrowed.emailVerified = candidate.isEmailVerified;
   }
   if (typeof candidate.createdAt === 'string') {
     narrowed.createdAt = candidate.createdAt;
@@ -428,14 +453,13 @@ export function narrowStoredUser(value: unknown): NarrowedStoredUser | null {
  * object (e.g., a refresh-only response), OR the stored value fails
  * runtime shape validation.
  *
- * The actual stored shape is the SPA's narrower `User` (id, email,
- * firstName, lastName, optionally emailVerified/createdAt). The
- * canonical `UserProfile` has additional REQUIRED fields (userId,
- * isEmailVerified, mfaEnabled, role, preferences) that the SPA does
- * not persist — see issue #200 for the unification plan.
+ * Since issue #200 the stored shape is `UserProfile` (userId, email,
+ * firstName, lastName, plus optional fields). `narrowStoredUser()`
+ * also accepts the legacy `{ id, ... }` shape so sessions created
+ * before this migration remain valid.
  *
  * The return is funneled through `narrowStoredUser()` so consumers
- * receive a typed `NarrowedStoredUser | null` instead of `unknown`.
+ * receive a typed `NarrowedStoredUser | null` instead of a raw value.
  * Bare-casting was the previous risk; the helper closes it.
  */
 export function getStoredUser(): NarrowedStoredUser | null {

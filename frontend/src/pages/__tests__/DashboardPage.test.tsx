@@ -52,6 +52,7 @@ function renderDashboard(authContext: Partial<AuthContextType>) {
 
 describe('DashboardPage', () => {
   const mockUser: User = {
+    userId: 'test-user-123',
     id: 'test-user-123',
     email: 'john.doe@example.com',
     firstName: 'John',
@@ -102,6 +103,7 @@ describe('DashboardPage', () => {
   describe('User Data Display', () => {
     it('should display full name correctly', () => {
       const user: User = {
+        userId: 'test-id',
         id: 'test-id',
         email: 'test@example.com',
         firstName: 'Jane',
@@ -115,6 +117,7 @@ describe('DashboardPage', () => {
 
     it('should display email correctly', () => {
       const user: User = {
+        userId: 'test-id',
         id: 'test-id',
         email: 'custom@email.com',
         firstName: 'Test',
@@ -129,6 +132,7 @@ describe('DashboardPage', () => {
 
     it('should handle user with empty first name', () => {
       const user: User = {
+        userId: 'test-id',
         id: 'test-id',
         email: 'test@example.com',
         firstName: '',
@@ -143,6 +147,7 @@ describe('DashboardPage', () => {
 
     it('should handle user with empty last name', () => {
       const user: User = {
+        userId: 'test-id',
         id: 'test-id',
         email: 'test@example.com',
         firstName: 'John',
@@ -157,6 +162,7 @@ describe('DashboardPage', () => {
 
     it('should handle special characters in user name', () => {
       const user: User = {
+        userId: 'test-id',
         id: 'test-id',
         email: 'test@example.com',
         firstName: "O'Brien",
@@ -245,6 +251,7 @@ describe('DashboardPage', () => {
   describe('Integration with AuthContext', () => {
     it('should use user from AuthContext', () => {
       const contextUser: User = {
+        userId: 'context-user',
         id: 'context-user',
         email: 'context@example.com',
         firstName: 'Context',
@@ -282,6 +289,7 @@ describe('DashboardPage', () => {
 
     it('should handle undefined user fields', () => {
       const user = {
+        userId: 'test-id',
         id: 'test-id',
         email: 'test@example.com',
         firstName: undefined as any,

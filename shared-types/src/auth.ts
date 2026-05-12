@@ -2,18 +2,41 @@
 import { z } from 'zod';
 
 // User Profile
+//
+// Issue #200: unified canonical user shape for all consumers (frontend SPA,
+// backend responses, localStorage session).
+//
+// Fields that the frontend SPA receives and persists:
+//   userId, email, firstName, lastName, organization?, createdAt?, lastLoginAt?
+//
+// Fields that the SPA does NOT receive in the current implementation and are
+// therefore optional (marked optional so UserProfile can be used directly as
+// the frontend session type without unsafe `as` casts or parallel type defs):
+//   isEmailVerified, mfaEnabled, role, preferences
+//
+// `id` is an optional alias for `userId`. Legacy Cognito-adjacent endpoints
+// and mock handlers surface this field as `id`; new endpoints use `userId`.
+// Consumers SHOULD prefer `userId`; `id` is preserved so that sessions
+// created by older code remain valid after this migration.
 export interface UserProfile {
   userId: string;
+  /** Optional alias for `userId` — present on some legacy response shapes. */
+  id?: string;
   email: string;
   firstName: string;
   lastName: string;
   organization?: string;
-  createdAt: string;
+  /** Optional: not present in all auth responses (e.g. REFRESH_TOKEN_AUTH). */
+  createdAt?: string;
   lastLoginAt?: string;
-  isEmailVerified: boolean;
-  mfaEnabled: boolean;
-  role: UserRole;
-  preferences: UserPreferences;
+  /** Optional: not returned by all auth endpoints (e.g. REFRESH_TOKEN_AUTH). */
+  isEmailVerified?: boolean;
+  /** Optional: MFA is not required by current SPA flows. */
+  mfaEnabled?: boolean;
+  /** Optional: role is not surfaced in the current auth response. */
+  role?: UserRole;
+  /** Optional: preferences are loaded lazily (profile page). */
+  preferences?: UserPreferences;
 }
 
 export type UserRole = 'USER' | 'ADMIN' | 'MODERATOR';
@@ -134,26 +157,19 @@ export interface StoredSession {
    */
   refreshToken?: string;
   /**
-   * Epoch milliseconds at which the ID token expires. Optional
-   * because the backend currently surfaces `expiresIn` (seconds)
-   * not an absolute timestamp; consumers compute `expiresAt =
-   * Date.now() + expiresIn * 1000` when persisting.
-   */
-  expiresAt?: number;
-  /**
-   * The authenticated user object. Optional because token-only
-   * refresh responses do not re-send the user object.
+   * The authenticated user object (issue #200 — unified with UserProfile).
    *
-   * Typed as `unknown` (rather than `UserProfile`) intentionally:
-   * the frontend SPA persists a NARROWER shape than the canonical
-   * `UserProfile` (it stores only the fields it renders — id,
-   * email, firstName, lastName). Consumers that read this field
-   * are responsible for narrowing it to whatever shape they
-   * actually need; this keeps the `StoredSession` contract honest
-   * and avoids forcing every future caller to satisfy every
-   * required field on `UserProfile`.
+   * Typed as `UserProfile | undefined` now that `UserProfile` is safe to use
+   * as the SPA session type: all fields beyond the core four (userId, email,
+   * firstName, lastName) are optional. Token-only refresh responses do not
+   * re-send the user object, so the field remains optional.
+   *
+   * Legacy sessions that stored a `{ id, ... }` shape (pre-issue-#200) are
+   * still valid: `UserProfile.id` is an optional alias for `userId` so the
+   * stored value satisfies the type at runtime. `narrowStoredUser` in
+   * `utils/api.ts` accepts both `id` and `userId` for backwards compatibility.
    */
-  user?: unknown;
+  user?: UserProfile;
 }
 
 export interface ForgotPasswordRequest {
