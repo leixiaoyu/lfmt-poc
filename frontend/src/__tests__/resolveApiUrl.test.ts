@@ -35,10 +35,12 @@ describe('resolveApiUrl (e2e/fixtures/url.ts contract)', () => {
       expect(resolveApiUrl('https://example.com/v1/')).toBe('https://example.com/v1');
     });
 
-    it('strips only the last character when input ends with //', () => {
-      // Single strip: the function removes exactly one trailing slash per call.
-      // A double-slash input is unusual but should not silently collapse further.
-      expect(resolveApiUrl('https://example.com/v1//')).toBe('https://example.com/v1/');
+    it('strips all trailing slashes when input ends with //', () => {
+      // #231: resolveApiUrl now delegates to stripTrailingSlashes which uses
+      // a greedy regex. Both consecutive slashes are removed, matching the
+      // behaviour of constants.ts BASE_URL. The old one-strip implementation
+      // was a divergent behaviour with no documented rationale.
+      expect(resolveApiUrl('https://example.com/v1//')).toBe('https://example.com/v1');
     });
 
     it('key regression: CloudFormation ApiUrl format does not double-prefix v1', () => {

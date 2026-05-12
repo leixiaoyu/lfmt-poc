@@ -7,7 +7,7 @@
  *
  * Testing Strategy:
  * - Mock apiClient for backend API calls
- * - Mock axios for direct S3 uploads
+ * - Mock uploadService.uploadToS3 for the S3 PUT step (#230 SRP refactor)
  * - Test success paths AND error paths
  * - Verify error messages and status codes
  *
@@ -15,7 +15,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import axios, { AxiosError } from 'axios';
+import { AxiosError } from 'axios';
 import {
   uploadDocument,
   uploadAndAwaitChunked,
@@ -45,13 +45,24 @@ vi.mock('../../utils/api', () => ({
 
 import { getAuthToken, apiClient } from '../../utils/api';
 
-// Mock axios module (only for S3 uploads which bypass apiClient)
+// Mock uploadService so translationService.uploadDocument delegates to a
+// controlled stub rather than an XHR-based S3 PUT (#230 SRP refactor).
+// Browser-safe-header filtering and XHR lifecycle are uploadService's
+// responsibility and are covered by uploadService.test.ts.
+vi.mock('../uploadService', () => ({
+  uploadToS3: vi.fn(),
+}));
+
+import { uploadToS3 } from '../uploadService';
+
+// Keep axios mock for wrapS3UploadError's axios.isAxiosError() path and for
+// tests that verify AxiosError-shaped S3 errors are handled correctly.
 vi.mock('axios', () => {
   return {
     default: {
-      put: vi.fn(),
       isAxiosError: vi.fn((error: any) => error && error.isAxiosError === true),
     },
+    AxiosError: class AxiosError extends Error {},
   };
 });
 
@@ -61,10 +72,38 @@ const mockedApiClient = apiClient as unknown as {
   put: ReturnType<typeof vi.fn>;
 };
 
-const mockedAxios = axios as unknown as {
-  put: ReturnType<typeof vi.fn>;
-  isAxiosError: (error: any) => boolean;
-};
+const mockedUploadToS3 = uploadToS3 as ReturnType<typeof vi.fn>;
+
+// ---------------------------------------------------------------------------
+// Shared helpers for uploadDocument tests
+// ---------------------------------------------------------------------------
+
+function buildAttestation(): LegalAttestation {
+  return {
+    acceptCopyrightOwnership: true,
+    acceptTranslationRights: true,
+    acceptLiabilityTerms: true,
+    userIPAddress: 'captured-by-backend',
+    userAgent: 'Mozilla/5.0',
+    timestamp: '2024-10-31T12:00:00Z',
+  };
+}
+
+function mockPresignedUrl(overrides?: {
+  jobId?: string;
+  requiredHeaders?: Record<string, string>;
+}) {
+  mockedApiClient.post.mockResolvedValueOnce({
+    data: {
+      data: {
+        uploadUrl: 'https://s3.amazonaws.com/bucket/presigned-url',
+        fileId: 'file-1',
+        jobId: overrides?.jobId ?? 'job-1',
+        requiredHeaders: overrides?.requiredHeaders ?? { 'Content-Type': 'text/plain' },
+      },
+    },
+  });
+}
 
 describe('TranslationService - uploadDocument', () => {
   beforeEach(() => {
@@ -80,22 +119,10 @@ describe('TranslationService - uploadDocument', () => {
     it('should upload document successfully with presigned URL flow', async () => {
       // Arrange
       const mockFile = new File(['test content'], 'test.txt', { type: 'text/plain' });
-      const mockLegalAttestation: LegalAttestation = {
-        acceptCopyrightOwnership: true,
-        acceptTranslationRights: true,
-        acceptLiabilityTerms: true,
-        userIPAddress: 'captured-by-backend',
-        userAgent: 'Mozilla/5.0',
-        timestamp: '2024-10-31T12:00:00Z',
-      };
+      const mockLegalAttestation = buildAttestation();
 
-      // Mock presigned URL response from backend.
-      // The backend now includes both `fileId` (the S3 object key component)
-      // and `jobId` (the DynamoDB record key) in the response envelope.
-      // requiredHeaders mirrors what uploadRequest.ts lines 224-227 returns:
-      // Content-Type (already normalised server-side to match the signed value)
-      // plus any additional S3 metadata headers.
-      const mockPresignedResponse = {
+      // Mock presigned URL response from backend (#230: legalAttestation bundled here).
+      mockedApiClient.post.mockResolvedValueOnce({
         data: {
           data: {
             uploadUrl: 'https://s3.amazonaws.com/bucket/presigned-url',
@@ -107,13 +134,10 @@ describe('TranslationService - uploadDocument', () => {
             },
           },
         },
-      };
+      });
 
-      // Step 1: Mock POST to /jobs/upload (request presigned URL via apiClient)
-      mockedApiClient.post.mockResolvedValueOnce(mockPresignedResponse);
-
-      // Step 2: Mock PUT to S3 presigned URL (upload file via axios)
-      mockedAxios.put.mockResolvedValueOnce({ data: null });
+      // uploadToS3 is the shared XHR helper (#230 SRP refactor).
+      mockedUploadToS3.mockResolvedValueOnce(undefined);
 
       const request: UploadDocumentRequest = {
         file: mockFile,
@@ -123,7 +147,7 @@ describe('TranslationService - uploadDocument', () => {
       // Act
       const result = await uploadDocument(request);
 
-      // Assert - Step 1: Request presigned URL
+      // Assert - Step 1: Request presigned URL (includes legal attestation).
       expect(mockedApiClient.post).toHaveBeenCalledTimes(1);
       expect(mockedApiClient.post).toHaveBeenCalledWith('/jobs/upload', {
         fileName: 'test.txt',
@@ -132,65 +156,39 @@ describe('TranslationService - uploadDocument', () => {
         legalAttestation: mockLegalAttestation,
       });
 
-      // Assert - Step 2: Upload to S3.
-      // Bug #1 fix (SignatureDoesNotMatch): the PUT must use ONLY the headers
-      // supplied by the backend in requiredHeaders — no extra Content-Type
-      // override from request.file.type. The backend already places Content-Type
-      // in requiredHeaders with the value it signed.
-      //
-      // Code-4 (OMC Round 2): use strict toEqual at the outer level (not
-      // objectContaining) so a future stray config key in the axios options
-      // object is caught rather than silently passing through.
-      expect(mockedAxios.put).toHaveBeenCalledTimes(1);
-      expect(mockedAxios.put).toHaveBeenCalledWith(
-        'https://s3.amazonaws.com/bucket/presigned-url',
+      // Assert - Step 2: Delegated to uploadToS3 with the correct
+      // file + URL + requiredHeaders. Browser-safe-header filtering is
+      // uploadToS3's responsibility and is covered in uploadService.test.ts.
+      expect(mockedUploadToS3).toHaveBeenCalledTimes(1);
+      expect(mockedUploadToS3).toHaveBeenCalledWith(
         mockFile,
+        'https://s3.amazonaws.com/bucket/presigned-url',
         {
-          headers: {
-            'Content-Type': 'text/plain',
-            'x-amz-server-side-encryption': 'AES256',
-          },
+          'Content-Type': 'text/plain',
+          'x-amz-server-side-encryption': 'AES256',
         }
       );
 
-      // Assert - Result
+      // Assert - Result shape
       expect(result.jobId).toBe('job-123');
       expect(result.fileName).toBe('test.txt');
       expect(result.status).toBe('PENDING');
     });
 
     // ---------------------------------------------------------------------------
-    // Bug #1 regression guard — SignatureDoesNotMatch on S3 PUT
+    // Regression guard — requiredHeaders are passed verbatim to uploadToS3.
     //
-    // Root cause: translationService previously spread requiredHeaders AND then
-    // overrode Content-Type with request.file.type. If the browser's File.type
-    // differs from what the backend normalised when signing the presigned URL,
-    // S3 rejects the PUT with SignatureDoesNotMatch.
-    //
-    // Fix: rely exclusively on requiredHeaders from the backend.
-    //
-    // This test verifies the exact headers object forwarded to axios.put:
-    //   • No extra Content-Type key beyond what the backend sent.
-    //   • Additional backend headers (e.g. server-side encryption) are preserved.
-    //   • When browser File.type diverges from what the backend signed, the
-    //     backend value takes precedence.
+    // translationService.uploadDocument must forward the requiredHeaders from
+    // the presigned-URL response unchanged to uploadToS3 — no extra keys,
+    // no Content-Type override. Header filtering (Content-Length, etc.) is
+    // uploadToS3's responsibility and is covered in uploadService.test.ts.
     // ---------------------------------------------------------------------------
-    it('should send only requiredHeaders to S3 — no extra Content-Type override', async () => {
-      // Arrange: browser File has 'text/plain' but backend signed for 'text/x-rst'
-      // (simulating a normalisation step on the server side).
+    it('forwards requiredHeaders verbatim to uploadToS3 — no extra Content-Type', async () => {
+      // Backend signed for 'text/x-rst'; the browser File type is 'text/plain'.
+      // translationService must NOT override the signed Content-Type.
       const mockFile = new File(['content'], 'document.rst', { type: 'text/plain' });
-      const mockLegalAttestation: LegalAttestation = {
-        acceptCopyrightOwnership: true,
-        acceptTranslationRights: true,
-        acceptLiabilityTerms: true,
-        userIPAddress: 'captured-by-backend',
-        userAgent: 'Mozilla/5.0',
-        timestamp: '2024-10-31T12:00:00Z',
-      };
 
-      // Backend signed for 'text/x-rst' — note: intentionally different from
-      // the browser File.type ('text/plain') to expose the old double-set bug.
-      const mockPresignedResponse = {
+      mockedApiClient.post.mockResolvedValueOnce({
         data: {
           data: {
             uploadUrl: 'https://s3.amazonaws.com/bucket/presigned-url',
@@ -202,174 +200,114 @@ describe('TranslationService - uploadDocument', () => {
             },
           },
         },
-      };
+      });
+      mockedUploadToS3.mockResolvedValueOnce(undefined);
 
-      mockedApiClient.post.mockResolvedValueOnce(mockPresignedResponse);
-      mockedAxios.put.mockResolvedValueOnce({ data: null });
+      await uploadDocument({ file: mockFile, legalAttestation: buildAttestation() });
 
-      // Act
-      await uploadDocument({ file: mockFile, legalAttestation: mockLegalAttestation });
-
-      // Assert: the PUT headers object must contain Content-Type from the
-      // backend ('text/x-rst'), NOT the browser File.type ('text/plain').
-      // Content-Length is intentionally filtered out before reaching axios —
-      // see Bug #2 (browser-forbidden-header) regression guard below.
-      expect(mockedAxios.put).toHaveBeenCalledWith(
-        'https://s3.amazonaws.com/bucket/presigned-url',
-        mockFile,
-        expect.objectContaining({
-          headers: expect.objectContaining({
-            'Content-Type': 'text/x-rst',
-          }),
-        })
-      );
-
-      // Explicit guard: the browser MIME type must NOT override the signed value.
-      const sentHeaders = mockedAxios.put.mock.calls[0][2].headers as Record<string, string>;
+      // uploadToS3 must receive the exact requiredHeaders — no additional keys,
+      // no Content-Type override from File.type ('text/plain').
+      // Content-Length filtering is handled inside uploadToS3, not here.
+      const [, , sentHeaders] = mockedUploadToS3.mock.calls[0] as [
+        File,
+        string,
+        Record<string, string>,
+      ];
       expect(sentHeaders['Content-Type']).toBe('text/x-rst');
       expect(sentHeaders['Content-Type']).not.toBe('text/plain');
-    });
-
-    // -------------------------------------------------------------------------
-    // Bug #2 regression guard — "Refused to set unsafe header 'Content-Length'"
-    //
-    // Root cause: translationService previously spread requiredHeaders directly
-    // into axios.put({ headers }). When the backend included Content-Length
-    // (which it does — uploadRequest.ts:226 sets it for documentation), axios
-    // tried to forward it to XHR. Browsers reject Content-Length per Fetch
-    // spec §forbidden-header-name and emit "Refused to set unsafe header" to
-    // the console. The XHR still proceeded (browser computes Content-Length
-    // from the body), but the noisy log obscured the actual demo blocker (a
-    // CSP block — see Fix 1 in this PR).
-    //
-    // Fix: stripBrowserForbiddenHeaders() filters Content-Length (case-
-    // insensitive) before the headers reach axios. The backend keeps the
-    // header in PresignedUrlResponse for documentation / non-browser callers
-    // (curl honours it) — we don't change the API contract, we just stop the
-    // browser path from trying to send a header it can't.
-    // -------------------------------------------------------------------------
-    it('should NOT forward Content-Length to axios.put (browser-forbidden header)', async () => {
-      const mockFile = new File(['content'], 'document.txt', { type: 'text/plain' });
-      const mockLegalAttestation: LegalAttestation = {
-        acceptCopyrightOwnership: true,
-        acceptTranslationRights: true,
-        acceptLiabilityTerms: true,
-        userIPAddress: 'captured-by-backend',
-        userAgent: 'Mozilla/5.0',
-        timestamp: '2024-10-31T12:00:00Z',
-      };
-
-      const mockPresignedResponse = {
-        data: {
-          data: {
-            uploadUrl: 'https://s3.amazonaws.com/bucket/presigned-url',
-            fileId: 'file-1',
-            jobId: 'job-1',
-            requiredHeaders: {
-              'Content-Type': 'text/plain',
-              'Content-Length': '7',
-              // Lowercase variant — backend doesn't currently send this, but
-              // the filter is case-insensitive and we lock that contract here
-              // so a future header-name normalisation doesn't silently leak it.
-              'content-length': '7',
-            },
-          },
-        },
-      };
-
-      mockedApiClient.post.mockResolvedValueOnce(mockPresignedResponse);
-      mockedAxios.put.mockResolvedValueOnce({ data: null });
-
-      await uploadDocument({ file: mockFile, legalAttestation: mockLegalAttestation });
-
-      const sentHeaders = mockedAxios.put.mock.calls[0][2].headers as Record<string, string>;
-      // Content-Length must not be present in either casing.
-      const headerNames = Object.keys(sentHeaders).map((n) => n.toLowerCase());
-      expect(headerNames).not.toContain('content-length');
-      // Content-Type must still be forwarded.
-      expect(sentHeaders['Content-Type']).toBe('text/plain');
+      expect(sentHeaders['Content-Length']).toBe('7'); // forwarded; uploadToS3 filters it
     });
 
     // -------------------------------------------------------------------------
     // Issue #98 regression guard — accurate UI error when S3 PUT is blocked.
     //
-    // When the browser blocks the S3 PUT (CSP, network outage), axios reports
-    // the failure with `error.response === undefined`. translationService now
-    // catches this and re-throws a TranslationServiceError carrying
-    // S3_UPLOAD_BLOCKED_MESSAGE so the page mapper surfaces a targeted phrase
-    // instead of the misleading generic "Connection lost" text. See
-    // translationErrorMessages — when statusCode is undefined and message is
-    // non-generic, the message is surfaced verbatim (PR #202 Round 2 Code-3).
+    // uploadToS3 (XHR path) throws "Network error during file upload" when the
+    // XHR `error` event fires. wrapS3UploadError maps this sentinel message to
+    // S3_UPLOAD_BLOCKED_MESSAGE so the page mapper surfaces a targeted phrase.
+    // See translationErrorMessages — statusCode undefined → message surfaced
+    // verbatim (PR #202 Round 2 Code-3).
     // -------------------------------------------------------------------------
-    it('throws TranslationServiceError(S3_UPLOAD_BLOCKED_MESSAGE) when S3 PUT has no response', async () => {
+    it('throws TranslationServiceError(S3_UPLOAD_BLOCKED_MESSAGE) on XHR network failure', async () => {
       const { S3_UPLOAD_BLOCKED_MESSAGE } = await import('../translationService');
-      const mockFile = new File(['content'], 'doc.txt', { type: 'text/plain' });
-      const mockLegalAttestation: LegalAttestation = {
-        acceptCopyrightOwnership: true,
-        acceptTranslationRights: true,
-        acceptLiabilityTerms: true,
-        userIPAddress: 'captured-by-backend',
-        userAgent: 'Mozilla/5.0',
-        timestamp: '2024-10-31T12:00:00Z',
-      };
-
-      mockedApiClient.post.mockResolvedValueOnce({
-        data: {
-          data: {
-            uploadUrl: 'https://s3.amazonaws.com/bucket/presigned-url',
-            fileId: 'file-1',
-            jobId: 'job-1',
-            requiredHeaders: { 'Content-Type': 'text/plain' },
-          },
-        },
-      });
-
-      // Simulate a CSP-block / network failure: axios error with no response.
-      mockedAxios.put.mockRejectedValueOnce({
-        isAxiosError: true,
-        message: 'Network Error',
-        // response intentionally omitted — this is the CSP-block signature.
-        request: {},
-      } as unknown as AxiosError);
+      mockPresignedUrl();
+      mockedUploadToS3.mockRejectedValueOnce(new Error('Network error during file upload'));
 
       try {
-        await uploadDocument({ file: mockFile, legalAttestation: mockLegalAttestation });
+        await uploadDocument({
+          file: new File(['content'], 'doc.txt', { type: 'text/plain' }),
+          legalAttestation: buildAttestation(),
+        });
         expect.fail('Should have thrown TranslationServiceError');
       } catch (err) {
         expect(err).toBeInstanceOf(TranslationServiceError);
         expect((err as TranslationServiceError).message).toBe(S3_UPLOAD_BLOCKED_MESSAGE);
-        // statusCode is undefined for transport-level failures; the page
-        // mapper relies on this to surface the message verbatim.
         expect((err as TranslationServiceError).statusCode).toBeUndefined();
       }
     });
 
-    it('preserves S3 HTTP status when S3 PUT returns an error response (e.g. 403)', async () => {
-      const mockFile = new File(['content'], 'doc.txt', { type: 'text/plain' });
-      const mockLegalAttestation: LegalAttestation = {
-        acceptCopyrightOwnership: true,
-        acceptTranslationRights: true,
-        acceptLiabilityTerms: true,
-        userIPAddress: 'captured-by-backend',
-        userAgent: 'Mozilla/5.0',
-        timestamp: '2024-10-31T12:00:00Z',
-      };
+    it('throws S3_UPLOAD_BLOCKED_MESSAGE on XHR abort', async () => {
+      const { S3_UPLOAD_BLOCKED_MESSAGE } = await import('../translationService');
+      mockPresignedUrl();
+      mockedUploadToS3.mockRejectedValueOnce(new Error('Upload was cancelled'));
 
-      mockedApiClient.post.mockResolvedValueOnce({
-        data: {
-          data: {
-            uploadUrl: 'https://s3.amazonaws.com/bucket/presigned-url',
-            fileId: 'file-1',
-            jobId: 'job-1',
-            requiredHeaders: { 'Content-Type': 'text/plain' },
-          },
-        },
-      });
+      try {
+        await uploadDocument({
+          file: new File(['content'], 'doc.txt', { type: 'text/plain' }),
+          legalAttestation: buildAttestation(),
+        });
+        expect.fail('Should have thrown TranslationServiceError');
+      } catch (err) {
+        expect(err).toBeInstanceOf(TranslationServiceError);
+        expect((err as TranslationServiceError).message).toBe(S3_UPLOAD_BLOCKED_MESSAGE);
+        expect((err as TranslationServiceError).statusCode).toBeUndefined();
+      }
+    });
 
-      // Hold the rejected axios error in a named local so the test can
-      // assert reference equality on `originalError` below — without
-      // that, a future refactor that wraps the cause (losing the chain)
-      // would silently pass the bare instanceOf check.
+    it('preserves S3 HTTP status when XHR reports an HTTP error (e.g. 403)', async () => {
+      mockPresignedUrl();
+      const xhrError = new Error('Upload failed with status 403: Forbidden');
+      mockedUploadToS3.mockRejectedValueOnce(xhrError);
+
+      try {
+        await uploadDocument({
+          file: new File(['content'], 'doc.txt', { type: 'text/plain' }),
+          legalAttestation: buildAttestation(),
+        });
+        expect.fail('Should have thrown TranslationServiceError');
+      } catch (err) {
+        expect(err).toBeInstanceOf(TranslationServiceError);
+        expect((err as TranslationServiceError).statusCode).toBe(403);
+        expect((err as TranslationServiceError).originalError).toBe(xhrError);
+      }
+    });
+
+    // wrapS3UploadError axios-error path: still reachable if an AxiosError
+    // escapes from a future fetch-based S3 implementation.
+    it('wrapS3UploadError: AxiosError without response → S3_UPLOAD_BLOCKED_MESSAGE', async () => {
+      const { S3_UPLOAD_BLOCKED_MESSAGE } = await import('../translationService');
+      mockPresignedUrl();
+
+      mockedUploadToS3.mockRejectedValueOnce({
+        isAxiosError: true,
+        message: 'Network Error',
+        request: {},
+      } as unknown as AxiosError);
+
+      try {
+        await uploadDocument({
+          file: new File(['content'], 'doc.txt', { type: 'text/plain' }),
+          legalAttestation: buildAttestation(),
+        });
+        expect.fail('Should have thrown TranslationServiceError');
+      } catch (err) {
+        expect(err).toBeInstanceOf(TranslationServiceError);
+        expect((err as TranslationServiceError).message).toBe(S3_UPLOAD_BLOCKED_MESSAGE);
+        expect((err as TranslationServiceError).statusCode).toBeUndefined();
+      }
+    });
+
+    it('wrapS3UploadError: AxiosError with response preserves statusCode + originalError', async () => {
+      mockPresignedUrl();
       const rejectedAxiosError = {
         isAxiosError: true,
         message: 'Request failed with status code 403',
@@ -380,96 +318,41 @@ describe('TranslationService - uploadDocument', () => {
         },
       } as unknown as AxiosError;
 
-      mockedAxios.put.mockRejectedValueOnce(rejectedAxiosError);
+      mockedUploadToS3.mockRejectedValueOnce(rejectedAxiosError);
 
       try {
-        await uploadDocument({ file: mockFile, legalAttestation: mockLegalAttestation });
+        await uploadDocument({
+          file: new File(['content'], 'doc.txt', { type: 'text/plain' }),
+          legalAttestation: buildAttestation(),
+        });
         expect.fail('Should have thrown TranslationServiceError');
       } catch (err) {
         expect(err).toBeInstanceOf(TranslationServiceError);
         expect((err as TranslationServiceError).statusCode).toBe(403);
-        // C-test-3 (PR #214 OMC): lock originalError preservation. The
-        // wrap path MUST forward the rejected axios error verbatim so
-        // monitoring tools (Sentry, Rollbar) can introspect `.response`
-        // on the cause chain. If a future refactor wraps the cause
-        // (e.g. `new Error(err.message)`), this assertion breaks.
         expect((err as TranslationServiceError).originalError).toBe(rejectedAxiosError);
       }
     });
 
     // -------------------------------------------------------------------------
-    // C-test-2 (PR #214 OMC): wrapS3UploadError non-axios branch.
+    // wrapS3UploadError — non-Error / non-Axios rejected values.
     //
-    // When axios.put rejects with a value that ISN'T an AxiosError (a
-    // plain Error, a string, undefined), the wrap path must still:
-    //   1. Throw TranslationServiceError (not the raw value).
-    //   2. Preserve the original message (when one exists).
-    //   3. Preserve `originalError` so the cause chain survives — this
-    //      was the gap R-arch-2 closed.
+    // These test the last branch in wrapS3UploadError: when uploadToS3
+    // rejects with something that's neither an Error nor an AxiosError.
     // -------------------------------------------------------------------------
-    describe('wrapS3UploadError — non-axios rejected values', () => {
-      const buildAttestation = (): LegalAttestation => ({
-        acceptCopyrightOwnership: true,
-        acceptTranslationRights: true,
-        acceptLiabilityTerms: true,
-        userIPAddress: 'captured-by-backend',
-        userAgent: 'Mozilla/5.0',
-        timestamp: '2024-10-31T12:00:00Z',
-      });
-
-      const mockPresigned = () => {
-        mockedApiClient.post.mockResolvedValueOnce({
-          data: {
-            data: {
-              uploadUrl: 'https://s3.amazonaws.com/bucket/presigned-url',
-              fileId: 'file-1',
-              jobId: 'job-1',
-              requiredHeaders: { 'Content-Type': 'text/plain' },
-            },
-          },
-        });
-      };
-
-      it('re-throws TranslationServiceError preserving plain Error message + cause', async () => {
-        const mockFile = new File(['content'], 'doc.txt', { type: 'text/plain' });
-        mockPresigned();
-
-        const plainError = new Error('disk full while reading body');
-        mockedAxios.put.mockRejectedValueOnce(plainError);
-
-        try {
-          await uploadDocument({ file: mockFile, legalAttestation: buildAttestation() });
-          expect.fail('Should have thrown TranslationServiceError');
-        } catch (err) {
-          expect(err).toBeInstanceOf(TranslationServiceError);
-          expect((err as TranslationServiceError).message).toBe('disk full while reading body');
-          // statusCode is undefined for non-axios failures.
-          expect((err as TranslationServiceError).statusCode).toBeUndefined();
-          // R-arch-2: the cause chain must be intact so monitoring tools
-          // can see the underlying disk-full Error rather than just the
-          // wrapped service error.
-          expect((err as TranslationServiceError).originalError).toBe(plainError);
-        }
-      });
-
+    describe('wrapS3UploadError — non-Error rejected values', () => {
       it('handles a thrown string gracefully (does not crash)', async () => {
-        const mockFile = new File(['content'], 'doc.txt', { type: 'text/plain' });
-        mockPresigned();
-
-        // axios shouldn't reject with a string in practice, but the
-        // wrap path must not crash on `error.message` access if it does.
-        mockedAxios.put.mockRejectedValueOnce('boom');
+        mockPresignedUrl();
+        mockedUploadToS3.mockRejectedValueOnce('boom');
 
         try {
-          await uploadDocument({ file: mockFile, legalAttestation: buildAttestation() });
+          await uploadDocument({
+            file: new File(['content'], 'doc.txt', { type: 'text/plain' }),
+            legalAttestation: buildAttestation(),
+          });
           expect.fail('Should have thrown TranslationServiceError');
         } catch (err) {
           expect(err).toBeInstanceOf(TranslationServiceError);
-          // Falls back to the generic message — but does NOT throw a
-          // TypeError accessing .message on a string.
           expect((err as TranslationServiceError).message).toBe('S3 upload failed');
-          // R-arch-2: even non-Error rejections produce a synthetic
-          // cause so the monitoring path always has SOMETHING to log.
           const original = (err as TranslationServiceError).originalError as Error | undefined;
           expect(original).toBeInstanceOf(Error);
           expect(original?.message).toBe('boom');
@@ -477,123 +360,41 @@ describe('TranslationService - uploadDocument', () => {
       });
 
       it('handles a thrown undefined gracefully (does not crash)', async () => {
-        const mockFile = new File(['content'], 'doc.txt', { type: 'text/plain' });
-        mockPresigned();
-
-        mockedAxios.put.mockRejectedValueOnce(undefined);
+        mockPresignedUrl();
+        mockedUploadToS3.mockRejectedValueOnce(undefined);
 
         try {
-          await uploadDocument({ file: mockFile, legalAttestation: buildAttestation() });
+          await uploadDocument({
+            file: new File(['content'], 'doc.txt', { type: 'text/plain' }),
+            legalAttestation: buildAttestation(),
+          });
           expect.fail('Should have thrown TranslationServiceError');
         } catch (err) {
           expect(err).toBeInstanceOf(TranslationServiceError);
           expect((err as TranslationServiceError).message).toBe('S3 upload failed');
-          // The synthetic cause stringifies undefined to "undefined" —
-          // not pretty, but provably non-crashing and non-empty.
           const original = (err as TranslationServiceError).originalError as Error | undefined;
           expect(original).toBeInstanceOf(Error);
           expect(original?.message).toBe('undefined');
         }
       });
-
-      // -----------------------------------------------------------------
-      // M-1 (PR #214 OMC R2): proper type-guard narrowing — no
-      // `as unknown as AxiosError` lie.
-      //
-      // Pre-fix, the non-axios branch cast its synthetic cause through
-      // `as unknown as AxiosError` to satisfy `originalError`'s field
-      // type. Post-fix, the field is widened to `Error | undefined`,
-      // and `axios.isAxiosError()` is the only narrowing path used
-      // inside the wrap. This test pins the contract: the narrowed
-      // branch (axios.isAxiosError() === true) IS reachable, AND the
-      // non-axios branch produces a plain Error instance whose
-      // properties (message, name) survive intact — i.e. the cast is
-      // structurally unnecessary because the runtime type already
-      // matches the (now-widened) compile-time type.
-      // -----------------------------------------------------------------
-      it('M-1: axios-error branch IS reachable (narrowed via axios.isAxiosError)', async () => {
-        const mockFile = new File(['content'], 'doc.txt', { type: 'text/plain' });
-        mockPresigned();
-
-        const axiosError: AxiosError = {
-          isAxiosError: true,
-          message: 'Request failed with status code 500',
-          response: {
-            status: 500,
-            statusText: 'Internal Server Error',
-            data: '<Error>InternalError</Error>',
-            headers: {},
-            config: {} as AxiosError['config'],
-          },
-        } as unknown as AxiosError;
-
-        mockedAxios.put.mockRejectedValueOnce(axiosError);
-
-        try {
-          await uploadDocument({ file: mockFile, legalAttestation: buildAttestation() });
-          expect.fail('Should have thrown TranslationServiceError');
-        } catch (err) {
-          expect(err).toBeInstanceOf(TranslationServiceError);
-          // Reaching this expectation proves the axios-narrowed branch
-          // executed (statusCode is set ONLY in that branch).
-          expect((err as TranslationServiceError).statusCode).toBe(500);
-          expect((err as TranslationServiceError).originalError).toBe(axiosError);
-        }
-      });
-
-      it('M-1: non-axios branch yields plain Error (no AxiosError cast)', async () => {
-        const mockFile = new File(['content'], 'doc.txt', { type: 'text/plain' });
-        mockPresigned();
-
-        // Use a TypeError to maximise the divergence from AxiosError —
-        // it has no `.response`, no `isAxiosError` flag, etc. The wrap
-        // must still preserve it byte-for-byte (instanceof + same
-        // reference) without coercing through AxiosError.
-        const typeError = new TypeError('cannot read property of undefined');
-        mockedAxios.put.mockRejectedValueOnce(typeError);
-
-        try {
-          await uploadDocument({ file: mockFile, legalAttestation: buildAttestation() });
-          expect.fail('Should have thrown TranslationServiceError');
-        } catch (err) {
-          expect(err).toBeInstanceOf(TranslationServiceError);
-          const original = (err as TranslationServiceError).originalError;
-          // Pre-fix: `originalError` was typed `AxiosError` and TS
-          // couldn't tell us the runtime type was actually TypeError.
-          // Post-fix: typed as `Error`, so the instanceof check is
-          // direct and reflects reality.
-          expect(original).toBeInstanceOf(TypeError);
-          expect(original).toBe(typeError);
-          // No `isAxiosError` flag — confirms we did NOT silently
-          // coerce the cause into the AxiosError shape.
-          expect((original as unknown as { isAxiosError?: unknown }).isAxiosError).toBeUndefined();
-        }
-      });
     });
 
     it('should include legal attestation in JSON payload to backend', async () => {
-      // Arrange
       const mockFile = new File(['test'], 'test.txt', { type: 'text/plain' });
-      const mockLegalAttestation: LegalAttestation = {
-        acceptCopyrightOwnership: true,
-        acceptTranslationRights: true,
-        acceptLiabilityTerms: true,
-        userIPAddress: 'captured-by-backend',
-        userAgent: 'Mozilla/5.0',
-        timestamp: '2024-10-31T12:00:00Z',
-      };
+      const mockLegalAttestation = buildAttestation();
 
       mockedApiClient.post.mockResolvedValueOnce({
         data: {
           data: {
             uploadUrl: 'https://s3.amazonaws.com/bucket/presigned-url',
             fileId: 'job-123',
+            jobId: 'job-123',
             requiredHeaders: {},
           },
         },
       });
 
-      mockedAxios.put.mockResolvedValueOnce({ data: null });
+      mockedUploadToS3.mockResolvedValueOnce(undefined);
 
       // Act
       await uploadDocument({
@@ -1345,7 +1146,7 @@ describe('TranslationService - uploadAndAwaitChunked', () => {
         },
       },
     });
-    mockedAxios.put.mockResolvedValueOnce({ data: null });
+    mockedUploadToS3.mockResolvedValueOnce(undefined);
 
     mockedApiClient.get.mockResolvedValueOnce({ data: buildWireStatus('CHUNKED') });
 
@@ -1369,7 +1170,7 @@ describe('TranslationService - uploadAndAwaitChunked', () => {
         },
       },
     });
-    mockedAxios.put.mockResolvedValueOnce({ data: null });
+    mockedUploadToS3.mockResolvedValueOnce(undefined);
 
     // Three polls: PENDING, CHUNKING, CHUNKED — flat wire shape per
     // TranslationStatusApiResponse (the 2026-05-09 hotfix contract).
@@ -1402,7 +1203,7 @@ describe('TranslationService - uploadAndAwaitChunked', () => {
         },
       },
     });
-    mockedAxios.put.mockResolvedValueOnce({ data: null });
+    mockedUploadToS3.mockResolvedValueOnce(undefined);
 
     mockedApiClient.get.mockResolvedValueOnce({
       data: buildWireStatus('CHUNKING_FAILED'),
@@ -1430,7 +1231,7 @@ describe('TranslationService - uploadAndAwaitChunked', () => {
         },
       },
     });
-    mockedAxios.put.mockResolvedValueOnce({ data: null });
+    mockedUploadToS3.mockResolvedValueOnce(undefined);
 
     mockedApiClient.get.mockResolvedValueOnce({
       data: buildWireStatus('FAILED'),
@@ -1455,7 +1256,7 @@ describe('TranslationService - uploadAndAwaitChunked', () => {
         },
       },
     });
-    mockedAxios.put.mockResolvedValueOnce({ data: null });
+    mockedUploadToS3.mockResolvedValueOnce(undefined);
 
     // Always return PENDING so the loop never exits via success.
     mockedApiClient.get.mockResolvedValue({
@@ -1489,7 +1290,7 @@ describe('TranslationService - uploadAndAwaitChunked', () => {
         },
       },
     });
-    mockedAxios.put.mockResolvedValueOnce({ data: null });
+    mockedUploadToS3.mockResolvedValueOnce(undefined);
 
     mockedApiClient.get
       .mockResolvedValueOnce({ data: buildWireStatus('CHUNKING') })
@@ -1521,7 +1322,7 @@ describe('TranslationService - uploadAndAwaitChunked', () => {
         },
       },
     });
-    mockedAxios.put.mockResolvedValueOnce({ data: null });
+    mockedUploadToS3.mockResolvedValueOnce(undefined);
 
     const networkError = {
       isAxiosError: true,

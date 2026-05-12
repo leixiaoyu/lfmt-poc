@@ -172,7 +172,7 @@ export function FileUploadForm({ onUploadComplete, onUploadError }: FileUploadFo
       setUploadProgress(0);
       setErrorMessage(null);
 
-      const result = await uploadService.uploadDocument(selectedFile, handleProgress);
+      const result = await uploadService.uploadFile(selectedFile, handleProgress);
 
       if (result.success) {
         setUploadState('success');

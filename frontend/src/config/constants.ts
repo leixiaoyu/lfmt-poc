@@ -5,6 +5,8 @@
  * Environment-specific values are loaded from import.meta.env (Vite).
  */
 
+import { stripTrailingSlashes } from '../utils/url';
+
 /**
  * Validate required environment variable
  */
@@ -31,7 +33,7 @@ export const API_CONFIG = {
    * concatenation in the refresh interceptor — produces exactly one
    * slash separator and never yields a double-slash (issue #224).
    */
-  BASE_URL: getRequiredEnv('VITE_API_URL').replace(/\/+$/, ''),
+  BASE_URL: stripTrailingSlashes(getRequiredEnv('VITE_API_URL')),
 
   /**
    * Request timeout in milliseconds

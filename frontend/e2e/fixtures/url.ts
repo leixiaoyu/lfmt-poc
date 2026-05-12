@@ -6,8 +6,14 @@
  * Playwright bootstrap. E2E fixture files that need Playwright types (e.g.
  * auth.ts) import from here rather than inlining URL normalisation logic.
  *
+ * #231: trailing-slash normalisation is now delegated to the shared
+ * `stripTrailingSlashes` helper in src/utils/url.ts so both production
+ * code (constants.ts) and E2E fixtures use the same greedy-regex logic.
+ *
  * @see auth.ts for the Playwright-dependent helpers that consume resolveApiUrl.
  */
+
+import { stripTrailingSlashes } from '../../src/utils/url';
 
 /**
  * Resolve the API base URL from an optional override or the `API_BASE_URL`
@@ -27,6 +33,5 @@
  */
 export function resolveApiUrl(apiBaseUrl?: string): string {
   const raw = apiBaseUrl ?? process.env.API_BASE_URL ?? 'http://localhost:3000';
-  // Strip a single trailing slash to avoid double-slash in composed URLs.
-  return raw.endsWith('/') ? raw.slice(0, -1) : raw;
+  return stripTrailingSlashes(raw);
 }
