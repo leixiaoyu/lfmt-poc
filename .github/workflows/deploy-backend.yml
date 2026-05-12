@@ -80,6 +80,15 @@ jobs:
     # lint/format/type-check is handled by the parallel `Run Tests (Frontend)`
     # job in deploy-frontend.yml.
     #
+    # PARITY ENFORCEMENT (Issue #156): the ci.yml workflow-lint job includes a
+    # programmatic step `Verify ci.yml ↔ deploy-backend.yml step-list parity`
+    # that parses both files and asserts every step name in THIS job also
+    # appears in ci.yml's `test` or `lint-and-format` job. Adding a new step
+    # here without adding the matching step to ci.yml will FAIL the workflow-lint
+    # job on the next PR and block merge. To explicitly exempt a legitimately
+    # deploy-only step, add `# parity:exempt — <reason>` on the line before
+    # `- name:`.
+    #
     # Steps that ci.yml runs but this job intentionally does NOT:
     #   - shared-types `npm test` (ci.yml `test` job)        [PR-gate only]
     #   - backend `npx tsc --noEmit`  (ci.yml lint-and-format)[PR-gate only;
@@ -87,12 +96,6 @@ jobs:
     #   - infrastructure build/test/cdk-synth (ci.yml build-infrastructure)
     #     [the `cdk deploy` below implicitly re-synths; PR gate is authoritative]
     #   - npm audit                   (ci.yml security-scan) [PR-gate only]
-    #
-    # If you add a new deploy-blocking step to deploy-backend.yml, also add
-    # it to ci.yml so PRs surface failures BEFORE merge. Do NOT remove the
-    # primary lint/format steps below — those are the ones that historically
-    # failed at deploy-time after merging green PRs (Issue #149 backend lint,
-    # Issue #152 follow-on shared-types build).
 
     steps:
       - name: Checkout code
@@ -160,10 +163,15 @@ jobs:
     if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'dev'))
     environment:
       name: development
-      url: ${{ steps.get-frontend-url.outputs.frontend_url }}
+      url: ${{ steps.cfn-outputs.outputs.frontend_url }}
+    # Issue #248: outputs were previously sourced from `steps.get-*.outputs.*`
+    # alias steps that just echoed `steps.cfn-outputs.outputs.*`. The aliases
+    # existed during the #163/#187 refactor to avoid a mass find-replace; now
+    # that all callers reference `cfn-outputs` directly, the aliases are dead
+    # weight and have been removed (4 echo steps deleted).
     outputs:
-      api_url: ${{ steps.get-url.outputs.api_url }}
-      frontend_url: ${{ steps.get-frontend-url.outputs.frontend_url }}
+      api_url: ${{ steps.cfn-outputs.outputs.api_url }}
+      frontend_url: ${{ steps.cfn-outputs.outputs.frontend_url }}
 
     permissions:
       id-token: write # Required for OIDC authentication
@@ -224,106 +232,113 @@ jobs:
             echo "CDKToolkit already exists, skipping bootstrap"
           fi
 
+      # Issue #163 — CDK diff short-circuit.
+      #
+      # `cdk diff` is informational: it exits 0 whether or not there are
+      # differences. The string "There were no differences" only appears when
+      # the diff is truly empty. We capture both stdout and stderr (CDK writes
+      # to stderr on some versions) and check both.
+      #
+      # When has_changes=false the CDK deploy, S3 sync, CloudFront invalidation,
+      # and CF-wait steps are all skipped. The CFN describe-stacks call below
+      # still runs (needed to populate step outputs for smoke/integration tests),
+      # but that is cheap (~500ms) versus the ~5-8 min CDK deploy.
+      #
+      # Typical savings per noop deploy: ~10 min wall-clock + 1 CloudFront
+      # invalidation slot (3000/month free, then $0.005/path).
+      #
+      # Safety note: `|| true` is intentional. `cdk diff` exits 1 when real
+      # differences ARE present (i.e. the diff case — not the no-diff case).
+      # Without `|| true`, the step would fail on every real infrastructure
+      # change, which is exactly the wrong behaviour. The "There were no
+      # differences" grep on DIFF_OUTPUT is the authoritative no-op gate;
+      # `|| true` simply ensures the step never hard-fails regardless of exit
+      # code. On first-ever deploy, `cdk diff` exits non-zero AND prints no
+      # "no differences" message, so has_changes=true fires correctly — no
+      # special handling needed.
+      - name: Check for CDK infrastructure changes
+        id: cdk-diff
+        working-directory: backend/infrastructure
+        run: |
+          DIFF_OUTPUT=$(npx cdk diff --context environment=dev 2>&1) || true
+          echo "--- CDK diff output ---"
+          echo "$DIFF_OUTPUT"
+          echo "--- end diff output ---"
+          if echo "$DIFF_OUTPUT" | grep -q "There were no differences"; then
+            echo "has_changes=false" >> $GITHUB_OUTPUT
+            echo "::notice::No CDK infrastructure changes detected — skipping cdk deploy, S3 sync, and CloudFront invalidation"
+          else
+            echo "has_changes=true" >> $GITHUB_OUTPUT
+            echo "::notice::CDK infrastructure changes detected — proceeding with full deploy"
+          fi
+
       - name: CDK Deploy to Dev
+        if: steps.cdk-diff.outputs.has_changes == 'true'
         working-directory: backend/infrastructure
         run: npx cdk deploy --context environment=dev --require-approval never
 
-      - name: Get API URL
-        id: get-url
+      # Collapse 4 separate describe-stacks calls (Issue #163 bonus) into one
+      # jq parse. Each call was ~500ms-1s; this saves ~2-3s per deploy and
+      # reduces CFN API pressure. All four outputs are populated regardless of
+      # whether a CDK deploy ran — downstream steps (smoke, integration) need
+      # the outputs unconditionally.
+      - name: Get CloudFormation outputs
+        id: cfn-outputs
         run: |
-          API_URL=$(aws cloudformation describe-stacks \
+          OUTPUTS=$(aws cloudformation describe-stacks \
             --stack-name LfmtPocDev \
-            --query "Stacks[0].Outputs[?OutputKey=='ApiUrl'].OutputValue" \
-            --output text \
-            --region ${{ env.AWS_REGION }})
+            --region ${{ env.AWS_REGION }} \
+            --query 'Stacks[0].Outputs' \
+            --output json)
+          API_URL=$(echo "$OUTPUTS" | jq -r '.[] | select(.OutputKey=="ApiUrl") | .OutputValue')
+          BUCKET=$(echo "$OUTPUTS" | jq -r '.[] | select(.OutputKey=="FrontendBucketName") | .OutputValue')
+          DIST_ID=$(echo "$OUTPUTS" | jq -r '.[] | select(.OutputKey=="CloudFrontDistributionId") | .OutputValue')
+          FRONTEND_URL=$(echo "$OUTPUTS" | jq -r '.[] | select(.OutputKey=="FrontendUrl") | .OutputValue')
           echo "api_url=$API_URL" >> $GITHUB_OUTPUT
+          echo "bucket_name=$BUCKET" >> $GITHUB_OUTPUT
+          echo "distribution_id=$DIST_ID" >> $GITHUB_OUTPUT
+          echo "frontend_url=$FRONTEND_URL" >> $GITHUB_OUTPUT
           echo "API URL: $API_URL"
+          echo "Bucket: $BUCKET"
+          echo "CloudFront Distribution: $DIST_ID"
+          echo "Frontend URL: $FRONTEND_URL"
+
+      # Issue #248: 4 legacy alias steps (`Get API URL`, `Get Frontend Bucket
+      # Name from CDK`, `Get CloudFront Distribution ID`, `Get CloudFront URL`)
+      # that echoed `steps.cfn-outputs.outputs.*` removed. All downstream
+      # callers (job outputs, environment URL, Backend Deployment Summary,
+      # Test API Health) now reference `steps.cfn-outputs.outputs.*` directly.
 
       - name: Test API Health
         run: |
-          curl -f ${{ steps.get-url.outputs.api_url }}/v1/auth || echo "API not yet ready, may need warm-up"
+          curl -f ${{ steps.cfn-outputs.outputs.api_url }}/v1/auth || echo "API not yet ready, may need warm-up"
 
       # Backend deploys still rebuild + sync the frontend because the
       # newly-deployed API URL must be baked into the frontend bundle
       # (VITE_API_URL is build-time, not runtime). Frontend-only commits
       # take the lighter `deploy-frontend.yml` path which reads the existing
       # API URL from CFN outputs without a CDK deploy.
-      - name: Install shared-types for frontend rebuild
-        working-directory: shared-types
-        run: npm ci
-
-      - name: Build shared-types for frontend rebuild
-        working-directory: shared-types
-        run: npm run build
-
-      - name: Install frontend dependencies for rebuild
-        working-directory: frontend
-        run: npm ci
-
-      - name: Rebuild frontend with correct API URL
-        working-directory: frontend
-        run: npm run build
-        env:
-          NODE_ENV: production
-          VITE_API_URL: ${{ steps.get-url.outputs.api_url }}
-
-      - name: Get Frontend Bucket Name from CDK
-        id: get-bucket-name
-        run: |
-          FRONTEND_BUCKET=$(aws cloudformation describe-stacks \
-            --stack-name LfmtPocDev \
-            --query "Stacks[0].Outputs[?OutputKey=='FrontendBucketName'].OutputValue" \
-            --output text \
-            --region ${{ env.AWS_REGION }})
-          echo "bucket_name=$FRONTEND_BUCKET" >> $GITHUB_OUTPUT
-          echo "Frontend Bucket: $FRONTEND_BUCKET"
-
-      - name: Deploy frontend to S3
-        run: |
-          aws s3 sync frontend/dist/ s3://${{ steps.get-bucket-name.outputs.bucket_name }}/ --delete --cache-control "public, max-age=31536000, immutable" --exclude "index.html"
-          aws s3 cp frontend/dist/index.html s3://${{ steps.get-bucket-name.outputs.bucket_name }}/index.html --cache-control "public, max-age=0, must-revalidate"
-
-      - name: Get CloudFront Distribution ID
-        id: get-cf-dist
-        run: |
-          DIST_ID=$(aws cloudformation describe-stacks \
-            --stack-name LfmtPocDev \
-            --query "Stacks[0].Outputs[?OutputKey=='CloudFrontDistributionId'].OutputValue" \
-            --output text \
-            --region ${{ env.AWS_REGION }})
-          echo "distribution_id=$DIST_ID" >> $GITHUB_OUTPUT
-          echo "CloudFront Distribution ID: $DIST_ID"
-
-      - name: Get CloudFront URL
-        id: get-frontend-url
-        run: |
-          FRONTEND_URL=$(aws cloudformation describe-stacks \
-            --stack-name LfmtPocDev \
-            --query "Stacks[0].Outputs[?OutputKey=='FrontendUrl'].OutputValue" \
-            --output text \
-            --region ${{ env.AWS_REGION }})
-          echo "frontend_url=$FRONTEND_URL" >> $GITHUB_OUTPUT
-          echo "Frontend URL: $FRONTEND_URL"
-
-      - name: Invalidate CloudFront cache
-        run: |
-          aws cloudfront create-invalidation --distribution-id ${{ steps.get-cf-dist.outputs.distribution_id }} --paths "/*"
-          echo "CloudFront cache invalidation initiated"
-
-      - name: Wait for CloudFront cache invalidation
-        run: |
-          echo "Waiting for CloudFront invalidation to complete..."
-          sleep 30
+      # Gated on has_changes=true (Issue #163) — when the CDK diff was empty,
+      # the API URL has not changed and the current S3 bundle is still valid.
+      # Issue #187: rebuild sequence extracted to composite action for DRY.
+      - name: Rebuild and deploy frontend (has changes)
+        if: steps.cdk-diff.outputs.has_changes == 'true'
+        uses: ./.github/actions/rebuild-frontend
+        with:
+          stack-name: LfmtPocDev
+          aws-region: ${{ env.AWS_REGION }}
+          node-version: ${{ env.NODE_VERSION }}
 
       - name: Backend Deployment Summary
         run: |
           echo "========================================="
           echo "Backend Deployment Summary"
           echo "========================================="
-          echo "S3 Bucket: ${{ steps.get-bucket-name.outputs.bucket_name }}"
-          echo "CloudFront Distribution: ${{ steps.get-cf-dist.outputs.distribution_id }}"
-          echo "Frontend URL: ${{ steps.get-frontend-url.outputs.frontend_url }}"
-          echo "API URL: ${{ steps.get-url.outputs.api_url }}"
+          echo "CDK changes deployed: ${{ steps.cdk-diff.outputs.has_changes }}"
+          echo "S3 Bucket: ${{ steps.cfn-outputs.outputs.bucket_name }}"
+          echo "CloudFront Distribution: ${{ steps.cfn-outputs.outputs.distribution_id }}"
+          echo "Frontend URL: ${{ steps.cfn-outputs.outputs.frontend_url }}"
+          echo "API URL: ${{ steps.cfn-outputs.outputs.api_url }}"
           echo "========================================="
 
   smoke-tests:
@@ -334,6 +349,29 @@ jobs:
     # hold the deploy-${ref} concurrency lock indefinitely. Smoke tests
     # typically finish in under 2 minutes; 15 gives headroom.
     timeout-minutes: 15
+    # Issue #211 — smoke test policy decision:
+    #
+    # Smoke tests are NOT in branch-protection required checks because they
+    # run post-deploy (they need a live stack) and cannot block the CURRENT
+    # merge — they would block the NEXT merge. Option B (suppression-with-
+    # rationale) is the chosen policy instead of Option A (required gate):
+    #
+    #   Option A (required gate): promotes this job to a branch-protection
+    #     required check. Rejected because the timing is wrong — a failed
+    #     smoke test after merging PR N blocks PR N+1, not N. This creates
+    #     confusing UX where a deploy of one PR blocks an unrelated PR.
+    #     Re-evaluate once ephemeral dev stacks support pre-merge smoke tests.
+    #
+    #   Option B (suppression-with-rationale, CHOSEN): keep smoke tests as
+    #     informational. PR authors must check the smoke-test status after their
+    #     PR is deployed and either confirm green OR document known failures via
+    #     the PR template checklist (Issue #211 section added to PR template).
+    #
+    # RATIONALE comment convention: if a smoke test step must be skipped or
+    # is expected to fail for a known reason, add a comment to that step:
+    #   # RATIONALE: <reason> — tracked in #<issue>
+    # The workflow-lint job will flag steps that have `continue-on-error: true`
+    # without a RATIONALE comment (enforcement added in Issue #211 follow-up).
     if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'dev'))
 
     steps:
@@ -427,23 +465,18 @@ jobs:
         working-directory: backend/functions
         run: npm ci
 
-      - name: Get API URL
-        id: get-api-url
-        run: |
-          API_URL=$(aws cloudformation describe-stacks \
-            --stack-name LfmtPocDev \
-            --query "Stacks[0].Outputs[?OutputKey=='ApiUrl'].OutputValue" \
-            --output text \
-            --region ${{ env.AWS_REGION }})
-          echo "api_url=$API_URL" >> $GITHUB_OUTPUT
-          echo "Using API URL: $API_URL"
-
+      # Issue #248 / OMC R2 F-1: the former `Get API URL` step made a standalone
+      # describe-stacks call against LfmtPocDev — the same stack that deploy-dev
+      # already queried 30 seconds earlier. That is pure CFN API waste and a
+      # second drift point (two invocations with different --query shapes).
+      # deploy-dev already exports `api_url` as a job output; consume it here
+      # directly, mirroring the pattern the `smoke-tests` job above uses.
       - name: Wait for API to be ready
         run: |
           echo "Waiting for API to be ready..."
           for i in {1..30}; do
             # Check if API Gateway responds (any HTTP status including 401 is acceptable)
-            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" ${{ steps.get-api-url.outputs.api_url }}auth/me 2>/dev/null || echo "000")
+            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" ${{ needs.deploy-dev.outputs.api_url }}auth/me 2>/dev/null || echo "000")
             if [[ "$HTTP_CODE" != "000" && "$HTTP_CODE" != "502" && "$HTTP_CODE" != "503" && "$HTTP_CODE" != "504" ]]; then
               echo "API is ready! (HTTP $HTTP_CODE)"
               exit 0
@@ -458,19 +491,19 @@ jobs:
         working-directory: backend/functions
         run: npm run test:integration -- health-check.integration.test.ts
         env:
-          API_BASE_URL: ${{ steps.get-api-url.outputs.api_url }}
+          API_BASE_URL: ${{ needs.deploy-dev.outputs.api_url }}
 
       - name: Run API Integration Tests
         working-directory: backend/functions
         run: npm run test:integration -- api-integration.test.ts
         env:
-          API_BASE_URL: ${{ steps.get-api-url.outputs.api_url }}
+          API_BASE_URL: ${{ needs.deploy-dev.outputs.api_url }}
 
       - name: Run Translation Flow Integration Tests
         working-directory: backend/functions
         run: npm run test:integration -- translation-flow.integration.test.ts --testTimeout=600000
         env:
-          API_BASE_URL: ${{ steps.get-api-url.outputs.api_url }}
+          API_BASE_URL: ${{ needs.deploy-dev.outputs.api_url }}
           TEST_TIMEOUT: 600000
 
       - name: Backend Integration Test Summary
@@ -479,7 +512,7 @@ jobs:
           echo "========================================="
           echo "Backend Integration Test Summary"
           echo "========================================="
-          echo "API URL: ${{ steps.get-api-url.outputs.api_url }}"
+          echo "API URL: ${{ needs.deploy-dev.outputs.api_url }}"
           echo "Tests completed at: $(date -u +"%Y-%m-%d %H:%M:%S UTC")"
           echo "========================================="
 
@@ -487,7 +520,17 @@ jobs:
     name: Deploy Backend to Staging
     runs-on: ubuntu-latest
     needs: test
-    if: github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'staging'
+    # Issue #160 (branch-guard asymmetry): previously only checked environment
+    # input but not github.ref, allowing any branch to deploy to staging via
+    # `gh workflow run deploy-backend.yml --ref feature/foo -f environment=staging`.
+    # deploy-dev already required main — staging and prod now mirror that guard.
+    # Defense-in-depth: enforce main-only at the workflow level in addition to
+    # any GitHub Environment protection rules.
+    # IMPORTANT: do NOT remove the `github.ref == 'refs/heads/main'` clause
+    # without adding an equivalent carve-out (e.g. hotfix/* branches) and
+    # documenting it here. Three incidents in one quarter traced back to
+    # insufficient branch-ref guards (Issues #149, #152, #160).
+    if: github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'staging'
     environment:
       name: staging
       url: https://staging.lfmt.yourcompany.com
@@ -504,6 +547,18 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          # Issue #247: staging runs `npm ci` in the same four directories as
+          # deploy-dev (shared-types, backend/functions, backend/infrastructure,
+          # frontend via the rebuild-frontend composite action below). Without
+          # `cache-dependency-path` listed, the setup-node cache key isn't seeded
+          # and the four installs each cold-fetch from the registry — adding ~60s
+          # to every staging deploy. Mirror deploy-dev's list so the cache hits.
+          cache-dependency-path: |
+            shared-types/package-lock.json
+            backend/functions/package-lock.json
+            backend/infrastructure/package-lock.json
+            frontend/package-lock.json
 
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
@@ -528,95 +583,32 @@ jobs:
         working-directory: backend/infrastructure
         run: npx cdk deploy --context environment=staging --require-approval never
 
-      - name: Get API URL
-        id: get-url
-        run: |
-          API_URL=$(aws cloudformation describe-stacks \
-            --stack-name LfmtPocStaging \
-            --query "Stacks[0].Outputs[?OutputKey=='ApiUrl'].OutputValue" \
-            --output text \
-            --region ${{ env.AWS_REGION }})
-          echo "api_url=$API_URL" >> $GITHUB_OUTPUT
-          echo "API URL: $API_URL"
-
-      - name: Install shared-types for frontend rebuild
-        working-directory: shared-types
-        run: npm ci
-
-      - name: Build shared-types for frontend rebuild
-        working-directory: shared-types
-        run: npm run build
-
-      - name: Install frontend dependencies for rebuild
-        working-directory: frontend
-        run: npm ci
-
-      - name: Rebuild frontend with correct API URL
-        working-directory: frontend
-        run: npm run build
-        env:
-          NODE_ENV: production
-          VITE_API_URL: ${{ steps.get-url.outputs.api_url }}
-
-      - name: Get Frontend Bucket Name from CDK
-        id: get-bucket-name
-        run: |
-          FRONTEND_BUCKET=$(aws cloudformation describe-stacks \
-            --stack-name LfmtPocStaging \
-            --query "Stacks[0].Outputs[?OutputKey=='FrontendBucketName'].OutputValue" \
-            --output text \
-            --region ${{ env.AWS_REGION }})
-          echo "bucket_name=$FRONTEND_BUCKET" >> $GITHUB_OUTPUT
-          echo "Frontend Bucket: $FRONTEND_BUCKET"
-
-      - name: Deploy frontend to S3
-        run: |
-          aws s3 sync frontend/dist/ s3://${{ steps.get-bucket-name.outputs.bucket_name }}/ --delete --cache-control "public, max-age=31536000, immutable" --exclude "index.html"
-          aws s3 cp frontend/dist/index.html s3://${{ steps.get-bucket-name.outputs.bucket_name }}/index.html --cache-control "public, max-age=0, must-revalidate"
-
-      - name: Get CloudFront Distribution ID
-        id: get-cf-dist
-        run: |
-          DIST_ID=$(aws cloudformation describe-stacks \
-            --stack-name LfmtPocStaging \
-            --query "Stacks[0].Outputs[?OutputKey=='CloudFrontDistributionId'].OutputValue" \
-            --output text \
-            --region ${{ env.AWS_REGION }})
-          echo "distribution_id=$DIST_ID" >> $GITHUB_OUTPUT
-          echo "CloudFront Distribution ID: $DIST_ID"
-
-      - name: Get CloudFront URL
-        id: get-frontend-url
-        run: |
-          FRONTEND_URL=$(aws cloudformation describe-stacks \
-            --stack-name LfmtPocStaging \
-            --query "Stacks[0].Outputs[?OutputKey=='FrontendUrl'].OutputValue" \
-            --output text \
-            --region ${{ env.AWS_REGION }})
-          echo "frontend_url=$FRONTEND_URL" >> $GITHUB_OUTPUT
-          echo "Frontend URL: $FRONTEND_URL"
-
-      - name: Invalidate CloudFront cache
-        run: |
-          aws cloudfront create-invalidation --distribution-id ${{ steps.get-cf-dist.outputs.distribution_id }} --paths "/*"
-          echo "CloudFront cache invalidation initiated"
+      # Issue #187: rebuild sequence extracted to composite action for DRY.
+      # Source of truth for cache-control headers, CF invalidation wait, etc.
+      - name: Rebuild and deploy frontend
+        id: frontend
+        uses: ./.github/actions/rebuild-frontend
+        with:
+          stack-name: LfmtPocStaging
+          aws-region: ${{ env.AWS_REGION }}
+          node-version: ${{ env.NODE_VERSION }}
 
       - name: Staging Deployment Summary
         run: |
           echo "========================================="
           echo "Staging Deployment Summary"
           echo "========================================="
-          echo "S3 Bucket: ${{ steps.get-bucket-name.outputs.bucket_name }}"
-          echo "CloudFront Distribution: ${{ steps.get-cf-dist.outputs.distribution_id }}"
-          echo "Frontend URL: ${{ steps.get-frontend-url.outputs.frontend_url }}"
-          echo "API URL: ${{ steps.get-url.outputs.api_url }}"
+          echo "Frontend URL: ${{ steps.frontend.outputs.frontend_url }}"
+          echo "API URL: ${{ steps.frontend.outputs.api_url }}"
           echo "========================================="
 
   deploy-prod:
     name: Deploy Backend to Production
     runs-on: ubuntu-latest
     needs: test
-    if: github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'prod'
+    # Issue #160 (branch-guard asymmetry): mirrors the fix applied to
+    # deploy-staging above. See that job's comment block for rationale.
+    if: github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'prod'
     environment:
       name: production
       url: https://lfmt.yourcompany.com
@@ -633,6 +625,15 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          # Issue #247: mirror deploy-staging's cache-dependency-path. The prod
+          # job runs `npm ci` in the same four directories; without seeding the
+          # cache key the four installs each cold-fetch from the registry.
+          cache-dependency-path: |
+            shared-types/package-lock.json
+            backend/functions/package-lock.json
+            backend/infrastructure/package-lock.json
+            frontend/package-lock.json
 
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
@@ -669,7 +670,7 @@ jobs:
             echo "CDKToolkit already exists, skipping bootstrap"
           fi
 
-      - name: CDK Diff (show changes)
+      - name: CDK Diff (show changes for audit trail)
         working-directory: backend/infrastructure
         run: npx cdk diff --context environment=prod || true
 
@@ -677,78 +678,15 @@ jobs:
         working-directory: backend/infrastructure
         run: npx cdk deploy LfmtPocProd --context environment=prod --require-approval never
 
-      - name: Get API Gateway URL
-        id: get-api-url
-        run: |
-          API_URL=$(aws cloudformation describe-stacks \
-            --stack-name LfmtPocProd \
-            --query "Stacks[0].Outputs[?OutputKey=='ApiUrl'].OutputValue" \
-            --output text \
-            --region ${{ env.AWS_REGION }})
-          echo "api_url=$API_URL" >> $GITHUB_OUTPUT
-          echo "Production API URL: $API_URL"
-
-      - name: Install shared-types for frontend rebuild
-        working-directory: shared-types
-        run: npm ci
-
-      - name: Build shared-types for frontend rebuild
-        working-directory: shared-types
-        run: npm run build
-
-      - name: Install frontend dependencies for rebuild
-        working-directory: frontend
-        run: npm ci
-
-      - name: Rebuild frontend with correct API URL
-        working-directory: frontend
-        run: npm run build
-        env:
-          NODE_ENV: production
-          VITE_API_URL: ${{ steps.get-api-url.outputs.api_url }}
-
-      - name: Get Frontend Bucket Name from CDK
-        id: get-bucket-name
-        run: |
-          FRONTEND_BUCKET=$(aws cloudformation describe-stacks \
-            --stack-name LfmtPocProd \
-            --query "Stacks[0].Outputs[?OutputKey=='FrontendBucketName'].OutputValue" \
-            --output text \
-            --region ${{ env.AWS_REGION }})
-          echo "bucket_name=$FRONTEND_BUCKET" >> $GITHUB_OUTPUT
-          echo "Frontend Bucket: $FRONTEND_BUCKET"
-
-      - name: Deploy frontend to S3
-        run: |
-          aws s3 sync frontend/dist/ s3://${{ steps.get-bucket-name.outputs.bucket_name }}/ --delete --cache-control "public, max-age=31536000, immutable" --exclude "index.html"
-          aws s3 cp frontend/dist/index.html s3://${{ steps.get-bucket-name.outputs.bucket_name }}/index.html --cache-control "public, max-age=0, must-revalidate"
-
-      - name: Get CloudFront Distribution ID
-        id: get-cf-dist
-        run: |
-          DIST_ID=$(aws cloudformation describe-stacks \
-            --stack-name LfmtPocProd \
-            --query "Stacks[0].Outputs[?OutputKey=='CloudFrontDistributionId'].OutputValue" \
-            --output text \
-            --region ${{ env.AWS_REGION }})
-          echo "distribution_id=$DIST_ID" >> $GITHUB_OUTPUT
-          echo "CloudFront Distribution ID: $DIST_ID"
-
-      - name: Get CloudFront URL
-        id: get-frontend-url
-        run: |
-          FRONTEND_URL=$(aws cloudformation describe-stacks \
-            --stack-name LfmtPocProd \
-            --query "Stacks[0].Outputs[?OutputKey=='FrontendUrl'].OutputValue" \
-            --output text \
-            --region ${{ env.AWS_REGION }})
-          echo "frontend_url=$FRONTEND_URL" >> $GITHUB_OUTPUT
-          echo "Frontend URL: $FRONTEND_URL"
-
-      - name: Invalidate CloudFront cache
-        run: |
-          aws cloudfront create-invalidation --distribution-id ${{ steps.get-cf-dist.outputs.distribution_id }} --paths "/*"
-          echo "CloudFront cache invalidation initiated"
+      # Issue #187: rebuild sequence extracted to composite action for DRY.
+      # Source of truth for cache-control headers, CF invalidation wait, etc.
+      - name: Rebuild and deploy frontend
+        id: frontend
+        uses: ./.github/actions/rebuild-frontend
+        with:
+          stack-name: LfmtPocProd
+          aws-region: ${{ env.AWS_REGION }}
+          node-version: ${{ env.NODE_VERSION }}
 
       - name: Production Deployment Summary
         run: |
@@ -758,9 +696,7 @@ jobs:
           echo "Environment: production"
           echo "Region: ${{ env.AWS_REGION }}"
           echo "Stack: LfmtPocProd"
-          echo "S3 Bucket: ${{ steps.get-bucket-name.outputs.bucket_name }}"
-          echo "CloudFront Distribution: ${{ steps.get-cf-dist.outputs.distribution_id }}"
-          echo "Frontend URL: ${{ steps.get-frontend-url.outputs.frontend_url }}"
-          echo "API URL: ${{ steps.get-api-url.outputs.api_url }}"
+          echo "Frontend URL: ${{ steps.frontend.outputs.frontend_url }}"
+          echo "API URL: ${{ steps.frontend.outputs.api_url }}"
           echo "Deployed at: $(date -u +"%Y-%m-%d %H:%M:%S UTC")"
           echo "========================================="

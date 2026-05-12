@@ -12,7 +12,6 @@ export class DashboardPage extends BasePage {
   private readonly pageHeading = 'h4:has-text("Dashboard")';
   private readonly welcomeMessage = 'text=/Welcome/i';
   private readonly logoutButton = 'button:has-text("Logout")';
-  private readonly userMenu = '[data-testid="user-menu"]';
 
   constructor(page: Page) {
     super(page);
