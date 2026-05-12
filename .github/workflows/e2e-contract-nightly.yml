@@ -1,0 +1,119 @@
+name: E2E Contract Nightly (Live Backend)
+
+# Live-backend API envelope contract guard (#219).
+#
+# Runs the Playwright spec at
+#   `frontend/e2e/tests/contract/api-envelope-live.spec.ts`
+# against the deployed dev backend on a nightly schedule. Each test
+# authenticates with Cognito, hits a protected endpoint, and asserts the
+# response shape matches the corresponding `*ApiResponse` interface in
+# `@lfmt/shared-types`.
+#
+# Why NOT per-PR (issue #219 explicit requirement):
+# - Per-PR runs would burn AWS quota on every PR (Cognito user creation,
+#   S3 upload, Step Functions execution).
+# - The live network can flake; gating unrelated PRs on flaky-network
+#   failures is unhelpful.
+# - PRs that deploy backend changes during their own CI run would race
+#   with this spec.
+#
+# Triggers:
+# - `schedule` — 09:00 UTC daily (post-deploy window, before US business
+#   hours so a failure is visible at start-of-day).
+# - `workflow_dispatch` — on-call can re-run after a hot-fix without
+#   waiting for the next scheduled tick.
+
+on:
+  schedule:
+    # 09:00 UTC = 02:00 PT (winter) / 01:00 PT (DST). Avoid running on the
+    # exact :00 minute because GitHub schedules cluster there and queue.
+    - cron: '17 9 * * *'
+  workflow_dispatch:
+    inputs:
+      api_url:
+        description: 'API base URL (defaults to deployed dev API)'
+        required: false
+        type: string
+        default: ''
+
+env:
+  NODE_VERSION: '22'
+
+# Single in-flight run — nightly + a hot-fix dispatch on the same morning
+# would otherwise race on the shared test account's Cognito session.
+concurrency:
+  group: e2e-contract-nightly
+  cancel-in-progress: false
+
+jobs:
+  contract-live:
+    name: API envelope contract (live dev backend)
+    runs-on: ubuntu-latest
+    # 15 min hard cap — the spec hits 6 endpoints and should complete in
+    # under 2 min on a healthy backend. A long-running job indicates the
+    # deployed Lambda is hung; cancel-and-alarm rather than burn CI time.
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: |
+            frontend/package-lock.json
+            shared-types/package-lock.json
+
+      - name: Install shared-types
+        working-directory: shared-types
+        run: |
+          npm ci
+          npm run build
+
+      - name: Install frontend deps
+        working-directory: frontend
+        run: npm ci
+
+      - name: Install Playwright browsers
+        working-directory: frontend
+        # `--with-deps` installs the OS-level browser dependencies on
+        # ubuntu-latest. Without it Chromium fails to launch with a
+        # missing-shared-library error.
+        run: npx playwright install --with-deps chromium
+
+      - name: Run live-backend contract spec
+        working-directory: frontend
+        # The spec reads credentials from env vars. NEVER hardcode them
+        # in the spec file — see the file-level comment in
+        # api-envelope-live.spec.ts.
+        env:
+          # Repo secrets: set under Settings → Secrets and variables →
+          # Actions. The spec falls back to per-run user registration
+          # when these are absent (Cognito auto-confirm makes that
+          # synchronous on dev), so a forked workflow_dispatch still
+          # works without secret access.
+          LFMT_TEST_EMAIL: ${{ secrets.LFMT_TEST_EMAIL }}
+          LFMT_TEST_PASSWORD: ${{ secrets.LFMT_TEST_PASSWORD }}
+          LFMT_API_URL: ${{ inputs.api_url || 'https://8brwlwf68h.execute-api.us-east-1.amazonaws.com/v1/' }}
+          # The contract spec doesn't navigate the SPA — it makes raw
+          # API calls — so PLAYWRIGHT_BASE_URL is irrelevant. Set it
+          # to a no-op value so the dev-server bootstrap in
+          # playwright.config.ts is skipped.
+          PLAYWRIGHT_BASE_URL: ${{ inputs.api_url || 'https://8brwlwf68h.execute-api.us-east-1.amazonaws.com/v1/' }}
+        # `--grep` filters to ONLY the contract-live tagged suite so a
+        # future addition to the e2e/ tree doesn't accidentally execute
+        # under the nightly slot.
+        run: npx playwright test --grep "@contract-live" --reporter=html,junit
+
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report-contract-live
+          path: |
+            frontend/playwright-report
+            frontend/test-results
+          retention-days: 14
