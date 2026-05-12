@@ -6,11 +6,36 @@
  * - Wrong API paths
  * - Authentication token handling
  * - Presigned URL upload flow
+ *
+ * NOTE: These tests run against the MSW-mocked dev server (VITE_MOCK_API=true)
+ * configured in playwright.config.ts webServer. They do not require AWS credentials
+ * and use the mock API handlers in src/mocks/handlers.ts.
+ *
+ * Issue #243 boy-scout: updated stale page-object API calls (navigate → goto,
+ * acceptLegalTerms → completeLegalAttestation, selectLanguage+selectTone →
+ * completeTranslationConfig, submitUpload → clickSubmit, uploadFile(name,buf)
+ * → uploadFile(path)). The stale calls were pre-existing but invisible before
+ * tsconfig.json included e2e/ in tsc --noEmit.
  */
+
+import * as path from 'path';
+import * as fs from 'fs';
+import * as os from 'os';
 
 import { test, expect } from '@playwright/test';
 import { LoginPage } from '../../pages/LoginPage';
 import { TranslationUploadPage } from '../../pages/TranslationUploadPage';
+
+// ---------------------------------------------------------------------------
+// Helper: write a temp file and return its path. Playwright's setInputFiles
+// requires an actual file path on disk, not an in-memory Buffer.
+// ---------------------------------------------------------------------------
+function writeTempFile(name: string, content: string): string {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'lfmt-e2e-'));
+  const filePath = path.join(tmpDir, name);
+  fs.writeFileSync(filePath, content);
+  return filePath;
+}
 
 test.describe('Upload Flow - CORS and Authentication Regression', () => {
   let loginPage: LoginPage;
@@ -21,7 +46,7 @@ test.describe('Upload Flow - CORS and Authentication Regression', () => {
     uploadPage = new TranslationUploadPage(page);
 
     // Navigate and login
-    await loginPage.navigate();
+    await loginPage.goto();
     await loginPage.login('test@test.io', process.env.TEST_PASSWORD || 'TestPassword123!');
     await page.waitForURL('**/dashboard');
   });
@@ -36,21 +61,21 @@ test.describe('Upload Flow - CORS and Authentication Regression', () => {
     });
 
     // Navigate to upload page
-    await uploadPage.navigate();
+    await uploadPage.goto();
 
     // Complete legal attestation
-    await uploadPage.acceptLegalTerms();
+    await uploadPage.completeLegalAttestation();
 
     // Select language and tone
-    await uploadPage.selectLanguage('Spanish');
-    await uploadPage.selectTone('Formal');
+    await uploadPage.completeTranslationConfig('es', 'formal');
 
     // Upload file
-    const testFile = Buffer.from('This is a test document for translation.');
-    await uploadPage.uploadFile('test-document.txt', testFile);
+    const testFilePath = writeTempFile('test-document.txt', 'This is a test document for translation.');
+    await uploadPage.uploadFile(testFilePath);
+    await uploadPage.clickNext();
 
     // Submit
-    await uploadPage.submitUpload();
+    await uploadPage.clickSubmit();
 
     // Wait for upload to complete
     await page.waitForTimeout(3000);
@@ -69,14 +94,14 @@ test.describe('Upload Flow - CORS and Authentication Regression', () => {
       }
     });
 
-    await uploadPage.navigate();
-    await uploadPage.acceptLegalTerms();
-    await uploadPage.selectLanguage('Spanish');
-    await uploadPage.selectTone('Formal');
+    await uploadPage.goto();
+    await uploadPage.completeLegalAttestation();
+    await uploadPage.completeTranslationConfig('es', 'formal');
 
-    const testFile = Buffer.from('Test content');
-    await uploadPage.uploadFile('test.txt', testFile);
-    await uploadPage.submitUpload();
+    const testFilePath = writeTempFile('test.txt', 'Test content');
+    await uploadPage.uploadFile(testFilePath);
+    await uploadPage.clickNext();
+    await uploadPage.clickSubmit();
 
     await page.waitForTimeout(2000);
 
@@ -98,14 +123,14 @@ test.describe('Upload Flow - CORS and Authentication Regression', () => {
       }
     });
 
-    await uploadPage.navigate();
-    await uploadPage.acceptLegalTerms();
-    await uploadPage.selectLanguage('French');
-    await uploadPage.selectTone('Neutral');
+    await uploadPage.goto();
+    await uploadPage.completeLegalAttestation();
+    await uploadPage.completeTranslationConfig('fr', 'neutral');
 
-    const testFile = Buffer.from('Test document content');
-    await uploadPage.uploadFile('document.txt', testFile);
-    await uploadPage.submitUpload();
+    const testFilePath = writeTempFile('document.txt', 'Test document content');
+    await uploadPage.uploadFile(testFilePath);
+    await uploadPage.clickNext();
+    await uploadPage.clickSubmit();
 
     await page.waitForTimeout(2000);
 
@@ -123,14 +148,14 @@ test.describe('Upload Flow - CORS and Authentication Regression', () => {
       }
     });
 
-    await uploadPage.navigate();
-    await uploadPage.acceptLegalTerms();
-    await uploadPage.selectLanguage('German');
-    await uploadPage.selectTone('Informal');
+    await uploadPage.goto();
+    await uploadPage.completeLegalAttestation();
+    await uploadPage.completeTranslationConfig('de', 'neutral');
 
-    const testFile = Buffer.from('Test content');
-    await uploadPage.uploadFile('test.txt', testFile);
-    await uploadPage.submitUpload();
+    const testFilePath = writeTempFile('test.txt', 'Test content');
+    await uploadPage.uploadFile(testFilePath);
+    await uploadPage.clickNext();
+    await uploadPage.clickSubmit();
 
     await page.waitForTimeout(2000);
 
@@ -149,14 +174,14 @@ test.describe('Upload Flow - CORS and Authentication Regression', () => {
       });
     });
 
-    await uploadPage.navigate();
-    await uploadPage.acceptLegalTerms();
-    await uploadPage.selectLanguage('Chinese');
-    await uploadPage.selectTone('Formal');
+    await uploadPage.goto();
+    await uploadPage.completeLegalAttestation();
+    await uploadPage.completeTranslationConfig('zh', 'formal');
 
-    const testFile = Buffer.from('Test translation content');
-    await uploadPage.uploadFile('test.txt', testFile);
-    await uploadPage.submitUpload();
+    const testFilePath = writeTempFile('test.txt', 'Test translation content');
+    await uploadPage.uploadFile(testFilePath);
+    await uploadPage.clickNext();
+    await uploadPage.clickSubmit();
 
     await page.waitForTimeout(3000);
 
@@ -189,14 +214,14 @@ test.describe('Upload Flow - CORS and Authentication Regression', () => {
       localStorage.setItem('accessToken', `header.${expiredToken}.signature`);
     });
 
-    await uploadPage.navigate();
-    await uploadPage.acceptLegalTerms();
-    await uploadPage.selectLanguage('Spanish');
-    await uploadPage.selectTone('Formal');
+    await uploadPage.goto();
+    await uploadPage.completeLegalAttestation();
+    await uploadPage.completeTranslationConfig('es', 'formal');
 
-    const testFile = Buffer.from('Test');
-    await uploadPage.uploadFile('test.txt', testFile);
-    await uploadPage.submitUpload();
+    const testFilePath = writeTempFile('test.txt', 'Test');
+    await uploadPage.uploadFile(testFilePath);
+    await uploadPage.clickNext();
+    await uploadPage.clickSubmit();
 
     // Should redirect to login or show error
     await page.waitForTimeout(2000);
@@ -217,14 +242,14 @@ test.describe('Upload Flow - CORS and Authentication Regression', () => {
       }
     });
 
-    await uploadPage.navigate();
-    await uploadPage.acceptLegalTerms();
-    await uploadPage.selectLanguage('Italian');
-    await uploadPage.selectTone('Neutral');
+    await uploadPage.goto();
+    await uploadPage.completeLegalAttestation();
+    await uploadPage.completeTranslationConfig('it', 'neutral');
 
-    const testFile = Buffer.from('Test content');
-    await uploadPage.uploadFile('test.txt', testFile);
-    await uploadPage.submitUpload();
+    const testFilePath = writeTempFile('test.txt', 'Test content');
+    await uploadPage.uploadFile(testFilePath);
+    await uploadPage.clickNext();
+    await uploadPage.clickSubmit();
 
     await page.waitForTimeout(3000);
 
@@ -252,14 +277,14 @@ test.describe('Upload Flow - CORS and Authentication Regression', () => {
       }
     });
 
-    await uploadPage.navigate();
-    await uploadPage.acceptLegalTerms();
-    await uploadPage.selectLanguage('French');
-    await uploadPage.selectTone('Formal');
+    await uploadPage.goto();
+    await uploadPage.completeLegalAttestation();
+    await uploadPage.completeTranslationConfig('fr', 'formal');
 
-    const testFile = Buffer.from('Test content');
-    await uploadPage.uploadFile('test.txt', testFile);
-    await uploadPage.submitUpload();
+    const testFilePath = writeTempFile('test.txt', 'Test content');
+    await uploadPage.uploadFile(testFilePath);
+    await uploadPage.clickNext();
+    await uploadPage.clickSubmit();
 
     // Should eventually succeed after retry
     await page.waitForTimeout(5000);
@@ -275,7 +300,7 @@ test.describe('Upload Flow - CORS and Authentication Regression', () => {
 test.describe('Authentication Token Scenarios', () => {
   test('should maintain token across page navigation', async ({ page }) => {
     const loginPage = new LoginPage(page);
-    await loginPage.navigate();
+    await loginPage.goto();
     await loginPage.login('test@test.io', process.env.TEST_PASSWORD || 'TestPassword123!');
 
     // Get initial token
@@ -294,7 +319,7 @@ test.describe('Authentication Token Scenarios', () => {
 
   test('should clear tokens on logout', async ({ page }) => {
     const loginPage = new LoginPage(page);
-    await loginPage.navigate();
+    await loginPage.goto();
     await loginPage.login('test@test.io', process.env.TEST_PASSWORD || 'TestPassword123!');
 
     // Verify token exists

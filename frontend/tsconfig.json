@@ -35,6 +35,11 @@
       "@lfmt/shared-types": ["../shared-types/dist/cjs/index.d.ts"]
     }
   },
-  "include": ["src"],
+  // Issue #243: e2e/ was excluded from tsc --noEmit coverage, so a rename of
+  // src/utils/url.ts would silently break e2e/fixtures/url.ts at runtime rather
+  // than at type-check time. Adding "e2e" here ensures the relative import in
+  // e2e/fixtures/url.ts is verified by every `npm run type-check` run.
+  // Option A (path alias) was rejected — smaller delta with no alias indirection.
+  "include": ["src", "e2e"],
   "references": [{ "path": "./tsconfig.node.json" }]
 }
