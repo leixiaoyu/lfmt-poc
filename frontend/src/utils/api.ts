@@ -117,6 +117,13 @@ function readLegacySession(): StoredSession | null {
   let user: UserProfile | undefined;
   if (rawUser) {
     try {
+      // The stored value may be the legacy `{ id, ... }` shape or the
+      // canonical UserProfile. Both satisfy UserProfile structurally because
+      // all non-core fields are optional (issue #200) and narrowStoredUser()
+      // validates the actual value at every read — a bad cast here cannot
+      // reach a consumer unchecked. The `as UserProfile` cast is intentional:
+      // it is the migration boundary; the runtime invariant is enforced by
+      // narrowStoredUser() at every read site.
       user = JSON.parse(rawUser) as UserProfile;
     } catch {
       // Corrupted user JSON — discard rather than fail the whole

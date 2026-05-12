@@ -129,7 +129,7 @@ export default defineConfig(({ command, mode }) => {
           /**
            * R-perf-2: split the upload-wizard service group into its own
            * hashed chunk so the home, login, and dashboard routes do NOT
-           * pay the ~25 kB (gzip) cost of axios + translation services
+           * pay the ~33.78 kB (gzip) cost of axios + translation services
            * that they never call.
            *
            * Background (issue #217 / PR #214 OMC R2 perf S-perf-1):

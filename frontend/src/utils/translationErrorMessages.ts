@@ -38,14 +38,23 @@ export interface TranslationErrorLike {
 }
 
 /**
- * User-visible copy indexed by TranslationErrorCode (issue #215).
+ * User-visible copy indexed by short-circuit TranslationErrorCodes (issue #215).
  *
- * Exhaustiveness is enforced at the type level: adding a new
- * TranslationErrorCode without adding a row here is a compile error.
- * 'API_GENERIC' is intentionally absent from this table — those errors
- * fall through to the status-code map / message pass-through logic below.
+ * Typed as `Record<Exclude<TranslationErrorCode, 'API_GENERIC' | 'S3_HTTP_ERROR'>, string>`
+ * so exhaustiveness IS enforced at compile time: adding a new short-circuit
+ * TranslationErrorCode without a copy entry here is a tsc error.
+ *
+ * Fall-through codes (intentionally absent — they route via the status-code
+ * table or message pass-through below):
+ *   - 'API_GENERIC'  — general API/service errors; dispatched by statusCode.
+ *   - 'S3_HTTP_ERROR' — S3 returned an HTTP error; statusCode carries the
+ *     specific signal (e.g. 403, 503) so the status-code table produces a
+ *     more accurate message than any generic copy here.
  */
-const COPY_BY_CODE: Partial<Record<TranslationErrorCode, string>> = {
+const COPY_BY_CODE: Record<
+  Exclude<TranslationErrorCode, 'API_GENERIC' | 'S3_HTTP_ERROR'>,
+  string
+> = {
   S3_UPLOAD_BLOCKED:
     'Upload was blocked. This is likely a configuration issue — please refresh and try again, or contact support if it persists.',
 };
@@ -89,10 +98,12 @@ export function getTranslationErrorMessage(error: unknown): string {
 
   // 0. Typed errorCode discriminator (issue #215). Short-circuits before
   //    the status-code table so copy can be edited independently of the
-  //    wire signal and the HTTP status.
+  //    wire signal and the HTTP status. The `in` guard implicitly excludes
+  //    'API_GENERIC' (absent from COPY_BY_CODE keys) so the cast is safe.
   if (e.errorCode && e.errorCode in COPY_BY_CODE) {
-    const copy = COPY_BY_CODE[e.errorCode];
-    if (copy) return copy;
+    return COPY_BY_CODE[
+      e.errorCode as Exclude<TranslationErrorCode, 'API_GENERIC' | 'S3_HTTP_ERROR'>
+    ];
   }
 
   // 1. Known HTTP status → curated phrase.

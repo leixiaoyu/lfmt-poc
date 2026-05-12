@@ -54,9 +54,11 @@ export const AUTH_CONFIG = {
    * Local storage key for the one-blob session document (Issue #196).
    *
    * The entire authenticated session — `idToken`, `accessToken`,
-   * optional `refreshToken`, optional `expiresAt`, optional `user` —
-   * is serialized to JSON and stored under THIS single key. See the
-   * `StoredSession` type in `@lfmt/shared-types`.
+   * optional `refreshToken`, optional `user` — is serialized to JSON
+   * and stored under THIS single key. See the `StoredSession` type in
+   * `@lfmt/shared-types`. (`expiresAt` was removed in issue #200 — the
+   * refresh interceptor is reactive-on-401 only; `REFRESH_THRESHOLD_MS`
+   * is retained for future proactive-refresh work.)
    *
    * Atomicity: every session write replaces the blob in full, so the
    * fields cannot drift out of sync (the failure mode that motivated

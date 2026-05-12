@@ -20,7 +20,12 @@ import { z } from 'zod';
 // created by older code remain valid after this migration.
 export interface UserProfile {
   userId: string;
-  /** Optional alias for `userId` — present on some legacy response shapes. */
+  /**
+   * @deprecated Alias for `userId` preserved for pre-#200 session blobs.
+   * Consumers MUST prefer `userId`. This field will be removed on or after
+   * 2026-06-04 as part of the #199 migration cleanup — the same sweep that
+   * removes the `LEGACY` keys and the `narrowStoredUser` id-fallback path.
+   */
   id?: string;
   email: string;
   firstName: string;
