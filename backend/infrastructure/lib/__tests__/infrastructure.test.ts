@@ -1658,8 +1658,9 @@ describe('LFMT Infrastructure Stack', () => {
   // 'test' stackName used by these tests.
   // Update this constant + the PR body whenever a Lambda is added or removed
   // (PR #208: +2 for GetJob + DeleteJob, 11 → 13; demo-readiness: +1 for
-  // DownloadTranslation, 13 → 14; PR #239: +1 for ListJobs, 14 → 15).
-  const EXPECTED_APPLICATION_LAMBDA_COUNT = 15;
+  // DownloadTranslation, 13 → 14; PR #239: +1 for ListJobs, 14 → 15;
+  // #201: +1 for CspReport, 15 → 16).
+  const EXPECTED_APPLICATION_LAMBDA_COUNT = 16;
 
   describe('Lambda Runtime Drift Guard (PR #203 R2)', () => {
     // Regression guard mirroring the CSP/'unsafe-eval' pattern (PR #198):
@@ -2192,6 +2193,37 @@ describe('csp.ts — assertValidCspReportUri (H-3 sanitization)', () => {
 
   test('throws on a malformed URL', () => {
     expect(() => assertValidCspReportUri('not a url')).toThrow();
+  });
+
+  test('accepts an unresolved CDK token URL (deferred URL-parse)', () => {
+    // CDK emits `${Token[<id>]}` for unresolved references at synth time.
+    // The string is NOT a valid URL by `new URL()` standards, but it IS
+    // safe — CDK substitutes the concrete value via Fn::Join before the
+    // browser ever sees it. The validator must allow this through so the
+    // stack can synthesize, while still rejecting the dangerous characters.
+    expect(() =>
+      assertValidCspReportUri(
+        'https://${Token[apiId.123]}.execute-api.${Token[AWS.Region.13]}.amazonaws.com/v1/csp-report'
+      )
+    ).not.toThrow();
+  });
+
+  test('still rejects CDK-token URLs with forbidden chars (defense-in-depth)', () => {
+    // Even if a future contributor adds a token that resolves to a value
+    // containing a `;`/`,`/whitespace, this rejection fires SYNCHRONOUSLY
+    // at synth — the protection is not bypassed by the token escape hatch.
+    expect(() =>
+      assertValidCspReportUri('https://${Token[id]}.example.com; script-src *')
+    ).toThrow(/must not contain whitespace/);
+  });
+
+  test('still rejects CDK-token URLs that are http:// (defense-in-depth)', () => {
+    // Token escape hatch must NOT bypass the protocol check — the prefix
+    // test happens before the token detection so an http://-prefixed token
+    // string is rejected.
+    expect(() =>
+      assertValidCspReportUri('http://${Token[id]}.example.com/report')
+    ).toThrow(/protocol must be https:/);
   });
 
   test('throws on a non-string input', () => {

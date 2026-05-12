@@ -178,7 +178,10 @@ export function buildCsp(opts: BuildCspOptions = {}): string {
  *
  * Rules (intentionally conservative — favour false-positive on synth over
  * a false-negative that ships an injection):
- *   1. Must parse as a valid URL.
+ *   1. Must parse as a valid URL. (Skipped when the value contains an
+ *      UNRESOLVED CDK token like `${Token[apiId.123]}` — CDK resolves
+ *      these to concrete strings at deploy time. We can't `new URL()`
+ *      them, but the protocol/separator checks below still bite.)
  *   2. Protocol MUST be `https:`. CSP report endpoints commonly POST
  *      cross-origin with credentials, so plain HTTP would leak violation
  *      reports (which contain blocked URIs that may include session info)
@@ -197,11 +200,44 @@ export function assertValidCspReportUri(reportUri: string): void {
     );
   }
 
-  // Forbidden characters: whitespace + CSP-grammar separators.
+  // Forbidden characters: whitespace + CSP-grammar separators. This check
+  // runs FIRST and applies even to unresolved CDK tokens — `${Token[...]}`
+  // does not contain whitespace or `;`/`,` so legitimate tokens pass; an
+  // attacker-controlled string containing any of these characters is
+  // rejected before we get to the URL-parse step.
   if (/[\s;,]/.test(reportUri)) {
     throw new Error(
       `Invalid CSP reportUri: must not contain whitespace, ';' or ',' (got: ${JSON.stringify(reportUri)})`
     );
+  }
+
+  // Protocol check. We don't need a URL parser for this — checking the
+  // literal prefix is sufficient and works for both concrete strings AND
+  // strings that begin with `https://` and continue with an unresolved
+  // CDK token (e.g. `https://${Token[...]}.execute-api...`). A `report-uri`
+  // pointing at `http://...` is rejected explicitly to avoid the report-
+  // payload leak path described above.
+  if (!reportUri.startsWith('https://')) {
+    throw new Error(
+      `Invalid CSP reportUri: protocol must be https: (got: ${JSON.stringify(reportUri)})`
+    );
+  }
+
+  // CDK token escape hatch: when the value contains an unresolved token
+  // (the `${Token[...]}` lexical marker), skip the URL-parser check.
+  // At deploy time CDK substitutes the token with the concrete value via
+  // `Fn::Join`; the resulting CloudFormation-resolved string is the one
+  // the browser actually receives, NOT this token-laden synth-time view.
+  //
+  // We deliberately do NOT call `Token.isUnresolved` here — this module
+  // is a PURE FUNCTION that knows nothing about CDK, so a lexical check
+  // keeps the unit tests free of CDK imports. The token-detection regex
+  // matches the well-defined CDK internal format (`${Token[<id>]}`),
+  // which CDK guarantees won't collide with user data because CDK
+  // controls both the format and the id generator.
+  const containsCdkToken = /\$\{Token\[[^\]]+\]\}/.test(reportUri);
+  if (containsCdkToken) {
+    return; // Validation passes — defer the URL-parse check to deploy time.
   }
 
   // Must parse as a URL. URL constructor throws on malformed input.
@@ -215,6 +251,9 @@ export function assertValidCspReportUri(reportUri: string): void {
   }
 
   if (parsed.protocol !== 'https:') {
+    // Redundant guard — we already prefix-checked. Keeping it in case the
+    // URL parser normalises a weird scheme into something non-https
+    // (e.g., `javascript://` does parse, with a non-https protocol).
     throw new Error(
       `Invalid CSP reportUri: protocol must be https: (got: ${parsed.protocol})`
     );
