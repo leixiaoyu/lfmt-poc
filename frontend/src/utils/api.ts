@@ -48,7 +48,10 @@ function generateRequestId(): string {
 // session helpers exported below.
 //
 // Removal plan: see issue #199 — the migration code can be deleted
-// after one full rollover cycle (≥30 days post-deploy).
+// no earlier than 2026-06-04 (30 days after the 2026-05-04 deploy
+// of PR #198, which covers the worst-case Cognito refresh-token
+// lifetime). See AUTH_CONFIG.LEGACY in constants.ts for the full
+// removal checklist.
 
 /**
  * Local-storage keys we DELETE during migration. Sourced directly from
