@@ -329,15 +329,40 @@ export interface ListJobsItem {
 /**
  * Array element type for the GET /jobs response.
  *
- * The actual wire body is `{ jobs: ListJobsApiResponse, count: number }` —
- * this type describes the element shape of the `jobs` array. Frontend callers
- * access `response.data.jobs` after the axios get resolves.
+ * The actual wire body is `{ jobs: ListJobsApiResponse, count: number,
+ * nextCursor?: string }` — this type describes the element shape of the
+ * `jobs` array. Frontend callers access `response.data.jobs` after the
+ * axios get resolves.
  *
  * Authorization: the array MUST be scoped to the Cognito-claim identity
  * (`event.requestContext.authorizer.claims.sub`). Any client-supplied
  * `userId` query parameter MUST be silently ignored.
  */
 export type ListJobsApiResponse = ListJobsItem[];
+
+/**
+ * Response envelope returned by GET /jobs.
+ *
+ * `nextCursor` is present when DynamoDB returned a `LastEvaluatedKey`,
+ * indicating there are more jobs beyond this page. Clients pass it back as
+ * `?cursor=<value>` to retrieve the next page. The value is an opaque
+ * base64-encoded string — clients MUST NOT attempt to parse it.
+ *
+ * POC scope: the frontend currently ignores `nextCursor` and renders only
+ * the first page. A paginator UI is deferred until user history grows
+ * beyond 100 jobs in practice.
+ */
+export interface ListJobsEnvelope {
+  jobs: ListJobsItem[];
+  count: number;
+  /**
+   * Opaque base64-encoded DynamoDB continuation token. Present only when
+   * a subsequent page exists. Absent (not `null`) when this is the last page.
+   */
+  nextCursor?: string;
+  /** Index signature required by `createFlatResponse<T extends ApiFlatResponseBody>`. */
+  [key: string]: unknown;
+}
 
 /**
  * Response body returned by GET /jobs/{jobId}.
@@ -389,9 +414,12 @@ export interface DeleteJobApiResponse {
  * rather than a `Cannot read properties of undefined` runtime crash
  * (the 2026-05-09 demo blocker).
  *
- * Field naming notes (preserved from the live Lambda response):
- *   - `chunksTranslated` (NOT `completedChunks`) — the backend persists this
- *     name in DDB and surfaces it as-is on the wire.
+ * Field naming notes:
+ *   - `translatedChunks` (#229 rename from `chunksTranslated`) — now
+ *     matches the DDB column name, eliminating the 3-tier naming drift.
+ *     Single-shot rename is safe for this POC: there is exactly ONE
+ *     consumer (the SPA we own), atomic deploys are used, and no
+ *     third-party clients exist.
  *   - `fileName` is camelCase here even though DDB stores `filename`
  *     (lowercase n) — the Lambda translates at the response boundary.
  *
@@ -411,8 +439,16 @@ export interface TranslationStatusApiResponse {
   targetLanguage?: string;
   tone?: TranslationTone;
   totalChunks: number;
-  /** Number of chunks translated so far (NOT named `completedChunks`). */
-  chunksTranslated: number;
+  /**
+   * Number of chunks translated so far.
+   *
+   * Named `translatedChunks` to match the DDB column (issue #229 — eliminated
+   * 3-tier naming drift between DDB / wire / frontend). The frontend's
+   * Anti-Corruption Layer mapper (translationJobMapper.ts) projects this to
+   * `completedChunks` on the frontend model; that internal rename is a
+   * separate, optional cleanup.
+   */
+  translatedChunks: number;
   progressPercentage: number;
   tokensUsed?: number;
   estimatedCost?: number;
@@ -431,6 +467,9 @@ export interface TranslationStatusApiResponse {
  * (`backend/functions/jobs/startTranslation.ts`) and the frontend
  * (`translationService.ts:startTranslation`) MUST import this DTO so any
  * future drift surfaces at compile time.
+ *
+ * `translatedChunks` (#229 rename from `chunksTranslated`) — matches the
+ * DDB column and the TranslationStatusApiResponse field for consistency.
  */
 export interface StartTranslationApiResponse {
   message: string;
@@ -438,7 +477,8 @@ export interface StartTranslationApiResponse {
   translationStatus: string;
   targetLanguage: string;
   totalChunks: number;
-  chunksTranslated: number;
+  /** Always 0 at start; named `translatedChunks` to match DDB column (#229). */
+  translatedChunks: number;
   estimatedCompletion?: string;
   estimatedCost?: number;
   /** Step Functions execution ARN (for tracking / debugging). */

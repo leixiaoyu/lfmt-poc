@@ -111,9 +111,12 @@ describe('API Envelope Contract — translation pipeline', () => {
     // specifically to prevent reading `response.data.data` here.
     expect(response.data.jobId).toBe(jobId);
     expect(response.data.translationStatus).toBe('IN_PROGRESS');
-    // Field name is `chunksTranslated`, not `completedChunks` —
-    // mirrors the real Lambda. Frontend service translates at the seam.
-    expect(typeof response.data.chunksTranslated).toBe('number');
+    // Field name is `translatedChunks` (renamed from `chunksTranslated`
+    // in issue #229) — mirrors the real Lambda. Frontend service translates
+    // at the ACL seam (mapper) to `completedChunks`.
+    expect(typeof response.data.translatedChunks).toBe('number');
+    // Regression guard: the OLD field name MUST NOT appear on the wire.
+    expect(response.data).not.toHaveProperty('chunksTranslated');
     expect(typeof response.data.totalChunks).toBe('number');
   });
 
@@ -137,7 +140,10 @@ describe('API Envelope Contract — translation pipeline', () => {
     expect(typeof response.data.status).toBe('string');
     expect(typeof response.data.translationStatus).toBe('string');
     expect(typeof response.data.totalChunks).toBe('number');
-    expect(typeof response.data.chunksTranslated).toBe('number');
+    // #229: wire field is now `translatedChunks` (renamed from `chunksTranslated`).
+    expect(typeof response.data.translatedChunks).toBe('number');
+    // Regression guard: old name MUST NOT appear on the wire.
+    expect(response.data).not.toHaveProperty('chunksTranslated');
     expect(typeof response.data.progressPercentage).toBe('number');
   });
 

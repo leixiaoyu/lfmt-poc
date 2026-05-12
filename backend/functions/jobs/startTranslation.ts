@@ -212,7 +212,8 @@ export const handler = async (event: APIGatewayProxyEvent): Promise<APIGatewayPr
       translationStatus: 'IN_PROGRESS',
       targetLanguage: body.targetLanguage,
       totalChunks: job.totalChunks,
-      chunksTranslated: 0,
+      // #229: renamed from `chunksTranslated` → `translatedChunks` to match DDB column.
+      translatedChunks: 0,
       estimatedCompletion,
       estimatedCost: calculateEstimatedCost(job.totalChunks, 3500), // Assume 3500 tokens per chunk
       executionArn, // Step Functions execution ARN for tracking

@@ -88,8 +88,8 @@ export const handler = async (event: APIGatewayProxyEvent): Promise<APIGatewayPr
     // written by Lambda (via `marshall`) but as a STRING type when written by the
     // Step Functions DynamoUpdateItem task.  When `@aws-sdk/util-dynamodb`
     // `unmarshall` reads a `{ S: '1' }` attribute it returns the JS string `'1'`,
-    // not the number `1`.  JSON.stringify then serialises it as `"chunksTranslated":"1"`
-    // (quoted) instead of `"chunksTranslated":1` (numeric).
+    // not the number `1`.  JSON.stringify then serialises it as `"translatedChunks":"1"`
+    // (quoted) instead of `"translatedChunks":1` (numeric).
     //
     // The fix: call Number() at this seam so the wire always carries a number.
     // The WARN log makes the bug observable in CloudWatch until every write site
@@ -98,12 +98,12 @@ export const handler = async (event: APIGatewayProxyEvent): Promise<APIGatewayPr
     // NOTE: `totalChunks` has the same exposure via the Step Functions write,
     // so it receives the same coercion guard.
     const rawTranslatedChunks = job.translatedChunks;
-    const chunksTranslated =
+    const translatedChunks =
       typeof rawTranslatedChunks === 'number'
         ? rawTranslatedChunks
         : rawTranslatedChunks !== undefined && rawTranslatedChunks !== null
           ? (() => {
-              logger.warn('chunksTranslated read as non-number from DDB — coercing (#227)', {
+              logger.warn('translatedChunks read as non-number from DDB — coercing (#227)', {
                 jobId,
                 rawType: typeof rawTranslatedChunks,
                 rawValue: String(rawTranslatedChunks),
@@ -139,8 +139,10 @@ export const handler = async (event: APIGatewayProxyEvent): Promise<APIGatewayPr
       targetLanguage: job.targetLanguage,
       tone: job.translationTone,
       totalChunks,
-      chunksTranslated,
-      progressPercentage: calculateProgress(chunksTranslated, totalChunks),
+      // #229: field renamed from `chunksTranslated` → `translatedChunks` to
+      // match the DDB column (eliminates 3-tier naming drift).
+      translatedChunks,
+      progressPercentage: calculateProgress(translatedChunks, totalChunks),
       tokensUsed: job.tokensUsed,
       estimatedCost: job.estimatedCost,
       createdAt: job.createdAt,
@@ -151,7 +153,7 @@ export const handler = async (event: APIGatewayProxyEvent): Promise<APIGatewayPr
     // Add estimated completion for in-progress translations
     if (job.translationStatus === 'IN_PROGRESS') {
       response.estimatedCompletion = calculateEstimatedCompletion(
-        chunksTranslated,
+        translatedChunks,
         totalChunks,
         job.translationStartedAt
       );
@@ -209,20 +211,20 @@ async function loadJob(jobId: string, userId: string): Promise<DynamoDBJob | nul
 /**
  * Calculate progress percentage
  */
-function calculateProgress(chunksTranslated: number, totalChunks: number): number {
+function calculateProgress(translatedChunks: number, totalChunks: number): number {
   if (totalChunks === 0) return 0;
-  return Math.round((chunksTranslated / totalChunks) * 100);
+  return Math.round((translatedChunks / totalChunks) * 100);
 }
 
 /**
  * Calculate estimated completion time based on current progress
  */
 function calculateEstimatedCompletion(
-  chunksTranslated: number,
+  translatedChunks: number,
   totalChunks: number,
   startedAt?: string
 ): string | undefined {
-  if (!startedAt || chunksTranslated === 0) {
+  if (!startedAt || translatedChunks === 0) {
     // Can't estimate without start time or progress
     return undefined;
   }
@@ -232,10 +234,10 @@ function calculateEstimatedCompletion(
   const elapsed = now - startTime;
 
   // Calculate average time per chunk
-  const avgTimePerChunk = elapsed / chunksTranslated;
+  const avgTimePerChunk = elapsed / translatedChunks;
 
   // Estimate remaining time
-  const remainingChunks = totalChunks - chunksTranslated;
+  const remainingChunks = totalChunks - translatedChunks;
   const estimatedRemainingMs = remainingChunks * avgTimePerChunk;
 
   const completionTime = new Date(now + estimatedRemainingMs);

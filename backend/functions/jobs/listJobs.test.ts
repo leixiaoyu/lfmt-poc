@@ -18,7 +18,7 @@ import { APIGatewayProxyEvent } from 'aws-lambda';
 import { mockClient } from 'aws-sdk-client-mock';
 import { DynamoDBClient, QueryCommand } from '@aws-sdk/client-dynamodb';
 import { marshall } from '@aws-sdk/util-dynamodb';
-import { handler } from './listJobs';
+import { handler, encodeCursor, decodeCursor } from './listJobs';
 
 const dynamoMock = mockClient(DynamoDBClient);
 
@@ -208,5 +208,163 @@ describe('listJobs endpoint', () => {
     expect(result.statusCode).toBe(500);
     const body = JSON.parse(result.body);
     expect(body.message).toMatch(/failed to list jobs/i);
+  });
+
+  // -------------------------------------------------------------------------
+  // Pagination cursor (#237)
+  // -------------------------------------------------------------------------
+
+  describe('pagination cursor (#237)', () => {
+    it('omits nextCursor when DDB returns no LastEvaluatedKey (last page)', async () => {
+      dynamoMock.on(QueryCommand).resolves({
+        Items: [makeJobItem('job-aaa', 'user-123')],
+        Count: 1,
+        // No LastEvaluatedKey — this is the final page
+      } as any);
+
+      const result = await handler(createEvent('user-123') as APIGatewayProxyEvent);
+
+      expect(result.statusCode).toBe(200);
+      const body = JSON.parse(result.body);
+      // nextCursor MUST be absent (not null) when no more pages exist
+      expect(body).not.toHaveProperty('nextCursor');
+    });
+
+    it('includes nextCursor when DDB returns LastEvaluatedKey', async () => {
+      const lastKey = {
+        jobId: { S: 'job-last' },
+        userId: { S: 'user-123' },
+        createdAt: { S: '2026-01-01T00:00:00.000Z' },
+      };
+      dynamoMock.on(QueryCommand).resolves({
+        Items: [makeJobItem('job-aaa', 'user-123')],
+        Count: 1,
+        LastEvaluatedKey: lastKey,
+      } as any);
+
+      const result = await handler(createEvent('user-123') as APIGatewayProxyEvent);
+
+      expect(result.statusCode).toBe(200);
+      const body = JSON.parse(result.body);
+      expect(typeof body.nextCursor).toBe('string');
+      expect(body.nextCursor.length).toBeGreaterThan(0);
+    });
+
+    it('passes decoded cursor as ExclusiveStartKey to DynamoDB', async () => {
+      const startKey = {
+        jobId: { S: 'job-prev' },
+        userId: { S: 'user-123' },
+        createdAt: { S: '2026-01-15T00:00:00.000Z' },
+      };
+      const cursor = encodeCursor(startKey);
+
+      dynamoMock.on(QueryCommand).resolves({
+        Items: [makeJobItem('job-next', 'user-123')],
+        Count: 1,
+      } as any);
+
+      const event: Partial<APIGatewayProxyEvent> = {
+        ...createEvent('user-123'),
+        queryStringParameters: { cursor },
+      };
+
+      const result = await handler(event as APIGatewayProxyEvent);
+
+      expect(result.statusCode).toBe(200);
+      const calls = dynamoMock.calls();
+      expect(calls).toHaveLength(1);
+      const queryInput = calls[0].args[0].input as any;
+      expect(queryInput.ExclusiveStartKey).toEqual(startKey);
+    });
+
+    it('returns 400 for a malformed cursor', async () => {
+      const event: Partial<APIGatewayProxyEvent> = {
+        ...createEvent('user-123'),
+        queryStringParameters: { cursor: 'not-valid-base64url!!!' },
+      };
+
+      const result = await handler(event as APIGatewayProxyEvent);
+
+      expect(result.statusCode).toBe(400);
+      const body = JSON.parse(result.body);
+      expect(body.message).toMatch(/invalid cursor/i);
+    });
+
+    it('returns 400 when cursor userId does not match caller (cross-user cursor guard)', async () => {
+      // A cursor belonging to a different user must be rejected
+      const otherUserKey = {
+        jobId: { S: 'job-other' },
+        userId: { S: 'different-user-999' },
+        createdAt: { S: '2026-01-01T00:00:00.000Z' },
+      };
+      const cursor = encodeCursor(otherUserKey);
+
+      const event: Partial<APIGatewayProxyEvent> = {
+        ...createEvent('user-123'),
+        queryStringParameters: { cursor },
+      };
+
+      const result = await handler(event as APIGatewayProxyEvent);
+
+      expect(result.statusCode).toBe(400);
+      const body = JSON.parse(result.body);
+      expect(body.message).toMatch(/mismatch/i);
+    });
+
+    it('returns 400 when cursor body lacks a userId key (#244 — defense-in-depth)', async () => {
+      // A cursor crafted without a `userId` key must NOT silently bypass the
+      // cross-user guard. Pre-#244 the truthy check on `cursorUserId`
+      // short-circuited when the key was absent, leaving only the DDB GSI
+      // partition as defense. This test locks the fail-fast contract.
+      const keyWithoutUserId = {
+        jobId: { S: 'job-x' },
+        createdAt: { S: '2026-01-01T00:00:00.000Z' },
+        // Intentionally NO `userId` key.
+      };
+      const cursor = encodeCursor(keyWithoutUserId);
+
+      const event: Partial<APIGatewayProxyEvent> = {
+        ...createEvent('user-123'),
+        queryStringParameters: { cursor },
+      };
+
+      const result = await handler(event as APIGatewayProxyEvent);
+
+      expect(result.statusCode).toBe(400);
+      const body = JSON.parse(result.body);
+      expect(body.message).toMatch(/missing userid/i);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Cursor round-trip unit tests (#237)
+  // -------------------------------------------------------------------------
+
+  describe('encodeCursor / decodeCursor round-trip', () => {
+    it('round-trips a valid DDB key', () => {
+      const key = {
+        jobId: { S: 'j1' },
+        userId: { S: 'u1' },
+        createdAt: { S: '2026-01-01T00:00:00.000Z' },
+      };
+      const encoded = encodeCursor(key);
+      expect(typeof encoded).toBe('string');
+      const decoded = decodeCursor(encoded);
+      expect(decoded).toEqual(key);
+    });
+
+    it('decodeCursor returns null for non-base64url input', () => {
+      expect(decodeCursor('!!!invalid!!!')).toBeNull();
+    });
+
+    it('decodeCursor returns null for base64url that decodes to non-object JSON', () => {
+      const notObj = Buffer.from('[1,2,3]').toString('base64url');
+      expect(decodeCursor(notObj)).toBeNull();
+    });
+
+    it('decodeCursor returns null for base64url that decodes to invalid JSON', () => {
+      const broken = Buffer.from('not json').toString('base64url');
+      expect(decodeCursor(broken)).toBeNull();
+    });
   });
 });
