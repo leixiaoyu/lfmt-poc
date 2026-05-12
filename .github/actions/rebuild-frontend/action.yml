@@ -47,6 +47,22 @@ runs:
         BUCKET=$(echo "$OUTPUTS" | jq -r '.[] | select(.OutputKey=="FrontendBucketName") | .OutputValue')
         DIST_ID=$(echo "$OUTPUTS" | jq -r '.[] | select(.OutputKey=="CloudFrontDistributionId") | .OutputValue')
         FRONTEND_URL=$(echo "$OUTPUTS" | jq -r '.[] | select(.OutputKey=="FrontendUrl") | .OutputValue')
+        # OMC R2 L-2: guard against empty outputs. jq returns empty string (not
+        # an error) when a key is absent — e.g. if CDK deploy failed mid-way and
+        # the stack is in a partial state. An empty VITE_API_URL would bake a
+        # broken bundle into S3; fail loudly here instead.
+        if [ -z "$API_URL" ]; then
+          echo "::error::ApiUrl not found in CFN outputs for stack ${{ inputs.stack-name }} — was the CDK deploy successful?"
+          exit 1
+        fi
+        if [ -z "$BUCKET" ]; then
+          echo "::error::FrontendBucketName not found in CFN outputs for stack ${{ inputs.stack-name }}"
+          exit 1
+        fi
+        if [ -z "$DIST_ID" ]; then
+          echo "::error::CloudFrontDistributionId not found in CFN outputs for stack ${{ inputs.stack-name }}"
+          exit 1
+        fi
         echo "api_url=$API_URL" >> $GITHUB_OUTPUT
         echo "bucket_name=$BUCKET" >> $GITHUB_OUTPUT
         echo "distribution_id=$DIST_ID" >> $GITHUB_OUTPUT
