@@ -10,7 +10,7 @@ import {
   NotAuthorizedException,
   TooManyRequestsException,
 } from '@aws-sdk/client-cognito-identity-provider';
-import { refreshTokenRequestSchema } from '@lfmt/shared-types';
+import { refreshTokenRequestSchema, RefreshTokenResponse } from '@lfmt/shared-types';
 import { createFlatResponse, createErrorResponse } from '../shared/api-response';
 import Logger from '../shared/logger';
 import { getRequiredEnv } from '../shared/env';
@@ -86,13 +86,17 @@ export const handler = async (event: APIGatewayProxyEvent): Promise<APIGatewayPr
     //
     // Convention enforced at the type level via `createFlatResponse`
     // (PR #218 OMC R1 H1-arch).
+    // Issue #188: construct typed response first so tsc validates field presence.
+    const refreshResponse: RefreshTokenResponse = {
+      accessToken: response.AuthenticationResult.AccessToken!,
+      idToken: response.AuthenticationResult.IdToken!,
+      expiresIn: response.AuthenticationResult.ExpiresIn,
+    };
     return createFlatResponse(
       200,
       {
         message: 'Tokens refreshed successfully',
-        accessToken: response.AuthenticationResult.AccessToken,
-        idToken: response.AuthenticationResult.IdToken,
-        expiresIn: response.AuthenticationResult.ExpiresIn,
+        ...(refreshResponse as unknown as Record<string, unknown>),
       },
       requestId,
       requestOrigin

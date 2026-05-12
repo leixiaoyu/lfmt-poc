@@ -86,7 +86,7 @@ export function decodeCursor(cursor: string): Record<string, AttributeValue> | n
       typeof parsed !== 'object' ||
       parsed === null ||
       Array.isArray(parsed) ||
-      Object.keys(parsed as object).length === 0
+      Object.keys(parsed).length === 0
     ) {
       return null;
     }

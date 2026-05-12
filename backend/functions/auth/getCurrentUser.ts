@@ -44,21 +44,21 @@ export const handler = async (event: APIGatewayProxyEvent): Promise<APIGatewayPr
       userId: authorizerClaims.sub,
     });
 
-    const user = {
+    // Issue #188: the full shared UserProfile interface requires many fields that
+    // Cognito authorizer claims don't provide (createdAt, mfaEnabled, role, etc.).
+    // The wire contract for GET /me is the subset the frontend consumes:
+    // { id, email, firstName, lastName }. A future PR should add a
+    // CurrentUserApiResponse interface to shared-types that exactly matches this
+    // subset — for now, the object literal is locally typed to prevent accidental
+    // field removal.
+    const user: { id: string; email: string; firstName: string; lastName: string } = {
       id: authorizerClaims.sub,
       email: authorizerClaims.email || '',
       firstName: authorizerClaims.given_name || '',
       lastName: authorizerClaims.family_name || '',
     };
 
-    return createFlatResponse(
-      200,
-      {
-        user,
-      },
-      requestId,
-      requestOrigin
-    );
+    return createFlatResponse(200, { user }, requestId, requestOrigin);
   } catch (error) {
     logger.error('Unexpected error during getCurrentUser', {
       requestId,
