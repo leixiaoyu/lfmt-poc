@@ -57,7 +57,9 @@ describe('deleteJob endpoint', () => {
   const deletedJobWithExecutionAttributes = {
     ...deletedJobAttributes,
     status: { S: 'IN_PROGRESS' },
-    executionArn: { S: 'arn:aws:states:us-east-1:123456789012:execution:lfmt-translation-workflow-LfmtPocDev:exec-001' },
+    executionArn: {
+      S: 'arn:aws:states:us-east-1:123456789012:execution:lfmt-translation-workflow-LfmtPocDev:exec-001',
+    },
   };
 
   // ---------------------------------------------------------------------------

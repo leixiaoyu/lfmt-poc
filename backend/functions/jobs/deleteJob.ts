@@ -43,11 +43,7 @@ import {
   ConditionalCheckFailedException,
 } from '@aws-sdk/client-dynamodb';
 import { S3Client, DeleteObjectCommand } from '@aws-sdk/client-s3';
-import {
-  SFNClient,
-  DescribeExecutionCommand,
-  StopExecutionCommand,
-} from '@aws-sdk/client-sfn';
+import { SFNClient, DescribeExecutionCommand, StopExecutionCommand } from '@aws-sdk/client-sfn';
 import { marshall, unmarshall } from '@aws-sdk/util-dynamodb';
 import { DynamoDBJob, DeleteJobApiResponse } from '@lfmt/shared-types';
 import Logger from '../shared/logger';
