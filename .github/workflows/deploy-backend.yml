@@ -80,6 +80,15 @@ jobs:
     # lint/format/type-check is handled by the parallel `Run Tests (Frontend)`
     # job in deploy-frontend.yml.
     #
+    # PARITY ENFORCEMENT (Issue #156): the ci.yml workflow-lint job includes a
+    # programmatic step `Verify ci.yml ↔ deploy-backend.yml step-list parity`
+    # that parses both files and asserts every step name in THIS job also
+    # appears in ci.yml's `test` or `lint-and-format` job. Adding a new step
+    # here without adding the matching step to ci.yml will FAIL the workflow-lint
+    # job on the next PR and block merge. To explicitly exempt a legitimately
+    # deploy-only step, add `# parity:exempt — <reason>` on the line before
+    # `- name:`.
+    #
     # Steps that ci.yml runs but this job intentionally does NOT:
     #   - shared-types `npm test` (ci.yml `test` job)        [PR-gate only]
     #   - backend `npx tsc --noEmit`  (ci.yml lint-and-format)[PR-gate only;
@@ -87,12 +96,6 @@ jobs:
     #   - infrastructure build/test/cdk-synth (ci.yml build-infrastructure)
     #     [the `cdk deploy` below implicitly re-synths; PR gate is authoritative]
     #   - npm audit                   (ci.yml security-scan) [PR-gate only]
-    #
-    # If you add a new deploy-blocking step to deploy-backend.yml, also add
-    # it to ci.yml so PRs surface failures BEFORE merge. Do NOT remove the
-    # primary lint/format steps below — those are the ones that historically
-    # failed at deploy-time after merging green PRs (Issue #149 backend lint,
-    # Issue #152 follow-on shared-types build).
 
     steps:
       - name: Checkout code
