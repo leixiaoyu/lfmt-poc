@@ -27,7 +27,7 @@ import {
   __testResetLegacyShortCircuit,
 } from '../api';
 import { AUTH_CONFIG } from '../../config/constants';
-import type { StoredSession } from '@lfmt/shared-types';
+import type { StoredSession, UserProfile } from '@lfmt/shared-types';
 
 function readBlob(): StoredSession | null {
   const raw = localStorage.getItem(AUTH_CONFIG.SESSION_KEY);
@@ -146,7 +146,8 @@ describe('API Client - Token Management (one-blob model)', () => {
         idToken: 'id',
         accessToken: 'access',
         refreshToken: 'rt',
-        user: { id: 'u1' },
+        // Minimal fixture — tests clearAuthToken removes blob, not user shape.
+        user: { id: 'u1' } as unknown as UserProfile,
       });
 
       clearAuthToken();
@@ -180,7 +181,8 @@ describe('API Client - Token Management (one-blob model)', () => {
         idToken: 'id-1',
         accessToken: 'access-1',
         refreshToken: 'refresh-1',
-        user: { id: 'u1' },
+        // Minimal fixture — tests merge semantics, not user shape.
+        user: { id: 'u1' } as unknown as UserProfile,
       });
 
       updateStoredSession({ idToken: 'id-2', accessToken: 'access-2' });
@@ -224,8 +226,9 @@ describe('API Client - Token Management (one-blob model)', () => {
       // previous version of this test stored only id+email and
       // happened to pass because the helper was a bare passthrough;
       // the hardened narrower correctly returns null for that input.
+      // Legacy shape (id, not userId) — narrowStoredUser accepts both.
       const user = { id: 'u1', email: 'test@example.com', firstName: 'T', lastName: 'U' };
-      setStoredSession({ idToken: 'id', accessToken: 'a', user });
+      setStoredSession({ idToken: 'id', accessToken: 'a', user: user as unknown as UserProfile });
       expect(getStoredUser()).toEqual(user);
     });
 
@@ -236,7 +239,13 @@ describe('API Client - Token Management (one-blob model)', () => {
       // `unknown`, and a downstream consumer doing
       // `(user as User).email.toLowerCase()` would crash. Now they
       // get null and can branch defensively.
-      setStoredSession({ idToken: 'id', accessToken: 'a', user: { id: 'u1' } });
+      // Intentionally minimal (missing email/firstName/lastName) to verify
+      // narrowStoredUser returns null for malformed shapes.
+      setStoredSession({
+        idToken: 'id',
+        accessToken: 'a',
+        user: { id: 'u1' } as unknown as UserProfile,
+      });
       expect(getStoredUser()).toBeNull();
     });
   });
@@ -511,12 +520,53 @@ describe('API Client - narrowStoredUser (Round 2 item 8)', () => {
     expect(narrowStoredUser({})).toBeNull();
   });
 
+  // -----------------------------------------------------------------------
+  // Issue #200: accepts canonical UserProfile shape (`userId`) and normalises
+  // to `id` in the returned NarrowedStoredUser for SPA consumers.
+  // -----------------------------------------------------------------------
+
+  it('should accept userId (UserProfile shape) and normalise to id (issue #200)', () => {
+    const result = narrowStoredUser({
+      userId: 'up-1',
+      email: 'a@b.com',
+      firstName: 'A',
+      lastName: 'B',
+    });
+    // SPA consumers always receive `id` regardless of whether the stored
+    // object used `userId` (new sessions) or `id` (legacy sessions).
+    expect(result).toEqual({ id: 'up-1', email: 'a@b.com', firstName: 'A', lastName: 'B' });
+  });
+
+  it('should prefer userId over id when both are present', () => {
+    const result = narrowStoredUser({
+      userId: 'canonical',
+      id: 'legacy',
+      email: 'a@b.com',
+      firstName: 'A',
+      lastName: 'B',
+    });
+    expect(result?.id).toBe('canonical');
+  });
+
+  it('normalises isEmailVerified (UserProfile) → emailVerified (NarrowedStoredUser)', () => {
+    const result = narrowStoredUser({
+      userId: 'up-2',
+      email: 'a@b.com',
+      firstName: 'A',
+      lastName: 'B',
+      isEmailVerified: true,
+    });
+    expect(result?.emailVerified).toBe(true);
+  });
+
   it('getStoredUser routes through narrowStoredUser', () => {
     fullReset();
+    // Legacy shape (id, not userId) — narrowStoredUser accepts both and
+    // normalises to `id` in the returned NarrowedStoredUser.
     setStoredSession({
       idToken: 'id',
       accessToken: 'a',
-      user: { id: 'u1', email: 'a@b.com', firstName: 'A', lastName: 'B' },
+      user: { id: 'u1', email: 'a@b.com', firstName: 'A', lastName: 'B' } as unknown as UserProfile,
     });
     const user = getStoredUser();
     expect(user).toEqual({ id: 'u1', email: 'a@b.com', firstName: 'A', lastName: 'B' });
@@ -525,7 +575,7 @@ describe('API Client - narrowStoredUser (Round 2 item 8)', () => {
     setStoredSession({
       idToken: 'id',
       accessToken: 'a',
-      user: { id: 'u1' /* missing email, firstName, lastName */ },
+      user: { id: 'u1' /* missing email, firstName, lastName */ } as unknown as UserProfile,
     });
     expect(getStoredUser()).toBeNull();
 
@@ -990,7 +1040,7 @@ describe('API Client - Response Error Interceptor', () => {
       idToken: 'id',
       accessToken: 'test-token',
       refreshToken: 'refresh-token',
-      user: { id: '123' },
+      user: { id: '123' } as unknown as UserProfile,
     });
 
     const { createApiClient } = await import('../api');

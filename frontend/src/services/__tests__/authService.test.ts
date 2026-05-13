@@ -25,6 +25,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { authService } from '../authService';
 import { apiClient, getStoredSession, setStoredSession, clearAuthToken } from '../../utils/api';
+import type { UserProfile } from '@lfmt/shared-types';
 import type { AxiosResponse } from 'axios';
 
 // Mock ONLY the apiClient — storage helpers run against real jsdom
@@ -370,7 +371,8 @@ describe('AuthService - Logout', () => {
       idToken: 'id',
       accessToken: 'test-access-token',
       refreshToken: 'test-refresh-token',
-      user: { id: 'user-123' },
+      // Minimal object — only tests that clearAuthToken removes the blob.
+      user: { userId: 'user-123', id: 'user-123' } as UserProfile,
     });
 
     await authService.logout();

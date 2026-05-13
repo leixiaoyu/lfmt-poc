@@ -487,7 +487,7 @@ describe('TranslationUpload', () => {
       const TranslationServiceError = (await import('../../services/translationService'))
         .TranslationServiceError;
       vi.mocked(translationService.createLegalAttestation).mockRejectedValue(
-        new TranslationServiceError('Upload failed: invalid file', 400)
+        new TranslationServiceError('Upload failed: invalid file', 'API_GENERIC', 400)
       );
 
       const submitButton = screen.getByRole('button', { name: /Submit & Start Translation/i });
@@ -541,9 +541,10 @@ describe('TranslationUpload', () => {
 
       const { S3_UPLOAD_BLOCKED_MESSAGE, TranslationServiceError } =
         await import('../../services/translationService');
-      // statusCode left undefined to match the production wrap path.
+      // errorCode='S3_UPLOAD_BLOCKED' + statusCode=undefined matches the
+      // production wrapS3UploadError path for CSP/network blocks (issue #215).
       vi.mocked(translationService.uploadAndAwaitChunked).mockRejectedValue(
-        new TranslationServiceError(S3_UPLOAD_BLOCKED_MESSAGE)
+        new TranslationServiceError(S3_UPLOAD_BLOCKED_MESSAGE, 'S3_UPLOAD_BLOCKED')
       );
 
       const submitButton = screen.getByRole('button', { name: /Submit & Start Translation/i });
@@ -567,7 +568,7 @@ describe('TranslationUpload', () => {
       const TranslationServiceError = (await import('../../services/translationService'))
         .TranslationServiceError;
       vi.mocked(translationService.createLegalAttestation).mockRejectedValue(
-        new TranslationServiceError('Upload failed')
+        new TranslationServiceError('Upload failed', 'API_GENERIC')
       );
 
       await user.click(screen.getByRole('button', { name: /Submit & Start Translation/i }));

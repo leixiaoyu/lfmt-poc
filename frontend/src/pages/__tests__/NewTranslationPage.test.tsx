@@ -41,6 +41,7 @@ vi.mock('react-router-dom', async () => {
 describe('NewTranslationPage', () => {
   const mockLogout = vi.fn();
   const mockUser = {
+    userId: 'user-123',
     id: 'user-123',
     email: 'test@example.com',
     firstName: 'Test',
@@ -252,6 +253,7 @@ describe('NewTranslationPage', () => {
   describe('Edge Cases', () => {
     it('should handle user with missing firstName/lastName', () => {
       const minimalUser = {
+        userId: 'user-456',
         id: 'user-456',
         email: 'minimal@example.com',
         firstName: '',

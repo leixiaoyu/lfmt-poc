@@ -124,6 +124,39 @@ export default defineConfig(({ command, mode }) => {
     build: {
       outDir: 'dist',
       sourcemap: true,
+      rollupOptions: {
+        output: {
+          /**
+           * R-perf-2: split the upload-wizard service group into its own
+           * hashed chunk so the home, login, and dashboard routes do NOT
+           * pay the ~33.78 kB (gzip) cost of axios + translation services
+           * that they never call.
+           *
+           * Background (issue #217 / PR #214 OMC R2 perf S-perf-1):
+           * `stripBrowserForbiddenHeaders` was extracted from
+           * `translationService` into `utils/headerFilters` in PR #214,
+           * unblocking structural code-splitting. Without this hint Vite
+           * keeps any module imported from more than one route chunk in
+           * the parent (entry) chunk — collapsing translationService,
+           * uploadService, and headerFilters into the main bundle.
+           *
+           * `utils/api` (axios client + interceptors) is intentionally
+           * excluded: every authed call shares the interceptor, so it
+           * must stay in the entry chunk.
+           *
+           * Verify with: npm run build && check that
+           * dist/assets/translation-services-*.js is emitted and is NOT
+           * present in the main App-*.js chunk.
+           */
+          manualChunks: {
+            'translation-services': [
+              './src/services/translationService',
+              './src/services/uploadService',
+              './src/utils/headerFilters',
+            ],
+          },
+        },
+      },
     },
     test: {
       globals: true,

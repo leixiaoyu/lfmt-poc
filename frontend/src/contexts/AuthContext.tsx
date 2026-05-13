@@ -32,12 +32,8 @@ import {
 } from 'react';
 import { authService } from '../services/authService';
 import { getAuthToken } from '../utils/api';
-import type {
-  User,
-  LoginRequest,
-  RegisterRequest,
-  RefreshTokenResponse,
-} from '../services/authService';
+import type { UserProfile } from '@lfmt/shared-types';
+import type { LoginRequest, RegisterRequest, RefreshTokenResponse } from '../services/authService';
 import type { ApiError } from '../utils/api';
 
 /**
@@ -45,7 +41,7 @@ import type { ApiError } from '../utils/api';
  */
 interface AuthContextState {
   /** Current authenticated user (null if not authenticated) */
-  user: User | null;
+  user: UserProfile | null;
 
   /** Whether user is currently authenticated */
   isAuthenticated: boolean;
@@ -95,7 +91,7 @@ interface AuthProviderProps {
  * Automatically loads user session on mount if token exists.
  */
 export function AuthProvider({ children }: AuthProviderProps) {
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<UserProfile | null>(null);
   // Issue #228: initialise isLoading to `true` when a session token already
   // exists in localStorage, so ProtectedRoute sees a loading state on the
   // very first render (before the async /auth/me probe completes) rather

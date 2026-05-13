@@ -16,7 +16,6 @@ export class TranslationHistoryPage extends BasePage {
   private readonly jobsTable = 'table';
   private readonly jobRow = 'tbody tr';
   private readonly viewButton = 'button[aria-label="View Details"]';
-  private readonly downloadButton = 'button[aria-label="Download"]';
 
   constructor(page: Page) {
     super(page);
