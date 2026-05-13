@@ -148,6 +148,16 @@ jobs:
     name: Deploy Backend to Development
     runs-on: ubuntu-latest
     needs: test
+    # Boy-scout (#253 expansion round): mirror the `timeout-minutes` discipline
+    # that `smoke-tests` (15) and `integration-tests` (30) already enforce
+    # (added by PR #240). A stuck `cdk deploy` against a hung CloudFormation
+    # update would otherwise hold the `deploy-${ref}` concurrency lock
+    # indefinitely, blocking every subsequent deploy + the parallel
+    # deploy-frontend.yml workflow (shared concurrency group). Observed noop
+    # deploy-dev runs finish in <5 min (e.g. run 25770555446: 3m48s); a real
+    # deploy with frontend rebuild + CloudFront invalidation lands well inside
+    # 15 min. 30 gives ~6x headroom while still failing loud if CFN hangs.
+    timeout-minutes: 30
     # Trigger conditions:
     #   - push to main → automatic deploy
     #   - workflow_dispatch with environment=dev → manual deploy (escape hatch)
@@ -520,6 +530,13 @@ jobs:
     name: Deploy Backend to Staging
     runs-on: ubuntu-latest
     needs: test
+    # Boy-scout (#253 expansion round): same `timeout-minutes` discipline as
+    # deploy-dev above. Staging deploys are always full (no diff short-circuit
+    # — see Gap 2 rationale block below `Configure AWS credentials`) so the
+    # expected wall-clock is closer to dev's full-deploy path: ~5-8 min CDK
+    # + ~2-3 min frontend rebuild + ~3 min CloudFront wait. 30 gives ~2x
+    # headroom and still trips before the GitHub Actions 6-hour cap would.
+    timeout-minutes: 30
     # Issue #160 (branch-guard asymmetry): previously only checked environment
     # input but not github.ref, allowing any branch to deploy to staging via
     # `gh workflow run deploy-backend.yml --ref feature/foo -f environment=staging`.
@@ -566,6 +583,14 @@ jobs:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           role-session-name: GitHubActions-LFMT-Deploy-Staging
           aws-region: ${{ env.AWS_REGION }}
+
+      # Boy-scout (#253 expansion round): mirror deploy-dev (line 209) and
+      # deploy-prod (analogous step). Surfacing the assumed-role ARN in the
+      # workflow log is part of the audit trail for any staging deploy and
+      # gives operators a fast triage signal when an OIDC misconfiguration
+      # silently lands the workflow in the wrong account.
+      - name: Verify AWS identity
+        run: aws sts get-caller-identity
 
       - name: Install shared-types dependencies
         working-directory: shared-types
@@ -648,6 +673,19 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
           node-version: ${{ env.NODE_VERSION }}
 
+      # Boy-scout (#253 expansion round): mirror deploy-dev's `Test API Health`
+      # step (line 312). Without this, a deploy that succeeded at the CFN
+      # layer but produced an unreachable API Gateway (DNS lag, custom-domain
+      # misconfig, broken Lambda authorizer) would only be caught by the
+      # operator's manual smoke. The curl is non-blocking (`|| echo …`)
+      # because API Gateway can take a few seconds post-deploy to propagate
+      # custom-domain mappings — a transient 5xx is not a deploy failure,
+      # but the line in the run log is the audit signal that the operator
+      # should re-check if the manual smoke later reveals trouble.
+      - name: Test API Health (staging)
+        run: |
+          curl -f ${{ steps.frontend.outputs.api_url }}/v1/auth || echo "API not yet ready, may need warm-up"
+
       - name: Staging Deployment Summary
         run: |
           echo "========================================="
@@ -661,6 +699,15 @@ jobs:
     name: Deploy Backend to Production
     runs-on: ubuntu-latest
     needs: test
+    # Boy-scout (#253 expansion round): same `timeout-minutes` discipline as
+    # deploy-dev/deploy-staging above, with extra headroom. Prod runs the
+    # additional `CDK Diff (show changes for audit trail)` step (~30s) on top
+    # of the full deploy + frontend rebuild + CloudFront wait, and a prod
+    # CFN update can take longer than staging if there are more resources to
+    # update (Cognito user-pool changes, in particular, can take 5-10 min on
+    # their own). 45 min gives ~3x headroom over a typical full deploy while
+    # still tripping before the GitHub Actions 6-hour cap.
+    timeout-minutes: 45
     # Issue #160 (branch-guard asymmetry): mirrors the fix applied to
     # deploy-staging above. See that job's comment block for rationale.
     if: github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'prod'
@@ -750,6 +797,18 @@ jobs:
           stack-name: LfmtPocProd
           aws-region: ${{ env.AWS_REGION }}
           node-version: ${{ env.NODE_VERSION }}
+
+      # Boy-scout (#253 expansion round): mirror deploy-dev's `Test API Health`
+      # step (line 312) and the analogous staging step above. Same rationale:
+      # cheap audit signal for the CFN-succeeds-but-API-unreachable failure
+      # mode. Non-blocking by design (`|| echo …`) — a transient 5xx during
+      # custom-domain propagation should not fail the prod deploy run, but
+      # the line in the run log is the audit signal that lets the operator
+      # know to re-check via manual smoke if the production-frontend traffic
+      # later shows trouble.
+      - name: Test API Health (prod)
+        run: |
+          curl -f ${{ steps.frontend.outputs.api_url }}/v1/auth || echo "API not yet ready, may need warm-up"
 
       - name: Production Deployment Summary
         run: |
