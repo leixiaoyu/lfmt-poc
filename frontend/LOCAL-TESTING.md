@@ -354,6 +354,46 @@ by per-file scrutiny in PR review and the
 
 ---
 
+## Live-Backend Contract Spec (Nightly, #219)
+
+There is one Playwright spec that does NOT use the mock — it hits the
+deployed dev backend so we can catch mock-vs-live envelope drift. It
+runs on a schedule (post-deploy nightly) plus a manual dispatch — NEVER
+on per-PR CI.
+
+- Spec: `frontend/e2e/tests/contract/api-envelope-live.spec.ts`
+- Workflow: `.github/workflows/e2e-contract-nightly.yml`
+- Tag: `@contract-live` (filter via
+  `npx playwright test --grep "@contract-live"`)
+
+Run locally against the deployed dev backend:
+
+```bash
+cd frontend
+
+# Option A — with shared credentials (preferred; mirrors CI).
+export LFMT_TEST_EMAIL='dev-contract@e2e-test.lfmt.com'
+export LFMT_TEST_PASSWORD='<from 1Password>'
+export LFMT_API_URL='https://8brwlwf68h.execute-api.us-east-1.amazonaws.com/v1/'
+# Disable the local dev-server bootstrap in playwright.config.ts:
+export PLAYWRIGHT_BASE_URL="$LFMT_API_URL"
+
+npx playwright test --grep "@contract-live"
+
+# Option B — without shared creds. The spec registers a fresh user per
+# run. Auto-confirm makes that synchronous on the dev Cognito pool.
+unset LFMT_TEST_EMAIL LFMT_TEST_PASSWORD
+export LFMT_API_URL='https://8brwlwf68h.execute-api.us-east-1.amazonaws.com/v1/'
+export PLAYWRIGHT_BASE_URL="$LFMT_API_URL"
+npx playwright test --grep "@contract-live"
+```
+
+When this spec fails: the deployed Lambda's response shape has diverged
+from the SSoT type in `@lfmt/shared-types`. See the file-level comment
+in `api-envelope-live.spec.ts` for the triage steps.
+
+---
+
 ## Related References
 
 - `openspec/changes/add-local-mock-api-foundation/proposal.md` —

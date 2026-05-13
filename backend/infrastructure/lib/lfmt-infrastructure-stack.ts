@@ -24,6 +24,10 @@ import * as origins from 'aws-cdk-lib/aws-cloudfront-origins';
 import * as route53 from 'aws-cdk-lib/aws-route53';
 import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
 
+// CSP builder — extracted into its own module (#216) so the directive
+// shape is testable in isolation and re-usable from non-stack constructs.
+import { buildCsp } from './csp';
+
 // Centralized Lambda runtime version — single source of truth (DRY).
 // Bump here whenever AWS deprecates the current runtime; CI workflow
 // runners and the root package.json `engines.node` constraint should be
@@ -121,6 +125,10 @@ export class LfmtInfrastructureStack extends Stack {
   private deleteJobFunction?: lambda.Function;
   private listJobsFunction?: lambda.Function;
   private downloadTranslationFunction?: lambda.Function;
+  // CSP violation-report collector (#201). Anonymous, unauthenticated
+  // endpoint receiving browser reports — kept on its own role so the
+  // (minimal) IAM grant is auditable in isolation.
+  private cspReportFunction?: lambda.Function;
 
   // IAM role for Lambda functions
   private lambdaRole?: iam.Role;
@@ -134,6 +142,12 @@ export class LfmtInfrastructureStack extends Stack {
   // Dedicated role for the download-translation Lambda — scoped to GetItem on
   // JobsTable and GetObject on the translated/* prefix only.
   private downloadTranslationRole?: iam.Role;
+  // Dedicated role for the CSP report collector (#201). Only the
+  // CloudWatch Logs basic-execution permissions — NO DDB/S3/API access.
+  // Keeping this on its own role is doubly important here because the
+  // endpoint is unauthenticated; ANY additional grant on this role
+  // would be reachable by an anonymous internet caller.
+  private cspReportRole?: iam.Role;
 
   // Step Functions state machine
   public readonly translationStateMachine: stepfunctions.StateMachine;
@@ -1135,6 +1149,23 @@ export class LfmtInfrastructureStack extends Stack {
       ],
     });
 
+    // CSP Report Collector Role (#201) — strictest possible IAM grant.
+    //
+    // The /csp-report endpoint is INTENTIONALLY unauthenticated (browsers
+    // do not send credentials with violation reports). That makes every
+    // grant on this role reachable by an anonymous internet caller, so
+    // we attach ONLY the CloudWatch Logs basic-execution policy — no
+    // DDB, no S3, no Secrets Manager. The Lambda body is restricted to
+    // structured-log emission; there is no code path that could exfil
+    // data even if the role grew accidentally.
+    this.cspReportRole = new iam.Role(this, 'CspReportLambdaRole', {
+      assumedBy: new iam.ServicePrincipal('lambda.amazonaws.com'),
+      description: 'Isolated execution role for csp-report Lambda: CloudWatch Logs only (#201)',
+      managedPolicies: [
+        iam.ManagedPolicy.fromAwsManagedPolicyName('service-role/AWSLambdaBasicExecutionRole'),
+      ],
+    });
+
     // Step Functions Execution Role
     // SECURITY: Changed wildcard to specific function (only translate-chunk is invoked by Step Functions)
     const stepFunctionsRole = new iam.Role(this, 'StepFunctionsExecutionRole', {
@@ -1519,6 +1550,33 @@ export class LfmtInfrastructureStack extends Stack {
       environment: commonEnv,
       timeoutSeconds: 60, // Large documents (400K words) may need time to fetch and concatenate chunks
       memoryMB: 512,      // Buffer for concatenating many chunk strings in memory
+    });
+
+    // CSP Report Collector Lambda (#201) — POST /csp-report (unauthenticated)
+    //
+    // Receives browser CSP violation reports and logs them to CloudWatch
+    // for the regression-alarm pattern. Memory is tiny (the handler
+    // parses ~1 KB of JSON and emits a single log line), and the timeout
+    // is short — anything longer means the handler is wedged and we'd
+    // rather fail fast than let API Gateway hold the connection.
+    //
+    // NO commonEnv is passed: the CSP report handler does not need ANY
+    // of the standard env vars (no DDB table, no S3 bucket, no
+    // Cognito IDs). Keeping the env minimal also means an attacker who
+    // somehow achieved RCE here gets ZERO discovery surface for
+    // pivoting to other resources.
+    if (!this.cspReportRole) {
+      throw new Error('cspReportRole must be created before createLambdaFunctions');
+    }
+    this.cspReportFunction = this.createJobLambda({
+      id: 'CspReportFunction',
+      functionName: `lfmt-csp-report-${this.stackName}`,
+      entry: '../functions/security/cspReport.ts',
+      description: 'Anonymous CSP violation report collector - logs to CloudWatch (#201)',
+      role: this.cspReportRole,
+      environment: {}, // intentionally empty — see comment above
+      timeoutSeconds: 5,
+      memoryMB: 128,
     });
 
     // Add S3 event notification for upload completion
@@ -1985,7 +2043,9 @@ export class LfmtInfrastructureStack extends Stack {
       !this.listJobsFunction ||
       !this.listJobsRole ||
       !this.downloadTranslationFunction ||
-      !this.downloadTranslationRole
+      !this.downloadTranslationRole ||
+      !this.cspReportFunction ||
+      !this.cspReportRole
     ) {
       throw new Error('Lambda functions and roles must be created before API endpoints');
     }
@@ -2157,6 +2217,38 @@ export class LfmtInfrastructureStack extends Stack {
       }
     );
 
+    // -------------------------------------------------------------------------
+    // POST /csp-report — anonymous CSP violation report collector (#201).
+    //
+    // Browsers send violation reports WITHOUT credentials, so this route
+    // MUST NOT require Cognito auth. The Lambda's IAM grant is restricted
+    // to CloudWatch Logs only (see CspReportLambdaRole) so the anonymous
+    // access surface is bounded to one structured-log write.
+    //
+    // The route lives at the API root (`/csp-report`) rather than nested
+    // under `/jobs` or `/auth` so the URL is short — CSP report-uri
+    // values are emitted in every response header and shorter URLs keep
+    // the CSP string compact (important for caches and metrics).
+    //
+    // OPTIONS preflight is wired via `corsPreflightOptions('POST')` so
+    // the same-origin SPA test page (and any in-browser fetch from a
+    // future debug tool) can POST without a CORS error.
+    // -------------------------------------------------------------------------
+    const cspReportResource = this.api.root.addResource(
+      'csp-report',
+      this.corsPreflightOptions('POST')
+    );
+    cspReportResource.addMethod(
+      'POST',
+      new apigateway.LambdaIntegration(this.cspReportFunction),
+      {
+        // CRITICAL: this endpoint MUST stay unauthenticated. Browsers do
+        // not send credentials with CSP violation reports — requiring
+        // Cognito auth here would silently drop EVERY report.
+        authorizationType: apigateway.AuthorizationType.NONE,
+      }
+    );
+
     // Add Gateway Responses to include CORS headers on errors
     // Note: Gateway Response headers must be static strings, cannot use dynamic origins
     // For dynamic CORS support, Lambda functions extract requestOrigin and return appropriate headers
@@ -2293,11 +2385,18 @@ export class LfmtInfrastructureStack extends Stack {
           // updated policy is applied (preventing the same CSP-block
           // class that caused the demo-blocking failure on 2026-05-08).
           // See `buildCsp()` JSDoc for the full hardening status.
-          contentSecurityPolicy: this.buildCsp({
-            connectSrc: [
-              'https://*.execute-api.us-east-1.amazonaws.com',
-              `https://${this.documentBucket.bucketRegionalDomainName}`,
-            ],
+          contentSecurityPolicy: buildCsp({
+            directives: {
+              // Source-list REPLACEMENT (not merge) — caller must include
+              // 'self' explicitly. The wildcard execute-api host is the
+              // initial-deploy placeholder; updateCloudFrontCSP() replaces
+              // it with the concrete API Gateway domain once provisioned.
+              'connect-src': [
+                "'self'",
+                'https://*.execute-api.us-east-1.amazonaws.com',
+                `https://${this.documentBucket.bucketRegionalDomainName}`,
+              ],
+            },
           }),
           override: true,
         },
@@ -2359,156 +2458,11 @@ export class LfmtInfrastructureStack extends Stack {
     }));
   }
 
-  /**
-   * Build the Content-Security-Policy header string (Round 2 item 10).
-   *
-   * Single source of truth for the CSP — previously the policy string
-   * was duplicated between the initial response-headers policy (line
-   * ~1815) and the post-API-Gateway "Updated" policy (line ~1941).
-   * Drift between the two would have been a real risk; future hardening
-   * (e.g., Issue #197's `style-src` nonce work) now only edits ONE
-   * place.
-   *
-   * The per-call variable is `connectSrc` — a list of additional
-   * origins appended to `connect-src` alongside `'self'`. The list
-   * always includes:
-   *   1. The API Gateway origin (wildcard at initial deploy time, then
-   *      replaced with the concrete `https://<apiId>.execute-api.<region>.amazonaws.com`
-   *      once API Gateway is provisioned).
-   *   2. The S3 document-bucket regional domain
-   *      (`https://lfmt-documents-<stack>.s3.<region>.amazonaws.com`).
-   *      The browser performs presigned-PUT uploads directly against
-   *      this origin; without it the upload XHR is blocked by CSP and
-   *      the wizard surfaces a misleading "Connection lost" error
-   *      (root cause of the 2026-05-08 demo-blocking regression — the
-   *      curl validation path bypasses CSP, so this only manifests in
-   *      a real browser). The bucket origin is enumerated explicitly
-   *      (not via a `*.s3.amazonaws.com` wildcard) per OWASP CSP
-   *      guidance: a wildcard would let any compromised bucket script
-   *      exfiltrate the user's API Gateway Bearer credential.
-   *
-   * Hardening status (Issues #133, #194):
-   *   - 'unsafe-eval' REMOVED from script-src.
-   *   - 'unsafe-inline' REMOVED from script-src — Vite's built
-   *     `dist/index.html` has no inline `<script>` blocks.
-   *   - 'unsafe-inline' RETAINED on style-src — MUI/Emotion injects
-   *     runtime styles via `document.head.appendChild('<style>')`,
-   *     removal blocked on the Lambda@Edge nonce pipeline tracked in
-   *     issue #197.
-   *
-   * Telemetry (Round 2 item 9 — DEFERRED to issue #201):
-   *
-   *   The `report-uri` directive is INTENTIONALLY OMITTED from this
-   *   build. Implementing it correctly requires (1) a new Lambda
-   *   function to receive POST /csp-report; (2) a new API Gateway
-   *   route with no auth and request-size limits; (3) CORS
-   *   configuration since browsers send violation reports
-   *   cross-origin. That is a meaningful infrastructure change which
-   *   the OMC reviewer's "out of scope" guard for this PR specifically
-   *   excluded.
-   *
-   *   Issue #201 has the full implementation plan and acceptance
-   *   criteria; when it lands, the activation here is a one-line
-   *   edit: pass `reportUri` through to the options object below and
-   *   the directive is appended automatically. Until then, every
-   *   reviewer who looks at this code will see this block and know
-   *   exactly what to do (and why we didn't do it now).
-   *
-   * @param opts.connectSrc - Origins appended to `connect-src` alongside
-   *   `'self'`. Always pass an explicit list so reviewers can audit each
-   *   addition at the call site.
-   * @param opts.reportUri - Optional CSP `report-uri` endpoint. When set,
-   *   a `report-uri ${reportUri}` directive is appended (issue #201).
-   *   Left undefined today — see telemetry note above.
-   */
-  private buildCsp(opts: { connectSrc: string[]; reportUri?: string }): string {
-    const directives: string[] = [
-      `default-src 'self'`,
-      `script-src 'self'`,
-      `style-src 'self' 'unsafe-inline'`,
-      `img-src 'self' data: https:`,
-      `font-src 'self' data:`,
-      `connect-src 'self' ${opts.connectSrc.join(' ')}`,
-      `object-src 'none'`,
-      `base-uri 'self'`,
-      `form-action 'self'`,
-      `frame-ancestors 'none'`,
-      `upgrade-insecure-requests`,
-    ];
-
-    if (opts.reportUri) {
-      // H-3 (PR #214 OMC R2): sanitize `reportUri` BEFORE interpolating
-      // it into the CSP directive string. Without this, a malformed URL
-      // (or a misconfigured deploy) could inject arbitrary CSP
-      // directives — `;` and `,` both terminate directives in the CSP
-      // grammar, so a value like
-      //   `https://evil.com; script-src *`
-      // would silently downgrade `script-src` to allow ANY origin.
-      // Whitespace gets the same treatment because CSP source-list
-      // parsers split on whitespace; an injected token there would be
-      // treated as an additional source for the `report-uri` directive
-      // (which CSP3 ignores, but the legacy parser may not).
-      //
-      // The check is performed at synth time (not deploy time) so a
-      // misconfiguration fails fast in `cdk synth` / `cdk deploy` rather
-      // than reaching CloudFront. Issue #201 will wire this parameter;
-      // pinning the contract here means that PR can't accidentally
-      // forward an attacker-controlled URL.
-      LfmtInfrastructureStack.assertValidCspReportUri(opts.reportUri);
-      // CSP grammar requires `report-uri` to be the LAST directive so
-      // that any future tail-only directive (e.g. `report-to`) can be
-      // appended without breaking the value. Issue #201 will switch to
-      // `report-to` once the violation-receiver Lambda lands.
-      directives.push(`report-uri ${opts.reportUri}`);
-    }
-
-    return directives.join('; ') + ';';
-  }
-
-  /**
-   * Validate a CSP `report-uri` value before interpolating it into a
-   * directive string (H-3, PR #214 OMC R2).
-   *
-   * Rules (intentionally conservative — favour false-positive on synth
-   * over a false-negative that ships an injection):
-   *   1. Must parse as a valid URL.
-   *   2. Protocol MUST be `https:`. CSP report endpoints commonly POST
-   *      cross-origin with credentials, so plain HTTP would leak
-   *      violation reports (which contain blocked URIs that may include
-   *      session info) over the wire.
-   *   3. The raw string MUST NOT contain whitespace, `;`, or `,` —
-   *      these terminate / split CSP directives, so an injected
-   *      character there would let an attacker append a directive (e.g.
-   *      `https://x.com; script-src *`).
-   *
-   * Throws synchronously inside `cdk synth` so a bad value never
-   * reaches CloudFront. Static so the unit test can call it without
-   * instantiating the full stack.
-   */
-  private static assertValidCspReportUri(reportUri: string): void {
-    // Forbidden characters: whitespace + CSP-grammar separators.
-    if (/[\s;,]/.test(reportUri)) {
-      throw new Error(
-        `Invalid CSP reportUri: must not contain whitespace, ';' or ',' (got: ${JSON.stringify(reportUri)})`
-      );
-    }
-
-    // Must parse as a URL. URL constructor throws on malformed input.
-    let parsed: URL;
-    try {
-      parsed = new URL(reportUri);
-    } catch {
-      throw new Error(
-        `Invalid CSP reportUri: not a valid URL (got: ${JSON.stringify(reportUri)})`
-      );
-    }
-
-    if (parsed.protocol !== 'https:') {
-      throw new Error(
-        `Invalid CSP reportUri: protocol must be https: (got: ${parsed.protocol})`
-      );
-    }
-  }
+  // -------------------------------------------------------------------------
+  // CSP construction: extracted to `./csp.ts` (#216). Call `buildCsp({...})`
+  // directly — no class wrapper is needed. The `assertValidCspReportUri`
+  // helper is re-exported alongside it for the H-3 sanitization tests.
+  // -------------------------------------------------------------------------
 
   private updateCloudFrontCSP() {
     /**
@@ -2560,11 +2514,31 @@ export class LfmtInfrastructureStack extends Stack {
           // for browser-side presigned-PUT uploads (root cause of the
           // 2026-05-08 demo-blocking regression). See `buildCsp()`
           // JSDoc for the full hardening status (#133, #194, #197).
-          contentSecurityPolicy: this.buildCsp({
-            connectSrc: [
-              `https://${apiDomain}`,
-              `https://${this.documentBucket.bucketRegionalDomainName}`,
-            ],
+          contentSecurityPolicy: buildCsp({
+            directives: {
+              // Source-list REPLACEMENT (not merge) — caller must include
+              // 'self' explicitly. After API Gateway exists we swap the
+              // wildcard `*.execute-api` host for the concrete API domain.
+              'connect-src': [
+                "'self'",
+                `https://${apiDomain}`,
+                `https://${this.documentBucket.bucketRegionalDomainName}`,
+              ],
+              // #201: report violations to the dedicated unauthenticated
+              // /csp-report Lambda. Per CSP3, `report-uri` is exempt
+              // from `connect-src` — the browser fires the POST out-of-band
+              // without an explicit allowlist entry, so no `connect-src`
+              // widening is needed here.
+              //
+              // The URL is sanitized at synth time by
+              // `assertValidCspReportUri` (H-3, PR #214 OMC R2). The
+              // stage prefix `/v1` is baked into the value rather than
+              // computed because the API Gateway stage is configured
+              // statically in `createApiGateway()`.
+              'report-uri': [
+                `https://${apiDomain}/v1/csp-report`,
+              ],
+            },
           }),
           override: true,
         },

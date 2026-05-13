@@ -1658,8 +1658,9 @@ describe('LFMT Infrastructure Stack', () => {
   // 'test' stackName used by these tests.
   // Update this constant + the PR body whenever a Lambda is added or removed
   // (PR #208: +2 for GetJob + DeleteJob, 11 → 13; demo-readiness: +1 for
-  // DownloadTranslation, 13 → 14; PR #239: +1 for ListJobs, 14 → 15).
-  const EXPECTED_APPLICATION_LAMBDA_COUNT = 15;
+  // DownloadTranslation, 13 → 14; PR #239: +1 for ListJobs, 14 → 15;
+  // #201: +1 for CspReport, 15 → 16).
+  const EXPECTED_APPLICATION_LAMBDA_COUNT = 16;
 
   describe('Lambda Runtime Drift Guard (PR #203 R2)', () => {
     // Regression guard mirroring the CSP/'unsafe-eval' pattern (PR #198):
@@ -2142,27 +2143,25 @@ describe('LFMT Infrastructure Stack — multi-environment CORS (PR #214 OMC R2)'
 });
 
 // ===========================================================================
-// buildCsp — H-3 reportUri sanitization (PR #214 OMC R2)
+// buildCsp — H-3 reportUri sanitization (PR #214 OMC R2) + #216 refactor
 //
-// `buildCsp({ reportUri })` from commit ea221f1 interpolates the value
-// directly into a CSP directive string. When issue #201 wires this
-// parameter, an attacker (or a misconfigured deploy) could inject a CSP
-// directive via a malformed URL. The validation is exercised here via
-// the static assertion helper so the unit test runs without a full stack
-// synth.
+// `buildCsp` (now in `lib/csp.ts`, extracted by #216) interpolates the
+// configured `report-uri` value directly into a CSP directive string. When
+// issue #201 wires this parameter, an attacker (or a misconfigured deploy)
+// could inject a CSP directive via a malformed URL. The validation is
+// exercised here via the exported assertion helper so the unit test runs
+// without a full stack synth.
+//
+// #216 changed the options shape from
+//   `buildCsp({ connectSrc, reportUri })`
+// to
+//   `buildCsp({ directives: { 'connect-src': [...], 'report-uri': [...] } })`
+// — the tests below cover BOTH the validation contract AND the new shape.
 // ===========================================================================
-describe('LFMT Infrastructure Stack — buildCsp reportUri sanitization (H-3)', () => {
-  // Access the private static assertion via a typed bracket-lookup so
-  // we don't widen the public API just for the test. The helper is
-  // marked `private static` on the class for encapsulation; this
-  // pattern (cast-to-record then index) is the standard Jest idiom
-  // for testing private statics without leaking them.
-  const assertValidCspReportUri = (
-    LfmtInfrastructureStack as unknown as {
-      assertValidCspReportUri: (reportUri: string) => void;
-    }
-  ).assertValidCspReportUri;
+import { Lazy, Token } from 'aws-cdk-lib';
+import { buildCsp, assertValidCspReportUri, type CspDirective } from '../csp';
 
+describe('csp.ts — assertValidCspReportUri (H-3 sanitization)', () => {
   test('valid https:// URL passes', () => {
     expect(() =>
       assertValidCspReportUri('https://csp-report.lfmt.example.com/report')
@@ -2197,35 +2196,217 @@ describe('LFMT Infrastructure Stack — buildCsp reportUri sanitization (H-3)', 
     expect(() => assertValidCspReportUri('not a url')).toThrow();
   });
 
-  // Integration-flavoured assertion: the directive string emitted by
-  // buildCsp must contain `report-uri https://...` when the helper is
-  // given a valid URL. We synthesize a fresh stack so we can call the
-  // private buildCsp method via the same bracket-lookup idiom.
-  test('valid reportUri produces a `report-uri` directive in the emitted CSP string', () => {
-    const app = new App({ context: { skipLambdaBundling: 'true' } });
-    const stack = new LfmtInfrastructureStack(app, 'BuildCspStack', {
-      stackName: 'lfmt-buildcsp-test',
-      environment: 'test',
-      enableLogging: false,
-      retainData: false,
-    });
-    const buildCsp = (
-      stack as unknown as {
-        buildCsp: (opts: { connectSrc: string[]; reportUri?: string }) => string;
-      }
-    ).buildCsp.bind(stack);
+  test('accepts an unresolved CDK token URL (deferred URL-parse)', () => {
+    // CDK emits `${Token[<id>]}` for unresolved references at synth time.
+    // The string is NOT a valid URL by `new URL()` standards, but it IS
+    // safe — CDK substitutes the concrete value via Fn::Join before the
+    // browser ever sees it. The validator must allow this through so the
+    // stack can synthesize, while still rejecting the dangerous characters.
+    expect(() =>
+      assertValidCspReportUri(
+        'https://${Token[apiId.123]}.execute-api.${Token[AWS.Region.13]}.amazonaws.com/v1/csp-report'
+      )
+    ).not.toThrow();
+  });
 
+  // OMC R2 Medium-1: defensive coupling-check between the pure-module
+  // CDK-token regex in csp.ts and CDK's actual token lexical format.
+  //
+  // `csp.ts` is a pure module that deliberately does NOT depend on CDK
+  // (so the unit tests can run without `@aws-cdk/*` imports). The
+  // token-escape-hatch uses a lexical regex (`/\$\{Token\[[^\]]+\]\}/`)
+  // that mirrors CDK's internal `${Token[<id>]}` format. If a future CDK
+  // upgrade changes that lexical format, the escape hatch would silently
+  // misfire and our valid stack synth would start throwing.
+  //
+  // This test imports CDK and asks it to generate a real unresolved
+  // token, then verifies our lexical regex matches CDK's output. The
+  // test BREAKS at the CDK-upgrade PR, surfacing the drift at the time
+  // we can act on it (rather than at next deploy).
+  test('CDK token lexical format matches the csp.ts regex (CDK-upgrade drift guard)', () => {
+    const lazyToken = Lazy.uncachedString({
+      produce: () => 'resolved-at-deploy-time',
+    });
+
+    // Sanity-check: the produced string must actually BE an unresolved
+    // CDK token (not the literal resolved value). If this assertion
+    // fails, our test setup is wrong and the regex check below is
+    // vacuous.
+    expect(Token.isUnresolved(lazyToken)).toBe(true);
+
+    // The lexical form CDK emits when this token is stringified.
+    const tokenLexicalForm = String(lazyToken);
+
+    // The same regex literal that csp.ts uses internally (line 248).
+    // Keeping it inline here — rather than exporting it from csp.ts —
+    // preserves the pure-module API surface (only buildCsp + the
+    // assertion helper are exported). If a future csp.ts contributor
+    // changes the regex, they must update this test too — that's the
+    // OPPOSITE drift this test guards against (CDK changing on us).
+    const cspTokenRegex = /\$\{Token\[[^\]]+\]\}/;
+    expect(cspTokenRegex.test(tokenLexicalForm)).toBe(true);
+
+    // End-to-end check: an `https://...` URL containing the real token
+    // must pass our validator. This is the load-bearing assertion —
+    // if CDK changes the format, this is what would break inside an
+    // actual stack synth.
+    expect(() =>
+      assertValidCspReportUri(`https://${tokenLexicalForm}.example.com/csp-report`)
+    ).not.toThrow();
+  });
+
+  test('still rejects CDK-token URLs with forbidden chars (defense-in-depth)', () => {
+    // Even if a future contributor adds a token that resolves to a value
+    // containing a `;`/`,`/whitespace, this rejection fires SYNCHRONOUSLY
+    // at synth — the protection is not bypassed by the token escape hatch.
+    expect(() =>
+      assertValidCspReportUri('https://${Token[id]}.example.com; script-src *')
+    ).toThrow(/must not contain whitespace/);
+  });
+
+  test('still rejects CDK-token URLs that are http:// (defense-in-depth)', () => {
+    // Token escape hatch must NOT bypass the protocol check — the prefix
+    // test happens before the token detection so an http://-prefixed token
+    // string is rejected.
+    expect(() =>
+      assertValidCspReportUri('http://${Token[id]}.example.com/report')
+    ).toThrow(/protocol must be https:/);
+  });
+
+  test('throws on a non-string input', () => {
+    // Defensive: silent-coercion would let `null`/`undefined`/`{}` pass.
+    expect(() =>
+      assertValidCspReportUri(null as unknown as string)
+    ).toThrow(/must be a string/);
+    expect(() =>
+      assertValidCspReportUri(undefined as unknown as string)
+    ).toThrow(/must be a string/);
+    expect(() =>
+      assertValidCspReportUri({ url: 'https://x.com' } as unknown as string)
+    ).toThrow(/must be a string/);
+  });
+});
+
+describe('csp.ts — buildCsp(#216 directive-map shape)', () => {
+  test('default emission contains every hardening directive', () => {
+    const csp = buildCsp();
+    expect(csp).toContain("default-src 'self'");
+    expect(csp).toContain("script-src 'self'");
+    expect(csp).toContain("style-src 'self' 'unsafe-inline'");
+    expect(csp).toContain("img-src 'self' data: https:");
+    expect(csp).toContain("font-src 'self' data:");
+    expect(csp).toContain("connect-src 'self'");
+    expect(csp).toContain("object-src 'none'");
+    expect(csp).toContain("base-uri 'self'");
+    expect(csp).toContain("form-action 'self'");
+    expect(csp).toContain("frame-ancestors 'none'");
+    expect(csp).toContain('upgrade-insecure-requests');
+    // No `report-uri` unless explicitly opted in.
+    expect(csp).not.toContain('report-uri');
+  });
+
+  test('single-directive override replaces (does not merge) the default', () => {
+    const csp = buildCsp({
+      directives: {
+        'connect-src': ["'self'", 'https://api.example.com'],
+      },
+    });
+    expect(csp).toContain("connect-src 'self' https://api.example.com");
+    // Other directives untouched.
+    expect(csp).toContain("script-src 'self'");
+  });
+
+  test('multi-directive override coexists', () => {
+    const csp = buildCsp({
+      directives: {
+        'connect-src': ["'self'", 'https://api.example.com'],
+        'style-src': ["'self'", "'nonce-abc123'"],
+      },
+    });
+    expect(csp).toContain("connect-src 'self' https://api.example.com");
+    expect(csp).toContain("style-src 'self' 'nonce-abc123'");
+    // Default style-src was REPLACED — the inline keyword must not appear.
+    const styleSrcMatch = csp.match(/style-src[^;]*/);
+    expect(styleSrcMatch).not.toBeNull();
+    expect(styleSrcMatch![0]).not.toContain("'unsafe-inline'");
+  });
+
+  test('nonce-style runtime value survives unchanged through the builder', () => {
+    // #197 forward-compat: per-response nonces will be threaded in as
+    // `'nonce-<base64>'` source-expressions. The builder must not mangle them.
+    const nonce = "'nonce-r4ndomB64+/=='";
+    const csp = buildCsp({
+      directives: {
+        'style-src': ["'self'", nonce],
+        'script-src': ["'self'", nonce],
+      },
+    });
+    expect(csp).toContain(`style-src 'self' ${nonce}`);
+    expect(csp).toContain(`script-src 'self' ${nonce}`);
+  });
+
+  test("upgrade-insecure-requests emits as a value-less directive", () => {
+    // CSP grammar quirk: this directive takes NO source list. The builder
+    // must emit just the bare name; appending sources here would be a
+    // grammar error that some browsers tolerate and others reject.
+    const csp = buildCsp();
+    // Must appear as a standalone token between '; ' delimiters.
+    expect(csp).toMatch(/(^|; )upgrade-insecure-requests(;|$)/);
+  });
+
+  test('report-uri is emitted LAST when provided (per CSP grammar)', () => {
     const validUri = 'https://csp-report.lfmt.example.com/report';
     const csp = buildCsp({
-      connectSrc: ['https://api.example.com'],
-      reportUri: validUri,
+      directives: {
+        'connect-src': ["'self'", 'https://api.example.com'],
+        'report-uri': [validUri],
+      },
     });
     expect(csp).toContain(`report-uri ${validUri}`);
-    // Order matters per CSP grammar — report-uri must be the LAST
-    // directive so future tail-only directives can be appended cleanly.
-    // The directive must come at or near the end of the string.
     const directives = csp.split(';').map((d) => d.trim()).filter(Boolean);
     const lastDirective = directives[directives.length - 1];
     expect(lastDirective).toBe(`report-uri ${validUri}`);
+  });
+
+  test('report-uri validation rejects injection attempts at build time', () => {
+    expect(() =>
+      buildCsp({
+        directives: {
+          'report-uri': ['https://evil.com; script-src *'],
+        },
+      })
+    ).toThrow(/must not contain whitespace/);
+  });
+
+  test('report-uri rejects empty array (would emit a sourceless directive)', () => {
+    expect(() =>
+      buildCsp({
+        directives: {
+          'report-uri': [],
+        },
+      })
+    ).toThrow(/non-empty array/);
+  });
+
+  test('CspDirective type union covers every default directive (compile-time guard)', () => {
+    // This test is mostly a compile-time check — TypeScript narrows the
+    // type at the indexed access. If a future contributor removes a
+    // directive from the union without removing its default, this assertion
+    // (and the build) breaks.
+    const names: CspDirective[] = [
+      'default-src',
+      'script-src',
+      'style-src',
+      'img-src',
+      'font-src',
+      'connect-src',
+      'object-src',
+      'base-uri',
+      'form-action',
+      'frame-ancestors',
+      'upgrade-insecure-requests',
+      'report-uri',
+    ];
+    expect(names).toHaveLength(12);
   });
 });
