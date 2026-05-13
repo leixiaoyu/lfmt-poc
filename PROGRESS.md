@@ -142,11 +142,12 @@ when stakeholder timing requires.
 
 ## Open Risks & Active Issues
 
-### Open Issues (8 as of 2026-05-13)
+### Open Issues (9 as of 2026-05-13)
 
 | # | Title | Notes |
 |---|---|---|
-| [#253](https://github.com/leixiaoyu/lfmt-poc/issues/253) | chore(infra): staging/prod deploy-pipeline environment-parity sweep | Deferred from PR #250. Staging missing `cdk bootstrap` guard; staging/prod lack the dev short-circuit. Needs owner design decision. |
+| [#260](https://github.com/leixiaoyu/lfmt-poc/issues/260) | ci(deploy): add post-deploy smoke + integration tests to staging/prod | Filed 2026-05-13 from PR #258's deferred list. Requires per-env secret routing (`STAGING_USER_POOL_ID` / `PROD_USER_POOL_ID`), OIDC role broadening, and a test-user-isolation policy — architectural work, not a hygiene fix. |
+| [#253](https://github.com/leixiaoyu/lfmt-poc/issues/253) | chore(infra): staging/prod deploy-pipeline environment-parity sweep | Deferred from PR #250. Staging missing `cdk bootstrap` guard; staging/prod lack the dev short-circuit. Needs owner design decision. (In-flight: PR #258.) |
 | [#254](https://github.com/leixiaoyu/lfmt-poc/issues/254) | security: CSP style-src nonces via Lambda@Edge | Split from #197 by PR #257. Different operational layer (Lambda@Edge); needs deploy-sync architecture decision. |
 | [#255](https://github.com/leixiaoyu/lfmt-poc/issues/255) | security: migrate auth tokens from localStorage to httpOnly cookies | Split from #197 by PR #257. Cross-domain blocker (cloudfront.net → execute-api); needs custom-domain ACM/Route53 + CSRF/SameSite design decisions. |
 | [#199](https://github.com/leixiaoyu/lfmt-poc/issues/199) | tech-debt: remove StoredSession migration code | **Date-pinned removal: 2026-06-04** (30d after PR #198 deploy on 2026-05-04 = guaranteed Cognito refresh-token roll-over). Documentation marker landed in PR #251. |
@@ -221,7 +222,7 @@ not included in the totals above.
 
 - **TypeScript Coverage**: 100% (strict mode, no `any` types in production code).
 - **ESLint Errors**: 0.
-- **Jest Coverage Floors**: 70 / 75 / 82 / 84 (statements / branches / functions / lines) — raised from 35/68/70/70 in PR #250.
+- **Jest Coverage Floors**: branches 70 / functions 75 / lines 82 / statements 84 — raised from branches 35 / functions 68 / lines 70 / statements 70 in PR #250. (Order reflects the actual key order in `backend/functions/jest.config.js`.)
 - **Build Status**: All pipelines passing on `main`.
 
 ### Cost (AWS + Gemini)
