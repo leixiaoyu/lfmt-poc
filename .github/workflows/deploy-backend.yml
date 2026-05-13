@@ -579,6 +579,61 @@ jobs:
         working-directory: backend/infrastructure
         run: npm ci
 
+      # Issue #253 (Gap 1) — staging/prod deploy-pipeline parity:
+      # mirror deploy-dev's idempotent CDKToolkit guard. Without this, the
+      # first-ever staging deploy against a fresh account/region fails with
+      # "This stack uses assets, so the toolkit stack must be deployed to
+      # the environment (Run `cdk bootstrap aws://...`)" — a footgun that
+      # only fires once but blocks the very first stand-up of a new staging
+      # account. The block is textually identical to the one in deploy-dev
+      # and deploy-prod (grep for `CDK Bootstrap (if needed)`); do not
+      # refactor into a composite action without keeping all three call-
+      # sites parallel — operators rely on the inline form for run-log
+      # readability when triaging a fresh-account bootstrap.
+      - name: CDK Bootstrap (if needed)
+        working-directory: backend/infrastructure
+        run: |
+          if ! aws cloudformation describe-stacks --stack-name CDKToolkit --region ${{ env.AWS_REGION }} 2>/dev/null; then
+            echo "CDKToolkit not found, bootstrapping..."
+            ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+            npx cdk bootstrap aws://${ACCOUNT_ID}/${{ env.AWS_REGION }}
+          else
+            echo "CDKToolkit already exists, skipping bootstrap"
+          fi
+
+      # Issue #253 (Gap 2) — intentional asymmetry with deploy-dev:
+      #
+      # deploy-dev runs a `cdk diff` short-circuit (Issue #163, the
+      # `Check for CDK infrastructure changes` step + the `if:
+      # steps.cdk-diff.outputs.has_changes == 'true'` gate above its
+      # `CDK Deploy to Dev` step) that skips `cdk deploy` when no
+      # infrastructure changes are detected. deploy-staging and
+      # deploy-prod deliberately DO NOT replicate that optimization.
+      # Rationale:
+      #
+      #   1. Trigger semantics differ. deploy-dev fires on every push to
+      #      main AND on workflow_dispatch (default env=dev). The push-
+      #      triggered path runs on shared-types-only or backend-only
+      #      commits that may have no infra impact — that's the noop case
+      #      #163 optimizes away. deploy-staging/prod are workflow_dispatch
+      #      ONLY (see their job-level `if:` guards), so every invocation
+      #      carries explicit operator intent to deploy.
+      #
+      #   2. UX. A manual dispatch that exits in ~30s with "no changes" is
+      #      ambiguous: did the deploy run? Was the frontend rebuild step
+      #      gated out? Did the smoke check actually validate the new code?
+      #      Operators expect a manual staging/prod deploy to be a full
+      #      deploy, not a conditional fast-path.
+      #
+      #   3. Audit-trail-first design. deploy-prod already has a `CDK Diff
+      #      (show changes for audit trail)` step that records the proposed
+      #      change-set in the workflow log BEFORE the deploy runs. Adding
+      #      a has_changes gate would either duplicate that diff (wasted
+      #      ~30s) or remove the audit step (lost paper trail). Both are
+      #      worse than the current always-deploy behaviour.
+      #
+      # Do NOT replicate the deploy-dev short-circuit here without first
+      # re-evaluating points 1-3 against the then-current trigger semantics.
       - name: CDK Deploy to Staging
         working-directory: backend/infrastructure
         run: npx cdk deploy --context environment=staging --require-approval never
@@ -674,6 +729,14 @@ jobs:
         working-directory: backend/infrastructure
         run: npx cdk diff --context environment=prod || true
 
+      # Issue #253 (Gap 2) — intentional asymmetry with deploy-dev:
+      # see the matching block in deploy-staging (above the `CDK Deploy to
+      # Staging` step) for the full rationale. Short version: deploy-prod
+      # is workflow_dispatch-only, so every invocation is explicit operator
+      # intent — a has_changes gate would surprise operators and would
+      # either duplicate or supplant the audit-trail `cdk diff` step above.
+      # Keep this `cdk deploy` call unconditional. Do NOT add a has_changes
+      # gate without re-reading the rationale on deploy-staging.
       - name: CDK Deploy Main Infrastructure
         working-directory: backend/infrastructure
         run: npx cdk deploy LfmtPocProd --context environment=prod --require-approval never
