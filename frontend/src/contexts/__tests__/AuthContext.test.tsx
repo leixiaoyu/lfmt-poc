@@ -73,6 +73,7 @@ describe('AuthContext - Initialization', () => {
 
   it('should initialize with loading state when user is in localStorage', async () => {
     const mockUser = {
+      userId: 'user-123',
       id: 'user-123',
       email: 'test@example.com',
       firstName: 'John',
@@ -117,6 +118,7 @@ describe('AuthContext - Login', () => {
   it('should login user successfully', async () => {
     const mockAuthResponse = {
       user: {
+        userId: 'user-456',
         id: 'user-456',
         email: 'login@example.com',
         firstName: 'Jane',
@@ -184,6 +186,7 @@ describe('AuthContext - Login', () => {
 
     const mockAuthResponse = {
       user: {
+        userId: 'user-789',
         id: 'user-789',
         email: 'success@example.com',
         firstName: 'Success',
@@ -313,6 +316,7 @@ describe('AuthContext - Logout', () => {
   it('should logout user and clear state', async () => {
     const mockAuthResponse = {
       user: {
+        userId: 'user-123',
         id: 'user-123',
         email: 'test@example.com',
         firstName: 'Test',
@@ -398,6 +402,7 @@ describe('AuthContext - Token Refresh', () => {
 
   it('should handle refresh token failure and logout user', async () => {
     const mockUser = {
+      userId: 'user-123',
       id: 'user-123',
       email: 'test@example.com',
       firstName: 'Test',
@@ -498,6 +503,7 @@ describe('AuthContext - Initial User Load', () => {
 
   it('should load user from localStorage on mount', async () => {
     const mockUser = {
+      userId: 'stored-user',
       id: 'stored-user',
       email: 'stored@example.com',
       firstName: 'Stored',
@@ -607,12 +613,14 @@ describe('AuthContext - Initial User Load', () => {
     // that overwrite. Removing the guard from `AuthContext.tsx` makes this
     // test fail with `result.current.user === staleUser`.
     const staleUser = {
+      userId: 'user-stale',
       id: 'user-stale',
       email: 'stale@example.com',
       firstName: 'Stale',
       lastName: 'Mount',
     };
     const freshUser = {
+      userId: 'user-fresh',
       id: 'user-fresh',
       email: 'fresh@example.com',
       firstName: 'Fresh',

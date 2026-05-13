@@ -4,8 +4,23 @@
  */
 
 import { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
+import { UserProfile } from '@lfmt/shared-types';
 import { createFlatResponse, createErrorResponse } from '../shared/api-response';
 import Logger from '../shared/logger';
+
+/**
+ * Wire contract for GET /me.
+ *
+ * Issue #188: locally narrow the response shape to the subset of UserProfile
+ * that the Cognito authorizer actually provides (id/email/firstName/lastName).
+ * Using `satisfies` on this type catches any drift between the wire and the
+ * (broader) shared UserProfile — see comment block in the handler. A future
+ * PR should promote this to a `CurrentUserApiResponse` interface in
+ * shared-types/src/auth.ts so the frontend can `import` and type-share it.
+ */
+type CurrentUserApiBody = {
+  user: Pick<UserProfile, 'email' | 'firstName' | 'lastName'> & { id: string };
+};
 
 const logger = new Logger('lfmt-auth-getCurrentUser');
 
@@ -44,21 +59,24 @@ export const handler = async (event: APIGatewayProxyEvent): Promise<APIGatewayPr
       userId: authorizerClaims.sub,
     });
 
-    const user = {
-      id: authorizerClaims.sub,
-      email: authorizerClaims.email || '',
-      firstName: authorizerClaims.given_name || '',
-      lastName: authorizerClaims.family_name || '',
-    };
-
-    return createFlatResponse(
-      200,
-      {
-        user,
+    // Issue #188: the full shared UserProfile interface requires many fields that
+    // Cognito authorizer claims don't provide (createdAt, mfaEnabled, role, etc.).
+    // The wire contract for GET /me is the subset the frontend consumes:
+    // { id, email, firstName, lastName }. `satisfies CurrentUserApiBody` is the
+    // load-bearing check — it mirrors the pattern in login.ts:123 and catches
+    // field removal/rename at compile time. A future PR should promote
+    // CurrentUserApiBody to shared-types so the frontend can import the same
+    // contract (rather than the wider UserProfile it currently consumes).
+    const responseBody = {
+      user: {
+        id: authorizerClaims.sub,
+        email: authorizerClaims.email || '',
+        firstName: authorizerClaims.given_name || '',
+        lastName: authorizerClaims.family_name || '',
       },
-      requestId,
-      requestOrigin
-    );
+    } satisfies CurrentUserApiBody;
+
+    return createFlatResponse(200, responseBody, requestId, requestOrigin);
   } catch (error) {
     logger.error('Unexpected error during getCurrentUser', {
       requestId,

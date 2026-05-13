@@ -752,13 +752,10 @@ describe('Production Smoke Tests', () => {
           signal: controller.signal,
         });
 
-        // Ideally API Gateway's RequestValidator returns 400 before Lambda
-        // sees the body, but the auth/login route does not have schema
-        // validation wired up — the Lambda's JSON.parse throws, hits the
-        // catch-all, and returns 500. Both are non-crashing graceful
-        // responses; accept either rather than gating the deploy on a
-        // separately-tracked Lambda hardening task.
-        expect([400, 500]).toContain(response.status);
+        // The login Lambda now wraps JSON.parse in a dedicated try/catch
+        // and returns 400 for malformed bodies. The [400, 500] accept-list
+        // added in the deploy-pipeline-green PR is reverted here (issue #180).
+        expect(response.status).toBe(400);
 
         console.log(`✓ Malformed JSON handled gracefully (status: ${response.status})`);
       } finally {

@@ -13,7 +13,7 @@ import {
   UserNotConfirmedException,
   TooManyRequestsException,
 } from '@aws-sdk/client-cognito-identity-provider';
-import { loginRequestSchema } from '@lfmt/shared-types';
+import { loginRequestSchema, LoginResponse } from '@lfmt/shared-types';
 import { createErrorResponse, createFlatResponse } from '../shared/api-response';
 import Logger from '../shared/logger';
 import { getRequiredEnv } from '../shared/env';
@@ -32,8 +32,17 @@ export const handler = async (event: APIGatewayProxyEvent): Promise<APIGatewayPr
   logger.info('Processing login request', { requestId, requestOrigin });
 
   try {
-    // Handle both string and object body (API Gateway integration differences)
-    const body = typeof event.body === 'string' ? JSON.parse(event.body) : event.body || {};
+    // Handle both string and object body (API Gateway integration differences).
+    // A SyntaxError from JSON.parse must return 400 (client error), not 500.
+    // Wrapping in a dedicated try/catch isolates parse failures before Zod
+    // validation so the catch-all Cognito error handler never sees them.
+    let body: unknown;
+    try {
+      body = typeof event.body === 'string' ? JSON.parse(event.body) : event.body || {};
+    } catch {
+      logger.warn('Login request body is not valid JSON', { requestId });
+      return createErrorResponse(400, 'Malformed JSON body', requestId, undefined, requestOrigin);
+    }
     const validationResult = loginRequestSchema.safeParse(body);
 
     if (!validationResult.success) {
@@ -105,14 +114,22 @@ export const handler = async (event: APIGatewayProxyEvent): Promise<APIGatewayPr
     // in `frontend/src/services/authService.ts` accesses these fields directly
     // off `response.data` (no `.data.data` wrapper). Convention enforced at
     // compile time via `createFlatResponse` (see api-response.ts:108).
+    // Issue #188: list all fields explicitly so tsc catches missing/renamed ones.
+    // Known drift: LoginResponse.user is typed as the full UserProfile interface
+    // (which includes userId, createdAt, mfaEnabled, etc.) but the Cognito
+    // claim surface only provides { id, email, firstName, lastName }. The
+    // frontend reads only those four fields. A follow-up PR should narrow
+    // LoginResponse.user to a Pick<> of the consumed subset.
     return createFlatResponse(
       200,
       {
         user,
-        accessToken: response.AuthenticationResult.AccessToken,
-        refreshToken: response.AuthenticationResult.RefreshToken,
-        idToken: response.AuthenticationResult.IdToken,
-      },
+        accessToken: response.AuthenticationResult.AccessToken!,
+        refreshToken: response.AuthenticationResult.RefreshToken!,
+        idToken: response.AuthenticationResult.IdToken!,
+        expiresIn: response.AuthenticationResult.ExpiresIn ?? 3600,
+        requiresMfa: false, // LFMT POC does not configure Cognito MFA
+      } satisfies Omit<LoginResponse, 'user'> & { user: typeof user },
       requestId,
       requestOrigin
     );

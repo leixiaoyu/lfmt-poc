@@ -65,6 +65,7 @@ function renderProtectedRoute(authContext: Partial<AuthContextType>) {
 
 describe('ProtectedRoute - Security Tests', () => {
   const mockUser: User = {
+    userId: 'test-user-id',
     id: 'test-user-id',
     email: 'test@example.com',
     firstName: 'Test',
@@ -215,6 +216,7 @@ describe('ProtectedRoute - Security Tests', () => {
 
     it('should handle user without all fields', () => {
       const incompleteUser: User = {
+        userId: 'test-id',
         id: 'test-id',
         email: 'test@example.com',
         firstName: '',
