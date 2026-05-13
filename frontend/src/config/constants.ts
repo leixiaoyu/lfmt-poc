@@ -54,9 +54,11 @@ export const AUTH_CONFIG = {
    * Local storage key for the one-blob session document (Issue #196).
    *
    * The entire authenticated session — `idToken`, `accessToken`,
-   * optional `refreshToken`, optional `expiresAt`, optional `user` —
-   * is serialized to JSON and stored under THIS single key. See the
-   * `StoredSession` type in `@lfmt/shared-types`.
+   * optional `refreshToken`, optional `user` — is serialized to JSON
+   * and stored under THIS single key. See the `StoredSession` type in
+   * `@lfmt/shared-types`. (`expiresAt` was removed in issue #200 — the
+   * refresh interceptor is reactive-on-401 only; `REFRESH_THRESHOLD_MS`
+   * is retained for future proactive-refresh work.)
    *
    * Atomicity: every session write replaces the blob in full, so the
    * fields cannot drift out of sync (the failure mode that motivated
@@ -81,10 +83,16 @@ export const AUTH_CONFIG = {
    * source of truth — addition or rename here automatically
    * propagates to the migration code (Round 2 item 13).
    *
-   * Removal plan: tracked in issue #199. Once telemetry confirms no
-   * in-the-wild sessions pre-date the blob (one release cycle is
-   * sufficient — worst case is one 401 → refresh → re-login), this
-   * object can be deleted along with the migration code.
+   * Removal plan: tracked in issue #199.
+   *
+   * Safe removal window: 30 days after the 2026-05-04 deploy of PR #198
+   * — i.e., no earlier than 2026-06-04. The Cognito refresh token
+   * lifetime is 30 days; any user who has not logged in since before
+   * that deploy will have had their session silently migrated (or will
+   * receive a 401 → forced re-login that writes a fresh blob). After
+   * 2026-06-04 this object, `AUTH_CONFIG.LEGACY.*`, the migration
+   * helpers in `utils/api.ts`, and the migration tests in
+   * `utils/__tests__/api.test.ts` can all be deleted in one sweep.
    */
   LEGACY: {
     ID_TOKEN_KEY: 'lfmt_id_token',

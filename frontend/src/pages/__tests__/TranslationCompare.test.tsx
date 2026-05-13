@@ -102,7 +102,7 @@ describe('TranslationCompare page', () => {
 
   it('shows 404 message when getJobStatus returns 404', async () => {
     vi.mocked(translationService.getJobStatus).mockRejectedValue(
-      new TranslationServiceError('not found', 404)
+      new TranslationServiceError('not found', 'API_GENERIC', 404)
     );
 
     renderAt();
@@ -115,7 +115,7 @@ describe('TranslationCompare page', () => {
   it('shows 403 message and navigates to dashboard after timeout', async () => {
     vi.useFakeTimers();
     vi.mocked(translationService.getJobStatus).mockRejectedValue(
-      new TranslationServiceError('forbidden', 403)
+      new TranslationServiceError('forbidden', 'API_GENERIC', 403)
     );
 
     renderAt();
@@ -138,7 +138,7 @@ describe('TranslationCompare page', () => {
   it('cleans up the 403 navigation timer on unmount (no stale navigate)', async () => {
     vi.useFakeTimers();
     vi.mocked(translationService.getJobStatus).mockRejectedValue(
-      new TranslationServiceError('forbidden', 403)
+      new TranslationServiceError('forbidden', 'API_GENERIC', 403)
     );
 
     const { unmount } = renderAt();
@@ -159,7 +159,7 @@ describe('TranslationCompare page', () => {
 
   it('shows generic message for other API errors', async () => {
     vi.mocked(translationService.getJobStatus).mockRejectedValue(
-      new TranslationServiceError('server bork', 500)
+      new TranslationServiceError('server bork', 'API_GENERIC', 500)
     );
 
     renderAt();
