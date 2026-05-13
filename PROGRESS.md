@@ -1,6 +1,6 @@
 # LFMT POC - Current Progress
 
-**Last Updated**: 2026-04-16
+**Last Updated**: 2026-05-13
 **Project**: Long-Form Translation Service POC
 **Repository**: https://github.com/leixiaoyu/lfmt-poc
 **Owner**: Raymond Lei (leixiaoyu@github)
@@ -9,335 +9,227 @@
 
 ## Executive Summary
 
-The LFMT POC has completed **Phases 1-9** (foundation through translation UI deployment). All core infrastructure, authentication, upload, chunking, translation engine, and UI components are **deployed and operational** in the dev environment.
+The LFMT POC has completed **Phases 1-9** (foundation through translation UI
+deployment) and the end-to-end translation workflow (upload → chunk →
+Gemini 2.5 Flash → reassemble → download) has been deployed and operating
+in the dev environment since late 2025. The work since late April 2026 has
+been a focused **tech-debt cleanup pass** organised into Waves 1 and 2,
+landing in five large multi-issue PRs between 2026-05-12 and 2026-05-13.
+**25 individual tech-debt / hygiene issues** were resolved in that window.
 
-###Current Status
+### Current Status
 
-- **Completed Phases**: 1-9 (✅ See [archive](docs/archive/PROGRESS-PHASES-1-9.md))
-- **Current Phase**: Phase 10 - Investor Demo & Production Readiness
-- **Overall Progress**: ~80% (core workflow complete, optimization and polish pending)
+- **Completed Phases**: 1-9 (see [archive](docs/archive/PROGRESS-PHASES-1-9.md))
+- **Current Phase**: Wave 2 tech-debt cleanup (in progress / largely landed)
+- **Phase 10 (Investor Demo)**: Aspirational — core workflow functional but
+  the polish/demo-prep stream has been paused while cleanup waves shipped.
+  See [Deferred Phase 10 Items](#deferred-phase-10-items) below.
+- **Overall Progress**: Core workflow operational end-to-end; hardening,
+  type-safety, CI hygiene, and security work has substantially advanced.
 
-### Recent Milestone (2025-11-23 to 2025-11-26)
+### Recent Wave Summary (2026-05-12 → 2026-05-13)
 
-- ✅ Documentation consolidation complete (PR #93)
-- ✅ CORS fixes for all Lambda functions (PR #94)
-- ✅ Integration test axios dependency fixed (PR #95)
-- ✅ Gemini API key configured in AWS Secrets Manager (2025-11-24)
-- ✅ **Translation workflow critical fixes deployed** (PR #97, 2025-11-25)
-  - Step Functions userId parameter fix
-  - S3 ListBucket permission added
-  - DynamoDB reserved keyword handling
-- ✅ **Gemini API migration to 2.5 Flash** (PR #98, 2025-11-26)
-  - Migrated from deprecated Gemini 1.5 Pro to Gemini 2.5 Flash
-  - Updated API response structure for compatibility
-  - All 877 tests passing, end-to-end verification complete
-- ✅ **Integration test failures resolved** (PR #99, 2025-11-26)
-  - Fixed Step Functions UpdateJobCompleted to update translatedChunks
-  - Fixed TypeScript compilation errors in upload-presigned-url tests
-  - All CI/CD checks passing (877 tests)
+| PR | Wave / Track | Issues closed | Theme |
+|---|---|---|---|
+| [#250](https://github.com/leixiaoyu/lfmt-poc/pull/250) | Wave 1 Track A | 8 primary + 3 folded follow-ups (#153, #156, #160, #163, #186, #187, #211, #243, #247, #248, #249) | CI/CD pipeline hygiene |
+| [#251](https://github.com/leixiaoyu/lfmt-poc/pull/251) | Wave 1 Track C | #215, #217, #200 (3 closed; #199 deferred to 2026-06-04) | Frontend type-safety + sentinel hygiene |
+| [#252](https://github.com/leixiaoyu/lfmt-poc/pull/252) | Wave 1 Track E | #171, #183 (2) | Test-infra + per-day test email |
+| [#256](https://github.com/leixiaoyu/lfmt-poc/pull/256) | Wave 2 Track B | #180, #178, #246, #210, #188, #209 (6) | Auth hardening + cursor + StopExecution + typed returns |
+| [#257](https://github.com/leixiaoyu/lfmt-poc/pull/257) | Wave 2 Track D | #216, #201, #219 (3); #197 split → #254 + #255 | CSP refactor + violation telemetry + live contract guard |
 
----
-
-## 🎯 Phase 10: Investor Demo & Alpha User Readiness (CURRENT)
-
-**Target Date**: Originally 2025-11-30 (Phase 10 ongoing)
-**Goal**: Production-ready application for investor demos and alpha user testing
-
-**Detailed execution plan**: see [`demo/PHASE-10-STATUS.md`](demo/PHASE-10-STATUS.md)
-
-### Critical Path Items
-
-#### 1. **Translation Workflow Validation** (P0 - ✅ COMPLETED)
-
-- ✅ Gemini API key stored in AWS Secrets Manager
-- ✅ Lambda IAM permissions verified
-- ✅ Gemini 2.5 Flash migration complete (PR #98)
-- ✅ End-to-end translation validated in AWS
-- ✅ Step Functions execution confirmed working (2.2s runtime)
-- ✅ All integration tests passing (PR #99)
-- ✅ Progress tracking working correctly (100% on completion)
-
-#### 2. **Demo Content Preparation** (P0 - TODO)
-
-- Create demo account with sample translations
-- Prepare 3-5 test documents (varying lengths: 65K, 100K, 400K words)
-- Pre-translate showcase documents
-- Document translation quality metrics
-
-#### 3. **UI/UX Polish** (P1 - TODO)
-
-- Enhance loading states and progress indicators
-- Improve error messages
-- Add tooltip guidance for first-time users
-- Consider demo mode toggle (skip legal attestation)
-
-#### 4. **Performance Optimization** (P1 - TODO)
-
-- Validate parallel translation performance
-- Monitor CloudWatch for bottlenecks
-- Add caching for frequently accessed data
-
-#### 5. **Demo Documentation** (P0 - TODO)
-
-- Investor pitch deck (technical architecture slide)
-- Demo script with talking points
-- Key differentiators documentation
-- FAQ for investor questions
-
-#### 6. **Monitoring & Observability** (P1 - TODO)
-
-- CloudFront dashboard setup
-- Alert configuration
-- Log aggregation
-- Cost tracking
-
-### Success Criteria
-
-- ✅ **Functional**: Core workflows operational end-to-end
-- ⏳ **Performance**: <20s for 65K words, <90s for 400K words
-- ⏳ **Stability**: Zero critical errors in 50 consecutive test runs
-- ⏳ **User Experience**: Smooth workflow for first-time users
-- ⏳ **Demo Ready**: Polished UI, pre-loaded examples, clear messaging
+**Total**: 25 issues resolved across 5 PRs; 2 new follow-ups filed (#254, #255).
 
 ---
 
 ## Recent Updates (Last 7 Days)
 
-### 2025-11-26: Integration Test Failures Resolved ✅ MERGED
+### 2026-05-13: Wave 2 Track D — CSP refactor + violation telemetry + live contract guard (PR #257) — MERGED
 
-**Status**: All CI/CD integration tests passing, ready for demo preparation
+**Concern class**: security architecture + live contract verification.
 
-#### Actions Completed (PR #99)
+- **#216** — CSP builder evolved to typed `Partial<Record<CspDirective, string[]>>` shape; extracted into standalone `backend/infrastructure/lib/csp.ts`. Preserves H-3 reportUri sanitization and adds a CDK-token escape hatch with defense-in-depth checks (protocol/char checks run BEFORE token detection).
+- **#201** — New `POST /csp-report` Lambda (`backend/functions/security/cspReport.ts`) with strict input sanitization: Content-Type allowlist, 64 KB body cap, field allowlist on log emission, 2 KB per-field truncation, 204-on-success, dedicated minimal IAM role.
+- **#219** — Live-backend API envelope contract guard. New Playwright spec at `frontend/e2e/tests/contract/api-envelope-live.spec.ts` plus new scheduled workflow `.github/workflows/e2e-contract-nightly.yml` — **not** a per-PR gate.
+- **#197 split** — Style-src nonces moved to new **#254** (requires Lambda@Edge — different operational layer); httpOnly cookies moved to new **#255** (requires custom domain ACM/Route53 + owner design decisions on CSRF + SameSite).
 
-1. **Fix #1: Step Functions UpdateJobCompleted Task**
-   - **Problem**: `progressPercentage` always returning 0% after translation completion
-   - **Root Cause**: UpdateJobCompleted task only set `translationStatus = COMPLETED` but didn't update `translatedChunks`
-   - **Fix**: Added 3 fields to DynamoDB update expression:
-     - `translatedChunks = States.ArrayLength($.chunks)` (dynamic chunk count)
-     - `translationCompletedAt = $.State.EnteredTime` (completion timestamp)
-     - `updatedAt = $.State.EnteredTime` (update timestamp)
-   - **File Modified**: `backend/infrastructure/lib/lfmt-infrastructure-stack.ts:944-950`
-   - **Result**: Progress calculation now correctly shows 100% on completion
+New CI workflows added by this PR:
 
-2. **Fix #2: TypeScript Compilation Errors**
-   - **Problem**: 8 TypeScript TS18046 errors in upload-presigned-url integration test
-   - **Root Cause**: `response.json()` returns `unknown` type in strict mode
-   - **Fix**: Added type interfaces and type assertions at 6 locations:
-     ```typescript
-     interface PresignedUrlResponse { data: {...} }
-     interface ErrorResponse { message: string }
-     const data = await response.json() as PresignedUrlResponse;
-     ```
-   - **File Modified**: `backend/functions/__tests__/integration/upload-presigned-url.integration.test.ts`
-   - **Result**: TypeScript compilation successful with 0 errors
+- `.github/workflows/e2e-contract-nightly.yml` — nightly live-backend envelope guard.
+- `.github/workflows/cognito-test-user-cleanup.yml` — weekly Cognito test-user GC.
 
-#### Verification Completed
+### 2026-05-13: Wave 2 Track B — auth + cursor + StopExecution + typed returns (PR #256) — MERGED
 
-- ✅ Infrastructure tests: all passing
-- ✅ TypeScript compilation: 0 errors
-- ✅ CI/CD pipeline: all checks passed
-- ✅ Full test suite passing across backend, infrastructure, and frontend (see "Project Metrics" for latest totals)
-- ✅ Comprehensive test proof added to PR as documentation
+**Concern class**: backend correctness + auth hardening + Step Functions hygiene.
 
-### 2025-11-26: Gemini API Migration to 2.5 Flash ✅ DEPLOYED
+- **#180** — `/auth/login` now returns 400 on malformed JSON body instead of 500; same fix applied to `register.ts` (boy-scout, same file).
+- **#178** — Removed redundant `AdminConfirmSignUp` call and the elevated `cognito-idp:AdminConfirmSignUp` IAM grant from the register Lambda. Cognito pre-sign-up trigger already auto-confirms in dev.
+- **#246** — Tightened `decodeCursor` to reject empty-object decode results (the previous guard caught `null`/`undefined` but accepted `{}`). 5 malformed-cursor integration test variants added; mutation test confirms the guard is load-bearing.
+- **#210** — `StopExecution` on Step Functions when a job `DELETE` arrives while translation is in progress. Prevents orphaned executions burning Gemini quota. IAM grant scoped to the state machine ARN.
+- **#188** — Typed-return audit on critical auth handlers (`login`, `register`, `refreshToken`, `getCurrentUser`). Response bodies now use `satisfies` checks against shared-types so field-removal regressions fail at `tsc --noEmit`.
+- **#209** — Soft-delete OpenSpec proposal scaffolded at `openspec/changes/add-soft-delete-jobs/`. **Proposal only — no implementation.** `openspec validate add-soft-delete-jobs --strict` passes. Awaits owner approval.
 
-**Status**: Gemini 1.5 → 2.5 migration complete, translation workflow fully operational
+### 2026-05-13: Wave 1 Track C — frontend type-safety + sentinel hygiene (PR #251) — MERGED
 
-#### Actions Completed
+**Concern class**: frontend type-safety + bundle-size hygiene.
 
-1. **Model Migration** (PR #98)
-   - **Problem**: Google deprecated all Gemini 1.5 models in 2025, causing 404 errors
-   - **Error**: `models/gemini-1.5-pro is not found for API version v1beta`
-   - **Fix**: Updated default model from `gemini-1.5-pro` to `gemini-2.5-flash`
-   - **Files Modified**:
-     - `backend/functions/translation/geminiClient.ts:65` - Default model config
-     - `backend/functions/translation/translateChunk.ts:95` - Model initialization
-   - **Result**: Gemini 2.5 Flash active and operational
+- **#215** — Replaced `S3_UPLOAD_BLOCKED_MESSAGE` sentinel string with typed `TranslationErrorCode` union discriminator. `getTranslationErrorMessage` now dispatches via a `COPY_BY_CODE` lookup table. Surfaced and fixed a latent bug: inline mock `TranslationServiceError` constructors in `TranslationDetail.test.tsx` and `TranslationHistory.test.tsx` had wrong 2-arg signature causing `statusCode` to receive string values.
+- **#200** — Unified frontend `User` with shared `UserProfile`. `narrowStoredUser()` bridges legacy (`id`) and canonical (`userId`) shapes with normalization.
+- **#217** — `vite.config.ts` `manualChunks` splits `translationService` + `uploadService` + `headerFilters` into their own chunk. **App-*.js gzip reduced -28.6% (180 kB → 131 kB)**.
+- **#199** — **Deferred**, not closed. `StoredSession` migration code cannot be removed yet — Cognito refresh token lifetime is 30 days, PR #198 deployed 2026-05-04, so guaranteed roll-over date is **2026-06-04**. Documentation + safe-removal-date marker added in `constants.ts` and `api.ts`. Issue stays open with the new pinned removal date; close via a code-removal follow-up PR on/after 2026-06-04.
 
-2. **API Response Structure Update**
-   - **Problem**: Gemini 2.5 uses flat response structure vs Gemini 1.5's nested structure
-   - **Error**: `Cannot read properties of undefined (reading 'text')`
-   - **Fix**: Updated response accessors
-     - Changed `result.response.text()` → `result.text`
-     - Changed `result.response.usageMetadata` → `result.usageMetadata`
-   - **Files Modified**: `backend/functions/translation/geminiClient.ts:156, 159-162`
-   - **Result**: API integration working correctly
+### 2026-05-13: Wave 1 Track E — test-infra + per-day test email (PR #252) — MERGED
 
-3. **Test Mock Updates**
-   - Updated all test mocks to match new flat response structure
-   - **Files Modified**:
-     - `geminiClient.test.ts` - 7 mock responses updated
-     - `translateChunk.test.ts` - Global mock setup updated
-   - **Result**: Full backend + frontend test suite passing (see "Project Metrics" for current counts)
+- **#171** — `LFMT_TEST_EMAIL` default in `demo/scripts/capture-chapter-metrics.mjs` was hardcoded to a date string despite docstring claiming "fresh per-day". Replaced with `new Date().toISOString().slice(0, 10)` so the default regenerates daily. CI uses the distinct `SMOKE_TEST_EMAIL` variable — confirmed no CI impact.
+- **#183** — Added HTTP-boundary contract test rule to `docs/CDK-BEST-PRACTICES.md`: Lambda response bodies with typed shared-types counterparts MUST be statically constrained via generic and round-trip tested.
 
-#### Verification Completed
+### 2026-05-12: Wave 1 Track A — CI/CD pipeline hygiene (PR #250) — MERGED
 
-- ✅ **Step Functions Execution**: `gemini-2-5-verification-1764162348` succeeded (2.2s runtime)
-- ✅ **Lambda Logs**: Confirmed `"model":"gemini-2.5-flash"` in CloudWatch
-- ✅ **Deployment**: TranslateChunkFunction updated at 2025-11-25 23:10:40 UTC
-- ✅ **End-to-End**: Translation workflow validated in AWS dev environment
+**Concern class**: CI/CD pipeline architecture. 8 primary issues + 3 follow-ups folded inline.
 
-### 2025-11-25: Translation Workflow Critical Fixes ✅ DEPLOYED
+- **#153** — Jest coverage thresholds raised from 35/68/70/70 to 70/75/82/84 to match documented >90% target.
+- **#243** — `frontend/e2e/` now covered by `tsc --noEmit`. Fixed pre-existing stale page-object API calls.
+- **#160** — Added `github.ref == 'refs/heads/main'` guard to staging and prod deploy jobs (was only on dev).
+- **#163** — Skip `cdk deploy` + S3 sync + CF invalidation when `cdk diff` is empty; replaced `sleep 30` with `aws cloudfront wait`. **Saves ~10 min per no-op deploy.**
+- **#187** — Extracted `.github/actions/rebuild-frontend/action.yml` composite action used by 4 deploy paths.
+- **#186** — Auto-discover `deploy-*.yml` workflows in gated-job parity check (replaces hardcoded list).
+- **#156** — Added programmatic `ci.yml ↔ deploy-backend.yml` step-list parity check.
+- **#211** — Smoke test policy: **Option B (suppression-with-rationale)** documented via PR template checkbox.
+- **#247 / #248 / #249** — Folded inline: cache-dependency-path on staging/prod Setup Node.js (~60s/deploy savings), removal of 4 redundant alias steps in deploy-dev, and writeTempFile temp-dir cleanup in `upload-cors-flow.spec.ts`.
 
-**Status**: Three critical bugs fixed and deployed, chunking issue discovered
+### Earlier in May 2026 (already in `main` before Wave 1)
 
-#### Actions Completed
+These PRs landed between 2026-05-05 and 2026-05-12 and shipped the cleanup
+that immediately preceded Wave 1. Listed for completeness; see commit log
+for detail.
 
-1. **Fix #1: Step Functions userId Parameter Missing** (`backend/infrastructure/lib/lfmt-infrastructure-stack.ts:916`)
-   - **Problem**: Map state was not passing `userId` to translateChunk Lambda and updateJobCompleted task
-   - **Error**: `The JSONPath '$.userId' specified for the field 'userId.$' could not be found in the input`
-   - **Fix**: Added `'userId.$': '$.userId'` to Map state parameters
-   - **Result**: Step Functions now executing successfully (3-second runtime, SUCCEEDED status)
-
-2. **Fix #2: S3 ListBucket Permission Missing** (`backend/infrastructure/lib/lfmt-infrastructure-stack.ts:510-519`)
-   - **Problem**: translateChunk Lambda missing `s3:ListBucket` permission
-   - **Error**: `AccessDenied: User is not authorized to perform: s3:ListBucket on resource: "arn:aws:s3:::lfmt-documents-lfmtpocdev"`
-   - **Fix**: Added separate PolicyStatement for `s3:ListBucket` action on document and results buckets
-   - **Result**: S3 permission errors eliminated
-
-3. **Fix #3: DynamoDB Reserved Keyword** (`backend/functions/translation/translateChunk.ts:450-457`)
-   - **Problem**: Using `error` as attribute name in UpdateExpression (DynamoDB reserved keyword)
-   - **Error**: `Invalid UpdateExpression: Attribute name is a reserved keyword; reserved keyword: error`
-   - **Fix**: Modified `updateJobStatus()` to use ExpressionAttributeNames for all dynamic attributes
-   - **Result**: Job status updates working, error messages properly stored in DynamoDB
-
-#### Chunking Issue Resolution (Nov 30 Investigation)
-
-**Status**: ✅ **RESOLVED** - Issue was transient, current system operational
-
-**Original Issue (Nov 25)**:
-
-- Job `baf10e5d-aa6f-49b7-b2ad-561991dfc0b5` showed CHUNKED status but no S3 chunk files
-- Error: `NoSuchKey: The specified key does not exist.`
-
-**Investigation Findings (Nov 30)**:
-
-- ✅ CloudWatch logs show 100% success rate for recent chunkDocument executions
-- ✅ S3 bucket contains 10+ successfully created chunk files from Nov 30
-- ✅ DynamoDB jobs progressing correctly: PENDING → CHUNKING → CHUNKED → COMPLETED
-- ✅ Cannot reproduce original issue with current deployment
-
-**Root Cause**: Issue resolved by PR #97 fixes (userId parameter, S3 permissions, DynamoDB reserved keywords)
-
-**Conclusion**: Chunking workflow fully operational, no action required. Ready for Milestone 1.0 manual verification.
-
-### 2025-11-24: Gemini API Integration ✅ COMPLETED
-
-**Status**: AWS Secrets Manager configured, integration tests validated infrastructure
-
-#### Actions Completed
-
-1. **Gemini API Key Configuration**
-   - Secret created: `lfmt/gemini-api-key-LfmtPocDev`
-   - IAM permissions verified for Lambda access
-   - Environment variables confirmed in translateChunk Lambda
-
-2. **Root Cause Analysis**: Translation Test Timeouts
-   - Identified missing Gemini API key as initial blocker
-   - Discovered Step Functions userId parameter bug
-   - Discovered S3 permissions gap
-   - Discovered DynamoDB reserved keyword issue
+- **#241** (2026-05-12) — Four frontend hygiene fixes (#230, #231, #235, #236): uploadDocument SRP, URL normalization, AuthContext StrictMode, setTimeout in useEffect.
+- **#242** (2026-05-12) — `translatedChunks` wire rename, listJobs cursor pagination, CI timeout (#229, #237, #240).
+- **#239** (2026-05-10) — `GET /jobs` endpoint + IDOR guard + `chunksTranslated` wire type fix (#226, #227, #220).
+- **#238** (2026-05-10) — Auto-poll TranslationDetail on mount + auth hydration race (#225, #228).
 
 ---
 
-### 2025-11-23: Documentation & Testing Fixes ✅ MERGED
+## Aspirational Goals
 
-#### PR #95 - Integration Test Axios Fix
+### Deferred Phase 10 Items
 
-**Status**: ✅ Merged
-**Impact**: Fixed TypeScript compilation error in integration tests
+The original "Phase 10 — Investor Demo & Production Readiness" stream
+remains aspirationally relevant. The core translation workflow is
+operational and the recent cleanup waves have materially improved the
+codebase's readiness for a demo. The polish stream below has been
+de-prioritised in favour of the tech-debt cleanup waves; pick these up
+when stakeholder timing requires.
 
-- Replaced axios with built-in fetch in upload-presigned-url tests
-- All 11 test cases updated for fetch API compatibility
-- TypeScript compilation: ✅ No errors
-- Unit tests: ✅ 345/345 passing
+- **Demo content preparation** — demo account, 3-5 pre-translated sample
+  documents (varying lengths: 65K, 100K, 400K words), quality metrics
+  capture.
+- **UI/UX polish** — improved loading states, error messages, first-run
+  tooltips, optional demo-mode toggle.
+- **Performance validation** — measure parallel translation throughput
+  against targets (<20s for 65K words, <90s for 400K words). Already
+  uses Step Functions Map with `maxConcurrency: 10`.
+- **Demo documentation** — pitch deck, demo script, FAQ.
+- **Monitoring & observability** — CloudFront dashboard, alert
+  configuration, log aggregation, cost tracking.
 
-#### PR #94 - CORS Request Origin Fix
+### Roadmap Issues (Not Currently Active)
 
-**Status**: ✅ Merged
-**Impact**: Fixed CORS headers for remaining Lambda functions
-
-- Completed requestOrigin implementation across all Lambdas
-- Fixed refresh-token, reset-password, and getCurrentUser functions
-- All Lambda responses now include correct Access-Control-Allow-Origin
-
-#### PR #93 - Documentation Consolidation (Phase 3)
-
-**Status**: ✅ Merged
-**Impact**: Context optimization and archive organization
-
-- Moved 17 historical documents to `docs/archive/`
-- Created `.claudeignore` to exclude archive (saves ~7,500 tokens)
-- Optimized CLAUDE.md for task-specific documentation loading
-- Documented tiered context loading strategy
+- **#64** — P3-ARCH: nested-stacks refactor of the monolithic CDK stack.
+- **#29** — FEAT-PRO: post-translation review and editing interface.
+- **#28** — FEAT-CORE: additional output formats (ePub / PDF).
 
 ---
 
-## Current Risks & Mitigation
+## Open Risks & Active Issues
 
-### Pre-Production Blockers
+### Open Issues (8 as of 2026-05-13)
 
-_None open. See "Recently Resolved" below._
+| # | Title | Notes |
+|---|---|---|
+| [#253](https://github.com/leixiaoyu/lfmt-poc/issues/253) | chore(infra): staging/prod deploy-pipeline environment-parity sweep | Deferred from PR #250. Staging missing `cdk bootstrap` guard; staging/prod lack the dev short-circuit. Needs owner design decision. |
+| [#254](https://github.com/leixiaoyu/lfmt-poc/issues/254) | security: CSP style-src nonces via Lambda@Edge | Split from #197 by PR #257. Different operational layer (Lambda@Edge); needs deploy-sync architecture decision. |
+| [#255](https://github.com/leixiaoyu/lfmt-poc/issues/255) | security: migrate auth tokens from localStorage to httpOnly cookies | Split from #197 by PR #257. Cross-domain blocker (cloudfront.net → execute-api); needs custom-domain ACM/Route53 + CSRF/SameSite design decisions. |
+| [#199](https://github.com/leixiaoyu/lfmt-poc/issues/199) | tech-debt: remove StoredSession migration code | **Date-pinned removal: 2026-06-04** (30d after PR #198 deploy on 2026-05-04 = guaranteed Cognito refresh-token roll-over). Documentation marker landed in PR #251. |
+| [#197](https://github.com/leixiaoyu/lfmt-poc/issues/197) | security: deferred CSP/auth hardening (parent) | Parent of #254/#255. Considered effectively closed by PR #257's split; housekeeping-close pending. |
+| [#64](https://github.com/leixiaoyu/lfmt-poc/issues/64) | P3-ARCH: nested stacks refactor | Backlog. |
+| [#29](https://github.com/leixiaoyu/lfmt-poc/issues/29) | FEAT-PRO: post-translation review and editing interface | Backlog. |
+| [#28](https://github.com/leixiaoyu/lfmt-poc/issues/28) | FEAT-CORE: additional output formats (ePub / PDF) | Backlog. |
 
-#### Recently Resolved: Legal Attestation Write Path ✅ RESOLVED
+### Active In-Flight Spec
 
-- **Was**: Frontend collected user consent for legal attestation but no Lambda persisted the data to the provisioned `AttestationsTable`. Consent was silently dropped — OWASP A09 (Security Logging & Monitoring Failures).
-- **Resolution** (`feat/legal-attestation-write-path`, OpenSpec task 3.8.0):
-  - New `LegalAttestationRecord` schema in `shared-types/src/legal.ts` (Zod-validated).
-  - New helper `backend/functions/shared/attestationWriter.ts` (`buildAttestationRecord`, `writeAttestation`, `AttestationWriteError`).
-  - Wired into `backend/functions/jobs/uploadRequest.ts`: persists every consent BEFORE issuing the presigned URL; on persistence failure returns `500 AttestationPersistFailure` and aborts upload.
-  - Tests: 23 new tests across shared-types + functions; CDK IAM-assertion test verifies `dynamodb:PutItem` grant. All suites green.
-- **Outstanding follow-up** (P2, not a blocker): CloudWatch alarm on `AttestationsTable` write errors.
+- **`openspec/changes/add-soft-delete-jobs/`** — proposal-only soft-delete
+  model for `DELETE /jobs/{jobId}` (DDB TTL + scheduled purge Lambda).
+  Awaits owner design approval. Referenced by Issue #209 (closed by
+  PR #256) which scaffolded the proposal. Implementation deferred until
+  approved.
 
 ### Active Risks
 
-**MEDIUM Risk**: Gemini API Rate Limiting
+**LOW Risk**: Gemini API rate limiting
 
-- **Impact**: Could delay large document translations
-- **Mitigation**: Distributed rate limiter implemented, monitoring CloudWatch logs
-- **Status**: Monitoring initial integration test run
+- **Impact**: Could delay large-document translations.
+- **Mitigation**: Distributed rate limiter (5 RPM / 250K TPM / 25 RPD)
+  already in place; CloudWatch monitoring active.
+- **Status**: No incidents observed in recent runs.
 
-**LOW Risk**: Demo Timeline
+**LOW Risk**: Deferred security follow-ups (#254, #255)
 
-- **Impact**: Some polish items pending
-- **Mitigation**: Prioritized P0 items first, P1 items optional
-- **Status**: Core functionality complete, polish ongoing
+- **Impact**: Style-src CSP currently uses `'unsafe-inline'`; auth tokens
+  in localStorage are XSS-reachable.
+- **Mitigation**: PR #257 landed CSP violation telemetry (`POST /csp-report`)
+  so we will see in-the-wild XSS attempts. Strict-input sanitization on
+  the report endpoint prevents log poisoning.
+- **Status**: Tracked as #254 (nonces) and #255 (httpOnly cookies). Both
+  blocked on owner design decisions documented in the issue bodies.
 
-### Resolved Risks
+### Resolved Risks (current cleanup window)
 
-- ✅ Integration test failures (axios, CORS, API key)
-- ✅ AWS deployment permissions
-- ✅ Frontend-backend integration
-- ✅ Upload→chunking workflow
+- Cursor pagination resilience against malformed input (#246).
+- Orphaned Step Functions executions on job DELETE (#210).
+- Login/register 500-on-malformed-JSON instead of 400 (#180).
+- AdminConfirmSignUp race condition + over-privileged IAM grant (#178).
+- CI/CD parity drift between dev / staging / prod (#160, #163, #186, #187, #156).
+- Frontend bundle bloat in App chunk (#217: -28.6% gzip).
+- Latent type-safety gap in translation error sentinel handling (#215).
 
 ---
 
 ## Project Metrics
 
+### Test Suite Totals (verified 2026-05-13)
+
+Counts taken from running `npm test` (and `npx vitest --run` for frontend)
+in each package on `main` at commit `939a5ca`.
+
+| Package | Tests | Skipped | Suites/Files |
+|---|---|---|---|
+| `backend/functions` | **602 passed** | 3 | 28 suites |
+| `backend/infrastructure` | **90 passed** | 0 | 1 suite |
+| `frontend` (Vitest) | **776 passed** | 14 | 37 files |
+| **Total (jsdom/node)** | **1,468 passed** | 17 | 66 |
+
+E2E (Playwright) suites exist in `frontend/e2e/` and the new live-backend
+contract suite in `frontend/e2e/tests/contract/api-envelope-live.spec.ts`
+is exercised nightly via `e2e-contract-nightly.yml`. E2E run counts are
+not included in the totals above.
+
+> Note: Test totals are a point-in-time snapshot. For the authoritative
+> count, run `npm test` in each package (`backend/functions`,
+> `backend/infrastructure`, `frontend`).
+
 ### Code Quality
 
-- **TypeScript Coverage**: 100% (strict mode, no `any` types)
-- **ESLint Errors**: 0
-- **Test Coverage**: 91.66% frontend, 100% backend statements
-- **Build Status**: ✅ All pipelines passing
-
-### Testing
-
-- **Total Tests**: 877+ across backend, infrastructure, and frontend (milestone snapshot as of PR #99, 2025-11-26)
-- **Passing Rate**: 100%
-- **E2E Tests**: Playwright suite (frontend/e2e)
-- **Integration Tests**: Validated end-to-end against Gemini 2.5 Flash
-
-> Note: Test totals are a point-in-time snapshot. For the authoritative count,
-> run `npm test` in each package (`backend/functions`, `backend/infrastructure`,
-> `frontend`).
+- **TypeScript Coverage**: 100% (strict mode, no `any` types in production code).
+- **ESLint Errors**: 0.
+- **Jest Coverage Floors**: 70 / 75 / 82 / 84 (statements / branches / functions / lines) — raised from 35/68/70/70 in PR #250.
+- **Build Status**: All pipelines passing on `main`.
 
 ### Cost (AWS + Gemini)
 
-- **Development Environment**: ~$10/month AWS
-- **Gemini API**: Free tier (5 RPM, 250K TPM, 25 RPD)
-- **Current Spend**: Minimal (<$15/month)
-- **Well Within Budget**: <$50/month target achieved
+- **Development Environment**: ~$10/month AWS.
+- **Gemini API**: Free tier (5 RPM, 250K TPM, 25 RPD).
+- **Current Spend**: Minimal (<$15/month).
+- **Well Within Budget**: <$50/month target achieved.
 
 ---
 
@@ -350,13 +242,18 @@ _None open. See "Recently Resolved" below._
 - **Hosting**: CloudFront + S3 (CDK-managed)
 - **Translation**: Gemini 2.5 Flash (Google AI)
 - **Orchestration**: AWS Step Functions
-- **Auth**: AWS Cognito (JWT tokens)
+- **Auth**: AWS Cognito (JWT tokens; storage migration in progress — see #199, #255)
 
 ### DevOps
 
 - **Infrastructure**: AWS CDK v2 (TypeScript)
-- **CI/CD**: GitHub Actions (automated testing + deployment)
-- **Testing**: Vitest, React Testing Library, Playwright
+- **CI/CD**: GitHub Actions
+  - `ci.yml` — PR gate (lint / type-check / unit + integration tests / synth)
+  - `deploy-backend.yml` — backend deploy pipeline (dev / staging / prod)
+  - `deploy-frontend.yml` — frontend deploy pipeline
+  - `e2e-contract-nightly.yml` — nightly live-backend API envelope contract guard (added by PR #257)
+  - `cognito-test-user-cleanup.yml` — weekly Cognito test-user GC (added by PR #257)
+- **Testing**: Vitest, React Testing Library, Playwright, Jest (backend)
 - **Code Quality**: ESLint, Prettier, Husky pre-commit hooks
 
 ---
@@ -374,12 +271,18 @@ _None open. See "Recently Resolved" below._
 
 ## Historical Progress
 
-For detailed information on completed Phases 1-9, bug fixes, and architectural decisions, see:
+For detailed information on completed Phases 1-9, bug fixes, and
+architectural decisions, see:
 
 - **Phases 1-9 Archive**: [`docs/archive/PROGRESS-PHASES-1-9.md`](docs/archive/PROGRESS-PHASES-1-9.md)
 - **Architecture Docs**: `docs/` directory (CloudFront, CORS, Translation UI, etc.)
 - **OpenSpec Changes**: `openspec/changes/` for feature implementation specs
 
+For the deeper translation-workflow operational history (Gemini 2.5 Flash
+migration, Step Functions userId fix, S3 ListBucket grant, DynamoDB
+reserved-keyword handling) the archive remains the canonical reference.
+
 ---
 
-_This progress report focuses on current work and recent updates. For historical milestones, see the archive._
+_This progress report focuses on current work and recent updates. For
+historical milestones, see the archive._
