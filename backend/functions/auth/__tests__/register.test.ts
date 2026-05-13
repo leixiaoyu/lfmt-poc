@@ -14,14 +14,14 @@
 // Set environment before importing handler
 process.env.ENVIRONMENT = 'test';
 process.env.COGNITO_CLIENT_ID = 'test-client-id';
-process.env.COGNITO_USER_POOL_ID = 'test-user-pool-id';
+// COGNITO_USER_POOL_ID not needed: AdminConfirmSignUp removed (#178).
 
 import { APIGatewayProxyEvent } from 'aws-lambda';
 import { handler } from '../register';
 import {
   CognitoIdentityProviderClient,
   SignUpCommand,
-  AdminConfirmSignUpCommand,
+  AdminConfirmSignUpCommand, // kept for the zero-call assertion in prod path
   UsernameExistsException,
   InvalidPasswordException,
   InvalidParameterException,
@@ -463,17 +463,18 @@ describe('register Lambda Function', () => {
       expect(body.message).toBe('Validation failed');
     });
 
-    it('should return 500 when body is invalid JSON', async () => {
+    it('should return 400 when body is invalid JSON (regression guard #180)', async () => {
       const event = createMockEvent({
         body: 'not valid json{',
       });
 
       const response = await handler(event);
 
-      // JSON.parse will throw, caught by generic error handler
-      expect(response.statusCode).toBe(500);
+      // Malformed JSON is a client error (400), not a server error (500).
+      // The inner try/catch around JSON.parse now returns 400 explicitly.
+      expect(response.statusCode).toBe(400);
       const body = JSON.parse(response.body);
-      expect(body.message).toContain('internal error');
+      expect(body.message).toMatch(/malformed json/i);
     });
 
     it.skip('should handle body as object (not string) - API Gateway always sends string', async () => {

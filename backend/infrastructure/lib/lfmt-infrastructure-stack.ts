@@ -758,7 +758,10 @@ export class LfmtInfrastructureStack extends Stack {
             'cognito-idp:AdminSetUserPassword',
             'cognito-idp:AdminGetUser',
             'cognito-idp:AdminUpdateUserAttributes',
-            'cognito-idp:AdminConfirmSignUp',
+            // cognito-idp:AdminConfirmSignUp removed (#178): the PreSignUp Lambda
+            // trigger + autoVerifiedAttributes in the dev User Pool auto-confirm
+            // users as part of SignUp. The AdminConfirmSignUp call in register.ts
+            // was a no-op that required a privileged IAM grant. Both removed.
           ],
           resources: [this.userPool.userPoolArn],
         }),
@@ -1934,6 +1937,31 @@ export class LfmtInfrastructureStack extends Stack {
             ],
             resources: [
               this.translationStateMachine.stateMachineArn
+            ],
+          }),
+        ],
+      });
+    }
+
+    // Issue #210: Grant deleteJobRole permission to stop in-flight executions.
+    // Scoped to the translation state machine ARN only (least-privilege).
+    // states:DescribeExecution — check current status before calling StopExecution.
+    // states:StopExecution     — terminate a RUNNING execution when the owner deletes the job.
+    // Executions ARNs are derived from the state machine ARN at runtime; SFN
+    // IAM model requires the state machine ARN as resource for StopExecution.
+    if (this.deleteJobRole) {
+      new iam.ManagedPolicy(this, 'DeleteJobStepFunctionsPolicy', {
+        roles: [this.deleteJobRole],
+        statements: [
+          new iam.PolicyStatement({
+            effect: iam.Effect.ALLOW,
+            actions: ['states:DescribeExecution', 'states:StopExecution'],
+            resources: [
+              this.translationStateMachine.stateMachineArn,
+              // Execution ARNs share the same partition/account/region/name pattern:
+              // arn:aws:states:<region>:<account>:execution:<stateMachineName>:*
+              // CDK token resolution ensures we reference the correct machine.
+              `${this.translationStateMachine.stateMachineArn.replace(':stateMachine:', ':execution:')}:*`,
             ],
           }),
         ],
