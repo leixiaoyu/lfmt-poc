@@ -141,22 +141,40 @@ export interface UploadAndAwaitChunkedOptions {
 }
 
 /**
+ * Typed discriminator for TranslationServiceError instances (issue #215).
+ *
+ * Replaces the previous `S3_UPLOAD_BLOCKED_MESSAGE` sentinel-string
+ * pattern. Having a stable enum as the dispatch key means:
+ *   - User-visible copy lives in ONE place (translationErrorMessages.ts).
+ *   - Tests assert on the enum value, not on copy that can be reworded.
+ *   - New error categories slot in without precedence-rule gymnastics.
+ *   - The compiler enforces exhaustive COPY_BY_CODE coverage.
+ *
+ * 'API_GENERIC' is the catch-all for errors that fall through to the
+ * existing status-code / message-pass-through logic in
+ * `getTranslationErrorMessage`. A TranslationServiceError without an
+ * explicit errorCode should never be constructed in practice; the
+ * `handleError` helper always sets one of the other variants.
+ */
+export type TranslationErrorCode =
+  | 'S3_UPLOAD_BLOCKED' // Transport-level block (CSP, network, DNS, XHR abort)
+  | 'S3_HTTP_ERROR' // S3 returned an HTTP error (e.g. SignatureDoesNotMatch, 403)
+  | 'API_GENERIC'; // API / service error — fall through to status-code map
+
+/**
  * Translation Service Error.
  *
- * `originalError` is typed `Error | undefined` (NOT `AxiosError`) so
- * the non-axios branch in `wrapS3UploadError` can preserve plain Error
- * causes (disk-full, generic XHR failure, etc.) without a type cast.
- * AxiosError extends Error, so axios-error code paths remain
- * compatible — callers that need axios-specific fields (`.response`,
- * `.request`) MUST narrow with `axios.isAxiosError(originalError)`
- * before reading them. This matches the wider runtime contract
- * ("preserve any underlying cause") and removes the `as unknown as
- * AxiosError` lie that previously allowed the field to silently lose
- * the cause shape (PR #214 OMC R2 M-1).
+ * `errorCode` (required) is a stable discriminator for the error category
+ * (issue #215). `statusCode` is preserved for HTTP errors so the
+ * `getTranslationErrorMessage` status-code table still works for API-side
+ * failures. `originalError` is typed `Error | undefined` (NOT `AxiosError`)
+ * so the non-axios branch in `wrapS3UploadError` can preserve plain Error
+ * causes without a type cast (PR #214 OMC R2 M-1).
  */
 export class TranslationServiceError extends Error {
   constructor(
     message: string,
+    public errorCode: TranslationErrorCode,
     public statusCode?: number,
     public originalError?: Error
   ) {
@@ -166,17 +184,16 @@ export class TranslationServiceError extends Error {
 }
 
 /**
- * Sentinel message used by `wrapS3UploadError` when the browser blocks
- * the S3 PUT before any HTTP response is received. Exported so the
- * page-level error mapper (`translationErrorMessages`) can match on it
- * deterministically rather than parsing a free-form string.
+ * Backwards-compatibility re-export for tests and call sites that still
+ * reference `S3_UPLOAD_BLOCKED_MESSAGE` by name (issue #215 cleanup).
  *
- * The wording is deliberately neutral: from the browser's perspective
- * we cannot prove which of {CSP block, network outage, DNS failure,
- * S3 outage} caused `error.response === undefined`, so we describe the
- * symptom and point the user at the action with the highest expected
- * value (contact support if persistent — these are config issues, not
- * transient network blips, in 95%+ of observed cases).
+ * @deprecated Use `error.errorCode === 'S3_UPLOAD_BLOCKED'` instead of
+ * matching on this string. This constant will be removed in a follow-up
+ * once all consumers have migrated to the `errorCode` discriminator.
+ *
+ * The message text is intentionally preserved verbatim so any UI that
+ * accidentally surfaces `error.message` instead of routing through
+ * `getTranslationErrorMessage` still shows the same copy as before.
  */
 export const S3_UPLOAD_BLOCKED_MESSAGE =
   'Upload was blocked. This is likely a configuration issue — please refresh and try again, or contact support if it persists.';
@@ -202,13 +219,19 @@ function wrapS3UploadError(error: unknown): TranslationServiceError {
   if (axios.isAxiosError(error)) {
     if (!error.response) {
       // No HTTP response — CSP block, DNS failure, or network outage.
-      return new TranslationServiceError(S3_UPLOAD_BLOCKED_MESSAGE, undefined, error);
+      return new TranslationServiceError(
+        S3_UPLOAD_BLOCKED_MESSAGE,
+        'S3_UPLOAD_BLOCKED',
+        undefined,
+        error
+      );
     }
     // S3 returned an HTTP error (e.g. SignatureDoesNotMatch, 403). Surface
     // its status to the page so it can branch on the curated table in
     // translationErrorMessages.
     return new TranslationServiceError(
       error.response.statusText || `S3 upload failed with status ${error.response.status}`,
+      'S3_HTTP_ERROR',
       error.response.status,
       error
     );
@@ -222,21 +245,25 @@ function wrapS3UploadError(error: unknown): TranslationServiceError {
   //   "Upload was cancelled"              — XHR `abort` event.
   //   "Upload failed with status N: …"   — XHR `load` event with status ≥ 300.
   //
-  // We map network / abort failures to S3_UPLOAD_BLOCKED_MESSAGE (same
-  // sentinel the axios path surfaced for `error.response === undefined`) so
-  // the page's error mapper still shows the targeted phrase instead of a raw
-  // XHR string. HTTP errors surface the message as-is; the status code is
-  // extracted from the message string so `translationErrorMessages` can use
-  // it in future (currently the code only tests `statusCode === 403`).
+  // Network / abort failures → errorCode 'S3_UPLOAD_BLOCKED' (same
+  // category as the axios `error.response === undefined` path) so the
+  // page's error mapper shows the targeted phrase instead of a raw XHR
+  // string. HTTP errors → 'S3_HTTP_ERROR'; the status code is extracted
+  // from the message string for the curated-table lookup.
   if (error instanceof Error) {
     const msg = error.message;
     if (msg === 'Network error during file upload' || msg === 'Upload was cancelled') {
-      return new TranslationServiceError(S3_UPLOAD_BLOCKED_MESSAGE, undefined, error);
+      return new TranslationServiceError(
+        S3_UPLOAD_BLOCKED_MESSAGE,
+        'S3_UPLOAD_BLOCKED',
+        undefined,
+        error
+      );
     }
     // "Upload failed with status N: text" — extract the numeric status.
     const statusMatch = /Upload failed with status (\d+)/.exec(msg);
     const statusCode = statusMatch ? parseInt(statusMatch[1], 10) : undefined;
-    return new TranslationServiceError(msg, statusCode, error);
+    return new TranslationServiceError(msg, 'S3_HTTP_ERROR', statusCode, error);
   }
 
   // Non-Error rejection — preserve as much context as possible.
@@ -244,7 +271,7 @@ function wrapS3UploadError(error: unknown): TranslationServiceError {
   // M-1 (PR #214 OMC R2): widen `originalError` to `Error | undefined`
   // at the field level so the non-axios branch no longer needs a cast.
   const originalError: Error = new Error(String(error));
-  return new TranslationServiceError('S3 upload failed', undefined, originalError);
+  return new TranslationServiceError('S3 upload failed', 'S3_HTTP_ERROR', undefined, originalError);
 }
 
 // ---------------------------------------------------------------------------
@@ -283,9 +310,9 @@ const handleError = (error: unknown): never => {
   if (axios.isAxiosError(error)) {
     const message = error.response?.data?.message || error.message;
     const statusCode = error.response?.status;
-    throw new TranslationServiceError(message, statusCode, error);
+    throw new TranslationServiceError(message, 'API_GENERIC', statusCode, error);
   }
-  throw new TranslationServiceError('An unexpected error occurred');
+  throw new TranslationServiceError('An unexpected error occurred', 'API_GENERIC');
 };
 
 /**

@@ -137,3 +137,58 @@ describe('getTranslationErrorMessage — null / non-object inputs', () => {
     }
   );
 });
+
+// ---------------------------------------------------------------------------
+// Issue #215: typed errorCode discriminator tests
+// ---------------------------------------------------------------------------
+
+describe('getTranslationErrorMessage — errorCode discriminator (issue #215)', () => {
+  it('returns the S3_UPLOAD_BLOCKED copy when errorCode is S3_UPLOAD_BLOCKED (no statusCode)', () => {
+    const error = {
+      errorCode: 'S3_UPLOAD_BLOCKED' as const,
+      message: 'some raw message that should be ignored',
+      statusCode: undefined,
+    };
+    expect(getTranslationErrorMessage(error)).toBe(
+      'Upload was blocked. This is likely a configuration issue — please refresh and try again, or contact support if it persists.'
+    );
+  });
+
+  it('S3_UPLOAD_BLOCKED errorCode takes precedence over a known statusCode', () => {
+    // Even when a statusCode is present, the errorCode should win.
+    const error = {
+      errorCode: 'S3_UPLOAD_BLOCKED' as const,
+      statusCode: 403,
+      message: 'ignored',
+    };
+    const result = getTranslationErrorMessage(error);
+    expect(result).toBe(
+      'Upload was blocked. This is likely a configuration issue — please refresh and try again, or contact support if it persists.'
+    );
+    // Must NOT return the 403 curated phrase.
+    expect(result).not.toMatch(/permission/i);
+  });
+
+  it('API_GENERIC errorCode falls through to the status-code table', () => {
+    // API_GENERIC has no COPY_BY_CODE entry; the 429 curated phrase should apply.
+    const error = {
+      errorCode: 'API_GENERIC' as const,
+      statusCode: 429,
+      message: 'raw rate limit message',
+    };
+    expect(getTranslationErrorMessage(error)).toBe(
+      'Translation rate limit reached — please try again in a moment.'
+    );
+  });
+
+  it('S3_HTTP_ERROR errorCode falls through to the status-code table for mapped statuses', () => {
+    const error = {
+      errorCode: 'S3_HTTP_ERROR' as const,
+      statusCode: 403,
+      message: 'Forbidden',
+    };
+    expect(getTranslationErrorMessage(error)).toBe(
+      "You don't have permission to start this translation."
+    );
+  });
+});

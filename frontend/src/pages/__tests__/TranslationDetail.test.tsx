@@ -49,11 +49,13 @@ vi.mock('../../services/translationService', () => ({
     downloadTranslation: vi.fn(),
     startTranslation: vi.fn(),
   },
+  // Issue #215: updated to match new 4-arg constructor (message, errorCode, statusCode?, originalError?).
   TranslationServiceError: class TranslationServiceError extends Error {
     constructor(
       message: string,
+      public errorCode: string,
       public statusCode?: number,
-      public code?: string
+      public originalError?: Error
     ) {
       super(message);
       this.name = 'TranslationServiceError';
@@ -483,7 +485,7 @@ describe('TranslationDetail', () => {
       const user = userEvent.setup();
       vi.mocked(translationService.getJobStatus).mockResolvedValue(mockCompletedJob);
       vi.mocked(translationService.downloadTranslation).mockRejectedValue(
-        new TranslationServiceError('Download failed', 500)
+        new TranslationServiceError('Download failed', 'API_GENERIC', 500)
       );
 
       renderComponent();
@@ -599,7 +601,7 @@ describe('TranslationDetail', () => {
       const user = userEvent.setup();
       vi.mocked(translationService.getJobStatus).mockResolvedValue(mockChunkedJob);
       vi.mocked(translationService.startTranslation).mockRejectedValue(
-        new TranslationServiceError('Failed to start', 500)
+        new TranslationServiceError('Failed to start', 'API_GENERIC', 500)
       );
 
       renderComponent();
@@ -689,7 +691,7 @@ describe('TranslationDetail', () => {
       vi.useFakeTimers({ shouldAdvanceTime: true });
 
       vi.mocked(translationService.getJobStatus).mockRejectedValue(
-        new TranslationServiceError('Forbidden', 403)
+        new TranslationServiceError('Forbidden', 'API_GENERIC', 403)
       );
 
       renderComponent();
@@ -714,7 +716,7 @@ describe('TranslationDetail', () => {
       vi.useFakeTimers({ shouldAdvanceTime: true });
 
       vi.mocked(translationService.getJobStatus).mockRejectedValue(
-        new TranslationServiceError('Forbidden', 403)
+        new TranslationServiceError('Forbidden', 'API_GENERIC', 403)
       );
 
       const { unmount } = renderComponent();

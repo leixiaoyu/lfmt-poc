@@ -240,6 +240,9 @@ describe('TranslationService - uploadDocument', () => {
         expect.fail('Should have thrown TranslationServiceError');
       } catch (err) {
         expect(err).toBeInstanceOf(TranslationServiceError);
+        // Issue #215: assert on the stable errorCode discriminator, not
+        // on the user-visible copy that can be reworded independently.
+        expect((err as TranslationServiceError).errorCode).toBe('S3_UPLOAD_BLOCKED');
         expect((err as TranslationServiceError).message).toBe(S3_UPLOAD_BLOCKED_MESSAGE);
         expect((err as TranslationServiceError).statusCode).toBeUndefined();
       }
@@ -258,6 +261,7 @@ describe('TranslationService - uploadDocument', () => {
         expect.fail('Should have thrown TranslationServiceError');
       } catch (err) {
         expect(err).toBeInstanceOf(TranslationServiceError);
+        expect((err as TranslationServiceError).errorCode).toBe('S3_UPLOAD_BLOCKED');
         expect((err as TranslationServiceError).message).toBe(S3_UPLOAD_BLOCKED_MESSAGE);
         expect((err as TranslationServiceError).statusCode).toBeUndefined();
       }
@@ -276,6 +280,7 @@ describe('TranslationService - uploadDocument', () => {
         expect.fail('Should have thrown TranslationServiceError');
       } catch (err) {
         expect(err).toBeInstanceOf(TranslationServiceError);
+        expect((err as TranslationServiceError).errorCode).toBe('S3_HTTP_ERROR');
         expect((err as TranslationServiceError).statusCode).toBe(403);
         expect((err as TranslationServiceError).originalError).toBe(xhrError);
       }
@@ -301,6 +306,8 @@ describe('TranslationService - uploadDocument', () => {
         expect.fail('Should have thrown TranslationServiceError');
       } catch (err) {
         expect(err).toBeInstanceOf(TranslationServiceError);
+        // Issue #215: stable errorCode discriminator asserted alongside message.
+        expect((err as TranslationServiceError).errorCode).toBe('S3_UPLOAD_BLOCKED');
         expect((err as TranslationServiceError).message).toBe(S3_UPLOAD_BLOCKED_MESSAGE);
         expect((err as TranslationServiceError).statusCode).toBeUndefined();
       }
@@ -328,6 +335,7 @@ describe('TranslationService - uploadDocument', () => {
         expect.fail('Should have thrown TranslationServiceError');
       } catch (err) {
         expect(err).toBeInstanceOf(TranslationServiceError);
+        expect((err as TranslationServiceError).errorCode).toBe('S3_HTTP_ERROR');
         expect((err as TranslationServiceError).statusCode).toBe(403);
         expect((err as TranslationServiceError).originalError).toBe(rejectedAxiosError);
       }
@@ -340,7 +348,7 @@ describe('TranslationService - uploadDocument', () => {
     // rejects with something that's neither an Error nor an AxiosError.
     // -------------------------------------------------------------------------
     describe('wrapS3UploadError — non-Error rejected values', () => {
-      it('handles a thrown string gracefully (does not crash)', async () => {
+      it('handles a thrown string gracefully — errorCode S3_HTTP_ERROR (does not crash)', async () => {
         mockPresignedUrl();
         mockedUploadToS3.mockRejectedValueOnce('boom');
 
@@ -352,6 +360,7 @@ describe('TranslationService - uploadDocument', () => {
           expect.fail('Should have thrown TranslationServiceError');
         } catch (err) {
           expect(err).toBeInstanceOf(TranslationServiceError);
+          expect((err as TranslationServiceError).errorCode).toBe('S3_HTTP_ERROR');
           expect((err as TranslationServiceError).message).toBe('S3 upload failed');
           const original = (err as TranslationServiceError).originalError as Error | undefined;
           expect(original).toBeInstanceOf(Error);
@@ -359,7 +368,7 @@ describe('TranslationService - uploadDocument', () => {
         }
       });
 
-      it('handles a thrown undefined gracefully (does not crash)', async () => {
+      it('handles a thrown undefined gracefully — errorCode S3_HTTP_ERROR (does not crash)', async () => {
         mockPresignedUrl();
         mockedUploadToS3.mockRejectedValueOnce(undefined);
 
@@ -371,6 +380,7 @@ describe('TranslationService - uploadDocument', () => {
           expect.fail('Should have thrown TranslationServiceError');
         } catch (err) {
           expect(err).toBeInstanceOf(TranslationServiceError);
+          expect((err as TranslationServiceError).errorCode).toBe('S3_HTTP_ERROR');
           expect((err as TranslationServiceError).message).toBe('S3 upload failed');
           const original = (err as TranslationServiceError).originalError as Error | undefined;
           expect(original).toBeInstanceOf(Error);

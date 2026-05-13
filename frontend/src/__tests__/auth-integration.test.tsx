@@ -16,6 +16,7 @@ import { ProtectedRoute } from '../components/Auth/ProtectedRoute';
 import * as api from '../utils/api';
 import { setStoredSession } from '../utils/api';
 import { AUTH_CONFIG } from '../config/constants';
+import type { UserProfile } from '@lfmt/shared-types';
 
 // Mock API client
 vi.mock('../utils/api', async () => {
@@ -113,7 +114,8 @@ describe('Authentication Integration Tests', () => {
   });
 
   describe('Protected Route with Valid Authentication', () => {
-    const mockUser = {
+    const mockUser: UserProfile = {
+      userId: 'user-123',
       id: 'user-123',
       email: 'test@example.com',
       firstName: 'Test',

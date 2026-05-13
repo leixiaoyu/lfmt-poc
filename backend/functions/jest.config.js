@@ -5,12 +5,24 @@ module.exports = {
   testMatch: ['**/*.test.ts'],
   moduleFileExtensions: ['ts', 'js', 'json'],
   collectCoverageFrom: ['**/*.ts', '!**/*.test.ts', '!**/node_modules/**', '!**/dist/**'],
+  // Issue #153: thresholds raised to approach the documented >90% target.
+  // Previous floors (35/68/70/70) allowed silent coverage regression far
+  // below the CLAUDE.md / DEVELOPMENT-ROADMAP.md claims of >90% on critical
+  // paths. Actual measured coverage as of this change (f16303b):
+  //   branches: 75%, functions: 79%, lines: 86%, statements: 88%
+  //
+  // Strategy: Approach 3 (tiered) — a global floor meaningfully above the old
+  // floors and comfortably achievable with the current test suite, with headroom
+  // for a few new untested code paths to land without immediately blocking CI.
+  // Branches are lower than lines/statements because defensive error paths in
+  // Lambda handlers are hard to reach in unit tests (they require AWS SDK mocking
+  // of failure modes). Raise incrementally as test coverage improves.
   coverageThreshold: {
     global: {
-      branches: 35,
-      functions: 68,
-      lines: 70,
-      statements: 70,
+      branches: 70,
+      functions: 75,
+      lines: 82,
+      statements: 84,
     },
   },
   moduleNameMapper: {
