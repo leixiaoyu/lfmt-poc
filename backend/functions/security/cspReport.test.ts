@@ -169,8 +169,9 @@ describe('cspReport — parseReportsApiBody', () => {
       },
     ];
     const out = parseReportsApiBody(payload);
-    expect(out).toHaveLength(1);
-    const r = out[0];
+    expect(out).not.toBeNull();
+    expect(out!).toHaveLength(1);
+    const r = out![0];
     expect(r.reportType).toBe('reports-api');
     expect(r.violatedDirective).toBe('script-src');
     expect(r.blockedUri).toBe('https://evil.example.com/x.js');
@@ -189,17 +190,40 @@ describe('cspReport — parseReportsApiBody', () => {
       },
     ];
     const out = parseReportsApiBody(payload);
-    expect(out).toHaveLength(1);
-    expect(out[0].violatedDirective).toBe('script-src');
+    expect(out).not.toBeNull();
+    expect(out!).toHaveLength(1);
+    expect(out![0].violatedDirective).toBe('script-src');
   });
 
-  it('returns empty array on non-array input', () => {
-    expect(parseReportsApiBody({})).toEqual([]);
-    expect(parseReportsApiBody(null)).toEqual([]);
-    expect(parseReportsApiBody('string')).toEqual([]);
+  // OMC R2 Low-1: return-contract differentiates STRUCTURALLY malformed
+  // (not an array) from VALID-BUT-EMPTY (array with zero CSP entries).
+  it('returns null on non-array input (STRUCTURALLY malformed)', () => {
+    expect(parseReportsApiBody({})).toBeNull();
+    expect(parseReportsApiBody(null)).toBeNull();
+    expect(parseReportsApiBody('string')).toBeNull();
+    expect(parseReportsApiBody(42)).toBeNull();
+    expect(parseReportsApiBody(undefined)).toBeNull();
   });
 
-  it('drops entries with missing directive (REQUIRED)', () => {
+  it('returns empty array on valid-array-with-no-CSP-entries (VALID-BUT-EMPTY)', () => {
+    // Empty array is structurally valid Reporting-API JSON — handler
+    // must treat this as 204 (not 400).
+    expect(parseReportsApiBody([])).toEqual([]);
+
+    // Array containing only non-CSP report types is structurally valid;
+    // we just have nothing to log. Handler returns 204.
+    expect(
+      parseReportsApiBody([
+        { type: 'network-error', body: { phase: 'connection' } },
+        { type: 'deprecation', body: { id: 'old-api' } },
+      ])
+    ).toEqual([]);
+  });
+
+  it('drops entries with missing directive (REQUIRED) but still returns []', () => {
+    // The CSP-typed entry is malformed (no directive) so it's dropped,
+    // but the OUTER array is structurally valid → return []. The
+    // handler will surface this as 204 per the OMC R2 Low-1 semantic.
     const out = parseReportsApiBody([{ type: 'csp-violation', body: {} }]);
     expect(out).toEqual([]);
   });
@@ -331,15 +355,61 @@ describe('cspReport — handler (success paths)', () => {
     expect(warnSpy).toHaveBeenCalledTimes(2);
   });
 
-  it('returns 400 (no log) when payload contains zero valid reports', async () => {
+  it('returns 400 (no log) when LEGACY payload contains zero valid reports', async () => {
     const event = buildEvent({
       method: 'POST',
       contentType: 'application/csp-report',
-      // Wrapper present but no violated-directive — drop silently.
+      // Wrapper present but no violated-directive — STRUCTURALLY malformed
+      // for the legacy single-record shape (no "valid-but-empty" state
+      // is possible here, OMC R2 Low-1).
       body: JSON.stringify({ 'csp-report': { 'blocked-uri': 'https://x' } }),
     });
     const res = await handler(event);
     expect(res.statusCode).toBe(400);
+    expect(warnSpy).not.toHaveBeenCalled();
+  });
+
+  // OMC R2 Low-1 regression guards: the Reporting-API path differentiates
+  // STRUCTURALLY malformed (returns 400) from VALID-BUT-EMPTY (returns 204).
+  it('returns 400 (no log) when reports-api payload is NOT a JSON array', async () => {
+    const event = buildEvent({
+      method: 'POST',
+      contentType: 'application/reports+json',
+      // Wrong shape — reports-api requires a top-level array.
+      body: JSON.stringify({ type: 'csp-violation', body: { effectiveDirective: 'x' } }),
+    });
+    const res = await handler(event);
+    expect(res.statusCode).toBe(400);
+    expect(warnSpy).not.toHaveBeenCalled();
+  });
+
+  it('returns 204 (no log) when reports-api payload is a valid empty array', async () => {
+    const event = buildEvent({
+      method: 'POST',
+      contentType: 'application/reports+json',
+      body: JSON.stringify([]),
+    });
+    const res = await handler(event);
+    expect(res.statusCode).toBe(204);
+    expect(warnSpy).not.toHaveBeenCalled();
+  });
+
+  it('returns 204 (no log) when reports-api batch contains only non-CSP entries', async () => {
+    // Honest browser shape: a Reporting-API endpoint can receive a batch
+    // of NEL + Deprecation reports alongside CSP. If it happens to
+    // receive ONLY non-CSP entries (browser misconfig / endpoint URL
+    // drift), the request is still well-formed — return 204 without
+    // logging rather than the previous misleading 400.
+    const event = buildEvent({
+      method: 'POST',
+      contentType: 'application/reports+json',
+      body: JSON.stringify([
+        { type: 'network-error', body: { phase: 'connection' } },
+        { type: 'deprecation', body: { id: 'old-api' } },
+      ]),
+    });
+    const res = await handler(event);
+    expect(res.statusCode).toBe(204);
     expect(warnSpy).not.toHaveBeenCalled();
   });
 

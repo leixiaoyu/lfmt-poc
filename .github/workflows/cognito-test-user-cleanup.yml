@@ -1,0 +1,217 @@
+name: Cognito Test User Cleanup (Weekly GC)
+
+# Weekly garbage-collection sweep for ephemeral test users created by the
+# live-backend contract spec (#219) when shared CI credentials
+# (LFMT_TEST_EMAIL / LFMT_TEST_PASSWORD) are absent.
+#
+# The fallback path in `frontend/e2e/tests/contract/api-envelope-live.spec.ts`
+# registers a fresh user per run with the pattern
+#   contract-<ts>-<rand>@e2e-test.lfmt.com
+# and the dev Cognito pool's PreSignUp auto-confirm trigger makes that
+# synchronous so the spec can log in immediately. In normal operation the
+# shared-credentials path is taken and this fallback fires only on forked
+# `workflow_dispatch` runs that lack secret access — but over a year that
+# accumulation still adds up.
+#
+# This workflow runs weekly and:
+#   1. Reads the dev User Pool ID from the LfmtPocDev CloudFormation stack
+#      output (single source of truth — no hardcoded pool IDs).
+#   2. Lists users whose email matches `contract-*@e2e-test.lfmt.com`.
+#   3. Deletes every match older than 7 days (the operational SLA for
+#      reproducing a nightly failure — we never want to GC a user that
+#      on-call might still need for triage).
+#
+# OMC R2 Medium-2 follow-up to PR #257 (Wave 2 Track D).
+#
+# ---------------------------------------------------------------------------
+# IAM requirements
+# ---------------------------------------------------------------------------
+#
+# The OIDC role assumed via `secrets.AWS_ROLE_ARN` must have:
+#   - cognito-idp:ListUsers          (scoped to dev User Pool ARN)
+#   - cognito-idp:AdminDeleteUser    (scoped to dev User Pool ARN)
+#   - cloudformation:DescribeStacks  (already present — deploy workflows
+#                                     use this for stack-output reads)
+#
+# The current deploy role grants the Cognito admin actions (it creates the
+# pool), so no IAM update is expected to be required. If a future tightening
+# narrows the deploy role, the cleanup pool ARN MUST stay on the allow-list
+# or this workflow will start failing every Sunday.
+
+on:
+  schedule:
+    # Sunday 10:00 UTC = 03:00 PT (winter) / 02:00 PT (DST). Avoid the
+    # 00:00–06:00 UTC window where GitHub's scheduler clusters runs.
+    - cron: '0 10 * * 0'
+  # Manual trigger for on-call to sweep on demand after a noisy fallback
+  # week.
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Dry run (list only, do not delete)'
+        required: false
+        type: boolean
+        default: false
+      max_age_days:
+        description: 'Delete users older than N days (default 7)'
+        required: false
+        type: string
+        default: '7'
+
+env:
+  AWS_REGION: us-east-1
+  # The dev stack name — must match `backend/infrastructure/bin/lfmt-cdk.ts`.
+  # If a future PR renames the stack, this value must change in lockstep.
+  STACK_NAME: LfmtPocDev
+  # Email pattern hardcoded to match the spec's `generateRunUser` template
+  # (api-envelope-live.spec.ts line ~106). Drift between this pattern and
+  # the spec would silently miss zombie users — keep them in sync.
+  EMAIL_PREFIX: 'contract-'
+  EMAIL_DOMAIN: '@e2e-test.lfmt.com'
+
+permissions:
+  # OIDC token issuance — required by aws-actions/configure-aws-credentials.
+  id-token: write
+  # Read-only repo access; this workflow does not push commits or comments.
+  contents: read
+
+# Serialize against a manual dispatch on the same day so we don't double-
+# delete a user mid-list.
+concurrency:
+  group: cognito-test-user-cleanup
+  cancel-in-progress: false
+
+jobs:
+  cleanup:
+    name: Cognito test user GC (dev pool)
+    runs-on: ubuntu-latest
+    # 10-min cap. Listing + deleting ~365 users (one year of nightly
+    # fallbacks) takes <2 min via the AWS CLI; anything longer means the
+    # pool is much larger than expected or the API is throttling — fail
+    # loudly rather than burn CI time.
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          role-session-name: GitHubActions-LFMT-CognitoGC
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Verify AWS identity
+        run: aws sts get-caller-identity
+
+      - name: Resolve dev User Pool ID from stack output
+        id: pool
+        run: |
+          USER_POOL_ID=$(aws cloudformation describe-stacks \
+            --stack-name "${STACK_NAME}" \
+            --query "Stacks[0].Outputs[?OutputKey=='UserPoolId'].OutputValue" \
+            --output text)
+          if [ -z "${USER_POOL_ID}" ] || [ "${USER_POOL_ID}" = "None" ]; then
+            echo "::error::Could not resolve UserPoolId from stack ${STACK_NAME}"
+            exit 1
+          fi
+          echo "Resolved UserPoolId: ${USER_POOL_ID}"
+          echo "user_pool_id=${USER_POOL_ID}" >> "$GITHUB_OUTPUT"
+
+      - name: List + delete stale test users
+        env:
+          USER_POOL_ID: ${{ steps.pool.outputs.user_pool_id }}
+          DRY_RUN: ${{ inputs.dry_run || 'false' }}
+          MAX_AGE_DAYS: ${{ inputs.max_age_days || '7' }}
+        run: |
+          set -euo pipefail
+
+          # Cutoff timestamp in seconds (epoch). Users created on/after
+          # this timestamp are PRESERVED — on-call may still need them
+          # for nightly-failure triage.
+          NOW=$(date -u +%s)
+          CUTOFF=$(( NOW - (MAX_AGE_DAYS * 86400) ))
+          echo "Cutoff: ${MAX_AGE_DAYS} days = epoch ${CUTOFF}"
+          echo "Dry run: ${DRY_RUN}"
+
+          # AWS Cognito ListUsers supports a `Filter` parameter with
+          # limited syntax — `email ^=` is the documented prefix match.
+          # We additionally post-filter by domain suffix in shell so a
+          # future test pattern change doesn't accidentally GC users
+          # outside our test domain.
+          USERS_JSON=$(aws cognito-idp list-users \
+            --user-pool-id "${USER_POOL_ID}" \
+            --filter "email ^= \"${EMAIL_PREFIX}\"" \
+            --limit 60 \
+            --output json)
+
+          # Iterate paginated results. The AWS CLI exposes the next-page
+          # token in the response; loop until exhausted. Per-user
+          # DELETE/PRESERVE/SKIP records are emitted from `process_page`
+          # so the job log itself is the audit trail (no aggregate
+          # counters maintained — running them through a subshell loop
+          # would require fd-based bookkeeping for portability).
+          NEXT_TOKEN=$(echo "${USERS_JSON}" | jq -r '.PaginationToken // empty')
+
+          process_page() {
+            local page="$1"
+            echo "${page}" | jq -c '.Users[]' | while read -r user; do
+              local username email created
+              username=$(echo "${user}" | jq -r '.Username')
+              email=$(echo "${user}" | jq -r '.Attributes[] | select(.Name=="email") | .Value')
+              # UserCreateDate is ISO 8601 — convert to epoch.
+              created=$(echo "${user}" | jq -r '.UserCreateDate')
+
+              # Defensive double-check on the email domain. If a future
+              # test changes the pattern but we forget to update the
+              # workflow filter, the prefix `contract-` could match
+              # legitimate test accounts in production. The domain check
+              # narrows the blast radius.
+              if [[ "${email}" != *"${EMAIL_DOMAIN}" ]]; then
+                echo "SKIP (wrong domain): ${email}"
+                continue
+              fi
+
+              created_epoch=$(date -u -d "${created}" +%s 2>/dev/null \
+                || gdate -u -d "${created}" +%s 2>/dev/null \
+                || python3 -c "import sys, datetime as dt; print(int(dt.datetime.fromisoformat(sys.argv[1].replace('Z','+00:00')).timestamp()))" "${created}")
+
+              if [ "${created_epoch}" -ge "${CUTOFF}" ]; then
+                echo "PRESERVE (too young): ${email} (created ${created})"
+                continue
+              fi
+
+              if [ "${DRY_RUN}" = "true" ]; then
+                echo "DRY RUN — would delete: ${email} (created ${created})"
+              else
+                echo "DELETE: ${email} (created ${created})"
+                aws cognito-idp admin-delete-user \
+                  --user-pool-id "${USER_POOL_ID}" \
+                  --username "${username}"
+              fi
+            done
+          }
+
+          process_page "${USERS_JSON}"
+
+          while [ -n "${NEXT_TOKEN}" ]; do
+            USERS_JSON=$(aws cognito-idp list-users \
+              --user-pool-id "${USER_POOL_ID}" \
+              --filter "email ^= \"${EMAIL_PREFIX}\"" \
+              --limit 60 \
+              --pagination-token "${NEXT_TOKEN}" \
+              --output json)
+            process_page "${USERS_JSON}"
+            NEXT_TOKEN=$(echo "${USERS_JSON}" | jq -r '.PaginationToken // empty')
+          done
+
+          echo "Cleanup pass complete."
+
+      - name: Report summary
+        if: always()
+        run: |
+          echo "Cognito test user cleanup workflow finished."
+          echo "Stack:    ${STACK_NAME}"
+          echo "Pattern:  ${EMAIL_PREFIX}*${EMAIL_DOMAIN}"
+          echo "See job log above for per-user PRESERVE/DELETE/SKIP records."

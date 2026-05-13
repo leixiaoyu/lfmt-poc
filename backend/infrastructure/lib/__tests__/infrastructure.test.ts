@@ -2158,6 +2158,7 @@ describe('LFMT Infrastructure Stack — multi-environment CORS (PR #214 OMC R2)'
 //   `buildCsp({ directives: { 'connect-src': [...], 'report-uri': [...] } })`
 // — the tests below cover BOTH the validation contract AND the new shape.
 // ===========================================================================
+import { Lazy, Token } from 'aws-cdk-lib';
 import { buildCsp, assertValidCspReportUri, type CspDirective } from '../csp';
 
 describe('csp.ts — assertValidCspReportUri (H-3 sanitization)', () => {
@@ -2205,6 +2206,52 @@ describe('csp.ts — assertValidCspReportUri (H-3 sanitization)', () => {
       assertValidCspReportUri(
         'https://${Token[apiId.123]}.execute-api.${Token[AWS.Region.13]}.amazonaws.com/v1/csp-report'
       )
+    ).not.toThrow();
+  });
+
+  // OMC R2 Medium-1: defensive coupling-check between the pure-module
+  // CDK-token regex in csp.ts and CDK's actual token lexical format.
+  //
+  // `csp.ts` is a pure module that deliberately does NOT depend on CDK
+  // (so the unit tests can run without `@aws-cdk/*` imports). The
+  // token-escape-hatch uses a lexical regex (`/\$\{Token\[[^\]]+\]\}/`)
+  // that mirrors CDK's internal `${Token[<id>]}` format. If a future CDK
+  // upgrade changes that lexical format, the escape hatch would silently
+  // misfire and our valid stack synth would start throwing.
+  //
+  // This test imports CDK and asks it to generate a real unresolved
+  // token, then verifies our lexical regex matches CDK's output. The
+  // test BREAKS at the CDK-upgrade PR, surfacing the drift at the time
+  // we can act on it (rather than at next deploy).
+  test('CDK token lexical format matches the csp.ts regex (CDK-upgrade drift guard)', () => {
+    const lazyToken = Lazy.uncachedString({
+      produce: () => 'resolved-at-deploy-time',
+    });
+
+    // Sanity-check: the produced string must actually BE an unresolved
+    // CDK token (not the literal resolved value). If this assertion
+    // fails, our test setup is wrong and the regex check below is
+    // vacuous.
+    expect(Token.isUnresolved(lazyToken)).toBe(true);
+
+    // The lexical form CDK emits when this token is stringified.
+    const tokenLexicalForm = String(lazyToken);
+
+    // The same regex literal that csp.ts uses internally (line 248).
+    // Keeping it inline here — rather than exporting it from csp.ts —
+    // preserves the pure-module API surface (only buildCsp + the
+    // assertion helper are exported). If a future csp.ts contributor
+    // changes the regex, they must update this test too — that's the
+    // OPPOSITE drift this test guards against (CDK changing on us).
+    const cspTokenRegex = /\$\{Token\[[^\]]+\]\}/;
+    expect(cspTokenRegex.test(tokenLexicalForm)).toBe(true);
+
+    // End-to-end check: an `https://...` URL containing the real token
+    // must pass our validator. This is the load-bearing assertion —
+    // if CDK changes the format, this is what would break inside an
+    // actual stack synth.
+    expect(() =>
+      assertValidCspReportUri(`https://${tokenLexicalForm}.example.com/csp-report`)
     ).not.toThrow();
   });
 

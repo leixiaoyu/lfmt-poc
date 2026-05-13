@@ -193,14 +193,27 @@ export function parseLegacyReport(payload: unknown): SanitizedCspReport | null {
  * Parse a Reporting API `application/reports+json` body. The browser POSTs:
  *   [ { "type": "csp-violation", "body": { ... }, "url": "...", "age": N }, ... ]
  *
- * Returns the array of sanitized records. Non-CSP report types and
- * malformed entries are silently dropped (an honest browser may batch
- * a Network-Error-Report alongside the CSP one).
+ * Return semantics (OMC R2 Low-1: differentiate malformed from non-CSP):
+ *   - `null`  → payload is NOT a JSON array (structurally malformed).
+ *               Handler returns 400.
+ *   - `[]`    → payload IS a valid array but contains zero CSP-violation
+ *               entries (e.g., a Reporting API batch of only NEL reports
+ *               that hit our endpoint by browser-config drift). Handler
+ *               returns 204 — the request was structurally valid, we
+ *               simply had nothing to log. This avoids the previous
+ *               conflation where an honest non-CSP batch got a 400.
+ *   - `[r1,...]` → one or more sanitized CSP records. Handler logs each
+ *               at WARN level and returns 204.
+ *
+ * Non-CSP entries (`type !== 'csp-violation'`) and malformed CSP entries
+ * (missing the required directive field) are silently dropped within a
+ * valid-array payload — an honest browser may batch a NEL alongside the
+ * CSP one, and a partial-batch is still useful telemetry.
  *
  * Exported for unit testing.
  */
-export function parseReportsApiBody(payload: unknown): SanitizedCspReport[] {
-  if (!Array.isArray(payload)) return [];
+export function parseReportsApiBody(payload: unknown): SanitizedCspReport[] | null {
+  if (!Array.isArray(payload)) return null;
   const out: SanitizedCspReport[] = [];
   for (const entry of payload) {
     if (typeof entry !== 'object' || entry === null) continue;
@@ -315,10 +328,10 @@ export const handler = async (event: APIGatewayProxyEvent): Promise<APIGatewayPr
   }
   // `length` is char count, not byte count — for ASCII-heavy payloads
   // (CSP reports usually are) the two are equivalent. Use Buffer for
-  // an accurate byte count on multibyte input, but fall back to the
-  // string length when Buffer isn't available (unit tests).
-  const byteLength =
-    typeof Buffer !== 'undefined' ? Buffer.byteLength(rawBody, 'utf8') : rawBody.length;
+  // an accurate byte count on multibyte input. Buffer is a Node builtin
+  // always present in both the Lambda runtime and the Jest test runner;
+  // no fallback path is needed (OMC R2 Low-2: dead-code removal).
+  const byteLength = Buffer.byteLength(rawBody, 'utf8');
   if (byteLength > MAX_BODY_BYTES) {
     return badRequest();
   }
@@ -331,22 +344,44 @@ export const handler = async (event: APIGatewayProxyEvent): Promise<APIGatewayPr
     return badRequest();
   }
 
-  // Dispatch by content type. Each parser returns `null` / `[]` on
-  // any internal anomaly so the outer code can always reduce to a
-  // simple "did we produce ANY records?" check.
-  const records: SanitizedCspReport[] =
+  // Dispatch by content type with OMC R2 Low-1 semantic split:
+  //   - `null`     → STRUCTURALLY malformed (wrong wrapper / not an array
+  //                  / missing required field). Returns 400 — no log
+  //                  emission so an anonymous attacker can't fill
+  //                  CloudWatch with a JSON-shape fuzzer.
+  //   - `[]`       → STRUCTURALLY valid but contains zero CSP records
+  //                  (e.g., a Reporting API batch of only NEL/Deprecation
+  //                  reports that hit our endpoint by misconfiguration).
+  //                  Returns 204 — the request was a well-formed
+  //                  `application/reports+json` POST; we just had
+  //                  nothing CSP-relevant to log. Logging is still
+  //                  skipped so the cost ceiling is unchanged.
+  //   - `[r,...]`  → one or more sanitized CSP records to log.
+  const records: SanitizedCspReport[] | null =
     contentType === 'application/csp-report'
-      ? ((): SanitizedCspReport[] => {
+      ? ((): SanitizedCspReport[] | null => {
           const one = parseLegacyReport(parsed);
-          return one ? [one] : [];
+          // Legacy format is single-record; `null` from the parser means
+          // missing wrapper or missing required `violated-directive` —
+          // BOTH are structurally malformed for this Content-Type, so
+          // surface them as 400. There is no "valid-but-empty" state
+          // possible for the legacy shape (a single absent record is
+          // indistinguishable from a malformed one).
+          return one ? [one] : null;
         })()
       : parseReportsApiBody(parsed);
 
-  if (records.length === 0) {
-    // Malformed report (missing required directive, wrong shape, etc.).
-    // Return 400 without logging — anonymous endpoints that log every
-    // malformed POST are a log-flood vector.
+  if (records === null) {
+    // STRUCTURALLY malformed — see dispatch comment above.
     return badRequest();
+  }
+
+  if (records.length === 0) {
+    // Valid `application/reports+json` payload with no CSP entries.
+    // Don't log; return 204. The browser's reporting client gets a
+    // success and won't retry, which is correct given the request was
+    // well-formed.
+    return noContent();
   }
 
   // Emit one structured log record per violation. WARN level so the
