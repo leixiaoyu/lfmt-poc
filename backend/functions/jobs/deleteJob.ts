@@ -18,9 +18,18 @@
  *    jobRepository.ts; the perf rationale (one fewer DynamoDB round trip)
  *    justifies the divergence from the shared helper.
  *
- * 2. S3 cascade delete (item #7):
- *    After the DDB delete succeeds, deletes the S3 object(s) under the job's
- *    s3Key prefix (uploads/ key) and any translated results (results/ prefix).
+ * 2. S3 cascade delete (item #7) — SHALLOW cleanup only:
+ *    After the DDB delete succeeds, deletes ONLY the source upload (`uploads/`
+ *    key on the job record) and its post-validation `documents/` copy. This
+ *    handler does NOT delete the `chunks/{jobId}/*` segments or `results/{jobId}/*`
+ *    translation outputs — there is no listing/discovery step that would find
+ *    them. Removing those multi-file prefixes is deferred to the scheduled
+ *    purge Lambda proposed in `openspec/changes/add-soft-delete-jobs/` (#209);
+ *    once that lands, this handler will continue to do the shallow cleanup
+ *    inline and the purge Lambda will sweep the chunk/result prefixes on a
+ *    retention schedule. Until then, chunks/results are orphaned at delete time
+ *    and require manual cleanup. PR #256 review (xlei-raymond, 2026-05-13)
+ *    flagged the prior docstring as inaccurate; this revision matches reality.
  *    If S3 deletion fails after DDB delete, the orphan is logged and surfaced
  *    as a non-fatal warning in the response. The user's intent (delete the job)
  *    is honored at the DB level; S3 cleanup is operations' responsibility.
@@ -89,17 +98,24 @@ async function deleteJobRecord(jobId: string, userId: string): Promise<DynamoDBJ
 }
 
 /**
- * Best-effort delete of S3 objects associated with the job.
+ * Best-effort delete of S3 objects associated with the job — SHALLOW only.
  * Returns null on success, an error message if any deletion fails.
  *
  * S3 key conventions (from uploadRequest.ts):
- *   uploads/{userId}/{fileId}/{filename}   — original upload
- *   documents/{userId}/{fileId}/{filename} — post-validation copy (uploadComplete)
- *   chunks/{jobId}/chunk-*.txt             — chunked segments (chunkDocument)
- *   results/{jobId}/translated-*.txt       — translation outputs
+ *   uploads/{userId}/{fileId}/{filename}   — original upload          (CLEANED here)
+ *   documents/{userId}/{fileId}/{filename} — post-validation copy     (CLEANED here)
+ *   chunks/{jobId}/chunk-*.txt             — chunked segments         (NOT cleaned here)
+ *   results/{jobId}/translated-*.txt       — translation outputs      (NOT cleaned here)
  *
- * We delete by the `s3Key` stored on the job record (the uploads/ key), plus
- * the equivalent documents/ copy and any chunk/result prefixes if discoverable.
+ * We delete by the exact `s3Key` stored on the job record (the uploads/ key)
+ * plus its post-validation `documents/` equivalent — both are single, known
+ * keys. The chunks/ and results/ prefixes contain multiple files keyed by
+ * `jobId`, and discovering them requires a ListObjectsV2 call this handler
+ * intentionally does not make: that cleanup is deferred to the scheduled
+ * purge Lambda proposed in `openspec/changes/add-soft-delete-jobs/` (#209).
+ * Until #209 lands, deleting a translated job leaves chunks/results orphaned
+ * in S3 — operations must reconcile via the purge Lambda or manual cleanup.
+ *
  * S3 DeleteObject on a non-existent key is a no-op (returns 204) so we don't
  * need to check existence before deleting.
  */

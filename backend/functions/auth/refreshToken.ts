@@ -86,18 +86,23 @@ export const handler = async (event: APIGatewayProxyEvent): Promise<APIGatewayPr
     //
     // Convention enforced at the type level via `createFlatResponse`
     // (PR #218 OMC R1 H1-arch).
-    // Issue #188: construct typed response first so tsc validates field presence.
-    const refreshResponse: RefreshTokenResponse = {
-      accessToken: response.AuthenticationResult.AccessToken!,
-      idToken: response.AuthenticationResult.IdToken!,
-      expiresIn: response.AuthenticationResult.ExpiresIn,
-    };
+    //
+    // Issue #188: `satisfies` (not `as`) validates field presence at compile
+    // time, mirroring the pattern in login.ts:123. The previous manual-type
+    // + spread + `as unknown as Record<string, unknown>` cast was flagged
+    // in PR #256 review — the cast erased the very type safety the audit
+    // was supposed to add. The `message` field that previously rode along
+    // is not part of RefreshTokenResponse and is not read by the frontend
+    // (`authService.refreshToken` consumes only accessToken/idToken/
+    // refreshToken/expiresIn — see authService.ts:209) so it has been
+    // dropped to align the wire shape with the type.
     return createFlatResponse(
       200,
       {
-        message: 'Tokens refreshed successfully',
-        ...(refreshResponse as unknown as Record<string, unknown>),
-      },
+        accessToken: response.AuthenticationResult.AccessToken!,
+        idToken: response.AuthenticationResult.IdToken!,
+        expiresIn: response.AuthenticationResult.ExpiresIn,
+      } satisfies RefreshTokenResponse,
       requestId,
       requestOrigin
     );

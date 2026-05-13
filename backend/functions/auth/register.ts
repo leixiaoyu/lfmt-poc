@@ -27,7 +27,7 @@ import {
   InvalidPasswordException,
   InvalidParameterException,
 } from '@aws-sdk/client-cognito-identity-provider';
-import { registerRequestSchema } from '@lfmt/shared-types';
+import { registerRequestSchema, RegisterResponse } from '@lfmt/shared-types';
 import { createFlatResponse, createErrorResponse } from '../shared/api-response';
 import Logger from '../shared/logger';
 import { getRequiredEnv, getOptionalEnv } from '../shared/env';
@@ -121,13 +121,25 @@ export const handler = async (event: APIGatewayProxyEvent): Promise<APIGatewayPr
       isDev: IS_DEV,
     });
 
+    // Issue #188: `satisfies` against the wire contract to catch field
+    // drift at compile time, mirroring the pattern in login.ts:123.
+    //
+    // Narrowed via Pick<> because the actual wire contract is `{ message }`
+    // only — the frontend (`authService.register`) consumes a
+    // `MessageResponse` shape (see frontend/src/services/authService.ts:171
+    // and the comment block at 160). The full RegisterResponse interface
+    // (userId/verificationRequired/verificationExpiresAt) is aspirational
+    // and not yet wired through. Narrowing here, rather than padding the
+    // response with stub fields, keeps the wire contract truthful and the
+    // type check load-bearing — a follow-up that broadens the response
+    // must widen the Pick<> here in the same change.
     return createFlatResponse(
       201,
       {
         message: IS_DEV
           ? 'User registered successfully. You can now log in.'
           : 'User registered successfully. Please check your email to verify your account.',
-      },
+      } satisfies Pick<RegisterResponse, 'message'>,
       requestId,
       requestOrigin
     );
