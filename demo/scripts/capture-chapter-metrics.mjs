@@ -29,7 +29,10 @@
  *       TEST_PASSWORD       — Cognito password for the test account.
  *                             Script fails at startup if unset (R7 — burned
  *                             credentials must not live in source).
- *       LFMT_TEST_EMAIL     — Optional. Defaults to a fresh per-day address.
+ *       LFMT_TEST_EMAIL     — Optional. Defaults to a YYYY-MM-DD address derived
+ *                             from today's local-timezone date (not UTC). Set
+ *                             this explicitly to reuse a specific day's account
+ *                             across timezone boundaries.
  *
  * Usage:
  *   TEST_PASSWORD='...' node demo/scripts/capture-chapter-metrics.mjs [chapter-key]
@@ -71,7 +74,17 @@ const CHUNKING_TERMINAL_STATES = new Set(['VALIDATION_FAILED', 'CHUNKING_FAILED'
 const TRANSLATION_TERMINAL_STATES = new Set(['COMPLETED', 'TRANSLATION_FAILED']);
 
 // Fresh test account per the Track B brief. Auto-confirmed in dev env.
-const TEST_EMAIL = process.env.LFMT_TEST_EMAIL || 'claude-track-b-2026-04-25@lfmt-poc.dev';
+// The default regenerates daily so each day's run gets a new Cognito account;
+// same-day re-runs reuse the per-day account (matches the RPD guard's intent).
+// Set LFMT_TEST_EMAIL explicitly to override (e.g. when re-running a specific
+// day's capture without creating a new account).
+// toLocaleDateString('en-CA') returns YYYY-MM-DD anchored to the host's LOCAL
+// timezone (not UTC). This matters: at 23:00 PST, toISOString() already returns
+// the next UTC day, which would create a second Cognito account on what the
+// operator considers "the same calendar day". Using local date ensures
+// same-day re-runs (in the operator's timezone) always reuse the same account.
+const TODAY = new Date().toLocaleDateString('en-CA'); // YYYY-MM-DD in local time
+const TEST_EMAIL = process.env.LFMT_TEST_EMAIL || `claude-track-b-${TODAY}@lfmt-poc.dev`;
 // R7: TEST_PASSWORD MUST come from the environment — the previous literal
 // default ('TrackBDemo!2026') was a known-burned credential. We prefer
 // TEST_PASSWORD but accept the legacy LFMT_TEST_PASSWORD name during the
