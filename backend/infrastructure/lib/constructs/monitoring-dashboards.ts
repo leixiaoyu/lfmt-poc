@@ -46,9 +46,20 @@ export class MonitoringDashboards extends Construct {
   constructor(scope: Construct, id: string, props: MonitoringDashboardsProps) {
     super(scope, id);
 
-    const { stackName, environment, api, lambdaFunctions, jobsTable, usersTable,
-            attestationsTable, rateLimitBucketsTable, documentBucket, resultsBucket,
-            frontendBucket, translationStateMachine } = props;
+    const {
+      stackName,
+      environment,
+      api,
+      lambdaFunctions,
+      jobsTable,
+      usersTable,
+      attestationsTable,
+      rateLimitBucketsTable,
+      documentBucket,
+      resultsBucket,
+      frontendBucket,
+      translationStateMachine,
+    } = props;
 
     // 1. API Gateway Dashboard
     this.apiDashboard = this.createApiGatewayDashboard(stackName, api);
@@ -72,7 +83,10 @@ export class MonitoringDashboards extends Construct {
     });
 
     // 5. Step Functions Dashboard
-    this.stepFunctionsDashboard = this.createStepFunctionsDashboard(stackName, translationStateMachine);
+    this.stepFunctionsDashboard = this.createStepFunctionsDashboard(
+      stackName,
+      translationStateMachine
+    );
 
     // 6. Overview Dashboard (combined key metrics)
     this.overviewDashboard = this.createOverviewDashboard(stackName, {
@@ -83,7 +97,10 @@ export class MonitoringDashboards extends Construct {
     });
   }
 
-  private createApiGatewayDashboard(stackName: string, api: apigateway.RestApi): cloudwatch.Dashboard {
+  private createApiGatewayDashboard(
+    stackName: string,
+    api: apigateway.RestApi
+  ): cloudwatch.Dashboard {
     const dashboard = new cloudwatch.Dashboard(this, 'ApiGatewayDashboard', {
       dashboardName: `${stackName}-api-gateway`,
     });
@@ -176,7 +193,10 @@ export class MonitoringDashboards extends Construct {
     return dashboard;
   }
 
-  private createLambdaDashboard(stackName: string, lambdaFunctions: lambda.Function[]): cloudwatch.Dashboard {
+  private createLambdaDashboard(
+    stackName: string,
+    lambdaFunctions: lambda.Function[]
+  ): cloudwatch.Dashboard {
     const dashboard = new cloudwatch.Dashboard(this, 'LambdaDashboard', {
       dashboardName: `${stackName}-lambda`,
     });
@@ -352,11 +372,7 @@ export class MonitoringDashboards extends Construct {
       dashboardName: `${stackName}-s3`,
     });
 
-    const allBuckets = [
-      buckets.documentBucket,
-      buckets.resultsBucket,
-      buckets.frontendBucket,
-    ];
+    const allBuckets = [buckets.documentBucket, buckets.resultsBucket, buckets.frontendBucket];
 
     allBuckets.forEach((bucket) => {
       // Bucket size

@@ -567,7 +567,7 @@ test('all `Description` fields contain only AWS-allowed characters', () => {
     // ...
   };
   visit('$', template.toJSON());
-  expect(violations).toEqual([]);  // friendly multi-violation surface
+  expect(violations).toEqual([]); // friendly multi-violation surface
 });
 ```
 

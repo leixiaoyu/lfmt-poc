@@ -14,28 +14,28 @@ Commits reviewed (smallest-to-largest order as implemented):
 
 ### Category pass/fail matrix
 
-| Category | Result | Notes |
-|---|---|---|
-| Architecture / SOLID | PASS | errorCode dispatch is open/closed; storage/service/context boundaries maintained |
-| Type safety | PASS | No `any` in production paths; `as unknown as UserProfile` casts are test-only migration fixtures |
-| Test coverage | PASS | 7 new tests (4 errorCode discriminator, 3 narrowStoredUser userId→id); 776 total, 0 regressions |
-| Security | PASS | No new auth surface; StoredSession migration window correctly gated to 2026-06-04 |
-| Boy-scout | PASS | Inline mock class constructors corrected; orphan `expiresAt` field removed from StoredSession |
-| PR alignment | PASS | No conflict with main; shared-types build passes both CJS and ESM |
-| Performance | PASS | translation-services chunk: App-*.js −28.6% (131 kB vs 180 kB); no runtime overhead |
-| OpenSpec alignment | PASS | All 4 issues addressed; backwards compat preserved for pre-rollover sessions |
-| Backwards compatibility | PASS | User=UserProfile alias; narrowStoredUser accepts id AND userId; StoredSession.user cast handles legacy blobs |
+| Category                | Result | Notes                                                                                                        |
+| ----------------------- | ------ | ------------------------------------------------------------------------------------------------------------ |
+| Architecture / SOLID    | PASS   | errorCode dispatch is open/closed; storage/service/context boundaries maintained                             |
+| Type safety             | PASS   | No `any` in production paths; `as unknown as UserProfile` casts are test-only migration fixtures             |
+| Test coverage           | PASS   | 7 new tests (4 errorCode discriminator, 3 narrowStoredUser userId→id); 776 total, 0 regressions              |
+| Security                | PASS   | No new auth surface; StoredSession migration window correctly gated to 2026-06-04                            |
+| Boy-scout               | PASS   | Inline mock class constructors corrected; orphan `expiresAt` field removed from StoredSession                |
+| PR alignment            | PASS   | No conflict with main; shared-types build passes both CJS and ESM                                            |
+| Performance             | PASS   | translation-services chunk: App-\*.js −28.6% (131 kB vs 180 kB); no runtime overhead                         |
+| OpenSpec alignment      | PASS   | All 4 issues addressed; backwards compat preserved for pre-rollover sessions                                 |
+| Backwards compatibility | PASS   | User=UserProfile alias; narrowStoredUser accepts id AND userId; StoredSession.user cast handles legacy blobs |
 
 ---
 
 ### Findings
 
-| Severity | Category | Finding | Resolution |
-|---|---|---|---|
-| Low | #199 timing | Migration removal date is future-dated (2026-06-04 = 30 days after 2026-05-04 deploy). Cannot remove code yet — documented safe date rather than premature removal. | ACCEPTED — conservative, correct. |
-| Low | #200 cast scope | `as unknown as UserProfile` casts in test files are intentional: they test storage-layer behavior with partial blobs the migration path produces at runtime. A production-code cast would be a defect; here it's documenting real legacy shapes. | ACCEPTED — comments explain intent. |
-| Low | #215 deprecation | `S3_UPLOAD_BLOCKED_MESSAGE` string constant is kept as a `@deprecated` re-export for backwards compatibility with any consumers that reference it by string value (e.g. snapshot tests). | ACCEPTED — removal tracked in follow-up. |
-| Info | #200 `emailVerified` bridge | `narrowStoredUser` maps `isEmailVerified` (UserProfile canonical) → `emailVerified` (NarrowedStoredUser legacy). This bridge is one-way; the reverse mapping (writing `emailVerified` back to UserProfile) is not needed because the SPA never writes session fields from the UI layer. | No action required. |
+| Severity | Category                    | Finding                                                                                                                                                                                                                                                                                 | Resolution                               |
+| -------- | --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------- |
+| Low      | #199 timing                 | Migration removal date is future-dated (2026-06-04 = 30 days after 2026-05-04 deploy). Cannot remove code yet — documented safe date rather than premature removal.                                                                                                                     | ACCEPTED — conservative, correct.        |
+| Low      | #200 cast scope             | `as unknown as UserProfile` casts in test files are intentional: they test storage-layer behavior with partial blobs the migration path produces at runtime. A production-code cast would be a defect; here it's documenting real legacy shapes.                                        | ACCEPTED — comments explain intent.      |
+| Low      | #215 deprecation            | `S3_UPLOAD_BLOCKED_MESSAGE` string constant is kept as a `@deprecated` re-export for backwards compatibility with any consumers that reference it by string value (e.g. snapshot tests).                                                                                                | ACCEPTED — removal tracked in follow-up. |
+| Info     | #200 `emailVerified` bridge | `narrowStoredUser` maps `isEmailVerified` (UserProfile canonical) → `emailVerified` (NarrowedStoredUser legacy). This bridge is one-way; the reverse mapping (writing `emailVerified` back to UserProfile) is not needed because the SPA never writes session fields from the UI layer. | No action required.                      |
 
 No Critical or High findings. No code changes required from this review.
 
@@ -77,13 +77,13 @@ No Critical or High findings. No code changes required from this review.
 
 ### Test results
 
-| Package | Tests | Skipped | Result |
-|---|---|---|---|
-| `frontend` (Vitest) | 776 | 14 (pre-existing) | PASS |
-| `shared-types` build | n/a | — | PASS (CJS + ESM) |
-| Frontend type-check (`tsc --noEmit`) | n/a | — | PASS |
-| Frontend lint (ESLint `--max-warnings=0`) | n/a | — | PASS |
-| Frontend prettier | n/a | — | PASS |
-| Frontend Vite build | n/a | — | PASS |
+| Package                                   | Tests | Skipped           | Result           |
+| ----------------------------------------- | ----- | ----------------- | ---------------- |
+| `frontend` (Vitest)                       | 776   | 14 (pre-existing) | PASS             |
+| `shared-types` build                      | n/a   | —                 | PASS (CJS + ESM) |
+| Frontend type-check (`tsc --noEmit`)      | n/a   | —                 | PASS             |
+| Frontend lint (ESLint `--max-warnings=0`) | n/a   | —                 | PASS             |
+| Frontend prettier                         | n/a   | —                 | PASS             |
+| Frontend Vite build                       | n/a   | —                 | PASS             |
 
 Baseline on main was 769 tests / 37 files. Branch adds 7 tests, zero regressions.

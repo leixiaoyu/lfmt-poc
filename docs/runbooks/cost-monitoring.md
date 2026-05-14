@@ -11,6 +11,7 @@
 This runbook covers AWS cost monitoring, budget alerts, and emergency cost control procedures for the LFMT project.
 
 **Cost Breakdown (Estimated)**:
+
 - Lambda: ~$10/month (1M invocations)
 - API Gateway: ~$5/month (1M requests)
 - DynamoDB: ~$10/month (on-demand)
@@ -28,15 +29,18 @@ This runbook covers AWS cost monitoring, budget alerts, and emergency cost contr
 ### 1. AWS Budgets (Automated via CDK)
 
 **Budget Configuration**:
+
 - Monthly budget: $50 USD
 - Alert at 80%: $40 USD (warning)
 - Alert at 100%: $50 USD (critical)
 
 **Notifications**:
+
 - Email: operations@yourcompany.com
 - SNS Topic: `lfmt-cost-alarms-${environment}`
 
 **Verification**:
+
 ```bash
 # Check budget status
 aws budgets describe-budgets --account-id $(aws sts get-caller-identity --query Account --output text)
@@ -69,6 +73,7 @@ aws ce get-cost-and-usage \
 4. Click "Create monitor"
 
 **Verification**:
+
 ```bash
 # List all cost anomaly monitors
 aws ce get-anomaly-monitors
@@ -83,12 +88,14 @@ aws ce get-anomalies \
 ### 3. Daily Spend Alarm (Automated via CDK)
 
 **Alarm Configuration**:
+
 - Metric: AWS/Billing EstimatedCharges
 - Threshold: $5 (3x daily average for $50/month budget)
 - Evaluation Period: 6 hours
 - Action: SNS notification to operations team
 
 **Verification**:
+
 ```bash
 # Check alarm status
 aws cloudwatch describe-alarms --alarm-names "LfmtPocDev-daily-spend-spike"
@@ -111,6 +118,7 @@ aws cloudwatch get-metric-statistics \
 **CloudWatch Dashboard**: `${stackName}-cost-monitoring`
 
 **Widgets**:
+
 - Estimated charges (daily trend)
 - Lambda invocations (cost driver)
 - API Gateway requests (cost driver)
@@ -118,6 +126,7 @@ aws cloudwatch get-metric-statistics \
 - DynamoDB consumed capacity (cost driver)
 
 **Access**:
+
 ```bash
 # Get dashboard URL
 DASHBOARD_NAME="LfmtPocDev-cost-monitoring"
@@ -135,6 +144,7 @@ echo "https://console.aws.amazon.com/cloudwatch/home?region=us-east-1#dashboards
 **Actions**:
 
 1. **Investigate cost spike**
+
    ```bash
    # Check cost breakdown by service (last 7 days)
    aws ce get-cost-and-usage \
@@ -147,6 +157,7 @@ echo "https://console.aws.amazon.com/cloudwatch/home?region=us-east-1#dashboards
    ```
 
 2. **Check for runaway processes**
+
    ```bash
    # Check Lambda invocation count (last 24h)
    aws cloudwatch get-metric-statistics \

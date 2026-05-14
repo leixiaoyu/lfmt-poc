@@ -59,14 +59,14 @@ const API_BASE_PATH = '/v1';
 const METRICS_SCHEMA_VERSION = '1.0.0';
 
 // Polling / pause constants (R-suggestion: extract magic numbers).
-const POLL_INTERVAL_MS = 5_000;            // status poll cadence (translation phase)
-const CHUNKING_POLL_INTERVAL_MS = 1_000;   // chunking is fast — tighter poll
+const POLL_INTERVAL_MS = 5_000; // status poll cadence (translation phase)
+const CHUNKING_POLL_INTERVAL_MS = 1_000; // chunking is fast — tighter poll
 const MAX_POLL_DURATION_MS = 10 * 60 * 1000; // 10 min ceiling per chapter
-const CHUNKING_MAX_WAIT_MS = 4 * 60 * 1000;  // chunking ceiling
-const INTER_CHAPTER_PAUSE_MS = 15_000;     // rate-limiter slack between chapters
+const CHUNKING_MAX_WAIT_MS = 4 * 60 * 1000; // chunking ceiling
+const INTER_CHAPTER_PAUSE_MS = 15_000; // rate-limiter slack between chapters
 const DISCOVER_JOB_ID_RETRY_MS = 2_000;
 const DISCOVER_JOB_ID_MAX_ATTEMPTS = 30;
-const AWS_CLI_TIMEOUT_MS = 30_000;         // R5 — cap every spawnSync('aws', ...)
+const AWS_CLI_TIMEOUT_MS = 30_000; // R5 — cap every spawnSync('aws', ...)
 const RPD_GUARD_WINDOW_MS = 24 * 60 * 60 * 1000; // 24h same-day RPD warning window
 
 // Terminal status sets (R6 — short-circuit polls instead of running to ceiling).
@@ -140,23 +140,20 @@ function jsonRequest({ method, host, path, headers = {}, body }) {
       finalHeaders['Content-Type'] = finalHeaders['Content-Type'] || 'application/json';
       finalHeaders['Content-Length'] = payload.length;
     }
-    const req = httpsRequest(
-      { method, hostname: host, path, headers: finalHeaders },
-      (res) => {
-        const chunks = [];
-        res.on('data', (c) => chunks.push(c));
-        res.on('end', () => {
-          const text = Buffer.concat(chunks).toString('utf8');
-          let parsed = null;
-          try {
-            parsed = text ? JSON.parse(text) : null;
-          } catch {
-            parsed = { _raw: text };
-          }
-          resolveReq({ status: res.statusCode, headers: res.headers, body: parsed, raw: text });
-        });
-      }
-    );
+    const req = httpsRequest({ method, hostname: host, path, headers: finalHeaders }, (res) => {
+      const chunks = [];
+      res.on('data', (c) => chunks.push(c));
+      res.on('end', () => {
+        const text = Buffer.concat(chunks).toString('utf8');
+        let parsed = null;
+        try {
+          parsed = text ? JSON.parse(text) : null;
+        } catch {
+          parsed = { _raw: text };
+        }
+        resolveReq({ status: res.statusCode, headers: res.headers, body: parsed, raw: text });
+      });
+    });
     req.on('error', rejectReq);
     if (payload) req.write(payload);
     req.end();
@@ -180,7 +177,11 @@ function rawPut({ url, body, contentType }) {
         const chunks = [];
         res.on('data', (c) => chunks.push(c));
         res.on('end', () =>
-          resolveReq({ status: res.statusCode, headers: res.headers, body: Buffer.concat(chunks).toString('utf8') })
+          resolveReq({
+            status: res.statusCode,
+            headers: res.headers,
+            body: Buffer.concat(chunks).toString('utf8'),
+          })
         );
       }
     );
@@ -326,7 +327,9 @@ async function processChapter(chapter, auth) {
     },
   });
   if (uploadReq.status !== 200) {
-    throw new Error(`[${chapter.key}] /jobs/upload failed (${uploadReq.status}): ${JSON.stringify(uploadReq.body)}`);
+    throw new Error(
+      `[${chapter.key}] /jobs/upload failed (${uploadReq.status}): ${JSON.stringify(uploadReq.body)}`
+    );
   }
 
   // Response shape: createSuccessResponse spreads the second arg, so the body
@@ -336,7 +339,9 @@ async function processChapter(chapter, auth) {
   const uploadUrl = presigned.uploadUrl;
   const fileId = presigned.fileId;
   if (!uploadUrl || !fileId) {
-    throw new Error(`[${chapter.key}] upload response missing uploadUrl/fileId: ${JSON.stringify(uploadReq.body)}`);
+    throw new Error(
+      `[${chapter.key}] upload response missing uploadUrl/fileId: ${JSON.stringify(uploadReq.body)}`
+    );
   }
   console.log(`[${chapter.key}] presigned URL acquired, fileId=${fileId}`);
 
@@ -378,7 +383,9 @@ async function processChapter(chapter, auth) {
     body: { targetLanguage: chapter.targetLanguage, tone: 'neutral', contextChunks: 2 },
   });
   if (startRes.status !== 200) {
-    throw new Error(`[${chapter.key}] start translation failed (${startRes.status}): ${JSON.stringify(startRes.body)}`);
+    throw new Error(
+      `[${chapter.key}] start translation failed (${startRes.status}): ${JSON.stringify(startRes.body)}`
+    );
   }
   // startTranslation flattens fields onto the response; totalChunks lives at the top level.
   const startBody = startRes.body || {};
@@ -417,8 +424,7 @@ async function processChapter(chapter, auth) {
   // R3: only fetch from DDB when the API response is missing token data.
   // Post-PR #166, the API response should always carry these — we keep the
   // fallback as defense-in-depth for older deployed builds.
-  const apiHasTokens =
-    finalStatus.tokensUsed != null || finalStatus.estimatedCost != null;
+  const apiHasTokens = finalStatus.tokensUsed != null || finalStatus.estimatedCost != null;
   const dynamoTokenStats = apiHasTokens
     ? {}
     : await fetchTokenStatsFromDynamo(jobId, auth.user?.id);
@@ -464,8 +470,7 @@ async function processChapter(chapter, auth) {
       // Gemini usage metadata — useful for downstream drift detection.
       tokensUsedFromDynamo: dynamoTokenStats.tokensUsed ?? null,
       estimatedCostFromDynamo: dynamoTokenStats.estimatedCost ?? null,
-      note:
-        'tokensUsed/estimatedCost come from /jobs/{id}/translation-status (post-translation Step Functions update). When 0 or null, the deployed translateChunk Lambda is not back-propagating Gemini usage metadata to DynamoDB for this build — we treat per-chunk token counts as N/A in that case and rely on chunk count × 3,500-token chunk-size assumption for downstream cost projections.',
+      note: 'tokensUsed/estimatedCost come from /jobs/{id}/translation-status (post-translation Step Functions update). When 0 or null, the deployed translateChunk Lambda is not back-propagating Gemini usage metadata to DynamoDB for this build — we treat per-chunk token counts as N/A in that case and rely on chunk count × 3,500-token chunk-size assumption for downstream cost projections.',
     },
     rawFinalStatus: finalStatus,
     fixture: {
@@ -486,7 +491,10 @@ async function processChapter(chapter, auth) {
     metrics.partialReason = `missing chunks ${translation.missingChunkIndices.join(',')}`;
   }
 
-  await writeFile(resolve(outDir, '..', `${chapter.key}-metrics.json`), JSON.stringify(metrics, null, 2));
+  await writeFile(
+    resolve(outDir, '..', `${chapter.key}-metrics.json`),
+    JSON.stringify(metrics, null, 2)
+  );
   await writeFile(resolve(outDir, 'raw-status.json'), JSON.stringify(finalStatus, null, 2));
   await writeFile(resolve(outDir, 'source.txt'), fileBytes);
 
@@ -504,7 +512,9 @@ async function processChapter(chapter, auth) {
   }
 
   console.log(`[${chapter.key}] metrics written to demo/results/${chapter.key}-metrics.json`);
-  console.log(`[${chapter.key}] DONE — durationMs(server)=${durationMs} chunks=${metrics.chunks.totalChunks}`);
+  console.log(
+    `[${chapter.key}] DONE — durationMs(server)=${durationMs} chunks=${metrics.chunks.totalChunks}`
+  );
 
   return { chapter, metrics, jobId };
 }
@@ -533,7 +543,11 @@ export function countWords(text) {
  * ascending order. Pure function — extracted from writeQualitySamples for
  * testability (R9 follow-up suggestion).
  */
-export function pickSampleIndices(sourceParagraphCount, translationParagraphCount, samplesWanted = 5) {
+export function pickSampleIndices(
+  sourceParagraphCount,
+  translationParagraphCount,
+  samplesWanted = 5
+) {
   const maxIdx = Math.min(sourceParagraphCount, translationParagraphCount);
   const indices = [];
   for (let n = 0; n < samplesWanted && n < maxIdx; n++) {
@@ -905,7 +919,9 @@ async function discoverJobIdViaPaginatedScan(fileId) {
       return null;
     }
   }
-  console.warn(`[discoverJobId/scan] exhausted ${MAX_PAGES} pages without finding fileId=${fileId}`);
+  console.warn(
+    `[discoverJobId/scan] exhausted ${MAX_PAGES} pages without finding fileId=${fileId}`
+  );
   return null;
 }
 
@@ -916,7 +932,9 @@ async function main() {
   const arg = process.argv[2];
   const targets = arg ? CHAPTERS.filter((c) => c.key === arg) : CHAPTERS;
   if (targets.length === 0) {
-    console.error(`Unknown chapter key: ${arg}. Use one of: ${CHAPTERS.map((c) => c.key).join(', ')}`);
+    console.error(
+      `Unknown chapter key: ${arg}. Use one of: ${CHAPTERS.map((c) => c.key).join(', ')}`
+    );
     process.exit(1);
   }
 

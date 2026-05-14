@@ -8,12 +8,12 @@
 
 ## Severity Levels
 
-| Level | Description | Response Time | Examples |
-|-------|-------------|---------------|----------|
-| **P0** | Critical - Total service outage | 15 minutes | API Gateway down, all users affected |
-| **P1** | High - Major feature broken | 1 hour | Translation workflow failing, login broken |
-| **P2** | Medium - Degraded performance | 4 hours | Slow API responses, intermittent errors |
-| **P3** | Low - Minor issue | Next business day | Non-critical UI bug, cosmetic issue |
+| Level  | Description                     | Response Time     | Examples                                   |
+| ------ | ------------------------------- | ----------------- | ------------------------------------------ |
+| **P0** | Critical - Total service outage | 15 minutes        | API Gateway down, all users affected       |
+| **P1** | High - Major feature broken     | 1 hour            | Translation workflow failing, login broken |
+| **P2** | Medium - Degraded performance   | 4 hours           | Slow API responses, intermittent errors    |
+| **P3** | Low - Minor issue               | Next business day | Non-critical UI bug, cosmetic issue        |
 
 ---
 
@@ -83,13 +83,13 @@ aws cloudwatch get-metric-statistics \
 
 #### Common Root Causes
 
-| Symptom | Likely Cause | Investigation |
-|---------|--------------|---------------|
-| API Gateway 5xx errors | Lambda function crashing | Check Lambda CloudWatch Logs |
-| Lambda timeout errors | Long-running operations | Check Lambda duration metrics |
-| DynamoDB throttling | Traffic spike | Check consumed capacity metrics |
-| Translation failures | Gemini API rate limits | Check rate limiter logs |
-| Frontend not loading | CloudFront/S3 issue | Check CloudFront access logs |
+| Symptom                | Likely Cause             | Investigation                   |
+| ---------------------- | ------------------------ | ------------------------------- |
+| API Gateway 5xx errors | Lambda function crashing | Check Lambda CloudWatch Logs    |
+| Lambda timeout errors  | Long-running operations  | Check Lambda duration metrics   |
+| DynamoDB throttling    | Traffic spike            | Check consumed capacity metrics |
+| Translation failures   | Gemini API rate limits   | Check rate limiter logs         |
+| Frontend not loading   | CloudFront/S3 issue      | Check CloudFront access logs    |
 
 **Expected Outcome**: Root cause identified or hypothesized
 
@@ -249,11 +249,13 @@ Rolled back Lambda function to version 12 using `./scripts/rollback-lambda.sh`.
 **Symptoms**: CloudWatch alarm "API Gateway 5xx error rate > 1%"
 
 **Likely Causes**:
+
 1. Lambda function crashing (check Lambda logs)
 2. DynamoDB throttling (check consumed capacity)
 3. Recent deployment introduced bug
 
 **Resolution**:
+
 ```bash
 # Check which Lambda is failing
 aws logs filter-log-events \
@@ -272,11 +274,13 @@ aws logs filter-log-events \
 **Symptoms**: Users report translation never completes
 
 **Likely Causes**:
+
 1. Step Functions execution failed (check state machine logs)
 2. Gemini API rate limiting (check rate limiter metrics)
 3. Lambda timeout (check Lambda duration metrics)
 
 **Resolution**:
+
 ```bash
 # Check Step Functions executions
 aws stepfunctions list-executions \
@@ -298,10 +302,12 @@ aws stepfunctions describe-execution \
 **Symptoms**: CloudWatch alarm "DynamoDB throttled requests > 10"
 
 **Likely Causes**:
+
 1. Traffic spike (check CloudWatch metrics)
 2. Inefficient query patterns (check DynamoDB query metrics)
 
 **Resolution**:
+
 ```bash
 # Check consumed capacity
 aws cloudwatch get-metric-statistics \
@@ -324,11 +330,13 @@ aws cloudwatch get-metric-statistics \
 **Symptoms**: AWS Budget alarm "80% of monthly budget exceeded"
 
 **Likely Causes**:
+
 1. Infinite loop in Lambda function
 2. Large number of failed retries (check Step Functions execution count)
 3. Unexpected traffic spike
 
 **Resolution**:
+
 ```bash
 # Emergency: Stop all Step Functions executions
 ./scripts/emergency-cost-control.sh  # See runbook: cost-monitoring.md
@@ -345,11 +353,11 @@ aws ce get-cost-and-usage \
 
 ## Emergency Contacts
 
-| Role | Name | Contact | Timezone |
-|------|------|---------|----------|
-| Primary On-Call | DevOps Team | devops@yourcompany.com | UTC |
-| Secondary On-Call | Project Owner | raymond@yourcompany.com | UTC |
-| AWS Support | N/A | AWS Console | 24/7 |
+| Role              | Name          | Contact                 | Timezone |
+| ----------------- | ------------- | ----------------------- | -------- |
+| Primary On-Call   | DevOps Team   | devops@yourcompany.com  | UTC      |
+| Secondary On-Call | Project Owner | raymond@yourcompany.com | UTC      |
+| AWS Support       | N/A           | AWS Console             | 24/7     |
 
 ---
 

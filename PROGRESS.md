@@ -29,14 +29,14 @@ landing in six large multi-issue PRs between 2026-05-12 and 2026-05-14.
 
 ### Recent Wave Summary (2026-05-12 → 2026-05-14)
 
-| PR | Wave / Track | Issues closed | Theme |
-|---|---|---|---|
-| [#250](https://github.com/leixiaoyu/lfmt-poc/pull/250) | Wave 1 Track A | 8 primary + 3 folded follow-ups (#153, #156, #160, #163, #186, #187, #211, #243, #247, #248, #249) | CI/CD pipeline hygiene |
-| [#251](https://github.com/leixiaoyu/lfmt-poc/pull/251) | Wave 1 Track C | #215, #217, #200 (3 closed; #199 deferred to 2026-06-04) | Frontend type-safety + sentinel hygiene |
-| [#252](https://github.com/leixiaoyu/lfmt-poc/pull/252) | Wave 1 Track E | #171, #183 (2) | Test-infra + per-day test email |
-| [#256](https://github.com/leixiaoyu/lfmt-poc/pull/256) | Wave 2 Track B | #180, #178, #246, #210, #188, #209 (6) | Auth hardening + cursor + StopExecution + typed returns |
-| [#257](https://github.com/leixiaoyu/lfmt-poc/pull/257) | Wave 2 Track D | #216, #201, #219 (3); #197 split → #254 + #255 | CSP refactor + violation telemetry + live contract guard |
-| [#258](https://github.com/leixiaoyu/lfmt-poc/pull/258) | Wave 2 Track F | #253 (1); #260 follow-up filed | Deploy-pipeline parity sweep (bootstrap guard + observability) |
+| PR                                                     | Wave / Track   | Issues closed                                                                                      | Theme                                                          |
+| ------------------------------------------------------ | -------------- | -------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| [#250](https://github.com/leixiaoyu/lfmt-poc/pull/250) | Wave 1 Track A | 8 primary + 3 folded follow-ups (#153, #156, #160, #163, #186, #187, #211, #243, #247, #248, #249) | CI/CD pipeline hygiene                                         |
+| [#251](https://github.com/leixiaoyu/lfmt-poc/pull/251) | Wave 1 Track C | #215, #217, #200 (3 closed; #199 deferred to 2026-06-04)                                           | Frontend type-safety + sentinel hygiene                        |
+| [#252](https://github.com/leixiaoyu/lfmt-poc/pull/252) | Wave 1 Track E | #171, #183 (2)                                                                                     | Test-infra + per-day test email                                |
+| [#256](https://github.com/leixiaoyu/lfmt-poc/pull/256) | Wave 2 Track B | #180, #178, #246, #210, #188, #209 (6)                                                             | Auth hardening + cursor + StopExecution + typed returns        |
+| [#257](https://github.com/leixiaoyu/lfmt-poc/pull/257) | Wave 2 Track D | #216, #201, #219 (3); #197 split → #254 + #255                                                     | CSP refactor + violation telemetry + live contract guard       |
+| [#258](https://github.com/leixiaoyu/lfmt-poc/pull/258) | Wave 2 Track F | #253 (1); #260 follow-up filed                                                                     | Deploy-pipeline parity sweep (bootstrap guard + observability) |
 
 **Total**: 26 issues resolved across 6 PRs; 3 new follow-ups filed (#254, #255, #260).
 
@@ -84,7 +84,7 @@ New CI workflows added by this PR:
 
 - **#215** — Replaced `S3_UPLOAD_BLOCKED_MESSAGE` sentinel string with typed `TranslationErrorCode` union discriminator. `getTranslationErrorMessage` now dispatches via a `COPY_BY_CODE` lookup table. Surfaced and fixed a latent bug: inline mock `TranslationServiceError` constructors in `TranslationDetail.test.tsx` and `TranslationHistory.test.tsx` had wrong 2-arg signature causing `statusCode` to receive string values.
 - **#200** — Unified frontend `User` with shared `UserProfile`. `narrowStoredUser()` bridges legacy (`id`) and canonical (`userId`) shapes with normalization.
-- **#217** — `vite.config.ts` `manualChunks` splits `translationService` + `uploadService` + `headerFilters` into their own chunk. **App-*.js gzip reduced -28.6% (180 kB → 131 kB)**.
+- **#217** — `vite.config.ts` `manualChunks` splits `translationService` + `uploadService` + `headerFilters` into their own chunk. **App-\*.js gzip reduced -28.6% (180 kB → 131 kB)**.
 - **#199** — **Deferred**, not closed. `StoredSession` migration code cannot be removed yet — Cognito refresh token lifetime is 30 days, PR #198 deployed 2026-05-04, so guaranteed roll-over date is **2026-06-04**. Documentation + safe-removal-date marker added in `constants.ts` and `api.ts`. Issue stays open with the new pinned removal date; close via a code-removal follow-up PR on/after 2026-06-04.
 
 ### 2026-05-13: Wave 1 Track E — test-infra + per-day test email (PR #252) — MERGED
@@ -154,16 +154,16 @@ when stakeholder timing requires.
 
 ### Open Issues (8 as of 2026-05-14)
 
-| # | Title | Notes |
-|---|---|---|
+| #                                                        | Title                                                                 | Notes                                                                                                                                                                                                                          |
+| -------------------------------------------------------- | --------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | [#260](https://github.com/leixiaoyu/lfmt-poc/issues/260) | ci(deploy): add post-deploy smoke + integration tests to staging/prod | Filed 2026-05-13 from PR #258's deferred list. Requires per-env secret routing (`STAGING_USER_POOL_ID` / `PROD_USER_POOL_ID`), OIDC role broadening, and a test-user-isolation policy — architectural work, not a hygiene fix. |
-| [#254](https://github.com/leixiaoyu/lfmt-poc/issues/254) | security: CSP style-src nonces via Lambda@Edge | Split from #197 by PR #257. Different operational layer (Lambda@Edge); needs deploy-sync architecture decision. |
-| [#255](https://github.com/leixiaoyu/lfmt-poc/issues/255) | security: migrate auth tokens from localStorage to httpOnly cookies | Split from #197 by PR #257. Cross-domain blocker (cloudfront.net → execute-api); needs custom-domain ACM/Route53 + CSRF/SameSite design decisions. |
-| [#199](https://github.com/leixiaoyu/lfmt-poc/issues/199) | tech-debt: remove StoredSession migration code | **Date-pinned removal: 2026-06-04** (30d after PR #198 deploy on 2026-05-04 = guaranteed Cognito refresh-token roll-over). Documentation marker landed in PR #251. |
-| [#197](https://github.com/leixiaoyu/lfmt-poc/issues/197) | security: deferred CSP/auth hardening (parent) | Parent of #254/#255. Considered effectively closed by PR #257's split; housekeeping-close pending. |
-| [#64](https://github.com/leixiaoyu/lfmt-poc/issues/64) | P3-ARCH: nested stacks refactor | Backlog. |
-| [#29](https://github.com/leixiaoyu/lfmt-poc/issues/29) | FEAT-PRO: post-translation review and editing interface | Backlog. |
-| [#28](https://github.com/leixiaoyu/lfmt-poc/issues/28) | FEAT-CORE: additional output formats (ePub / PDF) | Backlog. |
+| [#254](https://github.com/leixiaoyu/lfmt-poc/issues/254) | security: CSP style-src nonces via Lambda@Edge                        | Split from #197 by PR #257. Different operational layer (Lambda@Edge); needs deploy-sync architecture decision.                                                                                                                |
+| [#255](https://github.com/leixiaoyu/lfmt-poc/issues/255) | security: migrate auth tokens from localStorage to httpOnly cookies   | Split from #197 by PR #257. Cross-domain blocker (cloudfront.net → execute-api); needs custom-domain ACM/Route53 + CSRF/SameSite design decisions.                                                                             |
+| [#199](https://github.com/leixiaoyu/lfmt-poc/issues/199) | tech-debt: remove StoredSession migration code                        | **Date-pinned removal: 2026-06-04** (30d after PR #198 deploy on 2026-05-04 = guaranteed Cognito refresh-token roll-over). Documentation marker landed in PR #251.                                                             |
+| [#197](https://github.com/leixiaoyu/lfmt-poc/issues/197) | security: deferred CSP/auth hardening (parent)                        | Parent of #254/#255. Considered effectively closed by PR #257's split; housekeeping-close pending.                                                                                                                             |
+| [#64](https://github.com/leixiaoyu/lfmt-poc/issues/64)   | P3-ARCH: nested stacks refactor                                       | Backlog.                                                                                                                                                                                                                       |
+| [#29](https://github.com/leixiaoyu/lfmt-poc/issues/29)   | FEAT-PRO: post-translation review and editing interface               | Backlog.                                                                                                                                                                                                                       |
+| [#28](https://github.com/leixiaoyu/lfmt-poc/issues/28)   | FEAT-CORE: additional output formats (ePub / PDF)                     | Backlog.                                                                                                                                                                                                                       |
 
 ### Active In-Flight Spec
 
@@ -211,12 +211,12 @@ when stakeholder timing requires.
 Counts taken from running `npm test` (and `npx vitest --run` for frontend)
 in each package on `main` at commit `939a5ca`.
 
-| Package | Tests | Skipped | Suites/Files |
-|---|---|---|---|
-| `backend/functions` | **602 passed** | 3 | 28 suites |
-| `backend/infrastructure` | **90 passed** | 0 | 1 suite |
-| `frontend` (Vitest) | **776 passed** | 14 | 37 files |
-| **Total (jsdom/node)** | **1,468 passed** | 17 | 66 |
+| Package                  | Tests            | Skipped | Suites/Files |
+| ------------------------ | ---------------- | ------- | ------------ |
+| `backend/functions`      | **602 passed**   | 3       | 28 suites    |
+| `backend/infrastructure` | **90 passed**    | 0       | 1 suite      |
+| `frontend` (Vitest)      | **776 passed**   | 14      | 37 files     |
+| **Total (jsdom/node)**   | **1,468 passed** | 17      | 66           |
 
 E2E (Playwright) suites exist in `frontend/e2e/` and the new live-backend
 contract suite in `frontend/e2e/tests/contract/api-envelope-live.spec.ts`

@@ -1,10 +1,4 @@
-import {
-  Stack,
-  StackProps,
-  RemovalPolicy,
-  Duration,
-  CfnOutput
-} from 'aws-cdk-lib';
+import { Stack, StackProps, RemovalPolicy, Duration, CfnOutput } from 'aws-cdk-lib';
 import { Construct } from 'constructs';
 
 // AWS Service Imports - grouped by service
@@ -93,7 +87,7 @@ export interface LfmtInfrastructureStackProps extends StackProps {
   environment: string;
   enableLogging: boolean;
   retainData: boolean;
-  skipLambdaBundling?: boolean;  // For testing purposes
+  skipLambdaBundling?: boolean; // For testing purposes
 }
 
 export class LfmtInfrastructureStack extends Stack {
@@ -379,19 +373,29 @@ export class LfmtInfrastructureStack extends Stack {
       encryption: s3.BucketEncryption.S3_MANAGED,
       publicReadAccess: false,
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
-      cors: [{
-        allowedMethods: [s3.HttpMethods.GET, s3.HttpMethods.PUT, s3.HttpMethods.POST],
-        allowedOrigins: getAllowedOrigins(),
-        allowedHeaders: ['Content-Type', 'x-amz-date', 'Authorization', 'x-api-key', 'x-amz-security-token'],
-        maxAge: 3000,
-      }],
-      lifecycleRules: [{
-        id: 'DocumentCleanup',
-        enabled: true,
-        expiration: Duration.days(90), // 90 days retention for source documents
-        abortIncompleteMultipartUploadAfter: Duration.days(1),
-        noncurrentVersionExpiration: Duration.days(30),
-      }],
+      cors: [
+        {
+          allowedMethods: [s3.HttpMethods.GET, s3.HttpMethods.PUT, s3.HttpMethods.POST],
+          allowedOrigins: getAllowedOrigins(),
+          allowedHeaders: [
+            'Content-Type',
+            'x-amz-date',
+            'Authorization',
+            'x-api-key',
+            'x-amz-security-token',
+          ],
+          maxAge: 3000,
+        },
+      ],
+      lifecycleRules: [
+        {
+          id: 'DocumentCleanup',
+          enabled: true,
+          expiration: Duration.days(90), // 90 days retention for source documents
+          abortIncompleteMultipartUploadAfter: Duration.days(1),
+          noncurrentVersionExpiration: Duration.days(30),
+        },
+      ],
     });
 
     // Translation Results Bucket
@@ -516,14 +520,18 @@ export class LfmtInfrastructureStack extends Stack {
       selfSignUpEnabled: true,
       // Disable email verification in dev to avoid SES limits
       // Integration tests create many users, exhausting 50 email/day quota
-      autoVerify: isDev ? {} : {
-        email: true,
-      },
-      userVerification: isDev ? undefined : {
-        emailSubject: 'LFMT Account Verification',
-        emailBody: 'Please verify your account by clicking the link: {##Verify Email##}',
-        emailStyle: cognito.VerificationEmailStyle.LINK,
-      },
+      autoVerify: isDev
+        ? {}
+        : {
+            email: true,
+          },
+      userVerification: isDev
+        ? undefined
+        : {
+            emailSubject: 'LFMT Account Verification',
+            emailBody: 'Please verify your account by clicking the link: {##Verify Email##}',
+            emailStyle: cognito.VerificationEmailStyle.LINK,
+          },
       passwordPolicy: {
         minLength: 8,
         requireLowercase: true,
@@ -582,7 +590,11 @@ export class LfmtInfrastructureStack extends Stack {
 
     // Add User Pool Domain (required for Cognito sign-up flow)
     // Create a simple hash from account ID to ensure uniqueness
-    const accountHash = Buffer.from(this.account).toString('base64').toLowerCase().replace(/[^a-z0-9]/g, '').substring(0, 8);
+    const accountHash = Buffer.from(this.account)
+      .toString('base64')
+      .toLowerCase()
+      .replace(/[^a-z0-9]/g, '')
+      .substring(0, 8);
     const userPoolDomain = new cognito.UserPoolDomain(this, 'UserPoolDomain', {
       userPool: this.userPool,
       cognitoDomain: {
@@ -691,9 +703,10 @@ export class LfmtInfrastructureStack extends Stack {
 
   private createLogGroups(removalPolicy: RemovalPolicy) {
     // Determine log retention based on environment
-    const logRetention = this.node.tryGetContext('environment') === 'prod' 
-      ? logs.RetentionDays.SIX_MONTHS 
-      : logs.RetentionDays.ONE_MONTH;
+    const logRetention =
+      this.node.tryGetContext('environment') === 'prod'
+        ? logs.RetentionDays.SIX_MONTHS
+        : logs.RetentionDays.ONE_MONTH;
 
     // API Gateway Logs
     new logs.LogGroup(this, 'ApiGatewayLogs', {
@@ -720,9 +733,10 @@ export class LfmtInfrastructureStack extends Stack {
     new logs.LogGroup(this, 'SecurityAuditLogs', {
       logGroupName: `/aws/security/lfmt-${this.stackName}`,
       removalPolicy,
-      retention: this.node.tryGetContext('environment') === 'prod' 
-        ? logs.RetentionDays.ONE_YEAR 
-        : logs.RetentionDays.THREE_MONTHS,
+      retention:
+        this.node.tryGetContext('environment') === 'prod'
+          ? logs.RetentionDays.ONE_YEAR
+          : logs.RetentionDays.THREE_MONTHS,
     });
   }
 
@@ -751,7 +765,8 @@ export class LfmtInfrastructureStack extends Stack {
     // ===================================================================
     (this as any).authRole = new iam.Role(this, 'AuthLambdaRole', {
       assumedBy: new iam.ServicePrincipal('lambda.amazonaws.com'),
-      description: 'Execution role for authentication Lambda functions (register, login, getCurrentUser, etc.)',
+      description:
+        'Execution role for authentication Lambda functions (register, login, getCurrentUser, etc.)',
       managedPolicies: [
         iam.ManagedPolicy.fromAwsManagedPolicyName('service-role/AWSLambdaBasicExecutionRole'),
       ],
@@ -823,23 +838,13 @@ export class LfmtInfrastructureStack extends Stack {
       statements: [
         new iam.PolicyStatement({
           effect: iam.Effect.ALLOW,
-          actions: [
-            's3:GetObject',
-            's3:PutObject',
-            's3:DeleteObject',
-          ],
-          resources: [
-            `${this.documentBucket.bucketArn}/*`,
-            `${this.resultsBucket.bucketArn}/*`,
-          ],
+          actions: ['s3:GetObject', 's3:PutObject', 's3:DeleteObject'],
+          resources: [`${this.documentBucket.bucketArn}/*`, `${this.resultsBucket.bucketArn}/*`],
         }),
         new iam.PolicyStatement({
           effect: iam.Effect.ALLOW,
           actions: ['s3:ListBucket'],
-          resources: [
-            this.documentBucket.bucketArn,
-            this.resultsBucket.bucketArn,
-          ],
+          resources: [this.documentBucket.bucketArn, this.resultsBucket.bucketArn],
         }),
       ],
     });
@@ -887,23 +892,13 @@ export class LfmtInfrastructureStack extends Stack {
       statements: [
         new iam.PolicyStatement({
           effect: iam.Effect.ALLOW,
-          actions: [
-            's3:GetObject',
-            's3:PutObject',
-            's3:DeleteObject',
-          ],
-          resources: [
-            `${this.documentBucket.bucketArn}/*`,
-            `${this.resultsBucket.bucketArn}/*`,
-          ],
+          actions: ['s3:GetObject', 's3:PutObject', 's3:DeleteObject'],
+          resources: [`${this.documentBucket.bucketArn}/*`, `${this.resultsBucket.bucketArn}/*`],
         }),
         new iam.PolicyStatement({
           effect: iam.Effect.ALLOW,
           actions: ['s3:ListBucket'],
-          resources: [
-            this.documentBucket.bucketArn,
-            this.resultsBucket.bucketArn,
-          ],
+          resources: [this.documentBucket.bucketArn, this.resultsBucket.bucketArn],
         }),
       ],
     });
@@ -917,11 +912,7 @@ export class LfmtInfrastructureStack extends Stack {
       statements: [
         new iam.PolicyStatement({
           effect: iam.Effect.ALLOW,
-          actions: [
-            'dynamodb:GetItem',
-            'dynamodb:PutItem',
-            'dynamodb:UpdateItem',
-          ],
+          actions: ['dynamodb:GetItem', 'dynamodb:PutItem', 'dynamodb:UpdateItem'],
           resources: [
             this.jobsTable.tableArn,
             (this as any).rateLimitBucketsTable.tableArn,
@@ -937,7 +928,8 @@ export class LfmtInfrastructureStack extends Stack {
     // ===================================================================
     (this as any).translationRole = new iam.Role(this, 'TranslationLambdaRole', {
       assumedBy: new iam.ServicePrincipal('lambda.amazonaws.com'),
-      description: 'Execution role for translation Lambda functions (translate-chunk, start-translation, get-translation-status)',
+      description:
+        'Execution role for translation Lambda functions (translate-chunk, start-translation, get-translation-status)',
       managedPolicies: [
         iam.ManagedPolicy.fromAwsManagedPolicyName('service-role/AWSLambdaBasicExecutionRole'),
       ],
@@ -949,23 +941,13 @@ export class LfmtInfrastructureStack extends Stack {
       statements: [
         new iam.PolicyStatement({
           effect: iam.Effect.ALLOW,
-          actions: [
-            's3:GetObject',
-            's3:PutObject',
-            's3:DeleteObject',
-          ],
-          resources: [
-            `${this.documentBucket.bucketArn}/*`,
-            `${this.resultsBucket.bucketArn}/*`,
-          ],
+          actions: ['s3:GetObject', 's3:PutObject', 's3:DeleteObject'],
+          resources: [`${this.documentBucket.bucketArn}/*`, `${this.resultsBucket.bucketArn}/*`],
         }),
         new iam.PolicyStatement({
           effect: iam.Effect.ALLOW,
           actions: ['s3:ListBucket'],
-          resources: [
-            this.documentBucket.bucketArn,
-            this.resultsBucket.bucketArn,
-          ],
+          resources: [this.documentBucket.bucketArn, this.resultsBucket.bucketArn],
         }),
       ],
     });
@@ -1031,7 +1013,8 @@ export class LfmtInfrastructureStack extends Stack {
     // ===================================================================
     this.deleteJobRole = new iam.Role(this, 'DeleteJobLambdaRole', {
       assumedBy: new iam.ServicePrincipal('lambda.amazonaws.com'),
-      description: 'Isolated execution role for delete-job Lambda - minimal DynamoDB + S3 delete permissions only',
+      description:
+        'Isolated execution role for delete-job Lambda - minimal DynamoDB + S3 delete permissions only',
       managedPolicies: [
         iam.ManagedPolicy.fromAwsManagedPolicyName('service-role/AWSLambdaBasicExecutionRole'),
       ],
@@ -1074,7 +1057,8 @@ export class LfmtInfrastructureStack extends Stack {
     // ===================================================================
     this.downloadTranslationRole = new iam.Role(this, 'DownloadTranslationLambdaRole', {
       assumedBy: new iam.ServicePrincipal('lambda.amazonaws.com'),
-      description: 'Isolated execution role for download-translation Lambda - read-only access to translated chunks and job ownership check',
+      description:
+        'Isolated execution role for download-translation Lambda - read-only access to translated chunks and job ownership check',
       managedPolicies: [
         iam.ManagedPolicy.fromAwsManagedPolicyName('service-role/AWSLambdaBasicExecutionRole'),
       ],
@@ -1176,7 +1160,9 @@ export class LfmtInfrastructureStack extends Stack {
             new iam.PolicyStatement({
               effect: iam.Effect.ALLOW,
               actions: ['lambda:InvokeFunction'],
-              resources: [`arn:aws:lambda:${this.region}:${this.account}:function:lfmt-translate-chunk-${this.stackName}`],
+              resources: [
+                `arn:aws:lambda:${this.region}:${this.account}:function:lfmt-translate-chunk-${this.stackName}`,
+              ],
             }),
           ],
         }),
@@ -1267,7 +1253,7 @@ export class LfmtInfrastructureStack extends Stack {
         externalModules: ['aws-sdk', '@aws-sdk/*'],
         minify: true,
         sourceMap: true,
-        forceDockerBundling: false,  // Use local esbuild instead of Docker
+        forceDockerBundling: false, // Use local esbuild instead of Docker
       },
     });
 
@@ -1549,7 +1535,7 @@ export class LfmtInfrastructureStack extends Stack {
       role: this.downloadTranslationRole,
       environment: commonEnv,
       timeoutSeconds: 60, // Large documents (400K words) may need time to fetch and concatenate chunks
-      memoryMB: 512,      // Buffer for concatenating many chunk strings in memory
+      memoryMB: 512, // Buffer for concatenating many chunk strings in memory
     });
 
     // CSP Report Collector Lambda (#201) — POST /csp-report (unauthenticated)
@@ -1716,7 +1702,8 @@ export class LfmtInfrastructureStack extends Stack {
         jobId: tasks.DynamoAttributeValue.fromString(stepfunctions.JsonPath.stringAt('$.jobId')),
         userId: tasks.DynamoAttributeValue.fromString(stepfunctions.JsonPath.stringAt('$.userId')),
       },
-      updateExpression: 'SET translationStatus = :status, #status = :outerStatus, translationCompletedAt = :completedAt, translatedChunks = :totalChunks, updatedAt = :updatedAt',
+      updateExpression:
+        'SET translationStatus = :status, #status = :outerStatus, translationCompletedAt = :completedAt, translatedChunks = :totalChunks, updatedAt = :updatedAt',
       expressionAttributeNames: {
         '#status': 'status',
       },
@@ -1726,11 +1713,17 @@ export class LfmtInfrastructureStack extends Stack {
         // and matches what frontend logic (TranslationDetail.tsx) expects on
         // terminal success.
         ':outerStatus': tasks.DynamoAttributeValue.fromString('COMPLETED'),
-        ':completedAt': tasks.DynamoAttributeValue.fromString(stepfunctions.JsonPath.stringAt('$$.State.EnteredTime')),
+        ':completedAt': tasks.DynamoAttributeValue.fromString(
+          stepfunctions.JsonPath.stringAt('$$.State.EnteredTime')
+        ),
         // CRITICAL FIX: DynamoDB NUMBER attributes in Step Functions MUST be provided as strings
         // Using States.Format() to convert the number result from States.ArrayLength() to a string
-        ':totalChunks': tasks.DynamoAttributeValue.fromString(stepfunctions.JsonPath.stringAt("States.Format('{}', States.ArrayLength($.chunks))")),
-        ':updatedAt': tasks.DynamoAttributeValue.fromString(stepfunctions.JsonPath.stringAt('$$.State.EnteredTime')),
+        ':totalChunks': tasks.DynamoAttributeValue.fromString(
+          stepfunctions.JsonPath.stringAt("States.Format('{}', States.ArrayLength($.chunks))")
+        ),
+        ':updatedAt': tasks.DynamoAttributeValue.fromString(
+          stepfunctions.JsonPath.stringAt('$$.State.EnteredTime')
+        ),
       },
       resultPath: stepfunctions.JsonPath.DISCARD,
     });
@@ -1766,7 +1759,8 @@ export class LfmtInfrastructureStack extends Stack {
         jobId: tasks.DynamoAttributeValue.fromString(stepfunctions.JsonPath.stringAt('$.jobId')),
         userId: tasks.DynamoAttributeValue.fromString(stepfunctions.JsonPath.stringAt('$.userId')),
       },
-      updateExpression: 'SET translationStatus = :status, #status = :outerStatus, translationFailedAt = :failedAt, translationError = :error, updatedAt = :updatedAt',
+      updateExpression:
+        'SET translationStatus = :status, #status = :outerStatus, translationFailedAt = :failedAt, translationError = :error, updatedAt = :updatedAt',
       expressionAttributeNames: {
         // `status` is a DDB reserved word — alias matches UpdateJobCompleted.
         '#status': 'status',
@@ -1778,13 +1772,19 @@ export class LfmtInfrastructureStack extends Stack {
         // OMC-followup C2: outer status mirrors translationStatus on terminal
         // failure (frontend TranslationDetail.tsx branches on `job.status`).
         ':outerStatus': tasks.DynamoAttributeValue.fromString('TRANSLATION_FAILED'),
-        ':failedAt': tasks.DynamoAttributeValue.fromString(stepfunctions.JsonPath.stringAt('$$.State.EnteredTime')),
+        ':failedAt': tasks.DynamoAttributeValue.fromString(
+          stepfunctions.JsonPath.stringAt('$$.State.EnteredTime')
+        ),
         // $.error is guaranteed to exist here — both entry paths set it:
         // 1. Map Catch path: resultPath='$.error' on processChunksMap.addCatch().
         // 2. Choice path (success:false): NormalizeFailureContext Pass state below
         //    synthesises $.error from $.translationResults before entering this task.
-        ':error': tasks.DynamoAttributeValue.fromString(stepfunctions.JsonPath.stringAt("States.JsonToString($.error)")),
-        ':updatedAt': tasks.DynamoAttributeValue.fromString(stepfunctions.JsonPath.stringAt('$$.State.EnteredTime')),
+        ':error': tasks.DynamoAttributeValue.fromString(
+          stepfunctions.JsonPath.stringAt('States.JsonToString($.error)')
+        ),
+        ':updatedAt': tasks.DynamoAttributeValue.fromString(
+          stepfunctions.JsonPath.stringAt('$$.State.EnteredTime')
+        ),
       },
       resultPath: stepfunctions.JsonPath.DISCARD,
     });
@@ -1842,7 +1842,7 @@ export class LfmtInfrastructureStack extends Stack {
         //   misinterpret it as the exact failure count.
         // - `translationResults.$`: raw forensic detail, preserved verbatim
         //   so we don't lose information for triage.
-        'reason': 'CHUNK_FAILURE',
+        reason: 'CHUNK_FAILURE',
         'failedCountUpperBound.$': 'States.ArrayLength($.translationResults)',
         'totalChunks.$': 'States.ArrayLength($.translationResults)',
         'translationResults.$': '$.translationResults',
@@ -1947,26 +1947,28 @@ export class LfmtInfrastructureStack extends Stack {
     //   ├── (anyChunkFailed=true)  → NormalizeFailureContext → UpdateJobFailed → TranslationFailed
     //   └── (default)              → UpdateJobCompleted → TranslationSuccess
     // Map Catch (States.ALL) → UpdateJobFailed (directly; $.error set by Catch resultPath)
-    const definition = processChunksMap
-      .next(aggregateChunkResults)
-      .next(checkAllChunksSucceeded);
+    const definition = processChunksMap.next(aggregateChunkResults).next(checkAllChunksSucceeded);
 
     // Create the state machine
-    (this as any).translationStateMachine = new stepfunctions.StateMachine(this, 'TranslationStateMachine', {
-      stateMachineName: `lfmt-translation-workflow-${this.stackName}`,
-      definition,
-      timeout: Duration.hours(6), // Max 6 hours for large documents (400K words)
-      logs: {
-        destination: new logs.LogGroup(this, 'TranslationStateMachineLogGroup', {
-          logGroupName: `/aws/stepfunctions/lfmt-translation-${this.stackName}`,
-          removalPolicy: RemovalPolicy.DESTROY,
-          retention: logs.RetentionDays.ONE_WEEK,
-        }),
-        level: stepfunctions.LogLevel.ALL, // Restore to ALL for better debugging
-        includeExecutionData: true, // Restore to true for complete execution logs
-      },
-      tracingEnabled: true,
-    });
+    (this as any).translationStateMachine = new stepfunctions.StateMachine(
+      this,
+      'TranslationStateMachine',
+      {
+        stateMachineName: `lfmt-translation-workflow-${this.stackName}`,
+        definition,
+        timeout: Duration.hours(6), // Max 6 hours for large documents (400K words)
+        logs: {
+          destination: new logs.LogGroup(this, 'TranslationStateMachineLogGroup', {
+            logGroupName: `/aws/stepfunctions/lfmt-translation-${this.stackName}`,
+            removalPolicy: RemovalPolicy.DESTROY,
+            retention: logs.RetentionDays.ONE_WEEK,
+          }),
+          level: stepfunctions.LogLevel.ALL, // Restore to ALL for better debugging
+          includeExecutionData: true, // Restore to true for complete execution logs
+        },
+        tracingEnabled: true,
+      }
+    );
 
     // Grant the state machine permission to invoke the Lambda function
     this.translateChunkFunction.grantInvoke(this.translationStateMachine);
@@ -1990,12 +1992,8 @@ export class LfmtInfrastructureStack extends Stack {
         statements: [
           new iam.PolicyStatement({
             effect: iam.Effect.ALLOW,
-            actions: [
-              'states:StartExecution',
-            ],
-            resources: [
-              this.translationStateMachine.stateMachineArn
-            ],
+            actions: ['states:StartExecution'],
+            resources: [this.translationStateMachine.stateMachineArn],
           }),
         ],
       });
@@ -2164,26 +2162,34 @@ export class LfmtInfrastructureStack extends Stack {
       'translate',
       this.corsPreflightOptions('POST')
     );
-    translateResource.addMethod('POST', new apigateway.LambdaIntegration(this.startTranslationFunction), {
-      authorizationType: apigateway.AuthorizationType.COGNITO,
-      authorizer: authorizer,
-      requestValidator: new apigateway.RequestValidator(this, 'StartTranslationValidator', {
-        restApi: this.api,
-        requestValidatorName: 'start-translation-validator',
-        validateRequestBody: true,
-        validateRequestParameters: false,
-      }),
-    });
+    translateResource.addMethod(
+      'POST',
+      new apigateway.LambdaIntegration(this.startTranslationFunction),
+      {
+        authorizationType: apigateway.AuthorizationType.COGNITO,
+        authorizer: authorizer,
+        requestValidator: new apigateway.RequestValidator(this, 'StartTranslationValidator', {
+          restApi: this.api,
+          requestValidatorName: 'start-translation-validator',
+          validateRequestBody: true,
+          validateRequestParameters: false,
+        }),
+      }
+    );
 
     // GET /jobs/{jobId}/translation-status - Get Translation Status (requires authentication)
     const translationStatusResource = jobResource.addResource(
       'translation-status',
       this.corsPreflightOptions('GET')
     );
-    translationStatusResource.addMethod('GET', new apigateway.LambdaIntegration(this.getTranslationStatusFunction), {
-      authorizationType: apigateway.AuthorizationType.COGNITO,
-      authorizer: authorizer,
-    });
+    translationStatusResource.addMethod(
+      'GET',
+      new apigateway.LambdaIntegration(this.getTranslationStatusFunction),
+      {
+        authorizationType: apigateway.AuthorizationType.COGNITO,
+        authorizer: authorizer,
+      }
+    );
 
     // GET /jobs/{jobId} - Get Job (requires authentication)
     // Returns the current state of a job record owned by the caller.
@@ -2238,16 +2244,12 @@ export class LfmtInfrastructureStack extends Stack {
       'csp-report',
       this.corsPreflightOptions('POST')
     );
-    cspReportResource.addMethod(
-      'POST',
-      new apigateway.LambdaIntegration(this.cspReportFunction),
-      {
-        // CRITICAL: this endpoint MUST stay unauthenticated. Browsers do
-        // not send credentials with CSP violation reports — requiring
-        // Cognito auth here would silently drop EVERY report.
-        authorizationType: apigateway.AuthorizationType.NONE,
-      }
-    );
+    cspReportResource.addMethod('POST', new apigateway.LambdaIntegration(this.cspReportFunction), {
+      // CRITICAL: this endpoint MUST stay unauthenticated. Browsers do
+      // not send credentials with CSP violation reports — requiring
+      // Cognito auth here would silently drop EVERY report.
+      authorizationType: apigateway.AuthorizationType.NONE,
+    });
 
     // Add Gateway Responses to include CORS headers on errors
     // Note: Gateway Response headers must be static strings, cannot use dynamic origins
@@ -2270,7 +2272,8 @@ export class LfmtInfrastructureStack extends Stack {
       type: apigateway.ResponseType.UNAUTHORIZED,
       responseHeaders: {
         'Access-Control-Allow-Origin': "'*'",
-        'Access-Control-Allow-Headers': "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,X-Request-ID'",
+        'Access-Control-Allow-Headers':
+          "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,X-Request-ID'",
         'Access-Control-Allow-Methods': "'OPTIONS,GET,POST,PUT,DELETE'",
       },
     });
@@ -2280,7 +2283,8 @@ export class LfmtInfrastructureStack extends Stack {
       type: apigateway.ResponseType.ACCESS_DENIED,
       responseHeaders: {
         'Access-Control-Allow-Origin': "'*'",
-        'Access-Control-Allow-Headers': "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,X-Request-ID'",
+        'Access-Control-Allow-Headers':
+          "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,X-Request-ID'",
         'Access-Control-Allow-Methods': "'OPTIONS,GET,POST,PUT,DELETE'",
       },
     });
@@ -2290,7 +2294,8 @@ export class LfmtInfrastructureStack extends Stack {
       type: apigateway.ResponseType.BAD_REQUEST_BODY,
       responseHeaders: {
         'Access-Control-Allow-Origin': "'*'",
-        'Access-Control-Allow-Headers': "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,X-Request-ID'",
+        'Access-Control-Allow-Headers':
+          "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,X-Request-ID'",
         'Access-Control-Allow-Methods': "'OPTIONS,GET,POST,PUT,DELETE'",
       },
     });
@@ -2300,7 +2305,8 @@ export class LfmtInfrastructureStack extends Stack {
       type: apigateway.ResponseType.DEFAULT_5XX,
       responseHeaders: {
         'Access-Control-Allow-Origin': "'*'",
-        'Access-Control-Allow-Headers': "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,X-Request-ID'",
+        'Access-Control-Allow-Headers':
+          "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,X-Request-ID'",
         'Access-Control-Allow-Methods': "'OPTIONS,GET,POST,PUT,DELETE'",
       },
     });
@@ -2309,9 +2315,9 @@ export class LfmtInfrastructureStack extends Stack {
   private createFrontendHosting(removalPolicy: RemovalPolicy) {
     /**
      * Frontend Hosting Infrastructure
-     * 
+     *
      * Creates CloudFront distribution and S3 bucket for hosting React SPA.
-     * 
+     *
      * Key Features:
      * - Origin Access Control (OAC) for secure S3 access
      * - Custom error responses for SPA routing (403 + 404 → /index.html)
@@ -2329,12 +2335,14 @@ export class LfmtInfrastructureStack extends Stack {
       encryption: s3.BucketEncryption.S3_MANAGED,
       publicReadAccess: false,
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
-      lifecycleRules: [{
-        id: 'FrontendCleanup',
-        enabled: true,
-        expiration: Duration.days(90), // Delete old deployments after 90 days
-        noncurrentVersionExpiration: Duration.days(30),
-      }],
+      lifecycleRules: [
+        {
+          id: 'FrontendCleanup',
+          enabled: true,
+          expiration: Duration.days(90), // Delete old deployments after 90 days
+          noncurrentVersionExpiration: Duration.days(30),
+        },
+      ],
     });
 
     // 2. Create Origin Access Control (OAC) for CloudFront
@@ -2347,61 +2355,65 @@ export class LfmtInfrastructureStack extends Stack {
     const isProd = environment === 'prod';
 
     // Environment-specific configuration
-    const priceClass = isProd 
-      ? cloudfront.PriceClass.PRICE_CLASS_ALL  // Global edge locations for production
+    const priceClass = isProd
+      ? cloudfront.PriceClass.PRICE_CLASS_ALL // Global edge locations for production
       : cloudfront.PriceClass.PRICE_CLASS_100; // North America & Europe only for dev (cost-optimized)
 
     // Create Response Headers Policy with security headers
-    const responseHeadersPolicy = new cloudfront.ResponseHeadersPolicy(this, 'FrontendSecurityHeaders', {
-      securityHeadersBehavior: {
-        strictTransportSecurity: {
-          accessControlMaxAge: Duration.days(365),
-          includeSubdomains: true,
-          override: true,
+    const responseHeadersPolicy = new cloudfront.ResponseHeadersPolicy(
+      this,
+      'FrontendSecurityHeaders',
+      {
+        securityHeadersBehavior: {
+          strictTransportSecurity: {
+            accessControlMaxAge: Duration.days(365),
+            includeSubdomains: true,
+            override: true,
+          },
+          contentTypeOptions: {
+            override: true,
+          },
+          frameOptions: {
+            frameOption: cloudfront.HeadersFrameOption.DENY,
+            override: true,
+          },
+          xssProtection: {
+            protection: true,
+            modeBlock: true,
+            override: true,
+          },
+          referrerPolicy: {
+            referrerPolicy: cloudfront.HeadersReferrerPolicy.STRICT_ORIGIN_WHEN_CROSS_ORIGIN,
+            override: true,
+          },
+          contentSecurityPolicy: {
+            // CSP body sourced from `buildCsp()` (Round 2 item 10).
+            // The `connect-src` arguments are region-wide wildcards at
+            // initial deploy time — `updateCloudFrontCSP()` swaps the API
+            // Gateway entry for the concrete domain once that resource
+            // exists. The document-bucket entry is included here too so
+            // browser-side presigned-PUT uploads succeed even before the
+            // updated policy is applied (preventing the same CSP-block
+            // class that caused the demo-blocking failure on 2026-05-08).
+            // See `buildCsp()` JSDoc for the full hardening status.
+            contentSecurityPolicy: buildCsp({
+              directives: {
+                // Source-list REPLACEMENT (not merge) — caller must include
+                // 'self' explicitly. The wildcard execute-api host is the
+                // initial-deploy placeholder; updateCloudFrontCSP() replaces
+                // it with the concrete API Gateway domain once provisioned.
+                'connect-src': [
+                  "'self'",
+                  'https://*.execute-api.us-east-1.amazonaws.com',
+                  `https://${this.documentBucket.bucketRegionalDomainName}`,
+                ],
+              },
+            }),
+            override: true,
+          },
         },
-        contentTypeOptions: {
-          override: true,
-        },
-        frameOptions: {
-          frameOption: cloudfront.HeadersFrameOption.DENY,
-          override: true,
-        },
-        xssProtection: {
-          protection: true,
-          modeBlock: true,
-          override: true,
-        },
-        referrerPolicy: {
-          referrerPolicy: cloudfront.HeadersReferrerPolicy.STRICT_ORIGIN_WHEN_CROSS_ORIGIN,
-          override: true,
-        },
-        contentSecurityPolicy: {
-          // CSP body sourced from `buildCsp()` (Round 2 item 10).
-          // The `connect-src` arguments are region-wide wildcards at
-          // initial deploy time — `updateCloudFrontCSP()` swaps the API
-          // Gateway entry for the concrete domain once that resource
-          // exists. The document-bucket entry is included here too so
-          // browser-side presigned-PUT uploads succeed even before the
-          // updated policy is applied (preventing the same CSP-block
-          // class that caused the demo-blocking failure on 2026-05-08).
-          // See `buildCsp()` JSDoc for the full hardening status.
-          contentSecurityPolicy: buildCsp({
-            directives: {
-              // Source-list REPLACEMENT (not merge) — caller must include
-              // 'self' explicitly. The wildcard execute-api host is the
-              // initial-deploy placeholder; updateCloudFrontCSP() replaces
-              // it with the concrete API Gateway domain once provisioned.
-              'connect-src': [
-                "'self'",
-                'https://*.execute-api.us-east-1.amazonaws.com',
-                `https://${this.documentBucket.bucketRegionalDomainName}`,
-              ],
-            },
-          }),
-          override: true,
-        },
-      },
-    });
+      }
+    );
 
     (this as any).frontendDistribution = new cloudfront.Distribution(this, 'FrontendDistribution', {
       defaultBehavior: {
@@ -2435,27 +2447,33 @@ export class LfmtInfrastructureStack extends Stack {
       ],
       comment: `LFMT Frontend Distribution - ${this.stackName}`,
       enableLogging: isProd, // Enable access logging for production
-      logBucket: isProd ? new s3.Bucket(this, 'CloudFrontLogBucket', {
-        bucketName: `lfmt-cloudfront-logs-${this.stackName.toLowerCase()}`,
-        removalPolicy,
-        autoDeleteObjects: removalPolicy === RemovalPolicy.DESTROY,
-        lifecycleRules: [{
-          expiration: Duration.days(90),
-        }],
-      }) : undefined,
+      logBucket: isProd
+        ? new s3.Bucket(this, 'CloudFrontLogBucket', {
+            bucketName: `lfmt-cloudfront-logs-${this.stackName.toLowerCase()}`,
+            removalPolicy,
+            autoDeleteObjects: removalPolicy === RemovalPolicy.DESTROY,
+            lifecycleRules: [
+              {
+                expiration: Duration.days(90),
+              },
+            ],
+          })
+        : undefined,
     });
 
     // 4. Grant CloudFront OAC access to frontend bucket
-    this.frontendBucket.addToResourcePolicy(new iam.PolicyStatement({
-      actions: ['s3:GetObject'],
-      resources: [`${this.frontendBucket.bucketArn}/*`],
-      principals: [new iam.ServicePrincipal('cloudfront.amazonaws.com')],
-      conditions: {
-        StringEquals: {
-          'AWS:SourceArn': `arn:aws:cloudfront::${this.account}:distribution/${this.frontendDistribution.distributionId}`,
+    this.frontendBucket.addToResourcePolicy(
+      new iam.PolicyStatement({
+        actions: ['s3:GetObject'],
+        resources: [`${this.frontendBucket.bucketArn}/*`],
+        principals: [new iam.ServicePrincipal('cloudfront.amazonaws.com')],
+        conditions: {
+          StringEquals: {
+            'AWS:SourceArn': `arn:aws:cloudfront::${this.account}:distribution/${this.frontendDistribution.distributionId}`,
+          },
         },
-      },
-    }));
+      })
+    );
   }
 
   // -------------------------------------------------------------------------
@@ -2483,72 +2501,78 @@ export class LfmtInfrastructureStack extends Stack {
     const apiDomain = `${this.api.restApiId}.execute-api.${this.region}.amazonaws.com`;
 
     // Create a new Response Headers Policy with the updated CSP
-    const updatedResponseHeadersPolicy = new cloudfront.ResponseHeadersPolicy(this, 'FrontendSecurityHeadersUpdated', {
-      securityHeadersBehavior: {
-        strictTransportSecurity: {
-          accessControlMaxAge: Duration.days(365),
-          includeSubdomains: true,
-          override: true,
+    const updatedResponseHeadersPolicy = new cloudfront.ResponseHeadersPolicy(
+      this,
+      'FrontendSecurityHeadersUpdated',
+      {
+        securityHeadersBehavior: {
+          strictTransportSecurity: {
+            accessControlMaxAge: Duration.days(365),
+            includeSubdomains: true,
+            override: true,
+          },
+          contentTypeOptions: {
+            override: true,
+          },
+          frameOptions: {
+            frameOption: cloudfront.HeadersFrameOption.DENY,
+            override: true,
+          },
+          xssProtection: {
+            protection: true,
+            modeBlock: true,
+            override: true,
+          },
+          referrerPolicy: {
+            referrerPolicy: cloudfront.HeadersReferrerPolicy.STRICT_ORIGIN_WHEN_CROSS_ORIGIN,
+            override: true,
+          },
+          contentSecurityPolicy: {
+            // CSP body sourced from `buildCsp()` (Round 2 item 10) so the
+            // initial and updated policies cannot drift. `connect-src`
+            // now lists BOTH the concrete API Gateway domain AND the
+            // document-bucket regional domain — the latter is required
+            // for browser-side presigned-PUT uploads (root cause of the
+            // 2026-05-08 demo-blocking regression). See `buildCsp()`
+            // JSDoc for the full hardening status (#133, #194, #197).
+            contentSecurityPolicy: buildCsp({
+              directives: {
+                // Source-list REPLACEMENT (not merge) — caller must include
+                // 'self' explicitly. After API Gateway exists we swap the
+                // wildcard `*.execute-api` host for the concrete API domain.
+                'connect-src': [
+                  "'self'",
+                  `https://${apiDomain}`,
+                  `https://${this.documentBucket.bucketRegionalDomainName}`,
+                ],
+                // #201: report violations to the dedicated unauthenticated
+                // /csp-report Lambda. Per CSP3, `report-uri` is exempt
+                // from `connect-src` — the browser fires the POST out-of-band
+                // without an explicit allowlist entry, so no `connect-src`
+                // widening is needed here.
+                //
+                // The URL is sanitized at synth time by
+                // `assertValidCspReportUri` (H-3, PR #214 OMC R2). The
+                // stage prefix `/v1` is baked into the value rather than
+                // computed because the API Gateway stage is configured
+                // statically in `createApiGateway()`.
+                'report-uri': [`https://${apiDomain}/v1/csp-report`],
+              },
+            }),
+            override: true,
+          },
         },
-        contentTypeOptions: {
-          override: true,
-        },
-        frameOptions: {
-          frameOption: cloudfront.HeadersFrameOption.DENY,
-          override: true,
-        },
-        xssProtection: {
-          protection: true,
-          modeBlock: true,
-          override: true,
-        },
-        referrerPolicy: {
-          referrerPolicy: cloudfront.HeadersReferrerPolicy.STRICT_ORIGIN_WHEN_CROSS_ORIGIN,
-          override: true,
-        },
-        contentSecurityPolicy: {
-          // CSP body sourced from `buildCsp()` (Round 2 item 10) so the
-          // initial and updated policies cannot drift. `connect-src`
-          // now lists BOTH the concrete API Gateway domain AND the
-          // document-bucket regional domain — the latter is required
-          // for browser-side presigned-PUT uploads (root cause of the
-          // 2026-05-08 demo-blocking regression). See `buildCsp()`
-          // JSDoc for the full hardening status (#133, #194, #197).
-          contentSecurityPolicy: buildCsp({
-            directives: {
-              // Source-list REPLACEMENT (not merge) — caller must include
-              // 'self' explicitly. After API Gateway exists we swap the
-              // wildcard `*.execute-api` host for the concrete API domain.
-              'connect-src': [
-                "'self'",
-                `https://${apiDomain}`,
-                `https://${this.documentBucket.bucketRegionalDomainName}`,
-              ],
-              // #201: report violations to the dedicated unauthenticated
-              // /csp-report Lambda. Per CSP3, `report-uri` is exempt
-              // from `connect-src` — the browser fires the POST out-of-band
-              // without an explicit allowlist entry, so no `connect-src`
-              // widening is needed here.
-              //
-              // The URL is sanitized at synth time by
-              // `assertValidCspReportUri` (H-3, PR #214 OMC R2). The
-              // stage prefix `/v1` is baked into the value rather than
-              // computed because the API Gateway stage is configured
-              // statically in `createApiGateway()`.
-              'report-uri': [
-                `https://${apiDomain}/v1/csp-report`,
-              ],
-            },
-          }),
-          override: true,
-        },
-      },
-    });
+      }
+    );
 
     // Update the CloudFront distribution's default behavior to use the new response headers policy
     // Note: We need to access the L1 CloudFormation construct to update this property
-    const cfnDistribution = this.frontendDistribution.node.defaultChild as cloudfront.CfnDistribution;
-    cfnDistribution.addPropertyOverride('DistributionConfig.DefaultCacheBehavior.ResponseHeadersPolicyId', updatedResponseHeadersPolicy.responseHeadersPolicyId);
+    const cfnDistribution = this.frontendDistribution.node
+      .defaultChild as cloudfront.CfnDistribution;
+    cfnDistribution.addPropertyOverride(
+      'DistributionConfig.DefaultCacheBehavior.ResponseHeadersPolicyId',
+      updatedResponseHeadersPolicy.responseHeadersPolicyId
+    );
   }
 
   private createOutputs() {

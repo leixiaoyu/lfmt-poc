@@ -10,6 +10,7 @@
 All Lambda functions in the LFMT project use structured JSON logging with correlation IDs for better observability and debugging.
 
 **Benefits**:
+
 - **Correlation IDs**: Track requests across multiple Lambda invocations
 - **Structured Data**: Query logs efficiently with CloudWatch Insights
 - **Consistent Format**: All logs follow the same JSON schema
@@ -217,6 +218,7 @@ fields metadata.error as errorMessage
 ### Converting Existing Lambdas
 
 **Before** (console.log):
+
 ```typescript
 export const handler = async (event: any): Promise<any> => {
   console.log('Processing request', JSON.stringify(event));
@@ -233,6 +235,7 @@ export const handler = async (event: any): Promise<any> => {
 ```
 
 **After** (structured logging):
+
 ```typescript
 import { Logger } from './utils/logger';
 
@@ -265,6 +268,7 @@ export const handler = async (event: any): Promise<any> => {
 ### 1. Always Include Relevant Context
 
 **Good**:
+
 ```typescript
 logger.info('User authenticated successfully', {
   userId: user.id,
@@ -274,8 +278,9 @@ logger.info('User authenticated successfully', {
 ```
 
 **Bad**:
+
 ```typescript
-logger.info('Success');  // No context
+logger.info('Success'); // No context
 ```
 
 ### 2. Use Appropriate Log Levels
@@ -288,6 +293,7 @@ logger.info('Success');  // No context
 ### 3. Include Error Details
 
 **Good**:
+
 ```typescript
 catch (error) {
   logger.error('Failed to translate chunk', {
@@ -300,6 +306,7 @@ catch (error) {
 ```
 
 **Bad**:
+
 ```typescript
 catch (error) {
   logger.error('Error');  // No details
@@ -312,7 +319,7 @@ catch (error) {
 return {
   statusCode: 200,
   headers: {
-    'X-Correlation-ID': logger.getCorrelationId(),  // ← Important for frontend logging
+    'X-Correlation-ID': logger.getCorrelationId(), // ← Important for frontend logging
     'Content-Type': 'application/json',
   },
   body: JSON.stringify({ success: true }),
@@ -320,6 +327,7 @@ return {
 ```
 
 This allows frontend to include correlation ID in support tickets:
+
 ```
 Error occurred. Please contact support with correlation ID: abc123-request-id
 ```
@@ -360,21 +368,21 @@ if (!response.ok) {
 
 #### Static Methods
 
-| Method | Parameters | Returns | Description |
-|--------|------------|---------|-------------|
-| `fromAPIGatewayEvent` | `event: APIGatewayProxyEvent` | `Logger` | Create logger from API Gateway event (extracts requestContext.requestId) |
-| `fromStepFunctionsEvent` | `executionArn: string` | `Logger` | Create logger from Step Functions execution ARN |
-| `withCorrelationId` | `correlationId: string` | `Logger` | Create logger with custom correlation ID |
+| Method                   | Parameters                    | Returns  | Description                                                              |
+| ------------------------ | ----------------------------- | -------- | ------------------------------------------------------------------------ |
+| `fromAPIGatewayEvent`    | `event: APIGatewayProxyEvent` | `Logger` | Create logger from API Gateway event (extracts requestContext.requestId) |
+| `fromStepFunctionsEvent` | `executionArn: string`        | `Logger` | Create logger from Step Functions execution ARN                          |
+| `withCorrelationId`      | `correlationId: string`       | `Logger` | Create logger with custom correlation ID                                 |
 
 #### Instance Methods
 
-| Method | Parameters | Description |
-|--------|------------|-------------|
-| `debug` | `message: string, metadata?: object` | Log DEBUG level message |
-| `info` | `message: string, metadata?: object` | Log INFO level message |
-| `warn` | `message: string, metadata?: object` | Log WARN level message |
-| `error` | `message: string, metadata?: object` | Log ERROR level message |
-| `getCorrelationId` | - | Get correlation ID for this logger instance |
+| Method             | Parameters                           | Description                                 |
+| ------------------ | ------------------------------------ | ------------------------------------------- |
+| `debug`            | `message: string, metadata?: object` | Log DEBUG level message                     |
+| `info`             | `message: string, metadata?: object` | Log INFO level message                      |
+| `warn`             | `message: string, metadata?: object` | Log WARN level message                      |
+| `error`            | `message: string, metadata?: object` | Log ERROR level message                     |
+| `getCorrelationId` | -                                    | Get correlation ID for this logger instance |
 
 ---
 

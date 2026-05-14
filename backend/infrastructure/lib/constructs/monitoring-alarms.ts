@@ -46,9 +46,18 @@ export class MonitoringAlarms extends Construct {
   constructor(scope: Construct, id: string, props: MonitoringAlarmsProps) {
     super(scope, id);
 
-    const { stackName, environment, operationsEmail, api, lambdaFunctions,
-            jobsTable, usersTable, attestationsTable, rateLimitBucketsTable,
-            translationStateMachine } = props;
+    const {
+      stackName,
+      environment,
+      operationsEmail,
+      api,
+      lambdaFunctions,
+      jobsTable,
+      usersTable,
+      attestationsTable,
+      rateLimitBucketsTable,
+      translationStateMachine,
+    } = props;
 
     // 1. Create SNS topic for alarm notifications
     this.alarmTopic = new sns.Topic(this, 'AlarmTopic', {
@@ -57,21 +66,13 @@ export class MonitoringAlarms extends Construct {
     });
 
     // Subscribe operations email to alarm topic
-    this.alarmTopic.addSubscription(
-      new sns_subscriptions.EmailSubscription(operationsEmail)
-    );
+    this.alarmTopic.addSubscription(new sns_subscriptions.EmailSubscription(operationsEmail));
 
     // 2. Create Lambda error rate alarms
-    this.lambdaErrorAlarms = this.createLambdaErrorAlarms(
-      lambdaFunctions,
-      this.alarmTopic
-    );
+    this.lambdaErrorAlarms = this.createLambdaErrorAlarms(lambdaFunctions, this.alarmTopic);
 
     // 3. Create API Gateway 5xx alarm
-    this.apiGateway5xxAlarm = this.createApiGateway5xxAlarm(
-      api,
-      this.alarmTopic
-    );
+    this.apiGateway5xxAlarm = this.createApiGateway5xxAlarm(api, this.alarmTopic);
 
     // 4. Create DynamoDB throttling alarms
     this.dynamoDbThrottlingAlarms = this.createDynamoDbThrottlingAlarms(

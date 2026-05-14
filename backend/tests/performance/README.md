@@ -34,9 +34,9 @@ The benchmark uses real literary works from the `demo/test-documents/` directory
 Based on the parallel translation architecture with `maxConcurrency: 10`:
 
 | Document Size | Target Duration | Baseline (Sequential) | Expected Improvement |
-|---------------|-----------------|----------------------|---------------------|
-| 65K words     | ≤5 minutes      | 20-30 minutes        | 5-7x faster         |
-| 400K words    | ≤25 minutes     | 120-180 minutes      | 5-7x faster         |
+| ------------- | --------------- | --------------------- | -------------------- |
+| 65K words     | ≤5 minutes      | 20-30 minutes         | 5-7x faster          |
+| 400K words    | ≤25 minutes     | 120-180 minutes       | 5-7x faster          |
 
 ## Benchmark Metrics
 

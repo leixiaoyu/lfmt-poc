@@ -48,7 +48,9 @@ Related to #
 -->
 
 Smoke test failure rationale (if applicable):
+
 <!-- Replace N/A with issue links and rationale for any known failures -->
+
 N/A
 
 ## Infrastructure/CDK Changes Checklist
