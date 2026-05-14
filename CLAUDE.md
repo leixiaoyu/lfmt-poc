@@ -220,10 +220,11 @@ and known footguns.
 
 ---
 
-**Last Updated**: 2026-04-18
+**Last Updated**: 2026-05-14
 
 **Previous Major Changes**:
 
+- Wave 1 + Wave 2 tech-debt cleanup landed (26 issues across PRs #250–#258); see [PROGRESS.md](PROGRESS.md) for the per-PR breakdown
 - Integration test failures resolved (PR #99)
 - Gemini 2.5 Flash migration complete (PR #98)
 - Translation workflow fully validated end-to-end
