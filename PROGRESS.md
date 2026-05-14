@@ -1,6 +1,6 @@
 # LFMT POC - Current Progress
 
-**Last Updated**: 2026-05-13
+**Last Updated**: 2026-05-14
 **Project**: Long-Form Translation Service POC
 **Repository**: https://github.com/leixiaoyu/lfmt-poc
 **Owner**: Raymond Lei (leixiaoyu@github)
@@ -14,8 +14,8 @@ deployment) and the end-to-end translation workflow (upload → chunk →
 Gemini 2.5 Flash → reassemble → download) has been deployed and operating
 in the dev environment since late 2025. The work since late April 2026 has
 been a focused **tech-debt cleanup pass** organised into Waves 1 and 2,
-landing in five large multi-issue PRs between 2026-05-12 and 2026-05-13.
-**25 individual tech-debt / hygiene issues** were resolved in that window.
+landing in six large multi-issue PRs between 2026-05-12 and 2026-05-14.
+**26 individual tech-debt / hygiene issues** were resolved in that window.
 
 ### Current Status
 
@@ -27,7 +27,7 @@ landing in five large multi-issue PRs between 2026-05-12 and 2026-05-13.
 - **Overall Progress**: Core workflow operational end-to-end; hardening,
   type-safety, CI hygiene, and security work has substantially advanced.
 
-### Recent Wave Summary (2026-05-12 → 2026-05-13)
+### Recent Wave Summary (2026-05-12 → 2026-05-14)
 
 | PR | Wave / Track | Issues closed | Theme |
 |---|---|---|---|
@@ -36,12 +36,22 @@ landing in five large multi-issue PRs between 2026-05-12 and 2026-05-13.
 | [#252](https://github.com/leixiaoyu/lfmt-poc/pull/252) | Wave 1 Track E | #171, #183 (2) | Test-infra + per-day test email |
 | [#256](https://github.com/leixiaoyu/lfmt-poc/pull/256) | Wave 2 Track B | #180, #178, #246, #210, #188, #209 (6) | Auth hardening + cursor + StopExecution + typed returns |
 | [#257](https://github.com/leixiaoyu/lfmt-poc/pull/257) | Wave 2 Track D | #216, #201, #219 (3); #197 split → #254 + #255 | CSP refactor + violation telemetry + live contract guard |
+| [#258](https://github.com/leixiaoyu/lfmt-poc/pull/258) | Wave 2 Track F | #253 (1); #260 follow-up filed | Deploy-pipeline parity sweep (bootstrap guard + observability) |
 
-**Total**: 25 issues resolved across 5 PRs; 2 new follow-ups filed (#254, #255).
+**Total**: 26 issues resolved across 6 PRs; 3 new follow-ups filed (#254, #255, #260).
 
 ---
 
 ## Recent Updates (Last 7 Days)
+
+### 2026-05-14: Wave 2 Track F — Deploy-pipeline parity sweep (PR #258) — MERGED
+
+**Concern class**: CI/CD pipeline architecture + operational correctness for fresh staging environments.
+
+- **#253 Gap 1 — staging missing `cdk bootstrap` guard**: Added the same idempotent `CDKToolkit describe-stacks` check that already wraps `deploy-dev` and `deploy-prod`. First-ever deploy of staging against a fresh account/region no longer fails with the "must be deployed to the environment" error.
+- **#253 Gap 2 — `cdk diff` short-circuit asymmetry**: Decided to keep staging/prod unconditional (Option A). Justification documented inline in the workflow: staging/prod deploys are `workflow_dispatch`-only with explicit operator intent, so a no-changes early-exit would create deploy-UX ambiguity; the existing `cdk diff || true` audit step on prod already produces the change-set log without gating the deploy.
+- **Folded-in parity gaps** (timeout-minutes on all 3 deploy jobs, `Verify AWS identity` on staging, post-deploy API health check on staging + prod) — all surfaced during the OMC R1 review and the owner asked for them in-PR.
+- **New follow-up issue #260** filed: post-deploy smoke + integration tests on staging/prod. Deliberately deferred — needs `STAGING_USER_POOL_ID` / `PROD_USER_POOL_ID` secret routing, OIDC role broadening, and a test-user-isolation policy. Genuine architectural work, not hygiene.
 
 ### 2026-05-13: Wave 2 Track D — CSP refactor + violation telemetry + live contract guard (PR #257) — MERGED
 
@@ -142,12 +152,11 @@ when stakeholder timing requires.
 
 ## Open Risks & Active Issues
 
-### Open Issues (9 as of 2026-05-13)
+### Open Issues (8 as of 2026-05-14)
 
 | # | Title | Notes |
 |---|---|---|
 | [#260](https://github.com/leixiaoyu/lfmt-poc/issues/260) | ci(deploy): add post-deploy smoke + integration tests to staging/prod | Filed 2026-05-13 from PR #258's deferred list. Requires per-env secret routing (`STAGING_USER_POOL_ID` / `PROD_USER_POOL_ID`), OIDC role broadening, and a test-user-isolation policy — architectural work, not a hygiene fix. |
-| [#253](https://github.com/leixiaoyu/lfmt-poc/issues/253) | chore(infra): staging/prod deploy-pipeline environment-parity sweep | Deferred from PR #250. Staging missing `cdk bootstrap` guard; staging/prod lack the dev short-circuit. Needs owner design decision. (In-flight: PR #258.) |
 | [#254](https://github.com/leixiaoyu/lfmt-poc/issues/254) | security: CSP style-src nonces via Lambda@Edge | Split from #197 by PR #257. Different operational layer (Lambda@Edge); needs deploy-sync architecture decision. |
 | [#255](https://github.com/leixiaoyu/lfmt-poc/issues/255) | security: migrate auth tokens from localStorage to httpOnly cookies | Split from #197 by PR #257. Cross-domain blocker (cloudfront.net → execute-api); needs custom-domain ACM/Route53 + CSRF/SameSite design decisions. |
 | [#199](https://github.com/leixiaoyu/lfmt-poc/issues/199) | tech-debt: remove StoredSession migration code | **Date-pinned removal: 2026-06-04** (30d after PR #198 deploy on 2026-05-04 = guaranteed Cognito refresh-token roll-over). Documentation marker landed in PR #251. |
