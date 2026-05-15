@@ -516,6 +516,87 @@ export interface DownloadTranslationApiResponse {
   [key: string]: unknown;
 }
 
+// ---------------------------------------------------------------------------
+// Output Format — issue #28 (additional download formats: ePub + PDF).
+// ---------------------------------------------------------------------------
+
+/**
+ * Canonical output-format union for translated documents (issue #28).
+ *
+ * - `markdown` — the original raw text/plain output (existing behaviour).
+ * - `epub`     — industry-standard ebook format (Kindle, Kobo, iBooks, etc.).
+ * - `pdf`      — universal format that preserves layout on any device.
+ *
+ * This type is the SINGLE SOURCE OF TRUTH shared between:
+ *   - frontend/src/services/translationService.ts (downloadTranslation `format` arg)
+ *   - frontend/src/pages/TranslationDetail.tsx (download-button group)
+ *   - backend/functions/translation/downloadTranslation.ts (Lambda dispatch)
+ *
+ * Markdown is retained as a value so legacy callers that omit the query
+ * parameter still receive the original behaviour. The Lambda validates the
+ * query value against `OUTPUT_FORMAT_VALUES` and rejects unknown formats
+ * with 400 — defense-in-depth against typos and supply-chain confusion.
+ */
+export type OutputFormat = 'markdown' | 'epub' | 'pdf';
+
+/**
+ * Runtime array of allowed OutputFormat values — derived from the union so
+ * the literal type and this array cannot drift.
+ *
+ * Use for input validation on the Lambda boundary:
+ *
+ * ```ts
+ * if (!OUTPUT_FORMAT_VALUES.includes(format as OutputFormat)) {
+ *   return createErrorResponse(400, ...);
+ * }
+ * ```
+ */
+export const OUTPUT_FORMAT_VALUES = [
+  'markdown',
+  'epub',
+  'pdf',
+] as const satisfies ReadonlyArray<OutputFormat>;
+
+/**
+ * Type-guard for OutputFormat. Use to narrow a wire-supplied string value
+ * (e.g. a query-string parameter) into the union before dispatching on it.
+ *
+ * ```ts
+ * const format = event.queryStringParameters?.format ?? 'markdown';
+ * if (!isOutputFormat(format)) {
+ *   return createErrorResponse(400, `Unsupported format: ${format}`, ...);
+ * }
+ * // `format` is now typed as OutputFormat.
+ * ```
+ */
+export function isOutputFormat(value: unknown): value is OutputFormat {
+  return typeof value === 'string' && (OUTPUT_FORMAT_VALUES as readonly string[]).includes(value);
+}
+
+/**
+ * MIME content type used in the Content-Type response header for each format.
+ *
+ * Source of truth for the Lambda response wiring; the frontend does not need
+ * to read this directly because it always treats the response as `Blob`, but
+ * the table is exported so contract tests can assert agreement.
+ */
+export const OUTPUT_FORMAT_CONTENT_TYPES: Readonly<Record<OutputFormat, string>> = {
+  markdown: 'text/plain; charset=utf-8',
+  epub: 'application/epub+zip',
+  pdf: 'application/pdf',
+};
+
+/**
+ * File-extension token used when building the Content-Disposition `filename=`
+ * attribute. Centralised here so the Lambda and any future client-side
+ * filename-derivation share a single value.
+ */
+export const OUTPUT_FORMAT_FILE_EXTENSIONS: Readonly<Record<OutputFormat, string>> = {
+  markdown: 'txt',
+  epub: 'epub',
+  pdf: 'pdf',
+};
+
 // Validation Schemas
 export const createJobRequestSchema = z.object({
   userId: z.string().uuid(),
