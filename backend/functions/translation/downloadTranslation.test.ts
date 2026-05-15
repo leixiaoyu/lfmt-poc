@@ -1,6 +1,6 @@
 /**
  * Unit tests for the Download Translation endpoint
- * GET /jobs/{jobId}/download
+ * GET /jobs/{jobId}/download[?format=markdown|epub|pdf]
  */
 
 // Set required environment variables BEFORE any imports so that getRequiredEnv()
@@ -8,14 +8,49 @@
 process.env.JOBS_TABLE = 'test-jobs-table';
 process.env.DOCUMENT_BUCKET = 'test-documents-bucket';
 
+// Mock @lesjoursfr/html-to-epub (issue #28) BEFORE importing the handler.
+// The real library ships as native ESM and the ts-jest preset (CJS) cannot
+// load it. Same mock strategy as in formatConverters.test.ts — see the
+// rationale block there.
+jest.mock('@lesjoursfr/html-to-epub', () => {
+  class FakeEPub {
+    private outputPath: string;
+    constructor(_options: Record<string, unknown>, outputPath: string) {
+      this.outputPath = outputPath;
+    }
+    async render(): Promise<{ result: string }> {
+      const fs = await import('fs');
+      // 'PK' header so the buffer passes the downstream ZIP-shape check
+      // if any code path inspects it (currently none in the Lambda).
+      await fs.promises.writeFile(this.outputPath, Buffer.from('PKfake-epub-bytes'));
+      return { result: 'ok' };
+    }
+  }
+  return { EPub: FakeEPub };
+});
+
+// Mock the s3-request-presigner getSignedUrl helper — tests assert that
+// the handler called it with the right inputs, not the actual signature.
+jest.mock('@aws-sdk/s3-request-presigner', () => ({
+  getSignedUrl: jest.fn().mockResolvedValue('https://signed.example/path?X-Amz-Signature=...'),
+}));
+
 import { APIGatewayProxyEvent } from 'aws-lambda';
 import { mockClient } from 'aws-sdk-client-mock';
 import { DynamoDBClient, GetItemCommand } from '@aws-sdk/client-dynamodb';
-import { S3Client, GetObjectCommand, ListObjectsV2Command } from '@aws-sdk/client-s3';
+import {
+  S3Client,
+  GetObjectCommand,
+  HeadObjectCommand,
+  ListObjectsV2Command,
+  PutObjectCommand,
+} from '@aws-sdk/client-s3';
 import { marshall } from '@aws-sdk/util-dynamodb';
 import { sdkStreamMixin } from '@smithy/util-stream';
 import { Readable } from 'stream';
 import { handler } from './downloadTranslation';
+import * as presignerModule from '@aws-sdk/s3-request-presigner';
+const { getSignedUrl } = presignerModule;
 
 const dynamoMock = mockClient(DynamoDBClient);
 const s3Mock = mockClient(S3Client);
@@ -549,5 +584,146 @@ describe('downloadTranslation handler', () => {
     expect(contentDisposition).not.toContain('X-Injected');
     // Must contain a safe fallback name
     expect(contentDisposition).toContain('translated_document.txt');
+  });
+
+  // -------------------------------------------------------------------------
+  // Issue #28 — format query parameter (ePub + PDF)
+  // -------------------------------------------------------------------------
+
+  /** Build a download event with an explicit format query parameter. */
+  const createFormatEvent = (
+    format: string,
+    jobId = TEST_JOB_ID,
+    userId = TEST_USER_ID
+  ): Partial<APIGatewayProxyEvent> => ({
+    ...(createEvent(jobId, userId) as Partial<APIGatewayProxyEvent>),
+    queryStringParameters: { format },
+  });
+
+  describe('format query parameter (#28)', () => {
+    beforeEach(() => {
+      (getSignedUrl as jest.Mock).mockClear();
+      (getSignedUrl as jest.Mock).mockResolvedValue(
+        'https://signed.example/path?X-Amz-Signature=abc'
+      );
+    });
+
+    it('rejects an unsupported format with 400', async () => {
+      const result = await handler(createFormatEvent('docx') as APIGatewayProxyEvent);
+      expect(result.statusCode).toBe(400);
+      expect(result.body).toContain('Unsupported format');
+    });
+
+    it('treats `format=markdown` as the legacy text/plain path', async () => {
+      dynamoMock.on(GetItemCommand).resolves({ Item: makeCompletedJobItem() });
+      s3Mock.on(ListObjectsV2Command).resolves({
+        Contents: [{ Key: `translated/${TEST_JOB_ID}/chunk-0.txt` }],
+        IsTruncated: false,
+      });
+      s3Mock.on(GetObjectCommand).resolves({ Body: makeS3Stream('Bonjour') } as any);
+
+      const result = await handler(createFormatEvent('markdown') as APIGatewayProxyEvent);
+
+      expect(result.statusCode).toBe(200);
+      expect(result.headers?.['Content-Type']).toContain('text/plain');
+      expect(result.body).toBe('Bonjour');
+      // markdown path MUST NOT presign anything
+      expect(getSignedUrl).not.toHaveBeenCalled();
+    });
+
+    it('generates an ePub, uploads to S3, and returns a presigned URL envelope', async () => {
+      dynamoMock.on(GetItemCommand).resolves({ Item: makeCompletedJobItem() });
+
+      s3Mock.on(ListObjectsV2Command).resolves({
+        Contents: [{ Key: `translated/${TEST_JOB_ID}/chunk-0.txt` }],
+        IsTruncated: false,
+      });
+      s3Mock
+        .on(GetObjectCommand)
+        .resolves({ Body: makeS3Stream('# Chapter 1\n\nHello world.') } as any);
+      // HeadObject — cache miss (NotFound) so the handler generates.
+      s3Mock
+        .on(HeadObjectCommand)
+        .rejects({ name: 'NotFound', $metadata: { httpStatusCode: 404 } });
+      s3Mock.on(PutObjectCommand).resolves({});
+
+      const result = await handler(createFormatEvent('epub') as APIGatewayProxyEvent);
+
+      expect(result.statusCode).toBe(200);
+      expect(result.headers?.['Content-Type']).toBe('application/json');
+      const body = JSON.parse(result.body);
+      expect(body.format).toBe('epub');
+      expect(body.downloadUrl).toContain('signed.example');
+      expect(body.expiresInSeconds).toBe(15 * 60);
+      expect(body.objectKey).toBe(`translated-output/${TEST_JOB_ID}/translation.epub`);
+      // Confirm PutObject was called for the generated artefact.
+      const putCalls = s3Mock.commandCalls(PutObjectCommand);
+      expect(putCalls).toHaveLength(1);
+      expect(putCalls[0].args[0].input.Key).toBe(body.objectKey);
+      expect(putCalls[0].args[0].input.ContentType).toBe('application/epub+zip');
+      expect(getSignedUrl).toHaveBeenCalledTimes(1);
+    });
+
+    it('generates a PDF and returns a presigned URL envelope', async () => {
+      dynamoMock.on(GetItemCommand).resolves({ Item: makeCompletedJobItem() });
+      s3Mock.on(ListObjectsV2Command).resolves({
+        Contents: [{ Key: `translated/${TEST_JOB_ID}/chunk-0.txt` }],
+        IsTruncated: false,
+      });
+      s3Mock.on(GetObjectCommand).resolves({ Body: makeS3Stream('# Title\n\nBody text.') } as any);
+      s3Mock
+        .on(HeadObjectCommand)
+        .rejects({ name: 'NotFound', $metadata: { httpStatusCode: 404 } });
+      s3Mock.on(PutObjectCommand).resolves({});
+
+      const result = await handler(createFormatEvent('pdf') as APIGatewayProxyEvent);
+
+      expect(result.statusCode).toBe(200);
+      const body = JSON.parse(result.body);
+      expect(body.format).toBe('pdf');
+      expect(body.objectKey).toBe(`translated-output/${TEST_JOB_ID}/translation.pdf`);
+      const putCalls = s3Mock.commandCalls(PutObjectCommand);
+      expect(putCalls[0].args[0].input.ContentType).toBe('application/pdf');
+      // Body must be a Buffer starting with the PDF magic header.
+      const putBody = putCalls[0].args[0].input.Body as Buffer;
+      expect(Buffer.isBuffer(putBody)).toBe(true);
+      expect(putBody.slice(0, 5).toString()).toBe('%PDF-');
+    });
+
+    it('reuses the cached artefact when HeadObject succeeds (cache hit)', async () => {
+      dynamoMock.on(GetItemCommand).resolves({ Item: makeCompletedJobItem() });
+      // Cache hit — HeadObject succeeds, generation is skipped entirely.
+      s3Mock.on(HeadObjectCommand).resolves({} as never);
+
+      const result = await handler(createFormatEvent('epub') as APIGatewayProxyEvent);
+
+      expect(result.statusCode).toBe(200);
+      const body = JSON.parse(result.body);
+      expect(body.format).toBe('epub');
+      // No PutObject — we reused the existing artefact.
+      expect(s3Mock.commandCalls(PutObjectCommand)).toHaveLength(0);
+      // The chunk listing must also have been skipped (no need to
+      // re-fetch the source markdown when the artefact already exists).
+      expect(s3Mock.commandCalls(ListObjectsV2Command)).toHaveLength(0);
+      expect(getSignedUrl).toHaveBeenCalledTimes(1);
+    });
+
+    it('returns 409 when requesting any format for a non-COMPLETED job', async () => {
+      dynamoMock.on(GetItemCommand).resolves({
+        Item: makeCompletedJobItem({ translationStatus: 'IN_PROGRESS' }),
+      });
+
+      const epubResult = await handler(createFormatEvent('epub') as APIGatewayProxyEvent);
+      expect(epubResult.statusCode).toBe(409);
+
+      const pdfResult = await handler(createFormatEvent('pdf') as APIGatewayProxyEvent);
+      expect(pdfResult.statusCode).toBe(409);
+    });
+
+    it('returns 404 when the job belongs to a different user (BOLA-safe across formats)', async () => {
+      dynamoMock.on(GetItemCommand).resolves({ Item: undefined });
+      const result = await handler(createFormatEvent('epub') as APIGatewayProxyEvent);
+      expect(result.statusCode).toBe(404);
+    });
   });
 });

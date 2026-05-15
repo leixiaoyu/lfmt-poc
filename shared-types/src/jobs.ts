@@ -597,6 +597,36 @@ export const OUTPUT_FORMAT_FILE_EXTENSIONS: Readonly<Record<OutputFormat, string
   pdf: 'pdf',
 };
 
+/**
+ * JSON envelope returned by GET /jobs/{jobId}/download?format=epub|pdf.
+ *
+ * The Lambda generates (or reuses) the converted artefact, uploads it to
+ * S3 under `translated-output/{jobId}/translation.{ext}`, and replies
+ * with this envelope. The SPA follows `downloadUrl` to trigger the
+ * direct-from-S3 browser download — no Lambda round trip for the bytes.
+ *
+ * `markdown` requests do NOT return this shape; they return raw text/plain
+ * (preserves the pre-#28 contract).
+ *
+ * The presigned URL expiry is informational — the SPA does not need to
+ * persist this value; it should redirect to `downloadUrl` immediately.
+ */
+export interface PresignedDownloadEnvelope {
+  /** Always 'epub' or 'pdf' (never 'markdown' — that path stays inline). */
+  format: Exclude<OutputFormat, 'markdown'>;
+  /** S3 presigned GET URL. Time-bounded; do not log or share. */
+  downloadUrl: string;
+  /** TTL of the presigned URL in seconds (informational). */
+  expiresInSeconds: number;
+  /**
+   * S3 object key — exposed so the SPA can show a stable identifier in
+   * dev tools / error reports without dumping the (long, signed) URL.
+   */
+  objectKey: string;
+  /** Index signature for the createFlatResponse generic constraint. */
+  [key: string]: unknown;
+}
+
 // Validation Schemas
 export const createJobRequestSchema = z.object({
   userId: z.string().uuid(),

@@ -60,6 +60,20 @@
  * 10. S3 keep-alive:
  *     The NodeHttpHandler is configured with connection keep-alive and a capped
  *     socket pool to reduce TCP overhead on parallel chunk fan-out.
+ *
+ * 11. Multi-format output (issue #28 — ePub + PDF):
+ *     The `?format=` query parameter selects the output format. The default
+ *     (`markdown`, or absent) preserves the legacy raw text/plain response so
+ *     existing clients are unaffected. `epub` and `pdf` follow a different
+ *     wire contract: we generate the bytes lazily on demand, persist them to
+ *     S3 under `translated-output/{jobId}/translation.{ext}`, and return a
+ *     15-minute presigned GET URL inside a JSON envelope. Rationale:
+ *       - ePub/PDF bytes routinely exceed the 6 MB API Gateway response cap.
+ *       - Cache-by-S3-key means a second request for the same format reuses
+ *         the existing object (idempotent + safe under concurrent callers).
+ *       - Lazy generation avoids the storage and reassembly-Lambda churn of
+ *         eager pre-generation when most casual readers only download one
+ *         format. See PR body for the full lazy-vs-eager decision.
  */
 
 import { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
@@ -67,15 +81,25 @@ import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import {
   S3Client,
   GetObjectCommand,
+  HeadObjectCommand,
   ListObjectsV2Command,
   ListObjectsV2CommandOutput,
+  PutObjectCommand,
 } from '@aws-sdk/client-s3';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { NodeHttpHandler } from '@smithy/node-http-handler';
 import { Agent as HttpAgent } from 'http';
 import Logger from '../shared/logger';
 import { getRequiredEnv } from '../shared/env';
 import { getCorsHeaders, createErrorResponse } from '../shared/api-response';
 import { loadJobForUser } from '../shared/jobRepository';
+import {
+  OutputFormat,
+  OUTPUT_FORMAT_CONTENT_TYPES,
+  OUTPUT_FORMAT_FILE_EXTENSIONS,
+  isOutputFormat,
+} from '@lfmt/shared-types';
+import { convertMarkdownToEpub, convertMarkdownToPdf } from './formatConverters';
 
 const logger = new Logger('lfmt-download-translation');
 const dynamoClient = new DynamoDBClient({});
@@ -215,19 +239,189 @@ function buildSafeDownloadFilename(rawFilename: string | undefined): string {
 }
 
 /**
- * Lambda handler — GET /jobs/{jobId}/download
+ * Presigned-URL expiry, in seconds. 15 minutes is long enough for the
+ * browser to follow the redirect even on a slow connection while keeping
+ * the link unattractive as a shareable artefact.
+ */
+const PRESIGNED_URL_TTL_SECONDS = 15 * 60;
+
+/**
+ * Maximum source-document size (in bytes) we are willing to convert into
+ * ePub / PDF inside a single Lambda invocation.
  *
- * Returns the assembled translated document as a raw text/plain response so
- * that the frontend can stream it into a Blob and trigger a browser download.
+ * Rationale: the existing 6 MB API Gateway markdown cap already gates the
+ * common case. For ePub/PDF, conversion runs in memory (PDFKit and the
+ * ePub generator both hold the full document in heap). 8 MB is a
+ * defense-in-depth ceiling: anything past this is almost certainly a
+ * partial-corruption red flag, not a real book.
+ *
+ * Documents that legitimately exceed this should be paginated by chapter
+ * — out of scope for v1 (#28 OMC R1 H3-cq).
+ */
+const MAX_CONVERSION_SOURCE_BYTES = 8 * 1024 * 1024;
+
+/**
+ * Parse and validate the `format` query parameter.
+ *
+ * Defaults to `markdown` when the parameter is absent or empty so the
+ * legacy GET /jobs/{jobId}/download contract is preserved for clients
+ * that haven't been updated.
+ *
+ * Returns `null` when the value is present but not in OutputFormat;
+ * callers map that to 400 Bad Request.
+ */
+function parseFormatParam(event: APIGatewayProxyEvent): OutputFormat | null {
+  const raw = event.queryStringParameters?.format;
+  if (raw === undefined || raw === null || raw === '') {
+    return 'markdown';
+  }
+  return isOutputFormat(raw) ? raw : null;
+}
+
+/**
+ * Build the deterministic S3 key for a generated ePub/PDF output.
+ *
+ * `translated-output/{jobId}/translation.{ext}` lives under a NEW prefix
+ * (translated-output/) so the IAM grant on the existing `translated/`
+ * prefix does NOT accidentally widen to include generated artefacts.
+ * The Lambda's role is updated separately in the CDK stack to add the
+ * write permission only on this prefix.
+ */
+function buildOutputObjectKey(jobId: string, format: OutputFormat): string {
+  return `translated-output/${jobId}/translation.${OUTPUT_FORMAT_FILE_EXTENSIONS[format]}`;
+}
+
+/**
+ * Best-effort title derivation from the job's filename.
+ *
+ * Strips the extension and replaces underscores with spaces so an ePub
+ * generated from `the_brothers_karamazov.txt` shows as
+ * "the brothers karamazov" in the device library rather than the raw
+ * filename. Returns "Translation" when the filename is missing or
+ * unparseable.
+ */
+function deriveTitle(rawFilename: string | undefined): string {
+  if (!rawFilename) return 'Translation';
+  const base = rawFilename.replace(/\.[^.]+$/, '').replace(/_/g, ' ');
+  return base.length > 0 ? base : 'Translation';
+}
+
+/**
+ * Check whether a generated artefact already exists at the given key.
+ *
+ * Used for the cache-by-S3-key optimisation: when two users (or the same
+ * user) request the same job + format, the second request reuses the
+ * existing object instead of regenerating. HeadObject is cheap (~5 ms)
+ * compared with PDF/ePub generation (1–5 s).
+ *
+ * Returns `true` if the object exists, `false` if not, and rethrows on
+ * any other error (e.g. AccessDenied — surfacing an IAM misconfiguration
+ * rather than silently falling through to regeneration).
+ */
+async function objectExists(bucket: string, key: string): Promise<boolean> {
+  try {
+    await s3Client.send(new HeadObjectCommand({ Bucket: bucket, Key: key }));
+    return true;
+  } catch (err) {
+    const e = err as { name?: string; $metadata?: { httpStatusCode?: number } };
+    if (e?.name === 'NotFound' || e?.$metadata?.httpStatusCode === 404) {
+      return false;
+    }
+    throw err;
+  }
+}
+
+/**
+ * Assemble the translated Markdown document for a job — encapsulates the
+ * full chunk-listing → ordering → fetching → concatenation pipeline so the
+ * handler can dispatch on `?format=` without duplicating this logic.
+ *
+ * Returns an error envelope (statusCode + message) on data-integrity
+ * failures so the caller can map directly to an `APIGatewayProxyResult`
+ * without re-deriving the appropriate HTTP code.
+ */
+async function assembleMarkdown(
+  job: { totalChunks?: number },
+  jobId: string,
+  requestId: string
+): Promise<{ ok: true; markdown: string } | { ok: false; statusCode: number; message: string }> {
+  const chunkKeys = await listTranslatedChunkKeys(jobId);
+
+  if (chunkKeys.length === 0) {
+    logger.error('COMPLETED job has no translated chunks in S3', { requestId, jobId });
+    return {
+      ok: false,
+      statusCode: 500,
+      message: 'Translation data missing — no translated chunks found for completed job',
+    };
+  }
+
+  const validChunkKeys = chunkKeys.filter((k) => !isNaN(parseChunkIndex(k)));
+  const invalidChunkKeys = chunkKeys.filter((k) => isNaN(parseChunkIndex(k)));
+
+  if (validChunkKeys.length === 0) {
+    const sampleKeys = invalidChunkKeys.slice(0, MAX_CORRUPT_KEYS_LOGGED);
+    logger.error('No chunk keys with parseable indices', {
+      requestId,
+      jobId,
+      totalCorruptKeys: invalidChunkKeys.length,
+      sampleKeys,
+    });
+    return {
+      ok: false,
+      statusCode: 500,
+      message: 'Translation data corrupt — unrecognised chunk keys',
+    };
+  }
+
+  if (invalidChunkKeys.length > 0) {
+    logger.warn('Some chunk keys had unparseable indices — skipped', {
+      requestId,
+      jobId,
+      validCount: validChunkKeys.length,
+      invalidCount: invalidChunkKeys.length,
+      sampleInvalidKeys: invalidChunkKeys.slice(0, MAX_CORRUPT_KEYS_LOGGED),
+    });
+  }
+
+  if (job.totalChunks !== undefined && validChunkKeys.length !== job.totalChunks) {
+    logger.error('Chunk count mismatch — partial document detected', {
+      requestId,
+      jobId,
+      expectedChunks: job.totalChunks,
+      foundChunks: validChunkKeys.length,
+    });
+    return {
+      ok: false,
+      statusCode: 500,
+      message: `Translation data incomplete — expected ${job.totalChunks} chunks but found ${validChunkKeys.length}`,
+    };
+  }
+
+  const chunkContents = await Promise.all(validChunkKeys.map(fetchChunkContent));
+  return { ok: true, markdown: chunkContents.join('\n') };
+}
+
+/**
+ * Lambda handler — GET /jobs/{jobId}/download[?format=markdown|epub|pdf]
+ *
+ * Format dispatch:
+ *   - `markdown` (default) — returns the raw text/plain body inline,
+ *     preserving the pre-#28 contract.
+ *   - `epub` / `pdf` — generates the output if not already cached in S3,
+ *     uploads under `translated-output/{jobId}/translation.{ext}`, and
+ *     returns a JSON envelope `{ downloadUrl, expiresIn, format, ... }`
+ *     pointing at a 15-minute presigned GET URL.
  *
  * HTTP response codes:
- *   200 — document assembled and returned
- *   400 — missing or invalid jobId path parameter
+ *   200 — document assembled and returned / presigned URL ready
+ *   400 — missing or invalid jobId; unsupported `format` value
  *   401 — no authenticated user (missing Cognito claims)
  *   404 — job not found or belongs to another user (BOLA-safe)
  *   409 — job exists but translationStatus is not COMPLETED
- *   413 — assembled document exceeds 6 MB response size limit
- *   500 — unexpected error (S3 read failure, data integrity issue, etc.)
+ *   413 — assembled markdown exceeds 6 MB inline-response limit
+ *          (markdown path only; ePub/PDF bypass this via S3)
+ *   500 — unexpected error (S3 read failure, conversion failure, etc.)
  */
 export const handler = async (event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> => {
   const requestId = event.requestContext.requestId;
@@ -237,6 +431,7 @@ export const handler = async (event: APIGatewayProxyEvent): Promise<APIGatewayPr
     requestId,
     path: event.path,
     method: event.httpMethod,
+    format: event.queryStringParameters?.format,
   });
 
   try {
@@ -246,9 +441,19 @@ export const handler = async (event: APIGatewayProxyEvent): Promise<APIGatewayPr
       return createErrorResponse(401, 'Unauthorized', requestId, undefined, requestOrigin);
     }
 
+    // --- Format param ---------------------------------------------------
+    const format = parseFormatParam(event);
+    if (format === null) {
+      return createErrorResponse(
+        400,
+        `Unsupported format: ${event.queryStringParameters?.format}. Allowed: markdown, epub, pdf.`,
+        requestId,
+        undefined,
+        requestOrigin
+      );
+    }
+
     // --- Path params + UUID format guard --------------------------------
-    // Cognito sub UUIDs and our jobId UUIDs share the same RFC 4122 format.
-    // Validating here rejects path-traversal-style attempts before DDB/S3 calls.
     const jobId = event.pathParameters?.jobId;
     if (!jobId) {
       return createErrorResponse(400, 'Missing jobId in path', requestId, undefined, requestOrigin);
@@ -265,9 +470,6 @@ export const handler = async (event: APIGatewayProxyEvent): Promise<APIGatewayPr
     }
 
     // --- Ownership & existence ------------------------------------------
-    // loadJobForUser uses the composite DynamoDB key (jobId + userId).
-    // Returns null when the job does not exist OR belongs to a different
-    // user — both cases map to 404 (BOLA prevention).
     const job = await loadJobForUser(dynamoClient, JOBS_TABLE, jobId, userId);
 
     if (!job) {
@@ -281,10 +483,6 @@ export const handler = async (event: APIGatewayProxyEvent): Promise<APIGatewayPr
     }
 
     // --- Status guard ---------------------------------------------------
-    // translationStatus is the field set by the Step Functions workflow;
-    // the outer `status` field is also set to COMPLETED by UpdateJobCompleted.
-    // We check translationStatus for the download guard because it is the
-    // authoritative field for translation-specific lifecycle state.
     if (job.translationStatus !== 'COMPLETED') {
       const currentStatus = job.translationStatus ?? 'UNKNOWN';
       return createErrorResponse(
@@ -296,90 +494,38 @@ export const handler = async (event: APIGatewayProxyEvent): Promise<APIGatewayPr
       );
     }
 
-    // --- Chunk assembly -------------------------------------------------
-    logger.info('Fetching translated chunks', { requestId, jobId });
+    const rawFilename = typeof job.filename === 'string' ? job.filename : undefined;
 
-    const chunkKeys = await listTranslatedChunkKeys(jobId);
+    // -----------------------------------------------------------------
+    // ePub / PDF path — generate-or-reuse via S3 + presigned URL.
+    // -----------------------------------------------------------------
+    if (format === 'epub' || format === 'pdf') {
+      return await handleConvertedFormat({
+        format,
+        job,
+        jobId,
+        requestId,
+        requestOrigin,
+        rawFilename,
+      });
+    }
 
-    if (chunkKeys.length === 0) {
-      // Job is marked COMPLETED but no chunks exist in S3 — data integrity error
-      logger.error('COMPLETED job has no translated chunks in S3', { requestId, jobId });
+    // -----------------------------------------------------------------
+    // Markdown path (legacy, unchanged) — inline text/plain response.
+    // -----------------------------------------------------------------
+    logger.info('Fetching translated chunks (markdown path)', { requestId, jobId });
+    const assembled = await assembleMarkdown(job, jobId, requestId);
+    if (!assembled.ok) {
       return createErrorResponse(
-        500,
-        'Translation data missing — no translated chunks found for completed job',
+        assembled.statusCode,
+        assembled.message,
         requestId,
         undefined,
         requestOrigin
       );
     }
+    const assembledDocument = assembled.markdown;
 
-    // Validate that all chunks have parseable indices (guards against
-    // unrecognised key formats in the prefix that might pollute the output).
-    const validChunkKeys = chunkKeys.filter((k) => !isNaN(parseChunkIndex(k)));
-    const invalidChunkKeys = chunkKeys.filter((k) => isNaN(parseChunkIndex(k)));
-
-    if (validChunkKeys.length === 0) {
-      // Cap logged key names to avoid log-line bloat on degenerate inputs.
-      const sampleKeys = invalidChunkKeys.slice(0, MAX_CORRUPT_KEYS_LOGGED);
-      logger.error('No chunk keys with parseable indices', {
-        requestId,
-        jobId,
-        totalCorruptKeys: invalidChunkKeys.length,
-        sampleKeys,
-      });
-      return createErrorResponse(
-        500,
-        'Translation data corrupt — unrecognised chunk keys',
-        requestId,
-        undefined,
-        requestOrigin
-      );
-    }
-
-    if (invalidChunkKeys.length > 0) {
-      // Partial corruption: some keys are parseable, some are not. Log but continue.
-      logger.warn('Some chunk keys had unparseable indices — skipped', {
-        requestId,
-        jobId,
-        validCount: validChunkKeys.length,
-        invalidCount: invalidChunkKeys.length,
-        sampleInvalidKeys: invalidChunkKeys.slice(0, MAX_CORRUPT_KEYS_LOGGED),
-      });
-    }
-
-    // --- Chunk count integrity check ------------------------------------
-    // If job.totalChunks is recorded, the S3 listing must match.
-    // A mismatch means some chunks were not written (or were deleted) — returning
-    // a partial document silently would mislead the end user.
-    if (job.totalChunks !== undefined && validChunkKeys.length !== job.totalChunks) {
-      logger.error('Chunk count mismatch — partial document detected', {
-        requestId,
-        jobId,
-        expectedChunks: job.totalChunks,
-        foundChunks: validChunkKeys.length,
-      });
-      return createErrorResponse(
-        500,
-        `Translation data incomplete — expected ${job.totalChunks} chunks but found ${validChunkKeys.length}`,
-        requestId,
-        undefined,
-        requestOrigin
-      );
-    }
-
-    // Fetch all chunks in parallel. For very large jobs (400K words ≈ 115 chunks
-    // at 3500 tokens/chunk) this is significantly faster than sequential fetching.
-    // The S3 client is configured with keep-alive and maxSockets: 50 (module level).
-    const chunkContents = await Promise.all(validChunkKeys.map(fetchChunkContent));
-
-    // Concatenate with a single newline between chunks to preserve paragraph
-    // breaks without doubling the whitespace that translateChunk already outputs.
-    const assembledDocument = chunkContents.join('\n');
-
-    // --- Size guard -------------------------------------------------------
-    // API Gateway hard-limits response bodies to 10 MB. We cap at 6 MB to
-    // leave headroom for UTF-8 multi-byte expansion. Documents exceeding this
-    // should use a presigned-URL download (future work — see #14).
     const documentBytes = Buffer.byteLength(assembledDocument, 'utf-8');
     if (documentBytes > MAX_RESPONSE_BYTES) {
       logger.warn('Assembled document exceeds 6 MB response limit', {
@@ -391,42 +537,31 @@ export const handler = async (event: APIGatewayProxyEvent): Promise<APIGatewayPr
       return createErrorResponse(
         413,
         'Assembled translation exceeds the 6 MB download limit via this API. ' +
-          'A presigned-URL download endpoint for large documents is planned.',
+          'Use ?format=pdf or ?format=epub for a presigned-URL download of large documents.',
         requestId,
         undefined,
         requestOrigin
       );
     }
 
-    logger.info('Translation assembled', {
+    logger.info('Translation assembled (markdown)', {
       requestId,
       jobId,
-      chunkCount: validChunkKeys.length,
       documentBytes,
     });
 
-    // DynamoDBJob.filename is typed `string | undefined` (the index signature
-    // also allows `unknown`). The helper only needs string | undefined.
-    const rawFilename = typeof job.filename === 'string' ? job.filename : undefined;
     const downloadFilename = buildSafeDownloadFilename(rawFilename);
 
-    // Return the raw document content as text/plain so the frontend
-    // can construct a Blob and trigger a browser download via an object URL.
-    // CORS headers are included so the browser permits the cross-origin read.
     return {
       statusCode: 200,
       headers: {
         ...getCorsHeaders(requestOrigin),
-        'Content-Type': 'text/plain; charset=utf-8',
+        'Content-Type': OUTPUT_FORMAT_CONTENT_TYPES.markdown,
         'Content-Disposition': `attachment; filename="${downloadFilename}"`,
-        // Prevent caching of translation downloads — the user should always
-        // get the latest assembled content if they re-request.
         'Cache-Control': 'no-store',
-        // Defense-in-depth: instruct browsers not to sniff the content type.
         'X-Content-Type-Options': 'nosniff',
       },
       body: assembledDocument,
-      // API Gateway requires isBase64Encoded: false for text responses.
       isBase64Encoded: false,
     };
   } catch (error) {
@@ -445,3 +580,186 @@ export const handler = async (event: APIGatewayProxyEvent): Promise<APIGatewayPr
     );
   }
 };
+
+/**
+ * Generate (or reuse) an ePub/PDF artefact and return a presigned-URL
+ * JSON envelope so the SPA can issue a follow-up direct-to-S3 download.
+ *
+ * Caching: keyed off `translated-output/{jobId}/translation.{ext}`. If
+ * the object already exists, we skip the (expensive) conversion and go
+ * straight to presigning. This is the deduplication strategy mentioned
+ * in the issue brief — both concurrent callers succeed; the second
+ * request just pays for a HeadObject + Presign instead of a full render.
+ */
+async function handleConvertedFormat(params: {
+  format: 'epub' | 'pdf';
+  job: { totalChunks?: number };
+  jobId: string;
+  requestId: string;
+  requestOrigin: string | undefined;
+  rawFilename: string | undefined;
+}): Promise<APIGatewayProxyResult> {
+  const { format, job, jobId, requestId, requestOrigin, rawFilename } = params;
+  const outputKey = buildOutputObjectKey(jobId, format);
+
+  // Cache hit — short-circuit straight to a presigned URL.
+  if (await objectExists(DOCUMENT_BUCKET, outputKey)) {
+    logger.info('Reusing cached generated artefact', {
+      requestId,
+      jobId,
+      format,
+      outputKey,
+    });
+    const url = await presignDownload(outputKey, rawFilename, format);
+    return jsonOk(url, format, outputKey, requestOrigin);
+  }
+
+  // Cache miss — fetch the markdown source, convert, and upload.
+  logger.info('Generating converted artefact', { requestId, jobId, format });
+
+  const assembled = await assembleMarkdown(job, jobId, requestId);
+  if (!assembled.ok) {
+    return createErrorResponse(
+      assembled.statusCode,
+      assembled.message,
+      requestId,
+      undefined,
+      requestOrigin
+    );
+  }
+
+  const sourceBytes = Buffer.byteLength(assembled.markdown, 'utf-8');
+  if (sourceBytes > MAX_CONVERSION_SOURCE_BYTES) {
+    logger.warn('Source document exceeds conversion size cap', {
+      requestId,
+      jobId,
+      format,
+      sourceBytes,
+      limitBytes: MAX_CONVERSION_SOURCE_BYTES,
+    });
+    return createErrorResponse(
+      413,
+      `Translation source exceeds the ${MAX_CONVERSION_SOURCE_BYTES} byte ePub/PDF conversion limit. ` +
+        'Per-chapter export is planned (see issue #28 follow-up).',
+      requestId,
+      undefined,
+      requestOrigin
+    );
+  }
+
+  const title = deriveTitle(rawFilename);
+  const author = 'Translated by LFMT';
+
+  let body: Buffer;
+  try {
+    body =
+      format === 'epub'
+        ? await convertMarkdownToEpub({ title, author, markdown: assembled.markdown })
+        : await convertMarkdownToPdf({ title, author, markdown: assembled.markdown });
+  } catch (err) {
+    logger.error('Conversion failed', {
+      requestId,
+      jobId,
+      format,
+      error: err instanceof Error ? err.message : 'Unknown error',
+    });
+    return createErrorResponse(
+      500,
+      `Failed to generate ${format.toUpperCase()} output`,
+      requestId,
+      undefined,
+      requestOrigin
+    );
+  }
+
+  // Write to S3. CacheControl: no-store on the object so that if we ever
+  // need to invalidate (e.g. translation rerun), we don't have to fight a
+  // long-lived CDN cache.
+  await s3Client.send(
+    new PutObjectCommand({
+      Bucket: DOCUMENT_BUCKET,
+      Key: outputKey,
+      Body: body,
+      ContentType: OUTPUT_FORMAT_CONTENT_TYPES[format],
+      CacheControl: 'no-store',
+    })
+  );
+
+  logger.info('Generated artefact uploaded', {
+    requestId,
+    jobId,
+    format,
+    outputKey,
+    bytes: body.length,
+  });
+
+  const url = await presignDownload(outputKey, rawFilename, format);
+  return jsonOk(url, format, outputKey, requestOrigin);
+}
+
+/**
+ * Build a 15-minute presigned GET URL for an S3 object. We set
+ * `ResponseContentDisposition` so the browser preserves the suggested
+ * filename even though the request hits S3 directly (the presigned URL
+ * carries it as a query parameter).
+ */
+async function presignDownload(
+  key: string,
+  rawFilename: string | undefined,
+  format: 'epub' | 'pdf'
+): Promise<string> {
+  const ext = OUTPUT_FORMAT_FILE_EXTENSIONS[format];
+  const baseName = (rawFilename ? rawFilename.replace(/\.[^.]+$/, '') : 'translation').replace(
+    /[/\\]/g,
+    '_'
+  );
+  const safe = /^[\w\-. ]+$/.test(baseName) ? baseName : 'translation';
+  const filename = `translated_${safe}.${ext}`;
+
+  return await getSignedUrl(
+    s3Client,
+    new GetObjectCommand({
+      Bucket: DOCUMENT_BUCKET,
+      Key: key,
+      ResponseContentDisposition: `attachment; filename="${filename}"`,
+      ResponseContentType: OUTPUT_FORMAT_CONTENT_TYPES[format],
+    }),
+    { expiresIn: PRESIGNED_URL_TTL_SECONDS }
+  );
+}
+
+/**
+ * Build the JSON-envelope success response for ePub/PDF downloads.
+ *
+ * Shape:
+ *   { format: 'epub' | 'pdf',
+ *     downloadUrl: string,
+ *     expiresInSeconds: number,
+ *     objectKey: string }
+ *
+ * Frontend reads `downloadUrl` and triggers a `window.location =` (or an
+ * anchor.click()) — the browser fetches direct from S3 with no Lambda
+ * round trip for the actual bytes.
+ */
+function jsonOk(
+  url: string,
+  format: 'epub' | 'pdf',
+  objectKey: string,
+  requestOrigin: string | undefined
+): APIGatewayProxyResult {
+  return {
+    statusCode: 200,
+    headers: {
+      ...getCorsHeaders(requestOrigin),
+      'Content-Type': 'application/json',
+      'Cache-Control': 'no-store',
+    },
+    body: JSON.stringify({
+      format,
+      downloadUrl: url,
+      expiresInSeconds: PRESIGNED_URL_TTL_SECONDS,
+      objectKey,
+    }),
+    isBase64Encoded: false,
+  };
+}
