@@ -100,10 +100,17 @@ The translation workflow UI provides a complete user experience for:
   - Percentage complete
   - Chunks completed / total chunks
   - Progress bar with animation
-- ✅ Download functionality
-  - Download button enabled when completed
-  - Automatic filename generation
-  - Error handling for download failures
+- ✅ Download functionality (multi-format — issue #28)
+  - Three independent download buttons: Markdown, ePub, PDF
+  - Markdown returns text/plain inline; ePub & PDF return a 15-min
+    presigned S3 URL (envelope: `{ format, downloadUrl, expiresInSeconds,
+objectKey }`) and the SPA navigates the browser direct to S3
+  - Per-format loading state — only the clicked button shows a spinner;
+    siblings are disabled until that conversion completes
+  - Automatic filename generation (`translated_<original>.{txt,epub,pdf}`)
+  - Cache-by-S3-key on the backend — second request for the same
+    job+format reuses the existing artefact (no double conversion)
+  - Error handling for download failures (format-specific messaging)
 - ✅ Error handling and retry logic
   - Automatic retry for transient failures
   - User-friendly error messages
