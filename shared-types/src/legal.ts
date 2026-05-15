@@ -236,21 +236,15 @@ export interface LegalAttestationPayload {
 }
 
 export const legalAttestationPayloadSchema = z.object({
-  acceptCopyrightOwnership: z
-    .boolean()
-    .refine((val) => val === true, {
-      message: 'acceptCopyrightOwnership must be true to upload',
-    }),
-  acceptTranslationRights: z
-    .boolean()
-    .refine((val) => val === true, {
-      message: 'acceptTranslationRights must be true to upload',
-    }),
-  acceptLiabilityTerms: z
-    .boolean()
-    .refine((val) => val === true, {
-      message: 'acceptLiabilityTerms must be true to upload',
-    }),
+  acceptCopyrightOwnership: z.boolean().refine((val) => val === true, {
+    message: 'acceptCopyrightOwnership must be true to upload',
+  }),
+  acceptTranslationRights: z.boolean().refine((val) => val === true, {
+    message: 'acceptTranslationRights must be true to upload',
+  }),
+  acceptLiabilityTerms: z.boolean().refine((val) => val === true, {
+    message: 'acceptLiabilityTerms must be true to upload',
+  }),
   userIPAddress: z.string().optional(),
   userAgent: z.string().optional(),
   timestamp: z.string().optional(),

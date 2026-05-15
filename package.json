@@ -54,6 +54,7 @@
     "minimatch": "^9.0.7"
   },
   "devDependencies": {
+    "lint-staged": "^16.4.0",
     "prettier": "^3.8.1"
   }
 }

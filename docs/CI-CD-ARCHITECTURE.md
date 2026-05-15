@@ -6,11 +6,11 @@ workflows in this repository.
 
 ## Files
 
-| File | Purpose | Trigger |
-|---|---|---|
-| `.github/workflows/ci.yml` | PR-time gates (lint, format, type-check, full unit tests, security audit, workflow lint) | All PRs targeting `main`/`develop`; pushes to non-main branches |
-| `.github/workflows/deploy-backend.yml` | Backend deploy + API verification (CDK deploy of Lambdas/DynamoDB/API Gateway/Step Functions, smoke tests against the deployed API, integration tests) | `push` to `main` touching `backend/**`, `shared-types/**`, or the workflow file itself; `workflow_dispatch` for staging/prod |
-| `.github/workflows/deploy-frontend.yml` | Frontend deploy + browser verification (S3 sync, CloudFront invalidation, Playwright smoke + E2E) | `push` to `main` touching `frontend/**`, `shared-types/**`, or the workflow file itself; `workflow_dispatch` for manual redeploy |
+| File                                    | Purpose                                                                                                                                                | Trigger                                                                                                                          |
+| --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------- |
+| `.github/workflows/ci.yml`              | PR-time gates (lint, format, type-check, full unit tests, security audit, workflow lint)                                                               | All PRs targeting `main`/`develop`; pushes to non-main branches                                                                  |
+| `.github/workflows/deploy-backend.yml`  | Backend deploy + API verification (CDK deploy of Lambdas/DynamoDB/API Gateway/Step Functions, smoke tests against the deployed API, integration tests) | `push` to `main` touching `backend/**`, `shared-types/**`, or the workflow file itself; `workflow_dispatch` for staging/prod     |
+| `.github/workflows/deploy-frontend.yml` | Frontend deploy + browser verification (S3 sync, CloudFront invalidation, Playwright smoke + E2E)                                                      | `push` to `main` touching `frontend/**`, `shared-types/**`, or the workflow file itself; `workflow_dispatch` for manual redeploy |
 
 ## Why the split (Issue #157)
 
@@ -31,10 +31,10 @@ runs only what's relevant.
 
 ### Performance impact
 
-| Commit type | Before | After |
-|---|---|---|
-| Backend-only | ~15-20 min (full pipeline) | ~15-20 min (deploy-backend.yml only) |
-| Frontend-only | ~15-20 min (full pipeline) | ~5-7 min (deploy-frontend.yml only) |
+| Commit type           | Before                     | After                                              |
+| --------------------- | -------------------------- | -------------------------------------------------- |
+| Backend-only          | ~15-20 min (full pipeline) | ~15-20 min (deploy-backend.yml only)               |
+| Frontend-only         | ~15-20 min (full pipeline) | ~5-7 min (deploy-frontend.yml only)                |
 | `shared-types` change | ~15-20 min (full pipeline) | ~15-20 min (both run, sequentially or in parallel) |
 
 ## Shared-types contract
@@ -92,10 +92,10 @@ message.
 GitHub branch-protection identifies required status checks by job name
 string. The split changes the names of the deploy-time test jobs:
 
-| Old required check (in branch protection) | New required check(s) |
-|---|---|
-| `Run Tests` | `Run Tests (Backend)` AND `Run Tests (Frontend)` |
-| `Build Infrastructure` | `Build Infrastructure` (unchanged — still in ci.yml) |
+| Old required check (in branch protection) | New required check(s)                                |
+| ----------------------------------------- | ---------------------------------------------------- |
+| `Run Tests`                               | `Run Tests (Backend)` AND `Run Tests (Frontend)`     |
+| `Build Infrastructure`                    | `Build Infrastructure` (unchanged — still in ci.yml) |
 
 After this PR merges, a repo admin must update the main branch
 protection rule (Settings → Branches → main → Require status checks)

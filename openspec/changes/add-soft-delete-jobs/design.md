@@ -8,12 +8,14 @@ Constraint: POC budget — no DynamoDB Streams, no SQS, no multi-region replicat
 ## Goals / Non-Goals
 
 Goals:
+
 - User-initiated delete immediately hides the job from all list/get endpoints (user intent honored).
 - S3 objects are guaranteed to be deleted eventually (within ≤32 days: 30d TTL + 2d DynamoDB TTL SLA).
 - Audit trail (DDB record) survives for the retention window.
 - No new read-path latency for `GET /jobs` or `GET /jobs/{jobId}`.
 
 Non-Goals:
+
 - GDPR right-to-erasure within 30 days without a dedicated sweep: DynamoDB TTL SLA is 48h past the TTL timestamp, so the scheduled Lambda must sweep explicitly (not rely on TTL alone) if the 30-day window is a hard contractual requirement. This proposal treats the window as advisory for POC.
 - Undo/restore endpoint — out of scope for POC.
 - Streaming delete events via DynamoDB Streams or EventBridge Pipes — unnecessary complexity for daily batch.
@@ -21,20 +23,24 @@ Non-Goals:
 ## Decisions
 
 **Decision: UpdateItem (status + TTL) in the request path; S3 delete deferred to scheduled Lambda.**
+
 - Keeps the delete request fast (one DDB write, no S3 calls).
 - Eliminates the `warning` field from the API response (the source of the current S3-cleanup UX ambiguity).
 - Scheduled Lambda retries on failure — no partial-state problem.
 
 Alternatives considered:
+
 - Hard-delete + DDB Streams → SQS → purge worker: operationally complex for POC. Adds DDB Streams cost and SQS queue management.
 - Hard-delete + synchronous S3 cleanup (current): no audit trail; orphan risk on S3 failure.
 - TTL-only (no scheduled Lambda): DynamoDB TTL SLA is ≤48h past expiry, not instant. S3 keys are not cleaned by TTL. Rejected.
 
 **Decision: `FilterExpression status <> :deleted` in listJobs instead of a secondary GSI.**
+
 - GSI for `status` would require a GSI partition key with acceptable cardinality. `'DELETED'` is a sparse value — a GSI on status would not be evenly distributed. FilterExpression post-scan is acceptable given `MAX_ITEMS = 100` and the expectation that deleted-but-not-yet-purged records are rare.
 - Rejected: sparse-GSI approach.
 
 **Decision: Purge Lambda triggered by EventBridge Scheduler (daily cron), not TTL Streams.**
+
 - DynamoDB TTL stream events are not guaranteed to fire within the 48h SLA and require DynamoDB Streams to be enabled (added cost). A daily cron is deterministic and auditable.
 - Scheduling: `cron(0 3 * * ? *)` UTC — 3 AM daily, low-traffic window.
 

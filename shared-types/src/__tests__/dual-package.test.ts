@@ -58,10 +58,10 @@ describe('Dual-package boundary contract (PR #203 R4)', () => {
   beforeAll(() => {
     if (!fs.existsSync(CJS_ENTRY) || !fs.existsSync(ESM_ENTRY)) {
       throw new Error(
-        `Dual-package contract tests require a built dist/. Run \`npm run build\` `
-          + `before \`npm test\`. Missing entries:\n`
-          + `  CJS: ${CJS_ENTRY} ${fs.existsSync(CJS_ENTRY) ? '✓' : '✗'}\n`
-          + `  ESM: ${ESM_ENTRY} ${fs.existsSync(ESM_ENTRY) ? '✓' : '✗'}`
+        `Dual-package contract tests require a built dist/. Run \`npm run build\` ` +
+          `before \`npm test\`. Missing entries:\n` +
+          `  CJS: ${CJS_ENTRY} ${fs.existsSync(CJS_ENTRY) ? '✓' : '✗'}\n` +
+          `  ESM: ${ESM_ENTRY} ${fs.existsSync(ESM_ENTRY) ? '✓' : '✗'}`
       );
     }
   });
@@ -93,8 +93,8 @@ describe('Dual-package boundary contract (PR #203 R4)', () => {
         const absPath = path.resolve(PKG_ROOT, relPath);
         if (!fs.existsSync(absPath)) {
           throw new Error(
-            `package.json exports map references non-existent path: ${relPath} `
-              + `(resolved to ${absPath})`
+            `package.json exports map references non-existent path: ${relPath} ` +
+              `(resolved to ${absPath})`
           );
         }
       }
@@ -155,11 +155,9 @@ describe('Dual-package boundary contract (PR #203 R4)', () => {
         const missing = ${JSON.stringify(REQUIRED_EXPORTS)}.filter(k => !(k in m));
         process.stdout.write(JSON.stringify({ keyCount: keys.length, missing }));
       `;
-      const stdout = execFileSync(
-        process.execPath,
-        ['--input-type=module', '--eval', probe],
-        { encoding: 'utf8' }
-      );
+      const stdout = execFileSync(process.execPath, ['--input-type=module', '--eval', probe], {
+        encoding: 'utf8',
+      });
       const result = JSON.parse(stdout) as { keyCount: number; missing: string[] };
       expect(result.missing).toEqual([]);
       expect(result.keyCount).toBeGreaterThanOrEqual(REQUIRED_EXPORTS.length);

@@ -170,10 +170,9 @@ async function startTranslation(
   } catch (error: unknown) {
     // axios errors carry response?.data?.message; fall back to Error.message,
     // then stringify anything else (shouldn't happen in practice).
-    const axiosMessage =
-      (error as { response?: { data?: { message?: string } } })?.response?.data?.message;
-    const message =
-      axiosMessage ?? (error instanceof Error ? error.message : String(error));
+    const axiosMessage = (error as { response?: { data?: { message?: string } } })?.response?.data
+      ?.message;
+    const message = axiosMessage ?? (error instanceof Error ? error.message : String(error));
     throw new Error(`Translation start failed: ${message}`);
   }
 }
@@ -234,10 +233,9 @@ async function waitForTranslationComplete(
       // Wait before next poll
       await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
     } catch (error: unknown) {
-      const axiosMessage =
-        (error as { response?: { data?: { message?: string } } })?.response?.data?.message;
-      const message =
-        axiosMessage ?? (error instanceof Error ? error.message : String(error));
+      const axiosMessage = (error as { response?: { data?: { message?: string } } })?.response?.data
+        ?.message;
+      const message = axiosMessage ?? (error instanceof Error ? error.message : String(error));
       throw new Error(`Status polling failed: ${message}`);
     }
   }
@@ -298,8 +296,7 @@ async function runBenchmark(
         jobCreatedAtMs = Date.parse(initialSnapshot.createdAt);
       }
     } catch (snapshotErr: unknown) {
-      const message =
-        snapshotErr instanceof Error ? snapshotErr.message : String(snapshotErr);
+      const message = snapshotErr instanceof Error ? snapshotErr.message : String(snapshotErr);
       console.log(
         `   ⚠️  Could not read initial status for createdAt (${message}); will fall back to client clock.`
       );
@@ -314,7 +311,12 @@ async function runBenchmark(
       ? Date.parse(finalSnapshot.translationCompletedAt)
       : undefined;
 
-    if (jobCreatedAtMs !== undefined && completedAtMs !== undefined && !Number.isNaN(jobCreatedAtMs) && !Number.isNaN(completedAtMs)) {
+    if (
+      jobCreatedAtMs !== undefined &&
+      completedAtMs !== undefined &&
+      !Number.isNaN(jobCreatedAtMs) &&
+      !Number.isNaN(completedAtMs)
+    ) {
       // Both anchors are server-side: most accurate duration.
       result.startTime = jobCreatedAtMs;
       result.endTime = completedAtMs;
@@ -344,9 +346,7 @@ async function runBenchmark(
     console.log(
       `   ✅ Completed in ${result.durationMinutes.toFixed(2)} minutes (${result.serverTimestamped ? 'server-timestamped' : 'client-clock fallback'})`
     );
-    console.log(
-      `   📊 Throughput: ${result.throughputWordsPerMinute.toFixed(0)} words/minute`
-    );
+    console.log(`   📊 Throughput: ${result.throughputWordsPerMinute.toFixed(0)} words/minute`);
   } catch (error: unknown) {
     // On failure, we may not have server timestamps — use client clock as a
     // best effort so a partial duration is still captured for triage.
@@ -407,11 +407,8 @@ function generateReport(config: BenchmarkConfig, results: BenchmarkResult[]): Be
   // If no sizes were measured (e.g. all runs failed), target is not met.
   const size65kMet = averageDuration65k !== undefined ? averageDuration65k <= 5 : undefined;
   const size400kMet = averageDuration400k !== undefined ? averageDuration400k <= 25 : undefined;
-  const measuredResults = [size65kMet, size400kMet].filter(
-    (v): v is boolean => v !== undefined
-  );
-  const performanceTargetMet =
-    measuredResults.length > 0 && measuredResults.every((met) => met);
+  const measuredResults = [size65kMet, size400kMet].filter((v): v is boolean => v !== undefined);
+  const performanceTargetMet = measuredResults.length > 0 && measuredResults.every((met) => met);
 
   return {
     timestamp: new Date().toISOString(),

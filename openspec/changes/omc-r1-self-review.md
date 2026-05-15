@@ -7,27 +7,27 @@ Date: 2026-05-11
 
 ### Category pass/fail matrix
 
-| Category | Result | Notes |
-|---|---|---|
-| Architecture / SOLID | PASS | ACL intact; cursor is opaque base64; SRP upheld in mapper |
-| Type safety | PASS | No `any` in production paths; `[key: string]: unknown` index signature correct |
-| Test coverage | PASS | 16 listJobs tests; regression guards on #229 reversion |
-| Security | PASS | Dual defense: GSI scope + userId cursor validation |
-| IAM | PASS | CDK emits GSI-scoped `dynamodb:Query`; no table-level grant |
-| Boy-scout | PASS | `timeout-minutes` added to all 3 long-running CI jobs |
-| PR alignment | PASS | No conflict with #238/#239 in main |
-| Performance | PASS | Single-page DDB Query unchanged; cursor adds no surface |
-| OpenSpec validation | PASS | Both changes pass `--strict` |
+| Category             | Result | Notes                                                                          |
+| -------------------- | ------ | ------------------------------------------------------------------------------ |
+| Architecture / SOLID | PASS   | ACL intact; cursor is opaque base64; SRP upheld in mapper                      |
+| Type safety          | PASS   | No `any` in production paths; `[key: string]: unknown` index signature correct |
+| Test coverage        | PASS   | 16 listJobs tests; regression guards on #229 reversion                         |
+| Security             | PASS   | Dual defense: GSI scope + userId cursor validation                             |
+| IAM                  | PASS   | CDK emits GSI-scoped `dynamodb:Query`; no table-level grant                    |
+| Boy-scout            | PASS   | `timeout-minutes` added to all 3 long-running CI jobs                          |
+| PR alignment         | PASS   | No conflict with #238/#239 in main                                             |
+| Performance          | PASS   | Single-page DDB Query unchanged; cursor adds no surface                        |
+| OpenSpec validation  | PASS   | Both changes pass `--strict`                                                   |
 
 ---
 
 ### Findings
 
-| Severity | Category | Finding | Resolution |
-|---|---|---|---|
-| Medium | Security | `decodeCursor` treats a valid base64url-encoded `null` JSON literal as malformed (returns null) — correct behavior, but the check against `Array.isArray(parsed)` is redundant since `null` is already excluded by `parsed === null`. | No code change required; redundancy is harmless defense-in-depth. Filed as style note. |
-| Low | Architecture | `ListJobsEnvelope.nextCursor` is marked `?` (optional) but the index signature `[key: string]: unknown` widens the type to allow `nextCursor: undefined` via the index path simultaneously — TypeScript permits this but callers must use `'nextCursor' in body` rather than truthiness when the cursor might be the string `"0"`. | Not an issue in practice (base64url cursors are never falsy edge-case strings). No change. |
-| Low | CI | `production-smoke-tests` job in `deploy-frontend.yml` has no `timeout-minutes`. This job is not in the deploy-${ref} concurrency hot path (it runs after `deploy-dev-frontend`, which is the locked job), so a hang here blocks only the smoke-test step, not subsequent queued deploys. Risk is lower than #240. | Filed as follow-up. Not addressed in this PR (YAGNI — no prior incident). |
+| Severity | Category     | Finding                                                                                                                                                                                                                                                                                                                            | Resolution                                                                                 |
+| -------- | ------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| Medium   | Security     | `decodeCursor` treats a valid base64url-encoded `null` JSON literal as malformed (returns null) — correct behavior, but the check against `Array.isArray(parsed)` is redundant since `null` is already excluded by `parsed === null`.                                                                                              | No code change required; redundancy is harmless defense-in-depth. Filed as style note.     |
+| Low      | Architecture | `ListJobsEnvelope.nextCursor` is marked `?` (optional) but the index signature `[key: string]: unknown` widens the type to allow `nextCursor: undefined` via the index path simultaneously — TypeScript permits this but callers must use `'nextCursor' in body` rather than truthiness when the cursor might be the string `"0"`. | Not an issue in practice (base64url cursors are never falsy edge-case strings). No change. |
+| Low      | CI           | `production-smoke-tests` job in `deploy-frontend.yml` has no `timeout-minutes`. This job is not in the deploy-${ref} concurrency hot path (it runs after `deploy-dev-frontend`, which is the locked job), so a hang here blocks only the smoke-test step, not subsequent queued deploys. Risk is lower than #240.                  | Filed as follow-up. Not addressed in this PR (YAGNI — no prior incident).                  |
 
 No Critical or High findings. No code changes required from this review.
 
@@ -52,11 +52,11 @@ No Critical or High findings. No code changes required from this review.
 
 ### Test results (all packages)
 
-| Package | Tests | Skipped | Result |
-|---|---|---|---|
-| `backend/functions` | 563 | 3 (pre-existing) | PASS |
-| `frontend` | 761 | 14 (pre-existing) | PASS |
-| `backend/infrastructure` CDK synth | n/a | — | PASS |
-| shared-types build | n/a | — | PASS |
-| Backend lint + prettier | n/a | — | PASS |
-| Frontend lint + prettier + tsc | n/a | — | PASS |
+| Package                            | Tests | Skipped           | Result |
+| ---------------------------------- | ----- | ----------------- | ------ |
+| `backend/functions`                | 563   | 3 (pre-existing)  | PASS   |
+| `frontend`                         | 761   | 14 (pre-existing) | PASS   |
+| `backend/infrastructure` CDK synth | n/a   | —                 | PASS   |
+| shared-types build                 | n/a   | —                 | PASS   |
+| Backend lint + prettier            | n/a   | —                 | PASS   |
+| Frontend lint + prettier + tsc     | n/a   | —                 | PASS   |

@@ -540,7 +540,14 @@ jobs:
   ci-summary:
     name: CI Summary
     runs-on: ubuntu-latest
-    needs: [test, build-infrastructure, lint-and-format, security-scan, test-frontend, workflow-lint] # test-e2e temporarily disabled
+    needs: [
+        test,
+        build-infrastructure,
+        lint-and-format,
+        security-scan,
+        test-frontend,
+        workflow-lint,
+      ] # test-e2e temporarily disabled
     if: always()
 
     steps:

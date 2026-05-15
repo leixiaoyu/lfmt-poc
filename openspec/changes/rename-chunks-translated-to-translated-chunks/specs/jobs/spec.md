@@ -8,6 +8,7 @@ DynamoDB column name, eliminating the 3-tier naming drift between DDB, wire, and
 frontend documented in issue #229.
 
 Affected endpoints:
+
 - `GET /v1/jobs/{jobId}/translation-status` → `TranslationStatusApiResponse.translatedChunks`
 - `POST /v1/jobs/{jobId}/translate` → `StartTranslationApiResponse.translatedChunks`
 

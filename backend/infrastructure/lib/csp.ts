@@ -87,20 +87,22 @@ export interface BuildCspOptions {
  * refactor. The order matches the conventional CSP write order so the
  * resulting string reads naturally in a violation-report dashboard.
  */
-const DEFAULT_DIRECTIVES: Required<Pick<
-  CspDirectives,
-  | 'default-src'
-  | 'script-src'
-  | 'style-src'
-  | 'img-src'
-  | 'font-src'
-  | 'connect-src'
-  | 'object-src'
-  | 'base-uri'
-  | 'form-action'
-  | 'frame-ancestors'
-  | 'upgrade-insecure-requests'
->> = {
+const DEFAULT_DIRECTIVES: Required<
+  Pick<
+    CspDirectives,
+    | 'default-src'
+    | 'script-src'
+    | 'style-src'
+    | 'img-src'
+    | 'font-src'
+    | 'connect-src'
+    | 'object-src'
+    | 'base-uri'
+    | 'form-action'
+    | 'frame-ancestors'
+    | 'upgrade-insecure-requests'
+  >
+> = {
   'default-src': ["'self'"],
   'script-src': ["'self'"],
   // 'unsafe-inline' is RETAINED on style-src for now (Issue #254 — split
@@ -169,7 +171,8 @@ export function buildCsp(opts: BuildCspOptions = {}): string {
 
   const parts: string[] = [];
   for (const directive of EMISSION_ORDER) {
-    const sources = overrides[directive] ?? DEFAULT_DIRECTIVES[directive as keyof typeof DEFAULT_DIRECTIVES];
+    const sources =
+      overrides[directive] ?? DEFAULT_DIRECTIVES[directive as keyof typeof DEFAULT_DIRECTIVES];
     if (sources === undefined) continue; // omitted directive (e.g., report-uri unless overridden)
     if (sources.length === 0) {
       // Sourceless directive (only legal for `upgrade-insecure-requests`).
@@ -205,9 +208,7 @@ export function buildCsp(opts: BuildCspOptions = {}): string {
  */
 export function assertValidCspReportUri(reportUri: string): void {
   if (typeof reportUri !== 'string') {
-    throw new Error(
-      `Invalid CSP reportUri: must be a string (got: ${typeof reportUri})`
-    );
+    throw new Error(`Invalid CSP reportUri: must be a string (got: ${typeof reportUri})`);
   }
 
   // Forbidden characters: whitespace + CSP-grammar separators. This check
@@ -255,17 +256,13 @@ export function assertValidCspReportUri(reportUri: string): void {
   try {
     parsed = new URL(reportUri);
   } catch {
-    throw new Error(
-      `Invalid CSP reportUri: not a valid URL (got: ${JSON.stringify(reportUri)})`
-    );
+    throw new Error(`Invalid CSP reportUri: not a valid URL (got: ${JSON.stringify(reportUri)})`);
   }
 
   if (parsed.protocol !== 'https:') {
     // Redundant guard — we already prefix-checked. Keeping it in case the
     // URL parser normalises a weird scheme into something non-https
     // (e.g., `javascript://` does parse, with a non-https protocol).
-    throw new Error(
-      `Invalid CSP reportUri: protocol must be https: (got: ${parsed.protocol})`
-    );
+    throw new Error(`Invalid CSP reportUri: protocol must be https: (got: ${parsed.protocol})`);
   }
 }

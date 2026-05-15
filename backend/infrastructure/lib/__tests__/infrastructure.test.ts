@@ -548,10 +548,7 @@ describe('LFMT Infrastructure Stack', () => {
       // Collect all policies that attach to translationRole via Roles property
       const policiesAttachedToTranslationRole = Object.entries(resources).filter(([, r]) => {
         const res = r as { Type?: string; Properties?: { Roles?: unknown[] } };
-        if (
-          res.Type !== 'AWS::IAM::ManagedPolicy' &&
-          res.Type !== 'AWS::IAM::Policy'
-        ) return false;
+        if (res.Type !== 'AWS::IAM::ManagedPolicy' && res.Type !== 'AWS::IAM::Policy') return false;
         const roles = res.Properties?.Roles ?? [];
         return JSON.stringify(roles).includes(translationRoleLogicalId);
       });
@@ -1507,7 +1504,8 @@ describe('LFMT Infrastructure Stack', () => {
         //    Either form is acceptable — we just need to prove the bucket
         //    is enumerated, not that a particular CFN intrinsic was used.
         const hasBucketLiteral = flat.includes('lfmt-documents-test');
-        const hasBucketGetAtt = flat.includes('DocumentBucket') && flat.includes('RegionalDomainName');
+        const hasBucketGetAtt =
+          flat.includes('DocumentBucket') && flat.includes('RegionalDomainName');
         expect(hasBucketLiteral || hasBucketGetAtt).toBe(true);
 
         // 3. connect-src directive must still start with 'self' and
@@ -1542,26 +1540,22 @@ describe('LFMT Infrastructure Stack', () => {
     test('Document bucket CORS includes CloudFront distribution origin', () => {
       const buckets = template.findResources('AWS::S3::Bucket');
       const docBucketEntry = Object.entries(buckets).find(([, bucket]) => {
-        const bucketName = (bucket as { Properties?: { BucketName?: unknown } })
-          .Properties?.BucketName;
+        const bucketName = (bucket as { Properties?: { BucketName?: unknown } }).Properties
+          ?.BucketName;
         // Document bucket has BucketName = `lfmt-documents-<stack>`.
         if (typeof bucketName === 'string') return bucketName.includes('lfmt-documents');
         // Token form (Fn::Join) — match on the literal segment.
-        const join = (bucketName as { 'Fn::Join'?: [string, unknown[]] })?.[
-          'Fn::Join'
-        ];
+        const join = (bucketName as { 'Fn::Join'?: [string, unknown[]] })?.['Fn::Join'];
         return Array.isArray(join?.[1])
-          ? join[1].some(
-              (part) => typeof part === 'string' && part.includes('lfmt-documents')
-            )
+          ? join[1].some((part) => typeof part === 'string' && part.includes('lfmt-documents'))
           : false;
       });
 
       expect(docBucketEntry).toBeDefined();
       const [, docBucket] = docBucketEntry!;
       const corsRules =
-        (docBucket as { Properties?: { CorsConfiguration?: { CorsRules?: unknown[] } } })
-          .Properties?.CorsConfiguration?.CorsRules ?? [];
+        (docBucket as { Properties?: { CorsConfiguration?: { CorsRules?: unknown[] } } }).Properties
+          ?.CorsConfiguration?.CorsRules ?? [];
       expect(Array.isArray(corsRules)).toBe(true);
       // Two rules expected: (1) the initial localhost-dev rule from
       // `createS3Buckets` and (2) the CloudFront-origin rule appended
@@ -1585,9 +1579,7 @@ describe('LFMT Infrastructure Stack', () => {
       // Use Match.arrayWith semantics — the CloudFront dev origin must
       // be present somewhere in the union of CORS rules.
       expect(allOrigins).toEqual(
-        expect.arrayContaining([
-          expect.stringMatching(/d39xcun7144jgl\.cloudfront\.net/),
-        ])
+        expect.arrayContaining([expect.stringMatching(/d39xcun7144jgl\.cloudfront\.net/)])
       );
     });
 
@@ -1640,9 +1632,9 @@ describe('LFMT Infrastructure Stack', () => {
   //                                 a test-visible Lambda doesn't silently
   //                                 corrupt the drift-guard scope.
   const isApplicationLambda = (logicalId: string): boolean =>
-    !logicalId.startsWith('Custom')
-    && !logicalId.startsWith('BucketNotificationsHandler')
-    && !logicalId.startsWith('LogRetention');
+    !logicalId.startsWith('Custom') &&
+    !logicalId.startsWith('BucketNotificationsHandler') &&
+    !logicalId.startsWith('LogRetention');
 
   // PR #203 R4 item 2: pin exact application-Lambda count instead of a
   // loose `>= N` floor. Drift guards should fail loudly on ANY headcount
@@ -1682,9 +1674,9 @@ describe('LFMT Infrastructure Stack', () => {
       const allLambdas = template.findResources('AWS::Lambda::Function');
       const appNodeLambdas = Object.entries(allLambdas).filter(
         ([logicalId, fn]: [string, any]) =>
-          isApplicationLambda(logicalId)
-          && typeof fn.Properties?.Runtime === 'string'
-          && fn.Properties.Runtime.startsWith('nodejs')
+          isApplicationLambda(logicalId) &&
+          typeof fn.Properties?.Runtime === 'string' &&
+          fn.Properties.Runtime.startsWith('nodejs')
       );
 
       // R4: exact-count pin (was `>= 12` — accidentally satisfied by 11
@@ -1696,8 +1688,8 @@ describe('LFMT Infrastructure Stack', () => {
         // Lambda so CI output points straight at the regression.
         if (fn.Properties.Runtime !== 'nodejs22.x') {
           throw new Error(
-            `Application Lambda ${logicalId} runtime is `
-              + `${fn.Properties.Runtime}, expected nodejs22.x`
+            `Application Lambda ${logicalId} runtime is ` +
+              `${fn.Properties.Runtime}, expected nodejs22.x`
           );
         }
         expect(fn.Properties.Runtime).toBe('nodejs22.x');
@@ -1732,9 +1724,9 @@ describe('LFMT Infrastructure Stack', () => {
       const allLambdas = template.findResources('AWS::Lambda::Function');
       const appNodeLambdas = Object.entries(allLambdas).filter(
         ([logicalId, fn]: [string, any]) =>
-          isApplicationLambda(logicalId)
-          && typeof fn.Properties?.Runtime === 'string'
-          && fn.Properties.Runtime.startsWith('nodejs')
+          isApplicationLambda(logicalId) &&
+          typeof fn.Properties?.Runtime === 'string' &&
+          fn.Properties.Runtime.startsWith('nodejs')
       );
 
       // R4: exact-count pin (was `>= 10`). Same headcount contract as
@@ -1746,11 +1738,13 @@ describe('LFMT Infrastructure Stack', () => {
         // CDK serializes Architecture into the `Architectures` array
         // on the CFN resource (note the plural — Lambda's CFN schema
         // accepts a single-element array, not a scalar).
-        if (!Array.isArray(fn.Properties.Architectures)
-            || fn.Properties.Architectures[0] !== 'arm64') {
+        if (
+          !Array.isArray(fn.Properties.Architectures) ||
+          fn.Properties.Architectures[0] !== 'arm64'
+        ) {
           throw new Error(
-            `Application Lambda ${logicalId} architecture is `
-              + `${JSON.stringify(fn.Properties.Architectures)}, expected ["arm64"]`
+            `Application Lambda ${logicalId} architecture is ` +
+              `${JSON.stringify(fn.Properties.Architectures)}, expected ["arm64"]`
           );
         }
         expect(fn.Properties.Architectures).toEqual(['arm64']);
@@ -1770,16 +1764,14 @@ describe('LFMT Infrastructure Stack', () => {
       const allLambdas = template.findResources('AWS::Lambda::Function');
       const appNodeLambdas = Object.entries(allLambdas).filter(
         ([logicalId, fn]: [string, any]) =>
-          isApplicationLambda(logicalId)
-          && typeof fn.Properties?.Runtime === 'string'
-          && fn.Properties.Runtime.startsWith('nodejs')
+          isApplicationLambda(logicalId) &&
+          typeof fn.Properties?.Runtime === 'string' &&
+          fn.Properties.Runtime.startsWith('nodejs')
       );
       appNodeLambdas.forEach(([logicalId, fn]: [string, any]) => {
         const archs = fn.Properties.Architectures ?? [];
         if (Array.isArray(archs) && archs.includes('x86_64')) {
-          throw new Error(
-            `Application Lambda ${logicalId} declares x86_64 - must be arm64`
-          );
+          throw new Error(`Application Lambda ${logicalId} declares x86_64 - must be arm64`);
         }
         expect(archs).not.toContain('x86_64');
       });
@@ -1829,14 +1821,17 @@ describe('LFMT Infrastructure Stack', () => {
         if (typeof node === 'object') {
           for (const [key, value] of Object.entries(node as Record<string, unknown>)) {
             if (
-              (key === 'Description' || key === 'description')
-              && typeof value === 'string'
-              && !awsAllowedDescription.test(value)
+              (key === 'Description' || key === 'description') &&
+              typeof value === 'string' &&
+              !awsAllowedDescription.test(value)
             ) {
               // Surface the offending character(s) for fast triage.
               const offenders = [...value]
                 .filter((ch) => !awsAllowedDescription.test(ch))
-                .map((ch) => `U+${ch.codePointAt(0)!.toString(16).padStart(4, '0').toUpperCase()} ('${ch}')`)
+                .map(
+                  (ch) =>
+                    `U+${ch.codePointAt(0)!.toString(16).padStart(4, '0').toUpperCase()} ('${ch}')`
+                )
                 .join(', ');
               violations.push(
                 `${path}.${key} contains chars outside AWS Latin-1 range: ${offenders}\n  value: ${value.slice(0, 120)}`
@@ -1852,8 +1847,8 @@ describe('LFMT Infrastructure Stack', () => {
       // CI run surfaces every offender (not just the first).
       if (violations.length > 0) {
         throw new Error(
-          `Found ${violations.length} Description field(s) with characters AWS will reject:\n\n`
-            + violations.join('\n\n')
+          `Found ${violations.length} Description field(s) with characters AWS will reject:\n\n` +
+            violations.join('\n\n')
         );
       }
       expect(violations).toEqual([]);
@@ -1883,8 +1878,8 @@ describe('LFMT Infrastructure Stack', () => {
       // PutObject + DeleteObject on the full bucket.  The dedicated
       // DownloadTranslationLambdaRole is read-only on translated/* only.
       const functions = template.findResources('AWS::Lambda::Function');
-      const downloadFn = Object.values(functions).find((fn: any) =>
-        fn.Properties?.FunctionName === 'lfmt-download-translation-test'
+      const downloadFn = Object.values(functions).find(
+        (fn: any) => fn.Properties?.FunctionName === 'lfmt-download-translation-test'
       ) as any;
 
       expect(downloadFn).toBeDefined();
@@ -2038,8 +2033,8 @@ describe('LFMT Infrastructure Stack — multi-environment CORS (PR #214 OMC R2)'
   const documentBucketCorsRules = (template: Template): unknown[] => {
     const buckets = template.findResources('AWS::S3::Bucket');
     const docBucketEntry = Object.entries(buckets).find(([, bucket]) => {
-      const bucketName = (bucket as { Properties?: { BucketName?: unknown } })
-        .Properties?.BucketName;
+      const bucketName = (bucket as { Properties?: { BucketName?: unknown } }).Properties
+        ?.BucketName;
       if (typeof bucketName === 'string') return bucketName.includes('lfmt-documents');
       const join = (bucketName as { 'Fn::Join'?: [string, unknown[]] })?.['Fn::Join'];
       return Array.isArray(join?.[1])
@@ -2049,8 +2044,8 @@ describe('LFMT Infrastructure Stack — multi-environment CORS (PR #214 OMC R2)'
     expect(docBucketEntry).toBeDefined();
     const [, docBucket] = docBucketEntry!;
     return (
-      (docBucket as { Properties?: { CorsConfiguration?: { CorsRules?: unknown[] } } })
-        .Properties?.CorsConfiguration?.CorsRules ?? []
+      (docBucket as { Properties?: { CorsConfiguration?: { CorsRules?: unknown[] } } }).Properties
+        ?.CorsConfiguration?.CorsRules ?? []
     );
   };
 
@@ -2068,50 +2063,47 @@ describe('LFMT Infrastructure Stack — multi-environment CORS (PR #214 OMC R2)'
       )
     );
 
-  describe.each(['dev', 'staging', 'prod'] as const)(
-    'environment=%s',
-    (environment) => {
-      let template: Template;
-      beforeAll(() => {
-        template = synthForEnvironment(environment);
-      });
+  describe.each(['dev', 'staging', 'prod'] as const)('environment=%s', (environment) => {
+    let template: Template;
+    beforeAll(() => {
+      template = synthForEnvironment(environment);
+    });
 
-      test(`document bucket CORS allows the ${environment} CloudFront origin`, () => {
+    test(`document bucket CORS allows the ${environment} CloudFront origin`, () => {
+      const origins = flattenAllowedOrigins(documentBucketCorsRules(template));
+      const expectedOrigin = CLOUDFRONT_ORIGINS_BY_ENVIRONMENT[environment];
+      expect(origins).toEqual(expect.arrayContaining([expectedOrigin]));
+    });
+
+    test('document bucket CORS allows the PUT method (presigned uploads)', () => {
+      // Without PUT, every presigned upload preflight is rejected by
+      // the bucket's CORS policy and the browser blocks the request
+      // before any HTTP body is sent — same regression class as the
+      // 2026-05-08 demo blocker.
+      const methods = flattenAllowedMethods(documentBucketCorsRules(template));
+      expect(methods).toEqual(expect.arrayContaining(['PUT']));
+    });
+
+    if (environment === 'dev') {
+      test('localhost IS allowed on dev (developer experience)', () => {
         const origins = flattenAllowedOrigins(documentBucketCorsRules(template));
-        const expectedOrigin = CLOUDFRONT_ORIGINS_BY_ENVIRONMENT[environment];
-        expect(origins).toEqual(expect.arrayContaining([expectedOrigin]));
+        // The initial `cors:[]` rule on the document bucket includes
+        // localhost for dev; this test pins that contract so a future
+        // refactor doesn't break local-machine wizard testing.
+        expect(origins).toEqual(expect.arrayContaining(['http://localhost:3000']));
       });
-
-      test('document bucket CORS allows the PUT method (presigned uploads)', () => {
-        // Without PUT, every presigned upload preflight is rejected by
-        // the bucket's CORS policy and the browser blocks the request
-        // before any HTTP body is sent — same regression class as the
-        // 2026-05-08 demo blocker.
-        const methods = flattenAllowedMethods(documentBucketCorsRules(template));
-        expect(methods).toEqual(expect.arrayContaining(['PUT']));
+    } else {
+      test(`localhost is NOT allowed on ${environment} (security M)`, () => {
+        // Per security-M finding (PR #214 OMC R2): non-dev tiers must
+        // never allow `http://localhost:3000` on the production
+        // document bucket — a developer running a local wizard on
+        // their laptop must not be able to drive prod uploads.
+        const origins = flattenAllowedOrigins(documentBucketCorsRules(template));
+        expect(origins).not.toContain('http://localhost:3000');
+        expect(origins).not.toContain('https://localhost:3000');
       });
-
-      if (environment === 'dev') {
-        test('localhost IS allowed on dev (developer experience)', () => {
-          const origins = flattenAllowedOrigins(documentBucketCorsRules(template));
-          // The initial `cors:[]` rule on the document bucket includes
-          // localhost for dev; this test pins that contract so a future
-          // refactor doesn't break local-machine wizard testing.
-          expect(origins).toEqual(expect.arrayContaining(['http://localhost:3000']));
-        });
-      } else {
-        test(`localhost is NOT allowed on ${environment} (security M)`, () => {
-          // Per security-M finding (PR #214 OMC R2): non-dev tiers must
-          // never allow `http://localhost:3000` on the production
-          // document bucket — a developer running a local wizard on
-          // their laptop must not be able to drive prod uploads.
-          const origins = flattenAllowedOrigins(documentBucketCorsRules(template));
-          expect(origins).not.toContain('http://localhost:3000');
-          expect(origins).not.toContain('https://localhost:3000');
-        });
-      }
     }
-  );
+  });
 
   // ---------------------------------------------------------------------
   // Constant drift guard (PR #214 OMC R2 convergent — 2 agents).
@@ -2169,27 +2161,27 @@ describe('csp.ts — assertValidCspReportUri (H-3 sanitization)', () => {
   });
 
   test('throws on injected CSP directive via `;`', () => {
-    expect(() =>
-      assertValidCspReportUri('https://evil.com; script-src *')
-    ).toThrow(/must not contain whitespace/);
+    expect(() => assertValidCspReportUri('https://evil.com; script-src *')).toThrow(
+      /must not contain whitespace/
+    );
   });
 
   test('throws on injected CSP directive via `,`', () => {
-    expect(() =>
-      assertValidCspReportUri('https://evil.com,script-src *')
-    ).toThrow(/must not contain whitespace/);
+    expect(() => assertValidCspReportUri('https://evil.com,script-src *')).toThrow(
+      /must not contain whitespace/
+    );
   });
 
   test('throws on whitespace inside the URL', () => {
-    expect(() =>
-      assertValidCspReportUri('https://evil.com /report')
-    ).toThrow(/must not contain whitespace/);
+    expect(() => assertValidCspReportUri('https://evil.com /report')).toThrow(
+      /must not contain whitespace/
+    );
   });
 
   test('throws on plain http:// (must be https)', () => {
-    expect(() =>
-      assertValidCspReportUri('http://csp-report.example.com/report')
-    ).toThrow(/protocol must be https:/);
+    expect(() => assertValidCspReportUri('http://csp-report.example.com/report')).toThrow(
+      /protocol must be https:/
+    );
   });
 
   test('throws on a malformed URL', () => {
@@ -2259,31 +2251,29 @@ describe('csp.ts — assertValidCspReportUri (H-3 sanitization)', () => {
     // Even if a future contributor adds a token that resolves to a value
     // containing a `;`/`,`/whitespace, this rejection fires SYNCHRONOUSLY
     // at synth — the protection is not bypassed by the token escape hatch.
-    expect(() =>
-      assertValidCspReportUri('https://${Token[id]}.example.com; script-src *')
-    ).toThrow(/must not contain whitespace/);
+    expect(() => assertValidCspReportUri('https://${Token[id]}.example.com; script-src *')).toThrow(
+      /must not contain whitespace/
+    );
   });
 
   test('still rejects CDK-token URLs that are http:// (defense-in-depth)', () => {
     // Token escape hatch must NOT bypass the protocol check — the prefix
     // test happens before the token detection so an http://-prefixed token
     // string is rejected.
-    expect(() =>
-      assertValidCspReportUri('http://${Token[id]}.example.com/report')
-    ).toThrow(/protocol must be https:/);
+    expect(() => assertValidCspReportUri('http://${Token[id]}.example.com/report')).toThrow(
+      /protocol must be https:/
+    );
   });
 
   test('throws on a non-string input', () => {
     // Defensive: silent-coercion would let `null`/`undefined`/`{}` pass.
-    expect(() =>
-      assertValidCspReportUri(null as unknown as string)
-    ).toThrow(/must be a string/);
-    expect(() =>
-      assertValidCspReportUri(undefined as unknown as string)
-    ).toThrow(/must be a string/);
-    expect(() =>
-      assertValidCspReportUri({ url: 'https://x.com' } as unknown as string)
-    ).toThrow(/must be a string/);
+    expect(() => assertValidCspReportUri(null as unknown as string)).toThrow(/must be a string/);
+    expect(() => assertValidCspReportUri(undefined as unknown as string)).toThrow(
+      /must be a string/
+    );
+    expect(() => assertValidCspReportUri({ url: 'https://x.com' } as unknown as string)).toThrow(
+      /must be a string/
+    );
   });
 });
 
@@ -2345,7 +2335,7 @@ describe('csp.ts — buildCsp(#216 directive-map shape)', () => {
     expect(csp).toContain(`script-src 'self' ${nonce}`);
   });
 
-  test("upgrade-insecure-requests emits as a value-less directive", () => {
+  test('upgrade-insecure-requests emits as a value-less directive', () => {
     // CSP grammar quirk: this directive takes NO source list. The builder
     // must emit just the bare name; appending sources here would be a
     // grammar error that some browsers tolerate and others reject.
@@ -2363,7 +2353,10 @@ describe('csp.ts — buildCsp(#216 directive-map shape)', () => {
       },
     });
     expect(csp).toContain(`report-uri ${validUri}`);
-    const directives = csp.split(';').map((d) => d.trim()).filter(Boolean);
+    const directives = csp
+      .split(';')
+      .map((d) => d.trim())
+      .filter(Boolean);
     const lastDirective = directives[directives.length - 1];
     expect(lastDirective).toBe(`report-uri ${validUri}`);
   });

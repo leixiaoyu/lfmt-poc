@@ -7,6 +7,7 @@ The system SHALL accept `DELETE /jobs/{jobId}` from an authenticated owner and i
 Authorization MUST use the Cognito JWT claim `sub` exclusively. A request for a job that does not exist OR belongs to a different user MUST return HTTP 404 (privacy-preserving — existence must not be leaked).
 
 On success, the Lambda MUST:
+
 1. Set `status = 'DELETED'` on the DynamoDB job record.
 2. Write a `deleteAt` attribute (Unix epoch seconds = now + 30 days) that DynamoDB treats as the TTL attribute.
 3. Return HTTP 200 with `{ message, jobId }` — no `warning` field (S3 cleanup is deferred to the scheduled purge).
@@ -57,6 +58,7 @@ A soft-deleted job MUST NOT appear in any `jobs` array returned by `GET /jobs`, 
 The system SHALL run a scheduled Lambda on a daily cron schedule (`cron(0 3 * * ? *)` UTC) that permanently removes all DynamoDB records and associated S3 objects for jobs where `status = 'DELETED'` AND `deleteAt <= now`.
 
 The purge Lambda MUST:
+
 1. Query DynamoDB for all records matching the above predicate (paginated).
 2. For each matched record: delete the S3 objects under the `uploads/`, `documents/`, `chunks/`, and `results/` prefixes keyed to that job.
 3. Hard-delete the DynamoDB record.
@@ -65,6 +67,7 @@ The purge Lambda MUST:
 S3 deletion failures for an individual job MUST be logged as warnings and MUST NOT prevent the purge of other jobs. The failed job MUST be retried on the next daily run (its DDB record is not hard-deleted until all S3 deletes succeed).
 
 The purge Lambda MUST use an isolated IAM role (`purgeDeletedJobsRole`) with:
+
 - `dynamodb:Query + DeleteItem` scoped to the jobs table.
 - `s3:DeleteObject` scoped to the document bucket.
 - `CloudWatch Logs` write (via `AWSLambdaBasicExecutionRole`).

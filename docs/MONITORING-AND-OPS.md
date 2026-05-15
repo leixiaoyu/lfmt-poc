@@ -11,6 +11,7 @@
 This document covers the monitoring, alerting, and operational tools implemented for the LFMT project (Phase 4: D1-D5).
 
 **What's Included**:
+
 - ✅ CloudWatch Dashboards (API Gateway, Lambda, DynamoDB, S3, Step Functions, Overview)
 - ✅ CloudWatch Alarms (Lambda errors, API Gateway 5xx, DynamoDB throttling, Step Functions failures)
 - ✅ Structured Logging with Correlation IDs
@@ -25,14 +26,14 @@ This document covers the monitoring, alerting, and operational tools implemented
 
 ### Available Dashboards
 
-| Dashboard | Name | Purpose |
-|-----------|------|---------|
-| **API Gateway** | `${stackName}-api-gateway` | Request count, 4xx/5xx errors, latency (p50, p90, p99) |
-| **Lambda** | `${stackName}-lambda` | Invocations, errors, duration, throttles, concurrency per function |
-| **DynamoDB** | `${stackName}-dynamodb` | Consumed capacity, throttled requests per table |
-| **S3** | `${stackName}-s3` | Bucket size, requests, errors per bucket |
-| **Step Functions** | `${stackName}-step-functions` | Execution count, success/failure rate, duration |
-| **Overview** | `${stackName}-overview` | Combined key metrics for system health |
+| Dashboard          | Name                          | Purpose                                                            |
+| ------------------ | ----------------------------- | ------------------------------------------------------------------ |
+| **API Gateway**    | `${stackName}-api-gateway`    | Request count, 4xx/5xx errors, latency (p50, p90, p99)             |
+| **Lambda**         | `${stackName}-lambda`         | Invocations, errors, duration, throttles, concurrency per function |
+| **DynamoDB**       | `${stackName}-dynamodb`       | Consumed capacity, throttled requests per table                    |
+| **S3**             | `${stackName}-s3`             | Bucket size, requests, errors per bucket                           |
+| **Step Functions** | `${stackName}-step-functions` | Execution count, success/failure rate, duration                    |
+| **Overview**       | `${stackName}-overview`       | Combined key metrics for system health                             |
 
 ### Accessing Dashboards
 
@@ -51,12 +52,12 @@ echo "https://console.aws.amazon.com/cloudwatch/home?region=us-east-1#dashboards
 
 ### Alarm Configuration
 
-| Alarm | Threshold | Evaluation | Action |
-|-------|-----------|------------|--------|
-| **Lambda Error Rate** | >5% | 2 consecutive 5-min periods | SNS notification |
-| **API Gateway 5xx** | >1% | 2 consecutive 5-min periods | SNS notification |
-| **DynamoDB Throttling** | >10 requests | 3 consecutive 1-min periods | SNS notification |
-| **Step Functions Failures** | >3 failures in 1 hour | 1 evaluation period | SNS notification |
+| Alarm                       | Threshold             | Evaluation                  | Action           |
+| --------------------------- | --------------------- | --------------------------- | ---------------- |
+| **Lambda Error Rate**       | >5%                   | 2 consecutive 5-min periods | SNS notification |
+| **API Gateway 5xx**         | >1%                   | 2 consecutive 5-min periods | SNS notification |
+| **DynamoDB Throttling**     | >10 requests          | 3 consecutive 1-min periods | SNS notification |
+| **Step Functions Failures** | >3 failures in 1 hour | 1 evaluation period         | SNS notification |
 
 ### SNS Notification Setup
 
@@ -137,6 +138,7 @@ export const handler = async (event: any): Promise<any> => {
 **Monthly Budget**: $50 USD
 
 **Alerts**:
+
 - 80% ($40): Warning notification
 - 100% ($50): Critical notification
 
@@ -182,6 +184,7 @@ aws ce get-cost-and-usage \
 **Script**: `scripts/rollback-lambda.sh`
 
 **Usage**:
+
 ```bash
 # List available versions
 ./scripts/rollback-lambda.sh lfmt-translate-chunk-LfmtPocDev
@@ -199,6 +202,7 @@ aws ce get-cost-and-usage \
 **Script**: `scripts/rollback-cdk-stack.sh`
 
 **Usage**:
+
 ```bash
 # Interactive rollback
 ./scripts/rollback-cdk-stack.sh LfmtPocDev
@@ -216,6 +220,7 @@ aws ce get-cost-and-usage \
 **Script**: `scripts/rollback-database.sh`
 
 **Usage**:
+
 ```bash
 # Restore to specific timestamp (ISO 8601 UTC format)
 ./scripts/rollback-database.sh lfmt-jobs-LfmtPocDev "2025-04-05T10:30:00Z"
@@ -232,6 +237,7 @@ aws ce get-cost-and-usage \
 **Script**: `scripts/emergency-cost-control.sh`
 
 **Usage**:
+
 ```bash
 # Interactive emergency stop
 ./scripts/emergency-cost-control.sh LfmtPocDev
@@ -241,6 +247,7 @@ aws ce get-cost-and-usage \
 ```
 
 **Actions Taken**:
+
 1. Stop all running Step Functions executions
 2. Disable API Gateway (throttle to 0 requests/sec)
 3. Set all Lambda functions to 0 concurrency
@@ -256,6 +263,7 @@ aws ce get-cost-and-usage \
 **Location**: [docs/runbooks/deployment.md](./runbooks/deployment.md)
 
 **Covers**:
+
 - Pre-deployment checklist
 - Dev/Staging/Prod deployment procedures
 - Post-deployment verification
@@ -269,6 +277,7 @@ aws ce get-cost-and-usage \
 **Location**: [docs/runbooks/incident-response.md](./runbooks/incident-response.md)
 
 **Covers**:
+
 - Severity levels (P0-P3)
 - Incident response process (Detection → Investigation → Mitigation → Verification)
 - Common incident scenarios with resolution steps
@@ -281,6 +290,7 @@ aws ce get-cost-and-usage \
 **Location**: [docs/runbooks/cost-monitoring.md](./runbooks/cost-monitoring.md)
 
 **Covers**:
+
 - Cost monitoring setup (Budgets, Anomaly Detection, Daily Alarms)
 - Emergency cost control procedures
 - Cost optimization tips
@@ -301,9 +311,9 @@ const stack = new LfmtInfrastructureStack(app, 'LfmtPocDev', {
   enableLogging: true,
   retainData: false,
   // Monitoring configuration (new)
-  enableMonitoring: true,  // Enable CloudWatch dashboards and alarms
-  operationsEmail: 'devops@yourcompany.com',  // Email for alarm notifications
-  monthlyBudgetLimit: 50,  // Monthly budget in USD
+  enableMonitoring: true, // Enable CloudWatch dashboards and alarms
+  operationsEmail: 'devops@yourcompany.com', // Email for alarm notifications
+  monthlyBudgetLimit: 50, // Monthly budget in USD
   env: {
     account: process.env.CDK_DEFAULT_ACCOUNT,
     region: process.env.CDK_DEFAULT_REGION,
@@ -321,6 +331,7 @@ npx cdk deploy --context environment=dev
 **Expected Deployment Time**: 5-10 minutes
 
 **New Resources Created**:
+
 - 6 CloudWatch Dashboards
 - 10+ CloudWatch Alarms
 - 1 SNS Topic for alarms
@@ -393,6 +404,7 @@ aws logs tail /aws/lambda/lfmt-login-LfmtPocDev --follow
 ```
 
 **Expected Output** (JSON formatted):
+
 ```json
 {
   "timestamp": "2025-04-05T10:30:45.123Z",
@@ -413,6 +425,7 @@ aws logs tail /aws/lambda/lfmt-login-LfmtPocDev --follow
 ### Issue: Alarms not triggering
 
 **Solution**:
+
 1. Check SNS topic subscription status:
    ```bash
    aws sns list-subscriptions-by-topic --topic-arn <topic-arn>
@@ -423,6 +436,7 @@ aws logs tail /aws/lambda/lfmt-login-LfmtPocDev --follow
 ### Issue: Dashboards showing "No data"
 
 **Solution**:
+
 1. Wait 5-10 minutes for metrics to populate
 2. Verify Lambda functions have been invoked at least once
 3. Check CloudWatch metric retention settings
@@ -430,6 +444,7 @@ aws logs tail /aws/lambda/lfmt-login-LfmtPocDev --follow
 ### Issue: Budget alerts not received
 
 **Solution**:
+
 1. Verify budget configuration:
    ```bash
    aws budgets describe-budgets --account-id $(aws sts get-caller-identity --query Account --output text)
@@ -446,6 +461,7 @@ aws logs tail /aws/lambda/lfmt-login-LfmtPocDev --follow
 **Future Enhancement**: CloudWatch RUM for frontend monitoring
 
 **Setup Required**:
+
 1. Create CloudWatch RUM app monitor in CDK
 2. Inject RUM script into frontend HTML (Vite plugin)
 3. Track: JS errors, page load time, React component crashes, API call failures
@@ -461,6 +477,7 @@ aws logs tail /aws/lambda/lfmt-login-LfmtPocDev --follow
 **Future Enhancement**: Automate staging/prod deployments via GitHub Actions
 
 **Required**:
+
 1. Create `.github/workflows/deploy-staging.yml`
 2. Create `.github/workflows/deploy-prod.yml`
 3. Add smoke tests to CI pipeline

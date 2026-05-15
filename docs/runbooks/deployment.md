@@ -139,6 +139,7 @@ ENVIRONMENT=staging npm run test:smoke
    - Schedule deployment during low-traffic period
 
 3. **Deploy to production**
+
    ```bash
    # Option 1: Via GitHub Actions (recommended)
    # 1. Go to GitHub Actions
@@ -152,6 +153,7 @@ ENVIRONMENT=staging npm run test:smoke
    ```
 
 4. **Run smoke tests**
+
    ```bash
    cd backend/functions
    ENVIRONMENT=prod npm run test:smoke
@@ -223,12 +225,14 @@ curl -I $FRONTEND_URL
 **If deployment fails or introduces critical bugs:**
 
 1. **Rollback CDK stack**
+
    ```bash
    ./scripts/rollback-cdk-stack.sh LfmtPocDev
    # Follow prompts and monitor progress
    ```
 
 2. **Rollback specific Lambda function** (if stack rollback not needed)
+
    ```bash
    # List available versions
    ./scripts/rollback-lambda.sh lfmt-translate-chunk-LfmtPocDev
@@ -238,6 +242,7 @@ curl -I $FRONTEND_URL
    ```
 
 3. **Verify rollback successful**
+
    ```bash
    # Check CloudWatch alarms
    aws cloudwatch describe-alarms --state-value ALARM
@@ -253,16 +258,19 @@ curl -I $FRONTEND_URL
 **If automated rollback fails:**
 
 1. Identify last stable Git commit:
+
    ```bash
    git log --oneline -n 10
    ```
 
 2. Checkout previous commit:
+
    ```bash
    git checkout <previous-commit-sha>
    ```
 
 3. Redeploy infrastructure:
+
    ```bash
    cd backend/infrastructure
    npx cdk deploy --context environment=dev
@@ -300,6 +308,7 @@ curl -I $FRONTEND_URL
 ### Issue: CDK deployment fails with "Stack is in UPDATE_ROLLBACK_FAILED state"
 
 **Solution**:
+
 ```bash
 # Continue rollback
 aws cloudformation continue-update-rollback --stack-name LfmtPocDev
@@ -311,6 +320,7 @@ aws cloudformation continue-update-rollback --stack-name LfmtPocDev
 ### Issue: CloudFront invalidation not working (old content still served)
 
 **Solution**:
+
 ```bash
 # Force invalidate all paths
 aws cloudfront create-invalidation \
@@ -323,6 +333,7 @@ aws cloudfront create-invalidation \
 ### Issue: Lambda function has high error rate after deployment
 
 **Solution**:
+
 ```bash
 # Check CloudWatch Logs
 aws logs tail /aws/lambda/lfmt-translate-chunk-LfmtPocDev --follow

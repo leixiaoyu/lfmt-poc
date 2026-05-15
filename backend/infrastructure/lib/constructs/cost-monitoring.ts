@@ -36,7 +36,9 @@ export class CostMonitoring extends Construct {
     // Emit warning during CDK synth about tag filter risk
     console.warn('\n⚠️  [CostMonitoring] Budget tag filter is set to "user:Project$lfmt"');
     console.warn('   If NO resources have this tag, the budget will track ALL account costs!');
-    console.warn('   Verify tag coverage: aws resourcegroupstaggingapi get-resources --tag-filters Key=Project,Values=lfmt\n');
+    console.warn(
+      '   Verify tag coverage: aws resourcegroupstaggingapi get-resources --tag-filters Key=Project,Values=lfmt\n'
+    );
 
     // 1. Create SNS topic for cost alerts
     this.costAlarmTopic = new sns.Topic(this, 'CostAlarmTopic', {

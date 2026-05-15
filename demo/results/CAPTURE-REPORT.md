@@ -4,6 +4,7 @@
   `demo/results/<run-timestamp>/REPORT.md` rather than appending here, so
   this file stays a stable historical artifact instead of growing forever.
 -->
+
 # Track B — Real-Metrics Capture Report
 
 **Run date**: 2026-04-25
@@ -112,12 +113,12 @@ The few placeholders that CAN be honestly tightened from the prep work alone (ch
 
 ## Free-tier accounting (final)
 
-| Counter | Used | Ceiling |
-| --- | --- | --- |
-| Gemini requests (chargeable to free tier) | **0** | 25 RPD |
-| Cognito register | 1 | n/a |
-| Cognito login | 2 | n/a |
-| API Gateway calls (auth/upload/status/translate combined) | ~30 | n/a |
+| Counter                                                   | Used  | Ceiling |
+| --------------------------------------------------------- | ----- | ------- |
+| Gemini requests (chargeable to free tier)                 | **0** | 25 RPD  |
+| Cognito register                                          | 1     | n/a     |
+| Cognito login                                             | 2     | n/a     |
+| API Gateway calls (auth/upload/status/translate combined) | ~30   | n/a     |
 
 No paid-tier usage. No quota burned. Safe to re-run the script tomorrow once the deployment is fixed.
 
