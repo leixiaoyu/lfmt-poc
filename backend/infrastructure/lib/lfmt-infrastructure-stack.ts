@@ -1219,6 +1219,21 @@ export class LfmtInfrastructureStack extends Stack {
       externalModules?: string[];
     };
   }): NodejsFunction {
+    // `skipLambdaBundling` context flag is set by the test harness
+    // (`infrastructure.test.ts`) to avoid the expensive bundling step at
+    // synth time. Under normal bundling, `nodeModules` triggers CDK to
+    // create a temp directory and run `npm ci` to install the listed
+    // packages — which fails in the Jest+Node environment under certain
+    // workspace/lockfile configurations (observed on PR #28 — CI Build
+    // Infrastructure regression). Externalising the same modules in test
+    // mode lets esbuild emit `require()` calls without trying to bundle
+    // them, which is functionally equivalent for the template-shape
+    // assertions the tests actually make. The bundle is not produced in
+    // a useful form when this flag is on — only the CFN template matters.
+    const skipBundling = this.node.tryGetContext('skipLambdaBundling') === 'true';
+    const extraNodeModules = opts.extraBundling?.nodeModules ?? [];
+    const extraExternalModules = opts.extraBundling?.externalModules ?? [];
+
     return new NodejsFunction(this, opts.id, {
       functionName: opts.functionName,
       entry: opts.entry,
@@ -1231,8 +1246,20 @@ export class LfmtInfrastructureStack extends Stack {
       memorySize: opts.memoryMB ?? 256,
       description: opts.description,
       bundling: {
-        externalModules: ['aws-sdk', '@aws-sdk/*', ...(opts.extraBundling?.externalModules ?? [])],
-        nodeModules: opts.extraBundling?.nodeModules,
+        externalModules: [
+          'aws-sdk',
+          '@aws-sdk/*',
+          ...extraExternalModules,
+          // Test-mode: route nodeModules through externalModules so the
+          // bundler doesn't `npm ci` them. Real-deploy bundling (skip=
+          // false) still threads them through `nodeModules` below.
+          ...(skipBundling ? extraNodeModules : []),
+        ],
+        nodeModules: skipBundling
+          ? undefined
+          : extraNodeModules.length > 0
+            ? extraNodeModules
+            : undefined,
         minify: true,
         sourceMap: true,
         forceDockerBundling: false,
@@ -1563,7 +1590,7 @@ export class LfmtInfrastructureStack extends Stack {
       functionName: `lfmt-download-translation-${this.stackName}`,
       entry: '../functions/translation/downloadTranslation.ts',
       description:
-        'Assemble translated chunks and return full document for download — markdown inline, ePub/PDF via presigned URL (#28)',
+        'Assemble translated chunks and return full document for download - markdown inline, ePub/PDF via presigned URL (#28)',
       role: this.downloadTranslationRole,
       environment: commonEnv,
       // Issue #28: ePub/PDF generation can take 1–5 s for a multi-megabyte

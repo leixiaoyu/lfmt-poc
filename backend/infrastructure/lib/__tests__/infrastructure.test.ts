@@ -1807,6 +1807,10 @@ describe('LFMT Infrastructure Stack', () => {
       // Per AWS docs: IAM Role / Policy / etc. `Description` accepts:
       //   ASCII printable (0x20-0x7E) + tab (0x09) + LF (0x0A) + CR (0x0D)
       //   + Latin-1 Supplement (0xA1-0xFF). NO Unicode beyond Latin-1.
+      // The control characters below (\x09 tab, \x0A LF, \x0D CR) are
+      // INTENTIONAL — they are part of AWS's allow-list that this test
+      // validates. Removing them would defeat the test.
+      // eslint-disable-next-line no-control-regex
       const awsAllowedDescription = /^[\x09\x0A\x0D\x20-\x7E\xA1-\xFF]*$/;
 
       // Walk the entire synthesized template, collecting every
@@ -1894,10 +1898,17 @@ describe('LFMT Infrastructure Stack', () => {
       expect(downloadRole).toBeDefined();
     });
 
-    test('DownloadTranslationLambdaRole does NOT have s3:PutObject or s3:DeleteObject', () => {
-      // Security assertion: the download role must be read-only.
-      // PutObject / DeleteObject on the document bucket would allow this
-      // Lambda to overwrite or delete source documents — not its purpose.
+    test('DownloadTranslationLambdaRole writes ONLY to the translated-output/* cache prefix (no source-doc write)', () => {
+      // Security assertion: the download role must NOT be able to write to
+      // source-document prefixes (uploads/, documents/) or chunk prefixes
+      // (chunks/). PutObject / DeleteObject on those would let the Lambda
+      // corrupt or destroy source data.
+      //
+      // Updated by PR #263 (#28 ePub/PDF): the download Lambda now caches
+      // generated ePub/PDF artifacts under `translated-output/*` so the
+      // lazy-generation path doesn't re-convert on every download. That
+      // narrow PutObject is allowed; ALL other PutObject/DeleteObject is
+      // still forbidden.
       const roles = template.findResources('AWS::IAM::Role');
       const downloadRoleEntry = Object.entries(roles).find(([, role]: [string, any]) =>
         role.Properties?.Description?.includes('download-translation')
@@ -1912,9 +1923,29 @@ describe('LFMT Infrastructure Stack', () => {
         return JSON.stringify(roles).includes(downloadRoleLogicalId);
       });
 
+      // No DeleteObject anywhere — the Lambda has no business deleting.
       const downloadPoliciesStr = JSON.stringify(downloadPolicies);
-      expect(downloadPoliciesStr).not.toContain('s3:PutObject');
       expect(downloadPoliciesStr).not.toContain('s3:DeleteObject');
+
+      // Per-statement check on PutObject scope. Every Allow statement that
+      // includes s3:PutObject MUST scope the Resource to the
+      // translated-output/* prefix. Anything else (e.g., uploads/*,
+      // documents/*, chunks/*, or the bare bucket ARN) is a regression.
+      for (const policy of downloadPolicies as any[]) {
+        const statements = policy.Properties?.PolicyDocument?.Statement ?? [];
+        for (const stmt of statements) {
+          if (stmt.Effect !== 'Allow') continue;
+          const actions = Array.isArray(stmt.Action) ? stmt.Action : [stmt.Action];
+          if (!actions.some((a: string) => a === 's3:PutObject')) continue;
+
+          const resourceStr = JSON.stringify(stmt.Resource);
+          expect(resourceStr).toContain('/translated-output/*');
+          // Negative checks: must NOT be a source-doc prefix or the bare bucket.
+          expect(resourceStr).not.toMatch(/\/uploads\/\*/);
+          expect(resourceStr).not.toMatch(/\/documents\/\*/);
+          expect(resourceStr).not.toMatch(/\/chunks\/\*/);
+        }
+      }
     });
 
     test('DownloadTranslationLambdaRole has s3:GetObject on translated/* prefix only', () => {
