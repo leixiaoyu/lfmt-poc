@@ -35,14 +35,20 @@
     "@aws-sdk/lib-dynamodb": "^3.525.0",
     "@aws-sdk/s3-request-presigner": "^3.525.0",
     "@google/genai": "^1.28.0",
+    "@lesjoursfr/html-to-epub": "^6.1.0",
     "@lfmt/shared-types": "file:../../shared-types",
     "date-fns-tz": "^3.2.0",
-    "gpt-tokenizer": "^3.2.0"
+    "gpt-tokenizer": "^3.2.0",
+    "markdown-it": "^14.1.1",
+    "pdfkit": "^0.18.0"
   },
   "devDependencies": {
+    "@smithy/util-stream": "^4.6.2",
     "@types/aws-lambda": "^8.10.138",
     "@types/jest": "^29.5.14",
+    "@types/markdown-it": "^14.1.2",
     "@types/node": "^18.19.129",
+    "@types/pdfkit": "^0.13.6",
     "@typescript-eslint/eslint-plugin": "^7.18.0",
     "@typescript-eslint/parser": "^7.18.0",
     "aws-sdk-client-mock": "^3.0.0",

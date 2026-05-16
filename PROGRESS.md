@@ -44,6 +44,17 @@ landing in six large multi-issue PRs between 2026-05-12 and 2026-05-14.
 
 ## Recent Updates (Last 7 Days)
 
+### 2026-05-14: ePub + PDF download formats (PR for #28) — OPEN
+
+**Concern class**: feature — casual-reader output formats (issue #28).
+
+- **#28** — Backend now produces ePub + PDF on demand alongside the legacy Markdown download. New `?format=` query parameter on `GET /jobs/{jobId}/download`; ePub/PDF responses return a JSON envelope with a 15-min presigned S3 URL (markdown stays inline). Three independent download buttons on the translation-detail page.
+- Library choices: `@lesjoursfr/html-to-epub@^6.1.0` (active fork; `epub-gen` dead since 2019), `pdfkit@^0.18.0` (lighter than `@react-pdf/renderer` — no React in the Lambda bundle), `markdown-it@^14.1.1`.
+- Lazy on-demand generation + cache-by-S3-key (HeadObject probe before regeneration). Lambda timeout bumped 60s → 120s and memory 512 MB → 1 GB. New IAM grant scoped to a fresh `translated-output/*` prefix; existing `translated/*` chunk store stays read-only.
+- Boy-scout: `shared-types/.eslintrc.cjs` + `backend/infrastructure/.eslintrc.cjs` added (husky pre-commit hook needs configs in those packages); `@smithy/util-stream` promoted from hoisted transitive to explicit devDep.
+- Sample sizes (18K-word source): PDF 40 KB, ePub 14 KB — both well under the API Gateway 10 MB cap and Lambda 6 MB direct-response limit.
+- Tests: 17 new backend (10 converter + 7 handler) + 8 new frontend (3 service + 5 page). All pre-existing tests still pass (619 backend, 784 frontend).
+
 ### 2026-05-14: Wave 2 Track F — Deploy-pipeline parity sweep (PR #258) — MERGED
 
 **Concern class**: CI/CD pipeline architecture + operational correctness for fresh staging environments.

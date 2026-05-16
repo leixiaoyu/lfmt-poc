@@ -38,6 +38,7 @@ import {
   translationService,
   TranslationServiceError,
   type TranslationConfig,
+  type OutputFormat,
 } from '../services/translationService';
 import { TranslationProgress } from '../components/Translation/TranslationProgress';
 import { useTranslationJob } from '../hooks/useTranslationJob';
@@ -84,7 +85,10 @@ export const TranslationDetail: React.FC = () => {
   const { jobId } = useParams<{ jobId: string }>();
   const navigate = useNavigate();
   const [actionError, setActionError] = useState<string | null>(null);
-  const [downloading, setDownloading] = useState(false);
+  // Tracks which format download is currently in-flight (if any), so the
+  // three download buttons can each show their own loading state without
+  // disabling the others. `null` means no download is running.
+  const [downloadingFormat, setDownloadingFormat] = useState<OutputFormat | null>(null);
 
   // Primary data source: React Query adaptive-polling hook (PR #125).
   // Starts fetching immediately on mount — no need for a separate
@@ -108,33 +112,64 @@ export const TranslationDetail: React.FC = () => {
   // reconcile UI state.
   // ------------------------------------------------------------------
 
-  const handleDownload = useCallback(async () => {
-    if (!jobId || !job) return;
+  /**
+   * Download dispatcher (issue #28).
+   *
+   * - Markdown: existing blob path — fetch the text inline, build an
+   *   object URL, and trigger an anchor click. Unchanged behaviour from
+   *   the pre-#28 download flow.
+   * - ePub / PDF: presigned-URL envelope path — the backend returns
+   *   `{ downloadUrl, ... }` and we set `window.location` to it so the
+   *   browser fetches the bytes directly from S3 (avoiding the 6 MB
+   *   API Gateway response cap). The presigned URL carries the
+   *   Content-Disposition filename so the saved file is named correctly.
+   */
+  const handleDownload = useCallback(
+    async (format: OutputFormat) => {
+      if (!jobId || !job) return;
 
-    setActionError(null);
-    setDownloading(true);
-    try {
-      const blob = await translationService.downloadTranslation(jobId);
-
-      // Create download link
-      const url = window.URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `translated_${job.fileName}`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      window.URL.revokeObjectURL(url);
-    } catch (err) {
-      if (err instanceof TranslationServiceError) {
-        setActionError(err.message);
-      } else {
-        setActionError('Failed to download translation');
+      setActionError(null);
+      setDownloadingFormat(format);
+      try {
+        if (format === 'markdown') {
+          const blob = await translationService.downloadTranslation(jobId);
+          const url = window.URL.createObjectURL(blob);
+          const link = document.createElement('a');
+          link.href = url;
+          link.download = `translated_${job.fileName}`;
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+          window.URL.revokeObjectURL(url);
+        } else {
+          // ePub / PDF — presigned-URL envelope.
+          const envelope = await translationService.getDownloadUrl(jobId, format);
+          // Use an anchor click rather than `window.location =` so the
+          // current SPA page is not navigated away from. The browser
+          // honours the presigned URL's Content-Disposition and saves
+          // the file under the suggested name.
+          const link = document.createElement('a');
+          link.href = envelope.downloadUrl;
+          // `download` attribute is advisory when the URL is
+          // cross-origin (S3); the Content-Disposition header from the
+          // presigned URL is the authoritative source.
+          link.rel = 'noopener noreferrer';
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+        }
+      } catch (err) {
+        if (err instanceof TranslationServiceError) {
+          setActionError(err.message);
+        } else {
+          setActionError(`Failed to download translation as ${format.toUpperCase()}`);
+        }
+      } finally {
+        setDownloadingFormat(null);
       }
-    } finally {
-      setDownloading(false);
-    }
-  }, [jobId, job]);
+    },
+    [jobId, job]
+  );
 
   const handleStartTranslation = useCallback(async () => {
     if (!jobId || !job) return;
@@ -401,16 +436,50 @@ export const TranslationDetail: React.FC = () => {
       </Paper>
 
       {/* Action Buttons */}
-      <Box sx={{ display: 'flex', gap: 2 }}>
+      <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
         {isCompleted && (
           <>
+            {/*
+              Issue #28: three independent download buttons — Markdown
+              (primary, original behaviour), ePub (e-reader friendly,
+              primary use case for casual readers), PDF (universal).
+              Each button shows its own spinner when in-flight; the
+              others remain enabled so the user can re-trigger another
+              format if e.g. the ePub takes longer than expected.
+            */}
             <Button
               variant="contained"
-              startIcon={downloading ? <CircularProgress size={20} /> : <DownloadIcon />}
-              onClick={handleDownload}
-              disabled={downloading}
+              startIcon={
+                downloadingFormat === 'markdown' ? <CircularProgress size={20} /> : <DownloadIcon />
+              }
+              onClick={() => void handleDownload('markdown')}
+              disabled={downloadingFormat !== null}
+              aria-label="Download Markdown"
             >
-              {downloading ? 'Downloading...' : 'Download Translation'}
+              {downloadingFormat === 'markdown' ? 'Downloading...' : 'Download Markdown'}
+            </Button>
+            <Button
+              variant="contained"
+              color="secondary"
+              startIcon={
+                downloadingFormat === 'epub' ? <CircularProgress size={20} /> : <DownloadIcon />
+              }
+              onClick={() => void handleDownload('epub')}
+              disabled={downloadingFormat !== null}
+              aria-label="Download ePub"
+            >
+              {downloadingFormat === 'epub' ? 'Preparing ePub...' : 'Download ePub'}
+            </Button>
+            <Button
+              variant="outlined"
+              startIcon={
+                downloadingFormat === 'pdf' ? <CircularProgress size={20} /> : <DownloadIcon />
+              }
+              onClick={() => void handleDownload('pdf')}
+              disabled={downloadingFormat !== null}
+              aria-label="Download PDF"
+            >
+              {downloadingFormat === 'pdf' ? 'Preparing PDF...' : 'Download PDF'}
             </Button>
             {/*
               Compare button gated behind feature flag — the source-pane backend

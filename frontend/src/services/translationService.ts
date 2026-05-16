@@ -9,6 +9,8 @@ import axios from 'axios';
 import { apiClient } from '../utils/api';
 import { uploadToS3 } from './uploadService';
 import type {
+  OutputFormat,
+  PresignedDownloadEnvelope,
   PresignedUrlApiResponse,
   StartTranslationApiResponse,
   TranslationJobStatus,
@@ -28,7 +30,7 @@ import { toTranslationJob } from './mappers/translationJobMapper';
 // `utils/headerFilters`, where the source of truth lives.
 
 // Re-export so callers can use the shared-types values without an extra import.
-export type { TranslationJobStatus };
+export type { TranslationJobStatus, OutputFormat };
 
 /**
  * Translation Job
@@ -600,7 +602,16 @@ export const getTranslationJobs = async (): Promise<TranslationJob[]> => {
 };
 
 /**
- * Download translated document
+ * Download translated document — legacy markdown / text path.
+ *
+ * Returns the raw text Blob (text/plain) the backend assembles inline.
+ * Preserves the pre-#28 wire contract for callers that don't need
+ * ePub/PDF; the page's existing object-URL → anchor download flow
+ * still works unchanged.
+ *
+ * For ePub/PDF, use `getDownloadUrl` instead — those formats are
+ * delivered via a JSON envelope + presigned S3 URL because the bytes
+ * routinely exceed API Gateway's 6 MB response cap.
  */
 export const downloadTranslation = async (jobId: string): Promise<Blob> => {
   try {
@@ -608,6 +619,37 @@ export const downloadTranslation = async (jobId: string): Promise<Blob> => {
       responseType: 'blob',
     });
 
+    return response.data;
+  } catch (error) {
+    return handleError(error);
+  }
+};
+
+/**
+ * Request a presigned-URL download for ePub or PDF output (issue #28).
+ *
+ * The backend lazily generates the requested format (or reuses a cached
+ * artefact) and returns a short-lived presigned S3 URL inside a JSON
+ * envelope. The caller is expected to navigate to (or anchor.click() on)
+ * `downloadUrl` immediately — the URL is time-bounded (15 min) and
+ * shouldn't be persisted in the SPA.
+ *
+ * Markdown is intentionally NOT routed through this helper: the legacy
+ * `downloadTranslation()` blob path remains the simplest path for text
+ * output (no extra round-trip + works for casual clients that don't
+ * want to navigate away).
+ *
+ * @throws {TranslationServiceError} — API failures (404 / 409 / 500)
+ *   are wrapped just like other endpoints.
+ */
+export const getDownloadUrl = async (
+  jobId: string,
+  format: Exclude<OutputFormat, 'markdown'>
+): Promise<PresignedDownloadEnvelope> => {
+  try {
+    const response = await apiClient.get<PresignedDownloadEnvelope>(`/jobs/${jobId}/download`, {
+      params: { format },
+    });
     return response.data;
   } catch (error) {
     return handleError(error);
@@ -656,6 +698,7 @@ export const translationService = {
   getJobStatus,
   getTranslationJobs,
   downloadTranslation,
+  getDownloadUrl,
   getUserIPAddress,
   createLegalAttestation,
 };

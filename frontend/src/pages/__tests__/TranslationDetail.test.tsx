@@ -47,6 +47,8 @@ vi.mock('../../services/translationService', () => ({
   translationService: {
     getJobStatus: vi.fn(),
     downloadTranslation: vi.fn(),
+    // Issue #28: new presigned-URL endpoint for ePub + PDF downloads.
+    getDownloadUrl: vi.fn(),
     startTranslation: vi.fn(),
   },
   // Issue #215: updated to match new 4-arg constructor (message, errorCode, statusCode?, originalError?).
@@ -432,7 +434,7 @@ describe('TranslationDetail', () => {
       renderComponent();
 
       await waitFor(() => {
-        expect(screen.getByRole('button', { name: /Download Translation/i })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: /Download Markdown/i })).toBeInTheDocument();
       });
     });
 
@@ -445,9 +447,7 @@ describe('TranslationDetail', () => {
         expect(screen.getByText('Job ID')).toBeInTheDocument();
       });
 
-      expect(
-        screen.queryByRole('button', { name: /Download Translation/i })
-      ).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /Download Markdown/i })).not.toBeInTheDocument();
     });
 
     it('should download translation when clicking download button', async () => {
@@ -466,10 +466,10 @@ describe('TranslationDetail', () => {
       renderComponent();
 
       await waitFor(() => {
-        expect(screen.getByRole('button', { name: /Download Translation/i })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: /Download Markdown/i })).toBeInTheDocument();
       });
 
-      const downloadButton = screen.getByRole('button', { name: /Download Translation/i });
+      const downloadButton = screen.getByRole('button', { name: /Download Markdown/i });
       await user.click(downloadButton);
 
       await waitFor(() => {
@@ -491,10 +491,10 @@ describe('TranslationDetail', () => {
       renderComponent();
 
       await waitFor(() => {
-        expect(screen.getByRole('button', { name: /Download Translation/i })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: /Download Markdown/i })).toBeInTheDocument();
       });
 
-      const downloadButton = screen.getByRole('button', { name: /Download Translation/i });
+      const downloadButton = screen.getByRole('button', { name: /Download Markdown/i });
       await user.click(downloadButton);
 
       await waitFor(() => {
@@ -512,14 +512,140 @@ describe('TranslationDetail', () => {
       renderComponent();
 
       await waitFor(() => {
-        expect(screen.getByRole('button', { name: /Download Translation/i })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: /Download Markdown/i })).toBeInTheDocument();
       });
 
-      const downloadButton = screen.getByRole('button', { name: /Download Translation/i });
+      const downloadButton = screen.getByRole('button', { name: /Download Markdown/i });
       await user.click(downloadButton);
 
       await waitFor(() => {
         expect(screen.getByText(/Downloading\.\.\./i)).toBeInTheDocument();
+      });
+    });
+
+    // ---------------------------------------------------------------
+    // Issue #28 — ePub + PDF additional download formats.
+    // ---------------------------------------------------------------
+
+    it('renders Markdown, ePub, and PDF download buttons for COMPLETED jobs (#28)', async () => {
+      vi.mocked(translationService.getJobStatus).mockResolvedValue(mockCompletedJob);
+
+      renderComponent();
+
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /Download Markdown/i })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: /Download ePub/i })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: /Download PDF/i })).toBeInTheDocument();
+      });
+    });
+
+    it('downloads ePub via getDownloadUrl + anchor click (#28)', async () => {
+      const user = userEvent.setup();
+      vi.mocked(translationService.getJobStatus).mockResolvedValue(mockCompletedJob);
+      vi.mocked(translationService.getDownloadUrl).mockResolvedValue({
+        format: 'epub',
+        downloadUrl: 'https://signed.example.com/translation.epub?X-Amz-Signature=abc',
+        expiresInSeconds: 900,
+        objectKey: 'translated-output/job-123/translation.epub',
+      });
+
+      // Spy on anchor click so we can assert the navigation pattern.
+      const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {
+        // no-op — prevent jsdom from actually navigating.
+      });
+
+      renderComponent();
+
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /Download ePub/i })).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByRole('button', { name: /Download ePub/i }));
+
+      await waitFor(() => {
+        expect(translationService.getDownloadUrl).toHaveBeenCalledWith('job-123', 'epub');
+        expect(clickSpy).toHaveBeenCalled();
+      });
+      // markdown blob path MUST NOT have been touched.
+      expect(translationService.downloadTranslation).not.toHaveBeenCalled();
+
+      clickSpy.mockRestore();
+    });
+
+    it('downloads PDF via getDownloadUrl (#28)', async () => {
+      const user = userEvent.setup();
+      vi.mocked(translationService.getJobStatus).mockResolvedValue(mockCompletedJob);
+      vi.mocked(translationService.getDownloadUrl).mockResolvedValue({
+        format: 'pdf',
+        downloadUrl: 'https://signed.example.com/translation.pdf',
+        expiresInSeconds: 900,
+        objectKey: 'translated-output/job-123/translation.pdf',
+      });
+      const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+
+      renderComponent();
+
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /Download PDF/i })).toBeInTheDocument();
+      });
+      await user.click(screen.getByRole('button', { name: /Download PDF/i }));
+
+      await waitFor(() => {
+        expect(translationService.getDownloadUrl).toHaveBeenCalledWith('job-123', 'pdf');
+      });
+      clickSpy.mockRestore();
+    });
+
+    it('shows a per-format loading state and disables siblings during download (#28)', async () => {
+      const user = userEvent.setup();
+      vi.mocked(translationService.getJobStatus).mockResolvedValue(mockCompletedJob);
+      vi.mocked(translationService.getDownloadUrl).mockImplementation(
+        () =>
+          new Promise((resolve) =>
+            setTimeout(
+              () =>
+                resolve({
+                  format: 'epub',
+                  downloadUrl: 'https://signed.example.com/x',
+                  expiresInSeconds: 900,
+                  objectKey: 'k',
+                }),
+              100
+            )
+          )
+      );
+      const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+
+      renderComponent();
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /Download ePub/i })).toBeInTheDocument();
+      });
+      await user.click(screen.getByRole('button', { name: /Download ePub/i }));
+
+      await waitFor(() => {
+        expect(screen.getByText(/Preparing ePub.../i)).toBeInTheDocument();
+      });
+      // Other download buttons disabled while ePub is in flight.
+      expect(screen.getByRole('button', { name: /Download Markdown/i })).toBeDisabled();
+      expect(screen.getByRole('button', { name: /Download PDF/i })).toBeDisabled();
+      clickSpy.mockRestore();
+    });
+
+    it('surfaces a format-specific error message when ePub download fails (#28)', async () => {
+      const user = userEvent.setup();
+      vi.mocked(translationService.getJobStatus).mockResolvedValue(mockCompletedJob);
+      vi.mocked(translationService.getDownloadUrl).mockRejectedValue(
+        new TranslationServiceError('Conversion failed', 'API_GENERIC', 500)
+      );
+
+      renderComponent();
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /Download ePub/i })).toBeInTheDocument();
+      });
+      await user.click(screen.getByRole('button', { name: /Download ePub/i }));
+
+      await waitFor(() => {
+        expect(screen.getByText(/Conversion failed/i)).toBeInTheDocument();
       });
     });
   });
@@ -647,16 +773,14 @@ describe('TranslationDetail', () => {
       });
 
       // Initially IN_PROGRESS, no download button
-      expect(
-        screen.queryByRole('button', { name: /Download Translation/i })
-      ).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /Download Markdown/i })).not.toBeInTheDocument();
 
       const refreshButton = screen.getByRole('button', { name: /Refresh Status/i });
       await user.click(refreshButton);
 
       // After refresh, COMPLETED, download button appears
       await waitFor(() => {
-        expect(screen.getByRole('button', { name: /Download Translation/i })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: /Download Markdown/i })).toBeInTheDocument();
       });
 
       expect(translationService.getJobStatus).toHaveBeenCalledTimes(2);

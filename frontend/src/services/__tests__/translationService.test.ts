@@ -23,6 +23,7 @@ import {
   getJobStatus,
   getTranslationJobs,
   downloadTranslation,
+  getDownloadUrl,
   createLegalAttestation,
   TranslationServiceError,
   UPLOAD_AWAIT_CHUNKED_POLL_INTERVAL_MS,
@@ -1546,5 +1547,66 @@ describe('TranslationService - startTranslation — narrow return shape (H1-cq)'
     });
 
     expect(result.executionArn).toBeUndefined();
+  });
+});
+
+describe('TranslationService - getDownloadUrl (#28)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    (getAuthToken as ReturnType<typeof vi.fn>).mockReturnValue('mock-token-123');
+  });
+
+  it('forwards the format query parameter and returns the envelope', async () => {
+    const jobId = 'job-123';
+    const envelope = {
+      format: 'epub' as const,
+      downloadUrl: 'https://signed.example.com/path',
+      expiresInSeconds: 900,
+      objectKey: 'translated-output/job-123/translation.epub',
+    };
+    mockedApiClient.get.mockResolvedValueOnce({ data: envelope });
+
+    const result = await getDownloadUrl(jobId, 'epub');
+
+    expect(mockedApiClient.get).toHaveBeenCalledTimes(1);
+    expect(mockedApiClient.get).toHaveBeenCalledWith(
+      expect.stringContaining(`/jobs/${jobId}/download`),
+      expect.objectContaining({ params: { format: 'epub' } })
+    );
+    expect(result).toEqual(envelope);
+  });
+
+  it('threads PDF format through to the backend', async () => {
+    mockedApiClient.get.mockResolvedValueOnce({
+      data: {
+        format: 'pdf',
+        downloadUrl: 'https://signed.example.com/path.pdf',
+        expiresInSeconds: 900,
+        objectKey: 'translated-output/job-pdf/translation.pdf',
+      },
+    });
+
+    const result = await getDownloadUrl('job-pdf', 'pdf');
+
+    expect(mockedApiClient.get).toHaveBeenCalledWith(
+      expect.stringContaining('/jobs/job-pdf/download'),
+      expect.objectContaining({ params: { format: 'pdf' } })
+    );
+    expect(result.format).toBe('pdf');
+  });
+
+  it('wraps backend errors as TranslationServiceError', async () => {
+    const mockError = {
+      isAxiosError: true,
+      response: {
+        status: 500,
+        data: { message: 'Failed to generate EPUB output' },
+      },
+      message: 'Server error',
+    } as AxiosError;
+
+    mockedApiClient.get.mockRejectedValueOnce(mockError);
+
+    await expect(getDownloadUrl('job-x', 'epub')).rejects.toThrow('Failed to generate EPUB output');
   });
 });
