@@ -116,7 +116,6 @@ describe('Authentication Integration Tests', () => {
   describe('Protected Route with Valid Authentication', () => {
     const mockUser: UserProfile = {
       userId: 'user-123',
-      id: 'user-123',
       email: 'test@example.com',
       firstName: 'Test',
       lastName: 'User',

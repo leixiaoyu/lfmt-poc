@@ -27,11 +27,6 @@ import type { StoredSession, UserProfile } from '@lfmt/shared-types';
  * This local alias is kept ONLY for consumers that already import `User`
  * by name (e.g. test files, AuthContext). All new code should import
  * `UserProfile` directly. See issue #200 for the unification plan.
- *
- * Wire-compatibility note: the backend login/register handlers return a
- * shape that uses `userId` (matching UserProfile). Legacy sessions may
- * carry `id` instead — `narrowStoredUser()` in `utils/api.ts` handles
- * both spellings and normalises to `id` for SPA consumers.
  */
 export type User = UserProfile;
 
@@ -120,12 +115,10 @@ export interface MessageResponse {
  *     read `accessToken` directly via `getStoredSession()` without
  *     coordinating a second migration.
  *
- * The user shape is now the canonical `UserProfile` from shared-types
+ * The user shape is the canonical `UserProfile` from shared-types
  * (issue #200). The fields the SPA renders (userId/email/firstName/lastName)
  * are required; additional fields (`mfaEnabled`, `preferences`, etc.) are
- * optional and surface lazily when the user updates their profile. Legacy
- * sessions that stored `{ id, ... }` remain valid — `narrowStoredUser()`
- * in `utils/api.ts` accepts both `id` and `userId`.
+ * optional and surface lazily when the user updates their profile.
  */
 function storeAuthTokens(tokens: {
   accessToken: string;
@@ -134,21 +127,17 @@ function storeAuthTokens(tokens: {
   user?: UserProfile;
 }): void {
   // ID token is what API Gateway CognitoUserPoolsAuthorizer validates.
-  // The legacy `idToken ?? accessToken` fallback survives ONLY at this
-  // ingest boundary, because mock harnesses (and pre-rollout backends)
-  // can return responses without an idToken. New responses from the
-  // current backend always include both tokens — this nullish
-  // coalescing is the last remaining compat seam and can be deleted
-  // once the mock fixtures all carry idToken.
+  // The `idToken ?? accessToken` fallback survives ONLY at this ingest
+  // boundary, because mock harnesses (and pre-rollout backends) can
+  // return responses without an idToken. New responses from the current
+  // backend always include both tokens — this nullish coalescing is the
+  // last remaining compat seam and can be deleted once the mock fixtures
+  // all carry idToken.
   const idToken = tokens.idToken ?? tokens.accessToken;
   const session: StoredSession = {
     idToken,
     accessToken: tokens.accessToken,
     refreshToken: tokens.refreshToken,
-    // `user` on StoredSession is now `UserProfile | undefined` (issue #200).
-    // The login/register response carries a UserProfile-compatible shape;
-    // `narrowStoredUser()` in `utils/api.ts` handles sessions from before
-    // this migration that stored the older `{ id, ... }` shape.
     user: tokens.user,
   };
   setStoredSession(session);

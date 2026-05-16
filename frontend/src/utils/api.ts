@@ -11,7 +11,7 @@
  */
 
 import axios, { AxiosInstance, AxiosError, InternalAxiosRequestConfig, AxiosResponse } from 'axios';
-import type { StoredSession, UserProfile } from '@lfmt/shared-types';
+import type { StoredSession } from '@lfmt/shared-types';
 import { API_CONFIG, AUTH_CONFIG, ERROR_MESSAGES } from '../config/constants';
 
 /**
@@ -40,227 +40,41 @@ function generateRequestId(): string {
 // the fields cannot drift out of sync — the failure mode the OMC reviewer
 // flagged on PR #193 (two browser tabs racing a refresh; one setItem
 // succeeding while another hits a quota error).
-//
-// The previous "two-keys" model is preserved ONLY through a one-time,
-// idempotent migration in `getStoredSession()`. Once a session is read
-// in the new format, the legacy keys are deleted and never written
-// again. New code MUST NOT touch the legacy keys directly — call the
-// session helpers exported below.
-//
-// Removal plan: see issue #199 — the migration code can be deleted
-// no earlier than 2026-06-04 (30 days after the 2026-05-04 deploy
-// of PR #198, which covers the worst-case Cognito refresh-token
-// lifetime). See AUTH_CONFIG.LEGACY in constants.ts for the full
-// removal checklist.
-
-/**
- * Local-storage keys we DELETE during migration. Sourced directly from
- * `AUTH_CONFIG.LEGACY` so this list cannot drift out of sync (single
- * source of truth — addresses OMC Round 2 item 13).
- */
-const LEGACY_KEYS = Object.values(AUTH_CONFIG.LEGACY) as readonly string[];
-
-/**
- * One-shot in-memory short-circuit (OMC Round 2 item 16).
- *
- * `getStoredSession()` runs on EVERY request via the request interceptor.
- * For logged-out users, the legacy-cleanup branch would otherwise issue
- * 4 `localStorage.removeItem` calls per call. After the first cleanup
- * (at module load time, or immediately after logout) there are no legacy
- * keys to clean — flip this flag to true and the cleanup is skipped.
- *
- * Reset to `false` only by paths that could plausibly re-introduce
- * legacy keys, which currently means "tests that pre-populate them
- * deliberately" — the production code never writes legacy keys.
- *
- * Conservatively defaults to `false` so the first call always does a
- * full sweep regardless of how the SPA was bootstrapped.
- */
-let legacyKeysKnownAbsent = false;
-
-/**
- * Read the legacy two-key session and synthesize a StoredSession from
- * whatever fields are present. Returns `null` if no legacy keys exist
- * OR if neither `idToken` nor `accessToken` is set (the only two values
- * that could possibly serve as the Bearer credential — without one,
- * there is nothing meaningful to migrate).
- *
- * Pure function: no side effects. The caller decides whether to commit
- * the synthesized blob and delete the legacy keys.
- */
-function readLegacySession(): StoredSession | null {
-  const idToken = localStorage.getItem(AUTH_CONFIG.LEGACY.ID_TOKEN_KEY);
-  const accessToken = localStorage.getItem(AUTH_CONFIG.LEGACY.ACCESS_TOKEN_KEY);
-  const refreshToken = localStorage.getItem(AUTH_CONFIG.LEGACY.REFRESH_TOKEN_KEY);
-  const rawUser = localStorage.getItem(AUTH_CONFIG.LEGACY.USER_DATA_KEY);
-
-  // Nothing legacy stored — nothing to migrate.
-  if (!idToken && !accessToken && !refreshToken && !rawUser) {
-    return null;
-  }
-
-  // No bearer-eligible token — the legacy session is effectively dead;
-  // signal "nothing to migrate" so the caller can clean up the orphan
-  // keys without writing a useless blob.
-  if (!idToken && !accessToken) {
-    return null;
-  }
-
-  // The stored user JSON may be the legacy `{ id, ... }` shape (pre-#200)
-  // or the canonical `UserProfile` shape (post-#200). Both are valid
-  // inputs for `narrowStoredUser()` at read time. Casting the raw parse
-  // result to `UserProfile` is safe here because: (a) all new UserProfile
-  // fields beyond the core four are optional, so a legacy `{ id, email,
-  // firstName, lastName }` object satisfies the type structurally; (b)
-  // `narrowStoredUser()` validates and normalises the actual value at every
-  // read, so a malformed blob can never propagate to a consumer.
-  let user: UserProfile | undefined;
-  if (rawUser) {
-    try {
-      // The stored value may be the legacy `{ id, ... }` shape or the
-      // canonical UserProfile. Both satisfy UserProfile structurally because
-      // all non-core fields are optional (issue #200) and narrowStoredUser()
-      // validates the actual value at every read — a bad cast here cannot
-      // reach a consumer unchecked. The `as UserProfile` cast is intentional:
-      // it is the migration boundary; the runtime invariant is enforced by
-      // narrowStoredUser() at every read site.
-      user = JSON.parse(rawUser) as UserProfile;
-    } catch {
-      // Corrupted user JSON — discard rather than fail the whole
-      // migration. The user will be re-fetched via `/auth/me`.
-      user = undefined;
-    }
-  }
-
-  return {
-    // Prefer idToken (the API Gateway Bearer); fall back to accessToken
-    // ONLY for legacy sessions that pre-date PR #193 — those sessions
-    // will hit a 401, the refresh interceptor will fire, and the new
-    // session blob will replace this synthetic one. This fallback is
-    // strictly migration-scoped; the runtime fallback in `getAuthToken()`
-    // was removed in Issue #195.
-    idToken: (idToken ?? accessToken) as string,
-    accessToken: (accessToken ?? idToken) as string,
-    refreshToken: refreshToken ?? undefined,
-    user,
-  };
-}
-
-/**
- * Remove every legacy auth key from localStorage. Idempotent — safe to
- * call repeatedly. Used both by the migration path AND by the explicit
- * `clearAuthToken()` to ensure we never leave half-deleted state.
- *
- * Sets the in-memory `legacyKeysKnownAbsent` short-circuit so subsequent
- * `getStoredSession()` calls for logged-out users skip the syscalls.
- */
-function deleteLegacyKeys(): void {
-  for (const key of LEGACY_KEYS) {
-    localStorage.removeItem(key);
-  }
-  legacyKeysKnownAbsent = true;
-}
 
 /**
  * Read the current session from localStorage.
  *
- * Resolution order:
- *   1. Modern path: parse the blob under `AUTH_CONFIG.SESSION_KEY`.
- *      ALSO clean up any straggling legacy keys when the modern blob
- *      wins — addresses OMC Round 2 item 1 (latent coexistence bug:
- *      a valid blob alongside legacy keys would otherwise leave the
- *      legacy keys forever).
- *   2. Legacy migration: if the blob is absent BUT legacy keys exist,
- *      synthesize a blob, persist it (in a try/catch — Round 2 Critical:
- *      a quota error here would escape into AuthContext's mount
- *      effect and crash the React tree), delete the legacy keys, and
- *      return the synthesized session. Idempotent — the second call
- *      hits step 1 and returns immediately.
- *   3. Otherwise return `null` (no session). Best-effort clean of any
- *      orphan legacy keys, gated by the `legacyKeysKnownAbsent`
- *      short-circuit so logged-out requests don't burn syscalls.
- *
- * A corrupted blob (invalid JSON, missing required fields) is treated
- * as "no session" — we DO NOT throw because callers thread this
- * function through render paths and a thrown error would crash the
- * mount. The corrupted value is also cleared so the next call has a
- * clean slate.
+ * Returns the parsed blob when it carries both required fields as
+ * non-empty strings (OMC Round 2 item 7: an empty bearer would surface
+ * to the request interceptor and trigger an infinite 401→refresh loop;
+ * we tighten the guard to require positive length). Otherwise — corrupt
+ * JSON, missing field, empty string — the blob is cleared and we return
+ * `null`. We DO NOT throw because callers thread this function through
+ * render paths and a thrown error would crash the mount.
  */
 export function getStoredSession(): StoredSession | null {
   const raw = localStorage.getItem(AUTH_CONFIG.SESSION_KEY);
 
-  if (raw) {
-    try {
-      const parsed = JSON.parse(raw) as Partial<StoredSession>;
-      // Both required fields must be present AND non-empty strings.
-      // OMC Round 2 item 7: previously this guard accepted `idToken: ""`
-      // because `typeof '' === 'string'` is true. An empty bearer
-      // would surface to the request interceptor as a usable token
-      // and the SPA would send `Authorization: Bearer ` (trailing
-      // space) on every request, triggering 401 → infinite refresh
-      // loops. Tighten to require positive length.
-      if (
-        typeof parsed.idToken === 'string' &&
-        parsed.idToken.length > 0 &&
-        typeof parsed.accessToken === 'string' &&
-        parsed.accessToken.length > 0
-      ) {
-        // Round 2 item 1: sweep up any straggling legacy keys when a
-        // valid blob wins. The blob already exists, so the legacy
-        // keys are by definition stale — delete them once and the
-        // short-circuit flag covers all subsequent calls.
-        if (!legacyKeysKnownAbsent) {
-          deleteLegacyKeys();
-        }
-        return parsed as StoredSession;
-      }
-      // Malformed — fall through to clear it.
-      localStorage.removeItem(AUTH_CONFIG.SESSION_KEY);
-    } catch {
-      localStorage.removeItem(AUTH_CONFIG.SESSION_KEY);
-    }
+  if (!raw) {
+    return null;
   }
 
-  // Step 2: migration.
-  const legacy = readLegacySession();
-  if (legacy) {
-    // Persist the synthesized blob FIRST, then delete legacy keys.
-    // Round 2 Critical: wrap the setItem in try/catch — a
-    // QuotaExceededError here would escape into AuthContext's
-    // mount-time useEffect and potentially crash the React tree.
-    // Treating the migration as failed is correct fail-closed
-    // behavior: the user gets logged out (clean state) rather than
-    // leaving the SPA in a half-migrated zombie state.
-    try {
-      localStorage.setItem(AUTH_CONFIG.SESSION_KEY, JSON.stringify(legacy));
-    } catch (storageError) {
-      // eslint-disable-next-line no-console -- intentional one-time auth-debug
-      console.warn(
-        '[lfmt-auth] Legacy-session migration failed; logging out fail-closed.',
-        storageError
-      );
-      // Clear what we can — the legacy keys are now orphaned in a
-      // sense, but leaving them risks repeating the failed migration
-      // on every render. Accept the data loss and force a re-login.
-      deleteLegacyKeys();
-      return null;
+  try {
+    const parsed = JSON.parse(raw) as Partial<StoredSession>;
+    if (
+      typeof parsed.idToken === 'string' &&
+      parsed.idToken.length > 0 &&
+      typeof parsed.accessToken === 'string' &&
+      parsed.accessToken.length > 0
+    ) {
+      return parsed as StoredSession;
     }
-    deleteLegacyKeys();
-    return legacy;
+    // Malformed — clear it so the next read has a clean slate.
+    localStorage.removeItem(AUTH_CONFIG.SESSION_KEY);
+  } catch {
+    localStorage.removeItem(AUTH_CONFIG.SESSION_KEY);
   }
 
-  // Step 3: still nothing. Best-effort cleanup of any orphan legacy
-  // keys that don't yield a bearer-eligible session (e.g., only
-  // `lfmt_user` or only `lfmt_refresh_token` left over). Keeps
-  // localStorage tidy without affecting behavior.
-  //
-  // Short-circuit: skip the 4 removeItem syscalls if we already know
-  // the legacy keys are absent (Round 2 item 16). On a freshly-loaded
-  // logged-out tab the first call will sweep, set the flag, and every
-  // subsequent request avoids the syscalls.
-  if (!legacyKeysKnownAbsent) {
-    deleteLegacyKeys();
-  }
   return null;
 }
 
@@ -307,9 +121,7 @@ export function updateStoredSession(partial: Partial<StoredSession>): void {
  * Reads `idToken` from the one-blob session (Issue #196). Per Issue
  * #195 there is NO runtime fallback to `accessToken` — API Gateway's
  * CognitoUserPoolsAuthorizer accepts ID tokens only, so an access
- * token would 401 anyway. The migration path in `getStoredSession()`
- * already handles legacy sessions that pre-date the blob (those are
- * upgraded once and never seen again).
+ * token would 401 anyway.
  */
 export function getAuthToken(): string | null {
   const session = getStoredSession();
@@ -353,14 +165,9 @@ export function setAccessToken(accessToken: string): void {
 
 /**
  * Clear the entire authentication session.
- *
- * Removes the blob AND any straggling legacy keys, so an upgraded
- * session left over from a previous deploy cannot reincarnate after
- * a logout.
  */
 export function clearAuthToken(): void {
   localStorage.removeItem(AUTH_CONFIG.SESSION_KEY);
-  deleteLegacyKeys();
 }
 
 /**
@@ -371,120 +178,6 @@ export function clearAuthToken(): void {
  */
 export function getStoredRefreshToken(): string | null {
   return getStoredSession()?.refreshToken ?? null;
-}
-
-/**
- * Minimal user shape the SPA renders. Unified with the canonical
- * `UserProfile` in `@lfmt/shared-types` via issue #200.
- *
- * `id` is the normalised identity key used by all SPA consumers (e.g.
- * DashboardPage). New sessions store `userId` (UserProfile canonical
- * field); legacy sessions stored `id` (pre-#200 `User` shape). The
- * `narrowStoredUser()` helper accepts both spellings and always returns
- * `id` so consumers are insulated from the migration.
- *
- * Field-set MUST stay aligned with `narrowStoredUser()` below.
- */
-export interface NarrowedStoredUser {
-  id: string;
-  email: string;
-  firstName: string;
-  lastName: string;
-  emailVerified?: boolean;
-  createdAt?: string;
-}
-
-/**
- * Runtime narrowing helper for the persisted user object (OMC Round 2
- * item 8, issue #200). Accepts both the legacy `{ id, ... }` shape
- * (pre-#200 `User`) and the canonical `UserProfile` shape (`userId`),
- * normalising to `NarrowedStoredUser` with `id` so SPA consumers are
- * insulated from the migration.
- *
- *   - Returns `NarrowedStoredUser` when all required string fields are
- *     present (`id` OR `userId`, `email`, `firstName`, `lastName`).
- *   - Returns `null` otherwise (no session, malformed user, etc.).
- *
- * Consumers MUST NOT bare-cast the return of `getStoredUser()` — call
- * `narrowStoredUser()` first. The bare cast would crash on the first
- * `.email.toLowerCase()` against a malformed value.
- */
-export function narrowStoredUser(value: unknown): NarrowedStoredUser | null {
-  if (!value || typeof value !== 'object') {
-    return null;
-  }
-  const candidate = value as Record<string, unknown>;
-  // Accept `userId` (UserProfile canonical field, issue #200) OR `id`
-  // (legacy User shape, pre-#200 sessions). Normalise to `id` in the
-  // returned value so all SPA consumers continue to work unchanged.
-  const resolvedId =
-    typeof candidate.userId === 'string'
-      ? candidate.userId
-      : typeof candidate.id === 'string'
-        ? candidate.id
-        : undefined;
-  if (
-    !resolvedId ||
-    typeof candidate.email !== 'string' ||
-    typeof candidate.firstName !== 'string' ||
-    typeof candidate.lastName !== 'string'
-  ) {
-    return null;
-  }
-  // Optional fields: include only when present and well-typed. We
-  // deliberately do NOT widen the type — the consumer signed up for
-  // `NarrowedStoredUser`, that's what they get.
-  const narrowed: NarrowedStoredUser = {
-    id: resolvedId,
-    email: candidate.email,
-    firstName: candidate.firstName,
-    lastName: candidate.lastName,
-  };
-  if (typeof candidate.emailVerified === 'boolean') {
-    narrowed.emailVerified = candidate.emailVerified;
-  }
-  // `isEmailVerified` is the canonical UserProfile field (issue #200);
-  // fall back to `emailVerified` for legacy sessions.
-  if (narrowed.emailVerified === undefined && typeof candidate.isEmailVerified === 'boolean') {
-    narrowed.emailVerified = candidate.isEmailVerified;
-  }
-  if (typeof candidate.createdAt === 'string') {
-    narrowed.createdAt = candidate.createdAt;
-  }
-  return narrowed;
-}
-
-/**
- * Convenience reader for the persisted user object. Returns `null`
- * when no session is stored, the session was created without a user
- * object (e.g., a refresh-only response), OR the stored value fails
- * runtime shape validation.
- *
- * Since issue #200 the stored shape is `UserProfile` (userId, email,
- * firstName, lastName, plus optional fields). `narrowStoredUser()`
- * also accepts the legacy `{ id, ... }` shape so sessions created
- * before this migration remain valid.
- *
- * The return is funneled through `narrowStoredUser()` so consumers
- * receive a typed `NarrowedStoredUser | null` instead of a raw value.
- * Bare-casting was the previous risk; the helper closes it.
- */
-export function getStoredUser(): NarrowedStoredUser | null {
-  return narrowStoredUser(getStoredSession()?.user ?? null);
-}
-
-/**
- * Test-only helper: reset the in-memory legacy-cleanup short-circuit
- * flag (Round 2 item 16). Production code does NOT need this — the
- * flag is managed automatically. Tests that pre-populate legacy keys
- * AFTER the module has already swept them need a way to force a
- * fresh sweep on the next `getStoredSession()` call; without this
- * the sweep would no-op and legacy assertions would be meaningless.
- *
- * Exported with the `__test` prefix so grep makes intent obvious.
- */
-export function __testResetLegacyShortCircuit(): void {
-  legacyKeysKnownAbsent = false;
 }
 
 /**
