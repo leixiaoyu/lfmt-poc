@@ -7,12 +7,12 @@
  *
  * Storage model: Issue #196 introduced the one-blob session under
  * `AUTH_CONFIG.SESSION_KEY` and removed the runtime fallback to
- * `accessToken` in `getAuthToken()` (Issue #195). The legacy keys live
- * on only as inputs to a one-time, idempotent migration covered in the
- * dedicated migration block below.
+ * `accessToken` in `getAuthToken()` (Issue #195). The legacy two-keys
+ * migration (Issue #199 follow-up) was removed once all users had
+ * rolled over to the blob format.
  */
 
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
   setAuthToken,
   setAccessToken,
@@ -22,9 +22,6 @@ import {
   setStoredSession,
   updateStoredSession,
   getStoredRefreshToken,
-  getStoredUser,
-  narrowStoredUser,
-  __testResetLegacyShortCircuit,
 } from '../api';
 import { AUTH_CONFIG } from '../../config/constants';
 import type { StoredSession, UserProfile } from '@lfmt/shared-types';
@@ -34,15 +31,8 @@ function readBlob(): StoredSession | null {
   return raw ? (JSON.parse(raw) as StoredSession) : null;
 }
 
-/**
- * Reset both localStorage AND the in-memory legacy-cleanup
- * short-circuit. Tests that pre-populate legacy keys after a previous
- * test triggered the sweep need this to force a fresh sweep on the
- * next `getStoredSession()` call.
- */
 function fullReset(): void {
   localStorage.clear();
-  __testResetLegacyShortCircuit();
 }
 
 describe('API Client - Token Management (one-blob model)', () => {
@@ -147,7 +137,7 @@ describe('API Client - Token Management (one-blob model)', () => {
         accessToken: 'access',
         refreshToken: 'rt',
         // Minimal fixture — tests clearAuthToken removes blob, not user shape.
-        user: { id: 'u1' } as unknown as UserProfile,
+        user: { userId: 'u1' } as unknown as UserProfile,
       });
 
       clearAuthToken();
@@ -155,23 +145,6 @@ describe('API Client - Token Management (one-blob model)', () => {
       expect(localStorage.getItem(AUTH_CONFIG.SESSION_KEY)).toBeNull();
       expect(getAuthToken()).toBeNull();
       expect(getStoredSession()).toBeNull();
-    });
-
-    it('should also remove every legacy key (defensive — covers post-deploy cleanup)', () => {
-      // Simulate a deploy where a stray legacy key survived alongside a new blob.
-      localStorage.setItem(AUTH_CONFIG.LEGACY.ID_TOKEN_KEY, 'legacy-id');
-      localStorage.setItem(AUTH_CONFIG.LEGACY.ACCESS_TOKEN_KEY, 'legacy-access');
-      localStorage.setItem(AUTH_CONFIG.LEGACY.REFRESH_TOKEN_KEY, 'legacy-refresh');
-      localStorage.setItem(AUTH_CONFIG.LEGACY.USER_DATA_KEY, '{}');
-      setStoredSession({ idToken: 'id', accessToken: 'access' });
-
-      clearAuthToken();
-
-      expect(localStorage.getItem(AUTH_CONFIG.SESSION_KEY)).toBeNull();
-      expect(localStorage.getItem(AUTH_CONFIG.LEGACY.ID_TOKEN_KEY)).toBeNull();
-      expect(localStorage.getItem(AUTH_CONFIG.LEGACY.ACCESS_TOKEN_KEY)).toBeNull();
-      expect(localStorage.getItem(AUTH_CONFIG.LEGACY.REFRESH_TOKEN_KEY)).toBeNull();
-      expect(localStorage.getItem(AUTH_CONFIG.LEGACY.USER_DATA_KEY)).toBeNull();
     });
   });
 
@@ -182,7 +155,7 @@ describe('API Client - Token Management (one-blob model)', () => {
         accessToken: 'access-1',
         refreshToken: 'refresh-1',
         // Minimal fixture — tests merge semantics, not user shape.
-        user: { id: 'u1' } as unknown as UserProfile,
+        user: { userId: 'u1' } as unknown as UserProfile,
       });
 
       updateStoredSession({ idToken: 'id-2', accessToken: 'access-2' });
@@ -191,7 +164,7 @@ describe('API Client - Token Management (one-blob model)', () => {
       expect(blob?.idToken).toBe('id-2');
       expect(blob?.accessToken).toBe('access-2');
       expect(blob?.refreshToken).toBe('refresh-1');
-      expect(blob?.user).toEqual({ id: 'u1' });
+      expect(blob?.user).toEqual({ userId: 'u1' });
     });
 
     it('should treat a complete partial as a full session when nothing is stored', () => {
@@ -209,7 +182,7 @@ describe('API Client - Token Management (one-blob model)', () => {
     });
   });
 
-  describe('getStoredRefreshToken / getStoredUser', () => {
+  describe('getStoredRefreshToken', () => {
     it('should return the refresh token from the session', () => {
       setStoredSession({ idToken: 'id', accessToken: 'a', refreshToken: 'rt' });
       expect(getStoredRefreshToken()).toBe('rt');
@@ -219,429 +192,26 @@ describe('API Client - Token Management (one-blob model)', () => {
       setStoredSession({ idToken: 'id', accessToken: 'a' });
       expect(getStoredRefreshToken()).toBeNull();
     });
+  });
 
-    it('should return the persisted user object (well-formed)', () => {
-      // Round 2 item 8: user must satisfy `narrowStoredUser` shape —
-      // id, email, firstName, lastName all required as strings. The
-      // previous version of this test stored only id+email and
-      // happened to pass because the helper was a bare passthrough;
-      // the hardened narrower correctly returns null for that input.
-      // Legacy shape (id, not userId) — narrowStoredUser accepts both.
-      const user = { id: 'u1', email: 'test@example.com', firstName: 'T', lastName: 'U' };
-      setStoredSession({ idToken: 'id', accessToken: 'a', user: user as unknown as UserProfile });
-      expect(getStoredUser()).toEqual(user);
+  describe('getStoredSession - malformed blob handling', () => {
+    it('should treat a corrupted blob as no session and clear it', () => {
+      localStorage.setItem(AUTH_CONFIG.SESSION_KEY, '{not valid json');
+
+      expect(getStoredSession()).toBeNull();
+      expect(localStorage.getItem(AUTH_CONFIG.SESSION_KEY)).toBeNull();
     });
 
-    it('should return null when persisted user fails shape validation', () => {
-      // Documenting the new contract: a malformed user surfaces as
-      // null, not as the partial value. Previously the bare-cast in
-      // getStoredUser would have returned `{ id: 'u1' }` typed as
-      // `unknown`, and a downstream consumer doing
-      // `(user as User).email.toLowerCase()` would crash. Now they
-      // get null and can branch defensively.
-      // Intentionally minimal (missing email/firstName/lastName) to verify
-      // narrowStoredUser returns null for malformed shapes.
-      setStoredSession({
-        idToken: 'id',
-        accessToken: 'a',
-        user: { id: 'u1' } as unknown as UserProfile,
-      });
-      expect(getStoredUser()).toBeNull();
+    it('should treat a structurally-incomplete blob as no session and clear it', () => {
+      // Missing idToken (required).
+      localStorage.setItem(
+        AUTH_CONFIG.SESSION_KEY,
+        JSON.stringify({ accessToken: 'a', refreshToken: 'rt' })
+      );
+
+      expect(getStoredSession()).toBeNull();
+      expect(localStorage.getItem(AUTH_CONFIG.SESSION_KEY)).toBeNull();
     });
-  });
-});
-
-describe('API Client - Legacy Session Migration (Issue #196)', () => {
-  beforeEach(() => {
-    fullReset();
-  });
-
-  afterEach(() => {
-    fullReset();
-  });
-
-  it('should synthesize a blob from legacy keys and remove them on first read', () => {
-    // Pre-populate localStorage in the legacy two-keys shape.
-    localStorage.setItem(AUTH_CONFIG.LEGACY.ID_TOKEN_KEY, 'legacy-id-token');
-    localStorage.setItem(AUTH_CONFIG.LEGACY.ACCESS_TOKEN_KEY, 'legacy-access-token');
-    localStorage.setItem(AUTH_CONFIG.LEGACY.REFRESH_TOKEN_KEY, 'legacy-refresh-token');
-    localStorage.setItem(
-      AUTH_CONFIG.LEGACY.USER_DATA_KEY,
-      JSON.stringify({ id: 'legacy-u1', email: 'legacy@example.com' })
-    );
-
-    // First read triggers migration.
-    const session = getStoredSession();
-
-    expect(session).toEqual({
-      idToken: 'legacy-id-token',
-      accessToken: 'legacy-access-token',
-      refreshToken: 'legacy-refresh-token',
-      user: { id: 'legacy-u1', email: 'legacy@example.com' },
-    });
-
-    // Blob is now persisted under the new key.
-    const blob = readBlob();
-    expect(blob).toEqual(session);
-
-    // All legacy keys are gone.
-    expect(localStorage.getItem(AUTH_CONFIG.LEGACY.ID_TOKEN_KEY)).toBeNull();
-    expect(localStorage.getItem(AUTH_CONFIG.LEGACY.ACCESS_TOKEN_KEY)).toBeNull();
-    expect(localStorage.getItem(AUTH_CONFIG.LEGACY.REFRESH_TOKEN_KEY)).toBeNull();
-    expect(localStorage.getItem(AUTH_CONFIG.LEGACY.USER_DATA_KEY)).toBeNull();
-  });
-
-  it('should be idempotent — second call is a no-op', () => {
-    localStorage.setItem(AUTH_CONFIG.LEGACY.ID_TOKEN_KEY, 'legacy-id');
-    localStorage.setItem(AUTH_CONFIG.LEGACY.ACCESS_TOKEN_KEY, 'legacy-access');
-
-    const first = getStoredSession();
-    const blobAfterFirst = readBlob();
-
-    // Legacy keys gone after the first read.
-    expect(localStorage.getItem(AUTH_CONFIG.LEGACY.ID_TOKEN_KEY)).toBeNull();
-    expect(localStorage.getItem(AUTH_CONFIG.LEGACY.ACCESS_TOKEN_KEY)).toBeNull();
-
-    const second = getStoredSession();
-
-    expect(second).toEqual(first);
-    expect(readBlob()).toEqual(blobAfterFirst);
-  });
-
-  it('should fall back to accessToken when only the legacy access key exists', () => {
-    // Sessions created BEFORE PR #193 only had accessToken stored (no idToken).
-    // The migration must still extract a usable Bearer credential rather than
-    // log the user out; the upgraded session will then 401 on the next
-    // authenticated call and the refresh interceptor takes over.
-    localStorage.setItem(AUTH_CONFIG.LEGACY.ACCESS_TOKEN_KEY, 'pre-pr-193-access-token');
-
-    const session = getStoredSession();
-
-    expect(session?.idToken).toBe('pre-pr-193-access-token');
-    expect(session?.accessToken).toBe('pre-pr-193-access-token');
-    expect(localStorage.getItem(AUTH_CONFIG.LEGACY.ACCESS_TOKEN_KEY)).toBeNull();
-  });
-
-  it('should return null and clean orphan keys when no bearer-eligible token exists', () => {
-    // Only refresh token + user, no id/access — nothing meaningful to migrate.
-    localStorage.setItem(AUTH_CONFIG.LEGACY.REFRESH_TOKEN_KEY, 'orphan-refresh');
-    localStorage.setItem(AUTH_CONFIG.LEGACY.USER_DATA_KEY, '{}');
-
-    expect(getStoredSession()).toBeNull();
-    expect(localStorage.getItem(AUTH_CONFIG.SESSION_KEY)).toBeNull();
-    // Orphan keys cleaned up.
-    expect(localStorage.getItem(AUTH_CONFIG.LEGACY.REFRESH_TOKEN_KEY)).toBeNull();
-    expect(localStorage.getItem(AUTH_CONFIG.LEGACY.USER_DATA_KEY)).toBeNull();
-  });
-
-  it('should treat a corrupted blob as no session and clear it', () => {
-    localStorage.setItem(AUTH_CONFIG.SESSION_KEY, '{not valid json');
-
-    expect(getStoredSession()).toBeNull();
-    expect(localStorage.getItem(AUTH_CONFIG.SESSION_KEY)).toBeNull();
-  });
-
-  it('should treat a structurally-incomplete blob as no session and clear it', () => {
-    // Missing idToken (required).
-    localStorage.setItem(
-      AUTH_CONFIG.SESSION_KEY,
-      JSON.stringify({ accessToken: 'a', refreshToken: 'rt' })
-    );
-
-    expect(getStoredSession()).toBeNull();
-    expect(localStorage.getItem(AUTH_CONFIG.SESSION_KEY)).toBeNull();
-  });
-
-  it('should tolerate corrupted user JSON in legacy storage', () => {
-    localStorage.setItem(AUTH_CONFIG.LEGACY.ID_TOKEN_KEY, 'id');
-    localStorage.setItem(AUTH_CONFIG.LEGACY.ACCESS_TOKEN_KEY, 'access');
-    localStorage.setItem(AUTH_CONFIG.LEGACY.USER_DATA_KEY, '{not valid');
-
-    const session = getStoredSession();
-
-    expect(session?.idToken).toBe('id');
-    expect(session?.accessToken).toBe('access');
-    expect(session?.user).toBeUndefined();
-  });
-
-  // ---------------------------------------------------------------------
-  // Round 2 item 2: symmetric legacy idToken-only migration test.
-  // The access-only branch above tests pre-PR-#193 sessions; the
-  // idToken-only branch tests the inverse — a legacy session that
-  // was upgraded once but somehow lost its access key. The migration
-  // must still produce a usable blob (idToken doubles as accessToken
-  // for storage shape; the SPA's request interceptor only reads
-  // idToken anyway).
-  // ---------------------------------------------------------------------
-  it('should migrate when only the legacy idToken key exists', () => {
-    localStorage.setItem(AUTH_CONFIG.LEGACY.ID_TOKEN_KEY, 'legacy-id-only');
-
-    const session = getStoredSession();
-
-    expect(session?.idToken).toBe('legacy-id-only');
-    // Mirror — the readLegacySession synthesizer falls back to idToken
-    // when accessToken is absent so the blob's required `accessToken`
-    // field is satisfied.
-    expect(session?.accessToken).toBe('legacy-id-only');
-    expect(localStorage.getItem(AUTH_CONFIG.LEGACY.ID_TOKEN_KEY)).toBeNull();
-  });
-
-  // ---------------------------------------------------------------------
-  // Round 2 item 1 (latent coexistence bug): when a valid blob AND
-  // stray legacy keys both exist, the legacy keys MUST be cleaned up
-  // on the next read. Otherwise an out-of-band write to a legacy key
-  // (e.g., a third-party script poking localStorage) would survive
-  // forever, and a future bug that read a legacy key would silently
-  // pick up stale data.
-  // ---------------------------------------------------------------------
-  it('should sweep straggling legacy keys when a valid blob is present', () => {
-    // Pre-populate BOTH the modern blob AND legacy keys.
-    setStoredSession({ idToken: 'blob-id', accessToken: 'blob-access' });
-    localStorage.setItem(AUTH_CONFIG.LEGACY.ID_TOKEN_KEY, 'stray-legacy-id');
-    localStorage.setItem(AUTH_CONFIG.LEGACY.ACCESS_TOKEN_KEY, 'stray-legacy-access');
-    localStorage.setItem(AUTH_CONFIG.LEGACY.REFRESH_TOKEN_KEY, 'stray-legacy-refresh');
-    localStorage.setItem(AUTH_CONFIG.LEGACY.USER_DATA_KEY, '{}');
-    // Force a fresh sweep — the previous setStoredSession may have
-    // already triggered the short-circuit via a prior read.
-    __testResetLegacyShortCircuit();
-
-    // Trigger the sweep.
-    const session = getStoredSession();
-
-    // Modern blob wins.
-    expect(session?.idToken).toBe('blob-id');
-    expect(session?.accessToken).toBe('blob-access');
-    // ALL legacy keys are now gone (the bug was that they survived).
-    expect(localStorage.getItem(AUTH_CONFIG.LEGACY.ID_TOKEN_KEY)).toBeNull();
-    expect(localStorage.getItem(AUTH_CONFIG.LEGACY.ACCESS_TOKEN_KEY)).toBeNull();
-    expect(localStorage.getItem(AUTH_CONFIG.LEGACY.REFRESH_TOKEN_KEY)).toBeNull();
-    expect(localStorage.getItem(AUTH_CONFIG.LEGACY.USER_DATA_KEY)).toBeNull();
-  });
-
-  // ---------------------------------------------------------------------
-  // Round 2 Critical: setItem inside the migration block must be
-  // wrapped in try/catch so a QuotaExceededError doesn't escape into
-  // AuthContext's mount effect and crash React. Verify the
-  // fail-closed contract: caller gets null AND legacy keys are
-  // cleaned (so the next render doesn't loop on the same failed
-  // migration).
-  // ---------------------------------------------------------------------
-  it('should fail closed (return null + warn) when setItem throws QuotaExceededError', () => {
-    localStorage.setItem(AUTH_CONFIG.LEGACY.ID_TOKEN_KEY, 'legacy-id');
-    localStorage.setItem(AUTH_CONFIG.LEGACY.ACCESS_TOKEN_KEY, 'legacy-access');
-
-    // Stub setItem to throw. We restore via the spy's lifecycle so
-    // the test doesn't bleed into siblings.
-    const setItemSpy = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
-      const quotaError = new Error('QuotaExceededError') as Error & { name: string };
-      quotaError.name = 'QuotaExceededError';
-      throw quotaError;
-    });
-    const consoleWarnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
-
-    // Force a fresh sweep so the legacy keys are visible.
-    __testResetLegacyShortCircuit();
-
-    let result: ReturnType<typeof getStoredSession> | undefined;
-    expect(() => {
-      result = getStoredSession();
-    }).not.toThrow();
-    expect(result).toBeNull();
-
-    // Logged the failure so ops can see it.
-    expect(consoleWarnSpy).toHaveBeenCalledWith(
-      expect.stringContaining('migration failed'),
-      expect.anything()
-    );
-
-    setItemSpy.mockRestore();
-    consoleWarnSpy.mockRestore();
-  });
-});
-
-// =====================================================================
-// Round 2 item 8: narrowStoredUser runtime narrowing helper.
-// =====================================================================
-
-describe('API Client - narrowStoredUser (Round 2 item 8)', () => {
-  it('should return a typed user when all required fields are present', () => {
-    const result = narrowStoredUser({
-      id: 'u1',
-      email: 'a@b.com',
-      firstName: 'A',
-      lastName: 'B',
-    });
-    expect(result).toEqual({ id: 'u1', email: 'a@b.com', firstName: 'A', lastName: 'B' });
-  });
-
-  it('should include optional fields when well-typed', () => {
-    const result = narrowStoredUser({
-      id: 'u1',
-      email: 'a@b.com',
-      firstName: 'A',
-      lastName: 'B',
-      emailVerified: true,
-      createdAt: '2026-01-01T00:00:00Z',
-    });
-    expect(result?.emailVerified).toBe(true);
-    expect(result?.createdAt).toBe('2026-01-01T00:00:00Z');
-  });
-
-  it('should drop optional fields with the wrong type', () => {
-    const result = narrowStoredUser({
-      id: 'u1',
-      email: 'a@b.com',
-      firstName: 'A',
-      lastName: 'B',
-      emailVerified: 'yes', // wrong type
-      createdAt: 1234567890, // wrong type
-    });
-    expect(result).toEqual({ id: 'u1', email: 'a@b.com', firstName: 'A', lastName: 'B' });
-  });
-
-  it('should return null for null/undefined/non-object input', () => {
-    expect(narrowStoredUser(null)).toBeNull();
-    expect(narrowStoredUser(undefined)).toBeNull();
-    expect(narrowStoredUser('string')).toBeNull();
-    expect(narrowStoredUser(42)).toBeNull();
-    // Arrays are typeof 'object' but lack the required string fields
-    // → still null. (Documenting the edge case with the comment so a
-    // future reader doesn't have to re-derive why the assertion is
-    // toBeNull rather than not.toBeNull.)
-    expect(narrowStoredUser([])).toBeNull();
-  });
-
-  it('should return null when any required field is missing or wrong type', () => {
-    // Missing firstName.
-    expect(narrowStoredUser({ id: 'u1', email: 'a@b.com', lastName: 'B' })).toBeNull();
-    // Wrong type for email.
-    expect(narrowStoredUser({ id: 'u1', email: 42, firstName: 'A', lastName: 'B' })).toBeNull();
-    // Empty object.
-    expect(narrowStoredUser({})).toBeNull();
-  });
-
-  // -----------------------------------------------------------------------
-  // Issue #200: accepts canonical UserProfile shape (`userId`) and normalises
-  // to `id` in the returned NarrowedStoredUser for SPA consumers.
-  // -----------------------------------------------------------------------
-
-  it('should accept userId (UserProfile shape) and normalise to id (issue #200)', () => {
-    const result = narrowStoredUser({
-      userId: 'up-1',
-      email: 'a@b.com',
-      firstName: 'A',
-      lastName: 'B',
-    });
-    // SPA consumers always receive `id` regardless of whether the stored
-    // object used `userId` (new sessions) or `id` (legacy sessions).
-    expect(result).toEqual({ id: 'up-1', email: 'a@b.com', firstName: 'A', lastName: 'B' });
-  });
-
-  it('should prefer userId over id when both are present', () => {
-    const result = narrowStoredUser({
-      userId: 'canonical',
-      id: 'legacy',
-      email: 'a@b.com',
-      firstName: 'A',
-      lastName: 'B',
-    });
-    expect(result?.id).toBe('canonical');
-  });
-
-  it('normalises isEmailVerified (UserProfile) → emailVerified (NarrowedStoredUser)', () => {
-    const result = narrowStoredUser({
-      userId: 'up-2',
-      email: 'a@b.com',
-      firstName: 'A',
-      lastName: 'B',
-      isEmailVerified: true,
-    });
-    expect(result?.emailVerified).toBe(true);
-  });
-
-  it('getStoredUser routes through narrowStoredUser', () => {
-    fullReset();
-    // Legacy shape (id, not userId) — narrowStoredUser accepts both and
-    // normalises to `id` in the returned NarrowedStoredUser.
-    setStoredSession({
-      idToken: 'id',
-      accessToken: 'a',
-      user: { id: 'u1', email: 'a@b.com', firstName: 'A', lastName: 'B' } as unknown as UserProfile,
-    });
-    const user = getStoredUser();
-    expect(user).toEqual({ id: 'u1', email: 'a@b.com', firstName: 'A', lastName: 'B' });
-
-    // A malformed user surfaces as null even though the blob has SOME value.
-    setStoredSession({
-      idToken: 'id',
-      accessToken: 'a',
-      user: { id: 'u1' /* missing email, firstName, lastName */ } as unknown as UserProfile,
-    });
-    expect(getStoredUser()).toBeNull();
-
-    fullReset();
-  });
-});
-
-// =====================================================================
-// Round 2 item 16: in-memory short-circuit for logged-out requests.
-// =====================================================================
-
-describe('API Client - legacy-cleanup short-circuit (Round 2 item 16)', () => {
-  beforeEach(() => {
-    fullReset();
-  });
-
-  afterEach(() => {
-    fullReset();
-  });
-
-  it('should skip removeItem syscalls on subsequent calls when no legacy keys exist', () => {
-    // First call: no session, no legacy keys → does the sweep, sets the flag.
-    expect(getStoredSession()).toBeNull();
-
-    const removeSpy = vi.spyOn(Storage.prototype, 'removeItem');
-
-    // Second call: should NOT issue any removeItem on the legacy keys.
-    expect(getStoredSession()).toBeNull();
-
-    // Filter to legacy-key removeItem calls only — getItem on
-    // SESSION_KEY returns null without calling removeItem on it.
-    // Widen the LEGACY tuple to readonly string[] so .includes accepts
-    // the spy's string arg (otherwise TS rejects the literal-union narrowing).
-    const legacyKeys: readonly string[] = Object.values(AUTH_CONFIG.LEGACY);
-    const legacyRemovals = removeSpy.mock.calls.filter((args) =>
-      legacyKeys.includes(args[0] as string)
-    );
-    expect(legacyRemovals).toHaveLength(0);
-
-    removeSpy.mockRestore();
-  });
-
-  it('should still migrate late-arrival legacy keys (short-circuit only skips cleanup, not the migration read)', () => {
-    // Bring the flag up via a logged-out read.
-    expect(getStoredSession()).toBeNull();
-
-    // Stuff in legacy keys AFTER the sweep — simulates an out-of-band
-    // write (third-party script poking localStorage, or a stale tab
-    // that finally writes after a deploy).
-    localStorage.setItem(AUTH_CONFIG.LEGACY.ID_TOKEN_KEY, 'late-arrival-id');
-    localStorage.setItem(AUTH_CONFIG.LEGACY.ACCESS_TOKEN_KEY, 'late-arrival-access');
-
-    // Migration DOES still kick in — `readLegacySession()` reads
-    // localStorage directly without consulting the short-circuit
-    // flag. The flag only optimizes the step-3 cleanup branch, never
-    // the migration read. This is the documented contract.
-    const session = getStoredSession();
-    expect(session?.idToken).toBe('late-arrival-id');
-    expect(session?.accessToken).toBe('late-arrival-access');
-    // Migration deleted the legacy keys as part of upgrading them.
-    expect(localStorage.getItem(AUTH_CONFIG.LEGACY.ID_TOKEN_KEY)).toBeNull();
-
-    // Logout → resets the flag (so a NEW logged-out read will sweep
-    // again if needed) and clears the blob.
-    clearAuthToken();
-    expect(getStoredSession()).toBeNull();
   });
 });
 
@@ -703,76 +273,15 @@ describe('API Client - setAuthToken empty-storage regression (Round 2 item 6)', 
 });
 
 // =====================================================================
-// Round 2 item 3: end-to-end migration → request integration test.
-//
-// The original Issue #195 negative test asserted the no-fallback
-// behavior with synthetic empty-string blob input — logically weak
-// because it doesn't trace the user-facing scenario. This test
-// reproduces the full path:
-//
-//   1. localStorage seeded with ONLY `lfmt_access_token` (a pre-PR-#193
-//      session that survived the deploy).
-//   2. Code path that issues a request (apiClient.get).
-//   3. Assert the Authorization header on the wire carries a value
-//      derived from the legacy-migration synthesis — NOT a stale
-//      raw access-token-as-bearer that the runtime fallback would
-//      have produced.
+// Logged-out request integration: no Authorization header attached.
 // =====================================================================
 
-describe('API Client - legacy access-only migration → first request (Round 2 item 3)', () => {
+describe('API Client - logged-out request', () => {
   beforeEach(() => {
     fullReset();
   });
 
-  afterEach(() => {
-    fullReset();
-  });
-
-  it('should send the migration-synthesized idToken as Bearer on the first authenticated request', async () => {
-    // Pre-PR-#193 session shape: only the access-token key was
-    // populated, no idToken, no blob.
-    localStorage.setItem(AUTH_CONFIG.LEGACY.ACCESS_TOKEN_KEY, 'pre-pr-193-token');
-
-    // Sanity: the modern blob doesn't exist yet.
-    expect(localStorage.getItem(AUTH_CONFIG.SESSION_KEY)).toBeNull();
-
-    // First authenticated request — this triggers
-    // requestInterceptor → getAuthToken → getStoredSession →
-    // readLegacySession → migration → upgraded blob → idToken read.
-    const { createApiClient } = await import('../api');
-    const client = createApiClient();
-    let captured: Record<string, unknown> | null = null;
-    client.defaults.adapter = async (config) => {
-      captured = config.headers as unknown as Record<string, unknown>;
-      return {
-        data: { ok: true },
-        status: 200,
-        statusText: 'OK',
-        headers: {},
-        config,
-      };
-    };
-
-    await client.get('/some/protected/endpoint');
-
-    // The migration synthesizes idToken from the legacy access token
-    // (`readLegacySession` mirrors `accessToken` into `idToken` when
-    // the legacy idToken key is absent). The interceptor sends THAT
-    // value — NOT the raw legacy access-token-as-bearer that the
-    // removed runtime fallback (#195) would have produced.
-    expect(captured).not.toBeNull();
-    expect(captured!.Authorization).toBe('Bearer pre-pr-193-token');
-
-    // Side effects we want to verify happened:
-    //   - Blob exists under the modern key.
-    //   - Legacy access-token key is gone (idempotency).
-    expect(localStorage.getItem(AUTH_CONFIG.SESSION_KEY)).not.toBeNull();
-    expect(localStorage.getItem(AUTH_CONFIG.LEGACY.ACCESS_TOKEN_KEY)).toBeNull();
-  });
-
-  it('should send NO Authorization header when no legacy or modern session exists', async () => {
-    // Symmetric negative case: a logged-out user must not have a
-    // Bearer header attached.
+  it('should send NO Authorization header when no session exists', async () => {
     const { createApiClient } = await import('../api');
     const client = createApiClient();
     let captured: Record<string, unknown> | null = null;
@@ -1040,7 +549,7 @@ describe('API Client - Response Error Interceptor', () => {
       idToken: 'id',
       accessToken: 'test-token',
       refreshToken: 'refresh-token',
-      user: { id: '123' } as unknown as UserProfile,
+      user: { userId: '123' } as unknown as UserProfile,
     });
 
     const { createApiClient } = await import('../api');
