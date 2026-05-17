@@ -208,6 +208,125 @@ describe('getTranslationErrorMessage — errorCode discriminator (issue #215)', 
 });
 
 // ---------------------------------------------------------------------------
+// Issue #273: expanded COPY_BY_CODE entries for jobs/startTranslation.ts codes
+// ---------------------------------------------------------------------------
+//
+// Each entry locks the resolved copy in place. The test deliberately sets an
+// empty `message` so the COPY_BY_CODE branch wins — the API-message-wins
+// path is covered by `getApiErrorMessage` (separate describe block above).
+//
+// The literal copy is asserted (not a regex / contains-match) so a future
+// reword that would change the demo phrasing surfaces as a test failure,
+// not a silent UX regression.
+
+describe('getTranslationErrorMessage — issue #273 expanded COPY_BY_CODE entries', () => {
+  it.each([
+    [
+      'MISSING_JOB_ID',
+      'Translation request is missing a job identifier — please refresh and try again.',
+    ],
+    [
+      'INVALID_REQUEST',
+      'Translation settings are invalid — please check your target language and tone and try again.',
+    ],
+    [
+      'JOB_NOT_FOUND',
+      "We couldn't find that translation — it may have been deleted. Please try again from your history.",
+    ],
+    ['FORBIDDEN', "You don't have permission to start this translation."],
+    [
+      'INVALID_JOB_STATUS',
+      "This translation isn't ready to start yet — please wait for processing to finish and try again.",
+    ],
+    [
+      'NO_CHUNKS_AVAILABLE',
+      "This document couldn't be prepared for translation — please re-upload it and try again.",
+    ],
+  ])('maps errorCode=%s to its curated phrase (empty message)', (errorCode, expected) => {
+    const error = {
+      errorCode: errorCode as
+        | 'MISSING_JOB_ID'
+        | 'INVALID_REQUEST'
+        | 'JOB_NOT_FOUND'
+        | 'FORBIDDEN'
+        | 'INVALID_JOB_STATUS'
+        | 'NO_CHUNKS_AVAILABLE',
+      // statusCode + empty message — forces the COPY_BY_CODE branch to win.
+      statusCode: 400,
+      message: '',
+    };
+    expect(getTranslationErrorMessage(error)).toBe(expected);
+  });
+
+  it('FORBIDDEN errorCode takes precedence over the 403 status-code phrase', () => {
+    // Both `FORBIDDEN` (via COPY_BY_CODE) and 403 (via STATUS_MESSAGES) happen
+    // to resolve to the same string today, so the test compares against the
+    // explicit COPY_BY_CODE entry to lock in that the errorCode branch wins.
+    const error = {
+      errorCode: 'FORBIDDEN' as const,
+      statusCode: 403,
+      message: '',
+    };
+    expect(getTranslationErrorMessage(error)).toBe(
+      "You don't have permission to start this translation."
+    );
+  });
+
+  it('JOB_NOT_FOUND COPY_BY_CODE entry wins over a 404 status (no curated 404 phrase)', () => {
+    // 404 is intentionally absent from STATUS_MESSAGES. Pre-#273 a 404 with
+    // an empty message fell through to FALLBACK_MESSAGE; now it should hit
+    // the targeted JOB_NOT_FOUND copy whenever the backend supplies the code.
+    const error = {
+      errorCode: 'JOB_NOT_FOUND' as const,
+      statusCode: 404,
+      message: '',
+    };
+    expect(getTranslationErrorMessage(error)).toBe(
+      "We couldn't find that translation — it may have been deleted. Please try again from your history."
+    );
+  });
+
+  it.each([
+    'MISSING_JOB_ID',
+    'INVALID_REQUEST',
+    'JOB_NOT_FOUND',
+    'FORBIDDEN',
+    'INVALID_JOB_STATUS',
+    'NO_CHUNKS_AVAILABLE',
+  ])('getApiErrorMessage still prefers the Lambda message for errorCode=%s', (code) => {
+    // Precedence sanity-check for the new codes: a Lambda-supplied prose
+    // string must still beat the curated COPY_BY_CODE entry. The Lambda
+    // already crafts user-readable text for these conditions; COPY_BY_CODE
+    // is the fallback when that text isn't available.
+    const error = {
+      message: 'Custom Lambda-emitted phrase',
+      errorCode: code as
+        | 'MISSING_JOB_ID'
+        | 'INVALID_REQUEST'
+        | 'JOB_NOT_FOUND'
+        | 'FORBIDDEN'
+        | 'INVALID_JOB_STATUS'
+        | 'NO_CHUNKS_AVAILABLE',
+      statusCode: 400,
+    };
+    expect(getApiErrorMessage(error)).toBe('Custom Lambda-emitted phrase');
+  });
+
+  it('reads new codes from `response.data.requestId` on a raw axios-shaped error (#267 back-compat)', () => {
+    // The backend currently mislabels the field as `requestId`. Confirm the
+    // new codes are still resolved when the envelope uses that legacy slot.
+    const error = {
+      response: {
+        data: { requestId: 'JOB_NOT_FOUND' },
+      },
+    };
+    expect(getApiErrorMessage(error)).toBe(
+      "We couldn't find that translation — it may have been deleted. Please try again from your history."
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
 // #266: getApiErrorMessage — API-envelope precedence wrapper
 // ---------------------------------------------------------------------------
 
