@@ -920,12 +920,87 @@ describe('TranslationDetail', () => {
 
       await waitFor(
         () => {
-          expect(screen.getByText('Network error')).toBeInTheDocument();
+          // 'Network error' is in GENERIC_MESSAGES, so getApiErrorMessage
+          // falls through to the NETWORK_MESSAGE phrase instead of leaking
+          // the raw axios string. Asserting this pins the precedence chain.
+          expect(
+            screen.getByText(/Connection lost — check your internet and try again/i)
+          ).toBeInTheDocument();
         },
         { timeout: 3000 }
       );
+      // MUST NOT be the catch-all fallback.
+      expect(screen.queryByText(/An unexpected error occurred/i)).not.toBeInTheDocument();
+    });
 
-      expect(screen.getByRole('alert')).toHaveTextContent('Network error');
+    // #269: error-message precedence on the PAGE-LOAD failure branch.
+    //
+    // The bug: navigating to /translation/<invalid-id> rendered the catch-all
+    // "An unexpected error occurred" (via raw `queryError.message`) instead of
+    // the Lambda's structured `response.data.message` field. Wiring the
+    // page-load early-return through `getApiErrorMessage` fixes it.
+    //
+    // These tests pin both the happy path (structured-envelope `message`
+    // shows verbatim) AND the COPY_BY_CODE fallback (curated phrase when
+    // the API message is absent but an errorCode is known) on the
+    // fatal-load branch, mirroring the action-error precedence tests
+    // landed in PR #268.
+    it('surfaces the API envelope `message` on page-load failure (#269)', async () => {
+      // Mimic what translationService.handleError would emit for an axios
+      // call that hit a structured error envelope: the message has already
+      // been lifted from response.data.message into err.message.
+      const apiError = new TranslationServiceError('Job not found', 'API_GENERIC', 404);
+      vi.mocked(translationService.getJobStatus).mockRejectedValue(apiError);
+
+      renderComponent();
+
+      await waitFor(
+        () => {
+          expect(screen.getByText('Job not found')).toBeInTheDocument();
+        },
+        { timeout: 3000 }
+      );
+      // MUST NOT be the catch-all fallback the user reported in #266 / #269.
+      expect(screen.queryByText(/An unexpected error occurred/i)).not.toBeInTheDocument();
+      // The "Go to Translation History" recovery action must still render.
+      expect(screen.getByRole('link', { name: /Go to Translation History/i })).toBeInTheDocument();
+    });
+
+    it('falls back to a curated phrase on page-load 429 with no message (#269)', async () => {
+      // 429 with no message body — getApiErrorMessage's API-precedence branch
+      // is skipped and dispatch falls through to STATUS_MESSAGES[429].
+      const rateLimited = new TranslationServiceError('', 'API_GENERIC', 429);
+      vi.mocked(translationService.getJobStatus).mockRejectedValue(rateLimited);
+
+      renderComponent();
+
+      await waitFor(
+        () => {
+          // Curated phrase from translationErrorMessages.STATUS_MESSAGES[429].
+          expect(screen.getByText(/rate limit reached/i)).toBeInTheDocument();
+        },
+        { timeout: 3000 }
+      );
+      expect(screen.queryByText(/An unexpected error occurred/i)).not.toBeInTheDocument();
+    });
+
+    it('preserves the 403 hardcoded copy on page-load failure (#269 regression guard)', async () => {
+      // The 403 special-case override must continue to suppress whatever
+      // getApiErrorMessage would otherwise return, because backend 403
+      // bodies may leak resource-existence information.
+      vi.mocked(translationService.getJobStatus).mockRejectedValue(
+        new TranslationServiceError('Resource exists but you cannot see it', 'API_GENERIC', 403)
+      );
+
+      renderComponent();
+
+      await waitFor(() => {
+        expect(
+          screen.getByText('You do not have permission to view this translation')
+        ).toBeInTheDocument();
+      });
+      // Backend prose MUST NOT have been surfaced.
+      expect(screen.queryByText(/Resource exists but you cannot see it/i)).not.toBeInTheDocument();
     });
 
     // ----- #236 regression tests -----
@@ -996,6 +1071,77 @@ describe('TranslationDetail', () => {
       // Missing jobId guard renders inline (no async fetch needed).
       expect(screen.getByText('No job ID provided')).toBeInTheDocument();
       expect(screen.getByRole('alert')).toHaveTextContent('No job ID provided');
+    });
+
+    // -----------------------------------------------------------------
+    // #271 — In-page alert (post-initial-load polling-error path) must
+    // route through getApiErrorMessage just like the fatal-load early
+    // return that #270 / #269 fixed. The in-page alert is reached when
+    // an initial fetch succeeded (so `job` is defined) and a subsequent
+    // refetch fails. The previous implementation surfaced raw
+    // `queryError.message`; this verifies the precedence chain instead.
+    // -----------------------------------------------------------------
+    it('renders structured-envelope `response.data.message` via the in-page alert on refetch failure (#271)', async () => {
+      const user = userEvent.setup();
+      // First call succeeds — page enters the loaded state with a job.
+      // Second call fails — keeps the cached job but adds an error, which
+      // is the trigger for the in-page (non-fatal-early-return) alert path.
+      vi.mocked(translationService.getJobStatus)
+        .mockResolvedValueOnce(mockCompletedJob)
+        .mockRejectedValueOnce(
+          // Bare-shape AxiosError-like object: no `message` lifted, but a
+          // structured envelope in `response.data.message`. getApiErrorMessage
+          // MUST extract the envelope message; raw `err.message` would have
+          // produced an empty string here.
+          Object.assign(new Error(''), {
+            response: { data: { message: 'Translation backend unavailable, retry shortly' } },
+          })
+        );
+
+      renderComponent();
+
+      // Wait for the initial fetch to land — verified by the Markdown
+      // download button (COMPLETED-only).
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /Download Markdown/i })).toBeInTheDocument();
+      });
+
+      // Trigger the refetch that will reject.
+      await user.click(screen.getByRole('button', { name: /Refresh Status/i }));
+
+      // The in-page alert must show the API-envelope message.
+      await waitFor(() => {
+        expect(
+          screen.getByText('Translation backend unavailable, retry shortly')
+        ).toBeInTheDocument();
+      });
+    });
+
+    it('replaces a GENERIC_MESSAGES axios error with NETWORK_MESSAGE in the in-page alert (#271)', async () => {
+      const user = userEvent.setup();
+      vi.mocked(translationService.getJobStatus)
+        .mockResolvedValueOnce(mockCompletedJob)
+        // "Network Error" is in the GENERIC_MESSAGES deny-list — the alert
+        // must NOT leak that raw axios string. Old code path (raw
+        // err.message) would have rendered "Network Error".
+        .mockRejectedValueOnce(new Error('Network Error'));
+
+      renderComponent();
+
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /Download Markdown/i })).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByRole('button', { name: /Refresh Status/i }));
+
+      await waitFor(() => {
+        // NETWORK_MESSAGE from translationErrorMessages.ts.
+        expect(
+          screen.getByText(/Connection lost — check your internet and try again/i)
+        ).toBeInTheDocument();
+      });
+      // The raw axios string must NOT have leaked.
+      expect(screen.queryByText(/^Network Error$/)).not.toBeInTheDocument();
     });
   });
 
