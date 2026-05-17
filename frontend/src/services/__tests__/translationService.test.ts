@@ -703,6 +703,153 @@ describe('TranslationService - startTranslation', () => {
         expect((error as TranslationServiceError).message).toBe('Not authenticated');
       }
     });
+
+    // #266: handleError now extracts a typed errorCode from the API envelope.
+    // These tests pin both extraction branches (errorCode vs requestId
+    // fallback) and the known-vs-unknown narrowing logic so refactors to the
+    // envelope shape contract can't silently regress.
+    describe('Issue #266 — typed errorCode extraction in handleError', () => {
+      it('extracts errorCode from response.data.errorCode (forward-compat with #267)', async () => {
+        // Arrange: envelope carries the forward-looking `errorCode` field.
+        const mockError = {
+          isAxiosError: true,
+          response: {
+            status: 409,
+            data: {
+              message: 'Translation already in_progress for this job',
+              errorCode: 'TRANSLATION_ALREADY_STARTED',
+            },
+          },
+          message: 'Conflict',
+        } as AxiosError;
+
+        mockedApiClient.post.mockRejectedValueOnce(mockError);
+
+        // Act & Assert
+        try {
+          await startTranslation('job-123', { targetLanguage: 'es', tone: 'neutral' });
+          expect.fail('Should have thrown TranslationServiceError');
+        } catch (error) {
+          expect(error).toBeInstanceOf(TranslationServiceError);
+          expect((error as TranslationServiceError).errorCode).toBe('TRANSLATION_ALREADY_STARTED');
+          expect((error as TranslationServiceError).statusCode).toBe(409);
+          expect((error as TranslationServiceError).message).toBe(
+            'Translation already in_progress for this job'
+          );
+        }
+      });
+
+      it('falls back to response.data.requestId when errorCode is absent (current buggy backend shape)', async () => {
+        // Arrange: today's backend reuses the requestId slot to carry the
+        // error-category string. The frontend must accept that shape until
+        // backend issue #267 ships the rename.
+        const mockError = {
+          isAxiosError: true,
+          response: {
+            status: 409,
+            data: {
+              message: 'Translation already in_progress for this job',
+              requestId: 'TRANSLATION_ALREADY_STARTED',
+            },
+          },
+          message: 'Conflict',
+        } as AxiosError;
+
+        mockedApiClient.post.mockRejectedValueOnce(mockError);
+
+        // Act & Assert
+        try {
+          await startTranslation('job-123', { targetLanguage: 'es', tone: 'neutral' });
+          expect.fail('Should have thrown TranslationServiceError');
+        } catch (error) {
+          expect(error).toBeInstanceOf(TranslationServiceError);
+          expect((error as TranslationServiceError).errorCode).toBe('TRANSLATION_ALREADY_STARTED');
+          expect((error as TranslationServiceError).statusCode).toBe(409);
+        }
+      });
+
+      it('prefers errorCode over requestId when both are present', async () => {
+        // Arrange: belt-and-suspenders precedence — once #267 lands, the
+        // forward-looking field wins even if the legacy slot is still set.
+        const mockError = {
+          isAxiosError: true,
+          response: {
+            status: 409,
+            data: {
+              message: 'Translation already in_progress for this job',
+              errorCode: 'TRANSLATION_ALREADY_STARTED',
+              requestId: '550e8400-e29b-41d4-a716-446655440000', // proper UUID
+            },
+          },
+          message: 'Conflict',
+        } as AxiosError;
+
+        mockedApiClient.post.mockRejectedValueOnce(mockError);
+
+        try {
+          await startTranslation('job-123', { targetLanguage: 'es', tone: 'neutral' });
+          expect.fail('Should have thrown TranslationServiceError');
+        } catch (error) {
+          expect(error).toBeInstanceOf(TranslationServiceError);
+          // Comes from errorCode, NOT the UUID-shaped requestId.
+          expect((error as TranslationServiceError).errorCode).toBe('TRANSLATION_ALREADY_STARTED');
+        }
+      });
+
+      it('falls back to API_GENERIC for unknown errorCode strings', async () => {
+        // Arrange: an arbitrary string in errorCode must not poison the
+        // discriminator union — type-guard narrows to API_GENERIC.
+        const mockError = {
+          isAxiosError: true,
+          response: {
+            status: 500,
+            data: {
+              message: 'Something blew up',
+              errorCode: 'SOMETHING_NEW_WE_HAVENT_ENUMERATED',
+            },
+          },
+          message: 'Server error',
+        } as AxiosError;
+
+        mockedApiClient.post.mockRejectedValueOnce(mockError);
+
+        try {
+          await startTranslation('job-123', { targetLanguage: 'es', tone: 'neutral' });
+          expect.fail('Should have thrown TranslationServiceError');
+        } catch (error) {
+          expect(error).toBeInstanceOf(TranslationServiceError);
+          expect((error as TranslationServiceError).errorCode).toBe('API_GENERIC');
+        }
+      });
+
+      it('falls back to API_GENERIC when neither errorCode nor requestId is a string', async () => {
+        // Arrange: a UUID-shaped requestId (the eventual correct shape) is
+        // still a string — but here we feed non-string types to exercise the
+        // type-guard's `typeof === 'string'` negative branch.
+        const mockError = {
+          isAxiosError: true,
+          response: {
+            status: 500,
+            data: {
+              message: 'Server error',
+              errorCode: 42, // number, not string
+              requestId: { nested: 'object' }, // not string
+            },
+          },
+          message: 'Server error',
+        } as AxiosError;
+
+        mockedApiClient.post.mockRejectedValueOnce(mockError);
+
+        try {
+          await startTranslation('job-123', { targetLanguage: 'es', tone: 'neutral' });
+          expect.fail('Should have thrown TranslationServiceError');
+        } catch (error) {
+          expect(error).toBeInstanceOf(TranslationServiceError);
+          expect((error as TranslationServiceError).errorCode).toBe('API_GENERIC');
+        }
+      });
+    });
   });
 });
 
