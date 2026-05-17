@@ -583,11 +583,70 @@ describe('API Client - Response Error Interceptor', () => {
     }
   });
 
-  it('should handle 403 Forbidden', async () => {
+  // Issue #275: 403 backend-message precedence.
+  //
+  // Pre-#275 the 403 branch clobbered every backend message with the
+  // generic `ERROR_MESSAGES.UNAUTHORIZED` constant, silently destroying
+  // user-facing prose like the email-verification guidance emitted by
+  // `backend/functions/auth/login.ts:175` for `UserNotConfirmedException`.
+  // Post-#275 the precedence is: specific backend message wins; generic
+  // backend message OR absent backend message falls back to the
+  // `ERROR_MESSAGES.UNAUTHORIZED` constant (the deny-list guard prevents
+  // an opaque "Forbidden" / "Request failed" from re-introducing the
+  // issue #266 "An unexpected error occurred" class of bug).
+
+  it('403: surfaces specific backend message verbatim (issue #275 load-bearing case)', async () => {
     const { createApiClient } = await import('../api');
     const client = createApiClient();
 
-    // Mock adapter to simulate 403 error
+    // Mock adapter to simulate the 403 from login.ts:175 for an
+    // unconfirmed-user login. The pre-#275 implementation would
+    // clobber `error.message` with "You do not have permission to
+    // perform this action." — destroying the only recovery action
+    // the backend gave the user.
+    client.defaults.adapter = async () => {
+      const error: any = new Error('Request failed with status code 403');
+      error.isAxiosError = true;
+      error.response = {
+        status: 403,
+        data: {
+          message:
+            'Please verify your email address before logging in. Check your inbox for the verification link.',
+          requestId: 'req-abc',
+        },
+        statusText: 'Forbidden',
+        headers: {},
+        config: {},
+      };
+      throw error;
+    };
+
+    try {
+      await client.post('/auth/login', { email: 'x', password: 'y' });
+      expect.fail('Should have thrown an error');
+    } catch (error: any) {
+      expect(error.status).toBe(403);
+      expect(error.message).toBe(
+        'Please verify your email address before logging in. Check your inbox for the verification link.'
+      );
+      // The raw envelope is preserved for downstream consumers
+      // (e.g. `getApiErrorMessage` which also reads `data.errorCode`).
+      expect(error.data).toEqual({
+        message:
+          'Please verify your email address before logging in. Check your inbox for the verification link.',
+        requestId: 'req-abc',
+      });
+    }
+  });
+
+  it('403: falls back to UNAUTHORIZED constant when backend message is in the GENERIC deny-list', async () => {
+    const { createApiClient } = await import('../api');
+    const client = createApiClient();
+
+    // API Gateway authorizer 403 (no specific prose, just "Forbidden").
+    // Surfacing "Forbidden" verbatim would re-introduce the issue #266
+    // "An unexpected error occurred" class problem, so the deny-list
+    // routes us to the curated UNAUTHORIZED copy.
     client.defaults.adapter = async () => {
       const error: any = new Error('Request failed with status code 403');
       error.isAxiosError = true;
@@ -609,6 +668,135 @@ describe('API Client - Response Error Interceptor', () => {
       expect(error.message).toBe('You do not have permission to perform this action.');
     }
   });
+
+  it('403: falls back to UNAUTHORIZED constant when response body has no message field', async () => {
+    const { createApiClient } = await import('../api');
+    const client = createApiClient();
+
+    // Some 403 responses (e.g. opaque API Gateway 403s, raw blocked
+    // responses) carry no message field at all. Fall back to the
+    // curated copy.
+    client.defaults.adapter = async () => {
+      const error: any = new Error('Request failed with status code 403');
+      error.isAxiosError = true;
+      error.response = {
+        status: 403,
+        data: {},
+        statusText: 'Forbidden',
+        headers: {},
+        config: {},
+      };
+      throw error;
+    };
+
+    try {
+      await client.get('/admin');
+      expect.fail('Should have thrown an error');
+    } catch (error: any) {
+      expect(error.status).toBe(403);
+      expect(error.message).toBe('You do not have permission to perform this action.');
+    }
+  });
+
+  it('403: falls back to UNAUTHORIZED constant when backend message is whitespace only', async () => {
+    const { createApiClient } = await import('../api');
+    const client = createApiClient();
+
+    client.defaults.adapter = async () => {
+      const error: any = new Error('Request failed with status code 403');
+      error.isAxiosError = true;
+      error.response = {
+        status: 403,
+        data: { message: '   \t  \n' },
+        statusText: 'Forbidden',
+        headers: {},
+        config: {},
+      };
+      throw error;
+    };
+
+    try {
+      await client.get('/admin');
+      expect.fail('Should have thrown an error');
+    } catch (error: any) {
+      expect(error.status).toBe(403);
+      expect(error.message).toBe('You do not have permission to perform this action.');
+    }
+  });
+
+  it('403: falls back to UNAUTHORIZED constant when response body is not an object', async () => {
+    const { createApiClient } = await import('../api');
+    const client = createApiClient();
+
+    // Defensive: if some upstream layer returns a string body, the
+    // extractor must not treat that as a usable message.
+    client.defaults.adapter = async () => {
+      const error: any = new Error('Request failed with status code 403');
+      error.isAxiosError = true;
+      error.response = {
+        status: 403,
+        // axios may sometimes pass through plain-string error bodies
+        // when content-type isn't json. The extractor returns undefined
+        // for any non-object data.
+        data: 'Forbidden',
+        statusText: 'Forbidden',
+        headers: {},
+        config: {},
+      };
+      throw error;
+    };
+
+    try {
+      await client.get('/admin');
+      expect.fail('Should have thrown an error');
+    } catch (error: any) {
+      expect(error.status).toBe(403);
+      expect(error.message).toBe('You do not have permission to perform this action.');
+    }
+  });
+
+  it('403: deny-list match is case-insensitive (defense against backend casing drift)', async () => {
+    const { createApiClient } = await import('../api');
+    const client = createApiClient();
+
+    // Backend or API Gateway may send "FORBIDDEN" or "forbidden" depending
+    // on layer. The deny-list normalizes via .toLowerCase() so all variants
+    // fall back to the curated copy.
+    client.defaults.adapter = async () => {
+      const error: any = new Error('Request failed with status code 403');
+      error.isAxiosError = true;
+      error.response = {
+        status: 403,
+        data: { message: 'FORBIDDEN' },
+        statusText: 'Forbidden',
+        headers: {},
+        config: {},
+      };
+      throw error;
+    };
+
+    try {
+      await client.get('/admin');
+      expect.fail('Should have thrown an error');
+    } catch (error: any) {
+      expect(error.status).toBe(403);
+      expect(error.message).toBe('You do not have permission to perform this action.');
+    }
+  });
+
+  // 401-path regression guard:
+  //
+  // Issue #275's fix only changed the 403 branch — the 401 branch's
+  // behavior is intentionally DIFFERENT (when a refresh has already
+  // been attempted OR there is no refresh token, the curated
+  // SESSION_EXPIRED constant always wins, regardless of backend prose,
+  // because the session is dead). The real 401 path is exhaustively
+  // covered by `api.refresh.test.ts` (which uses axios-mock-adapter to
+  // properly attach axiosError.config so the refresh-flow guard fires).
+  // We deliberately do not duplicate that coverage here with a
+  // hand-constructed axios error — earlier attempts at this would
+  // either skip the 401 branch entirely (when axiosError.config is
+  // undefined) or accidentally pass for the wrong reason.
 
   it('should handle network errors (no response)', async () => {
     const { createApiClient } = await import('../api');
