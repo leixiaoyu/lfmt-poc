@@ -211,6 +211,47 @@ describe('TranslationCompare page', () => {
     });
   });
 
+  // ---------------------------------------------------------------------
+  // #271 — Generic error fall-through (the non-404, non-403 branch of
+  // fetchError, and the downloadError catch) must route through
+  // getApiErrorMessage so the API-envelope precedence chain governs the
+  // alert. The 404 / 403 hardcoded strings remain as page-specific UX
+  // overrides (covered by sibling tests above).
+  // ---------------------------------------------------------------------
+  it('replaces a GENERIC_MESSAGES jobError with NETWORK_MESSAGE in the fetchError branch (#271)', async () => {
+    vi.mocked(translationService.getJobStatus).mockRejectedValue(
+      new TranslationServiceError('Network Error', 'API_GENERIC')
+    );
+
+    renderAt();
+
+    // NETWORK_MESSAGE from translationErrorMessages.ts — raw "Network Error"
+    // must NOT leak (it's on the GENERIC_MESSAGES deny-list).
+    await waitFor(() => {
+      expect(
+        screen.getByText(/Connection lost — check your internet and try again/i)
+      ).toBeInTheDocument();
+    });
+    expect(screen.queryByText(/^Network Error$/)).not.toBeInTheDocument();
+  });
+
+  it('replaces a GENERIC_MESSAGES download error with NETWORK_MESSAGE (#271)', async () => {
+    vi.mocked(translationService.getJobStatus).mockResolvedValue(completedJob);
+    // Download fails with a generic axios string — must NOT leak.
+    vi.mocked(translationService.downloadTranslation).mockRejectedValue(
+      new TranslationServiceError('Network Error', 'API_GENERIC')
+    );
+
+    renderAt();
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(/Connection lost — check your internet and try again/i)
+      ).toBeInTheDocument();
+    });
+    expect(screen.queryByText(/^Network Error$/)).not.toBeInTheDocument();
+  });
+
   it('shows a "not yet completed" message when job is still in progress', async () => {
     vi.mocked(translationService.getJobStatus).mockResolvedValue({
       ...completedJob,

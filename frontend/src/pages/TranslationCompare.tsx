@@ -31,6 +31,7 @@ import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import { SideBySideViewer } from '../components/Translation/SideBySideViewer';
 import { translationService, TranslationServiceError } from '../services/translationService';
 import { useTranslationJob } from '../hooks/useTranslationJob';
+import { getApiErrorMessage } from '../utils/translationErrorMessages';
 
 /**
  * Maximum translated blob size we will load fully into memory via Blob.text().
@@ -51,12 +52,18 @@ export const TranslationCompare: React.FC = () => {
   const [downloadError, setDownloadError] = useState<string | null>(null);
 
   // Derived error message (job fetch error → friendly message + optional redirect).
+  // #271: page-specific 404 / 403 strings stay as hard-coded overrides (backend
+  // 403 body may leak resource-existence info; 404 prefers a UX-tailored phrase
+  // over the generic STATUS_MESSAGES copy). Everything else routes through
+  // getApiErrorMessage so the API-envelope precedence chain governs the message
+  // (GENERIC_MESSAGES filter → response.data.message → COPY_BY_CODE →
+  // STATUS_MESSAGES → fallback). Prior code surfaced raw `jobError.message`.
   const fetchError = (() => {
     if (!jobError) return null;
     if (jobError instanceof TranslationServiceError) {
       if (jobError.statusCode === 404) return 'Translation job not found';
       if (jobError.statusCode === 403) return 'You do not have permission to view this translation';
-      return jobError.message;
+      return getApiErrorMessage(jobError);
     }
     return 'Failed to load translation data';
   })();
@@ -110,7 +117,11 @@ export const TranslationCompare: React.FC = () => {
       } catch (err) {
         if (cancelled) return;
         if (err instanceof TranslationServiceError) {
-          setDownloadError(err.message);
+          // #271: route through API-envelope precedence (GENERIC_MESSAGES filter
+          // → response.data.message → COPY_BY_CODE → STATUS_MESSAGES → fallback)
+          // instead of surfacing raw `err.message`. Mirrors the #266 / #269 fixes
+          // on the sibling sites.
+          setDownloadError(getApiErrorMessage(err));
         } else {
           setDownloadError('Failed to load translation data');
         }

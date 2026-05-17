@@ -997,6 +997,77 @@ describe('TranslationDetail', () => {
       expect(screen.getByText('No job ID provided')).toBeInTheDocument();
       expect(screen.getByRole('alert')).toHaveTextContent('No job ID provided');
     });
+
+    // -----------------------------------------------------------------
+    // #271 — In-page alert (post-initial-load polling-error path) must
+    // route through getApiErrorMessage just like the fatal-load early
+    // return that #270 / #269 fixed. The in-page alert is reached when
+    // an initial fetch succeeded (so `job` is defined) and a subsequent
+    // refetch fails. The previous implementation surfaced raw
+    // `queryError.message`; this verifies the precedence chain instead.
+    // -----------------------------------------------------------------
+    it('renders structured-envelope `response.data.message` via the in-page alert on refetch failure (#271)', async () => {
+      const user = userEvent.setup();
+      // First call succeeds — page enters the loaded state with a job.
+      // Second call fails — keeps the cached job but adds an error, which
+      // is the trigger for the in-page (non-fatal-early-return) alert path.
+      vi.mocked(translationService.getJobStatus)
+        .mockResolvedValueOnce(mockCompletedJob)
+        .mockRejectedValueOnce(
+          // Bare-shape AxiosError-like object: no `message` lifted, but a
+          // structured envelope in `response.data.message`. getApiErrorMessage
+          // MUST extract the envelope message; raw `err.message` would have
+          // produced an empty string here.
+          Object.assign(new Error(''), {
+            response: { data: { message: 'Translation backend unavailable, retry shortly' } },
+          })
+        );
+
+      renderComponent();
+
+      // Wait for the initial fetch to land — verified by the Markdown
+      // download button (COMPLETED-only).
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /Download Markdown/i })).toBeInTheDocument();
+      });
+
+      // Trigger the refetch that will reject.
+      await user.click(screen.getByRole('button', { name: /Refresh Status/i }));
+
+      // The in-page alert must show the API-envelope message.
+      await waitFor(() => {
+        expect(
+          screen.getByText('Translation backend unavailable, retry shortly')
+        ).toBeInTheDocument();
+      });
+    });
+
+    it('replaces a GENERIC_MESSAGES axios error with NETWORK_MESSAGE in the in-page alert (#271)', async () => {
+      const user = userEvent.setup();
+      vi.mocked(translationService.getJobStatus)
+        .mockResolvedValueOnce(mockCompletedJob)
+        // "Network Error" is in the GENERIC_MESSAGES deny-list — the alert
+        // must NOT leak that raw axios string. Old code path (raw
+        // err.message) would have rendered "Network Error".
+        .mockRejectedValueOnce(new Error('Network Error'));
+
+      renderComponent();
+
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /Download Markdown/i })).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByRole('button', { name: /Refresh Status/i }));
+
+      await waitFor(() => {
+        // NETWORK_MESSAGE from translationErrorMessages.ts.
+        expect(
+          screen.getByText(/Connection lost — check your internet and try again/i)
+        ).toBeInTheDocument();
+      });
+      // The raw axios string must NOT have leaked.
+      expect(screen.queryByText(/^Network Error$/)).not.toBeInTheDocument();
+    });
   });
 
   // -------------------------------------------------------------------------
