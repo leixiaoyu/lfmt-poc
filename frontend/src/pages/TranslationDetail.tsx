@@ -135,11 +135,12 @@ export const TranslationDetail: React.FC = () => {
   const { job, isLoading, error: queryError, refetch } = useTranslationJob(jobId);
 
   // Map query error to a user-facing string.
-  const queryErrorMessage = queryError
-    ? queryError instanceof Error
-      ? queryError.message
-      : 'Failed to load translation details'
-    : null;
+  // #271: route through getApiErrorMessage so the in-page alert respects the
+  // API-envelope precedence chain (GENERIC_MESSAGES filter → response.data.message
+  // → COPY_BY_CODE → STATUS_MESSAGES → fallback). Prior implementation surfaced
+  // raw `err.message` which leaked terse axios strings ("Network Error",
+  // "Request failed") and bypassed curated copy.
+  const queryErrorMessage = queryError ? getApiErrorMessage(queryError) : null;
 
   // Combine query error and action error for display.
   const displayError = actionError ?? queryErrorMessage;
