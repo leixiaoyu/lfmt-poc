@@ -37,6 +37,7 @@ import {
   TranslationServiceError,
 } from '../services/translationService';
 import { getLanguageLabel, getToneLabel } from '../utils/translationLabels';
+import { getApiErrorMessage } from '../utils/translationErrorMessages';
 
 const STATUS_COLORS: Record<string, 'default' | 'primary' | 'success' | 'error' | 'warning'> = {
   PENDING: 'default',
@@ -67,7 +68,10 @@ export const TranslationHistory: React.FC = () => {
       setError(null);
     } catch (err) {
       if (err instanceof TranslationServiceError) {
-        setError(err.message);
+        // #271: route through API-envelope precedence (GENERIC_MESSAGES filter
+        // → response.data.message → COPY_BY_CODE → STATUS_MESSAGES → fallback)
+        // instead of surfacing raw `err.message`. Mirrors the #266 / #269 fixes.
+        setError(getApiErrorMessage(err));
       } else {
         setError('Failed to load translation history');
       }
@@ -119,7 +123,10 @@ export const TranslationHistory: React.FC = () => {
       window.URL.revokeObjectURL(url);
     } catch (err) {
       if (err instanceof TranslationServiceError) {
-        setError(err.message);
+        // #271: same API-envelope precedence as the load path. The Alert at
+        // the top of the page surfaces this string, so it IS user-visible —
+        // not just a logged side-effect.
+        setError(getApiErrorMessage(err));
       } else {
         setError('Failed to download translation');
       }

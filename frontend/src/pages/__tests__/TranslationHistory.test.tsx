@@ -519,6 +519,30 @@ describe('TranslationHistory', () => {
         expect(screen.getByText('Download failed')).toBeInTheDocument();
       });
     });
+
+    // #271: download-failure catch must respect getApiErrorMessage too.
+    it('replaces a GENERIC_MESSAGES download error with NETWORK_MESSAGE (#271)', async () => {
+      const user = userEvent.setup();
+      vi.mocked(translationService.getTranslationJobs).mockResolvedValue(mockJobs);
+      vi.mocked(translationService.downloadTranslation).mockRejectedValue(
+        new TranslationServiceError('Network Error', 'API_GENERIC')
+      );
+
+      renderComponent();
+
+      await waitFor(() => {
+        expect(screen.getByText('document1.txt')).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByLabelText(/Download/i));
+
+      await waitFor(() => {
+        expect(
+          screen.getByText(/Connection lost — check your internet and try again/i)
+        ).toBeInTheDocument();
+      });
+      expect(screen.queryByText(/^Network Error$/)).not.toBeInTheDocument();
+    });
   });
 
   describe('Refresh Functionality', () => {
@@ -592,6 +616,47 @@ describe('TranslationHistory', () => {
       await waitFor(() => {
         expect(screen.queryByText('Failed to fetch jobs')).not.toBeInTheDocument();
       });
+    });
+
+    // -----------------------------------------------------------------
+    // #271 — Load-failure catch must route through getApiErrorMessage so
+    // the API-envelope precedence chain governs the alert (GENERIC_MESSAGES
+    // filter → response.data.message → COPY_BY_CODE → STATUS_MESSAGES →
+    // fallback). Mirrors the #270 / #269 pattern.
+    // -----------------------------------------------------------------
+    it('surfaces a known errorCode via COPY_BY_CODE when load fails (#271)', async () => {
+      // Empty message forces the precedence chain to dispatch on errorCode
+      // (the COPY_BY_CODE branch). Old code surfaced raw err.message which
+      // would have left the alert empty here.
+      vi.mocked(translationService.getTranslationJobs).mockRejectedValue(
+        new TranslationServiceError('', 'TRANSLATION_ALREADY_STARTED', 409)
+      );
+
+      renderComponent();
+
+      await waitFor(() => {
+        expect(
+          screen.getByText(/Translation is already running\. The page will refresh automatically/i)
+        ).toBeInTheDocument();
+      });
+    });
+
+    it('replaces a GENERIC_MESSAGES envelope-leak with NETWORK_MESSAGE when load fails (#271)', async () => {
+      // "Network Error" is in the GENERIC_MESSAGES deny-list — must NOT leak.
+      // We pass it through a TranslationServiceError so the catch branch fires;
+      // the old code would have rendered "Network Error" verbatim.
+      vi.mocked(translationService.getTranslationJobs).mockRejectedValue(
+        new TranslationServiceError('Network Error', 'API_GENERIC')
+      );
+
+      renderComponent();
+
+      await waitFor(() => {
+        expect(
+          screen.getByText(/Connection lost — check your internet and try again/i)
+        ).toBeInTheDocument();
+      });
+      expect(screen.queryByText(/^Network Error$/)).not.toBeInTheDocument();
     });
   });
 
