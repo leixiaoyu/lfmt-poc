@@ -8,9 +8,13 @@
  *   1. POST /auth/register succeeds (201, no tokens returned by real backend).
  *   2. Silently attempt login with the same credentials via the shared login().
  *   3a. Login succeeds  → navigate to /dashboard (user is already authenticated).
- *   3b. Login fails     → navigate to /login with a friendly message in router
- *       state so the user can sign in manually without losing their credentials.
- *       The RegisterForm surfaces the error; this page does NOT crash.
+ *   3b. Login fails     → navigate to /login with a router-state message of
+ *       the form `"Account created. <actual-cause>"`. The actual-cause text
+ *       is produced by the shared `getApiErrorMessage` extractor (issue
+ *       #276), so the user sees the real failure (rate limit, network outage,
+ *       email verification required, etc.) rather than a hardcoded
+ *       "check your email" hint that misfires on every non-verification
+ *       cause. The RegisterForm surfaces the error too; this page does NOT crash.
  */
 
 import { useNavigate } from 'react-router-dom';
@@ -19,6 +23,7 @@ import { RegisterForm } from '../components/Auth/RegisterForm';
 import { useAuth } from '../contexts/AuthContext';
 import { ROUTES } from '../config/constants';
 import type { RegisterRequest } from '../services/authService';
+import { getApiErrorMessage } from '../utils/translationErrorMessages';
 
 export default function RegisterPage() {
   const navigate = useNavigate();
@@ -49,14 +54,25 @@ export default function RegisterPage() {
     try {
       await login({ email: formData.email, password: formData.password });
       navigate(ROUTES.DASHBOARD);
-    } catch {
-      // Auto-login failed (e.g., prod env where email verification is still
-      // required, or a transient network error). Redirect to /login and pass
-      // a friendly hint so the user knows their account was created.
+    } catch (autoLoginError) {
+      // Issue #276: Registration succeeded but the auto-login leg failed.
+      // Possible causes are heterogeneous: 429 (Cognito rate limit on the
+      // immediate follow-up InitiateAuth), 403 (email verification required
+      // in prod), 5xx (transient backend), or a network outage. The previous
+      // implementation swallowed the error with `catch {}` and surfaced a
+      // hardcoded "check your email" hint regardless of cause — actively
+      // misleading for the rate-limit / network cases.
+      //
+      // We route the actual error through the shared `getApiErrorMessage`
+      // extractor (the same one the upload wizard and translation pages use)
+      // and prefix it with "Account created." so the user keeps the positive
+      // confirmation about the registration leg AND learns what to actually
+      // do next (verify email, wait and retry, etc.). The /login route reads
+      // `state.message` and renders it verbatim in an info <Alert>.
+      const errorMessage = getApiErrorMessage(autoLoginError);
       navigate(ROUTES.LOGIN, {
         state: {
-          message:
-            'Account created! Please sign in — check your email if verification is required.',
+          message: `Account created. ${errorMessage}`,
         },
       });
     }
