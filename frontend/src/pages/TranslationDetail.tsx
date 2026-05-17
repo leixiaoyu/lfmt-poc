@@ -301,12 +301,18 @@ export const TranslationDetail: React.FC = () => {
   }, [is403, navigate]);
 
   if (queryError && !job && !isLoading) {
-    let errorMessage = 'Failed to load translation details';
-    if (queryError instanceof Error) {
-      errorMessage = queryError.message;
-    }
+    // #269: route through the API-precedence extractor (same helper used for
+    // action errors above at lines 205 / 252) so the user sees the Lambda's
+    // `response.data.message` field when present, then any curated
+    // COPY_BY_CODE phrase, then a generic fallback. The previous
+    // `queryError.message` extraction surfaced the axios top-level message
+    // ("Request failed with status code 404") instead of the API envelope's
+    // structured user-facing prose ("Job not found").
+    let errorMessage = getApiErrorMessage(queryError);
 
     // Special-case: 403 error message override (navigation handled by useEffect above).
+    // The backend 403 body may leak resource-existence information; hardcode
+    // the user-facing string regardless of what the extractor returned.
     if (is403) {
       errorMessage = 'You do not have permission to view this translation';
     }
