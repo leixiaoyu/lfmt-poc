@@ -29,12 +29,10 @@ function renderDashboard(authContext: Partial<AuthContextType>) {
     user: null,
     isAuthenticated: false,
     isLoading: false,
-    error: null,
     login: vi.fn(),
     register: vi.fn(),
     logout: vi.fn(),
     refreshToken: vi.fn(),
-    clearError: vi.fn(),
     ...authContext,
   };
 
