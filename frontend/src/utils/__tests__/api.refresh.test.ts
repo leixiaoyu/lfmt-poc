@@ -247,7 +247,7 @@ describe('API Token Refresh Interceptor', () => {
         idToken: 'expired-id',
         accessToken: 'expired-access',
         refreshToken: 'valid-refresh-token',
-        user: { id: 'u1' } as unknown as UserProfile,
+        user: { userId: 'u1' } as unknown as UserProfile,
       });
 
       instanceMock.onGet('/auth/me').replyOnce(401, {});

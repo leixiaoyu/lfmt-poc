@@ -14,19 +14,11 @@ import { z } from 'zod';
 // the frontend session type without unsafe `as` casts or parallel type defs):
 //   isEmailVerified, mfaEnabled, role, preferences
 //
-// `id` is an optional alias for `userId`. Legacy Cognito-adjacent endpoints
-// and mock handlers surface this field as `id`; new endpoints use `userId`.
-// Consumers SHOULD prefer `userId`; `id` is preserved so that sessions
-// created by older code remain valid after this migration.
+// The legacy `id` alias for `userId` (introduced in #200 to bridge pre-#200
+// session blobs) was removed in issue #199 alongside the StoredSession
+// migration cleanup. All consumers read `userId` directly.
 export interface UserProfile {
   userId: string;
-  /**
-   * @deprecated Alias for `userId` preserved for pre-#200 session blobs.
-   * Consumers MUST prefer `userId`. This field will be removed on or after
-   * 2026-06-04 as part of the #199 migration cleanup — the same sweep that
-   * removes the `LEGACY` keys and the `narrowStoredUser` id-fallback path.
-   */
-  id?: string;
   email: string;
   firstName: string;
   lastName: string;
@@ -135,14 +127,6 @@ export interface RefreshTokenResponse {
  * `JSON.parse`/`stringify` round-trip costs microseconds and eliminates
  * the consistency hazard the OMC reviewer flagged.
  *
- * Migration: a one-time, idempotent migration in `getStoredSession()`
- * reconstructs the blob from the legacy keys (`lfmt_id_token`,
- * `lfmt_access_token`, `lfmt_refresh_token`, `lfmt_user`) and removes
- * the legacy keys. Every other read path (`getAuthToken`,
- * `getStoredRefreshToken`, `getStoredUser`) goes through
- * `getStoredSession`, so the migration is hit on first read regardless
- * of which helper the caller invokes. Removal plan: see issue #199.
- *
  * SECURITY NOTE: storing the ID token in `localStorage` keeps the
  * Bearer credential reachable from any executed JavaScript.
  * `unsafe-inline` was removed from `script-src` in the same PR (#194,
@@ -164,15 +148,8 @@ export interface StoredSession {
   /**
    * The authenticated user object (issue #200 — unified with UserProfile).
    *
-   * Typed as `UserProfile | undefined` now that `UserProfile` is safe to use
-   * as the SPA session type: all fields beyond the core four (userId, email,
-   * firstName, lastName) are optional. Token-only refresh responses do not
-   * re-send the user object, so the field remains optional.
-   *
-   * Legacy sessions that stored a `{ id, ... }` shape (pre-issue-#200) are
-   * still valid: `UserProfile.id` is an optional alias for `userId` so the
-   * stored value satisfies the type at runtime. `narrowStoredUser` in
-   * `utils/api.ts` accepts both `id` and `userId` for backwards compatibility.
+   * Typed as `UserProfile | undefined` so token-only refresh responses
+   * (which do not re-send the user object) leave the field unchanged.
    */
   user?: UserProfile;
 }

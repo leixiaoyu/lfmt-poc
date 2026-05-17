@@ -24,7 +24,7 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { authService } from '../authService';
-import { apiClient, getStoredSession, setStoredSession, clearAuthToken } from '../../utils/api';
+import { apiClient, getStoredSession, setStoredSession } from '../../utils/api';
 import type { UserProfile } from '@lfmt/shared-types';
 import type { AxiosResponse } from 'axios';
 
@@ -155,7 +155,7 @@ describe('AuthService - Login', () => {
     const mockResponse: Partial<AxiosResponse> = {
       data: {
         user: {
-          id: 'user-456',
+          userId: 'user-456',
           email: 'login@example.com',
           firstName: 'Jane',
           lastName: 'Smith',
@@ -187,7 +187,7 @@ describe('AuthService - Login', () => {
       accessToken: 'login-access-token',
       refreshToken: 'login-refresh-token',
       user: {
-        id: 'user-456',
+        userId: 'user-456',
         email: 'login@example.com',
         firstName: 'Jane',
         lastName: 'Smith',
@@ -202,7 +202,12 @@ describe('AuthService - Login', () => {
   it('should use idToken as Bearer credential when present in login response', async () => {
     const mockResponse: Partial<AxiosResponse> = {
       data: {
-        user: { id: 'user-456', email: 'login@example.com', firstName: 'Jane', lastName: 'Smith' },
+        user: {
+          userId: 'user-456',
+          email: 'login@example.com',
+          firstName: 'Jane',
+          lastName: 'Smith',
+        },
         accessToken: 'login-access-token',
         idToken: 'login-id-token',
         refreshToken: 'login-refresh-token',
@@ -372,7 +377,7 @@ describe('AuthService - Logout', () => {
       accessToken: 'test-access-token',
       refreshToken: 'test-refresh-token',
       // Minimal object — only tests that clearAuthToken removes the blob.
-      user: { userId: 'user-123', id: 'user-123' } as UserProfile,
+      user: { userId: 'user-123' } as UserProfile,
     });
 
     await authService.logout();
@@ -387,26 +392,6 @@ describe('AuthService - Logout', () => {
     await expect(authService.logout()).resolves.toBeUndefined();
     expect(getStoredSession()).toBeNull();
   });
-
-  it('should also remove any straggling legacy keys (defense in depth)', async () => {
-    // Pre-populate the legacy keys (could happen if the deploy-rollover
-    // window leaves a stale key behind from a previous build).
-    localStorage.setItem('lfmt_id_token', 'legacy-id');
-    localStorage.setItem('lfmt_access_token', 'legacy-access');
-    localStorage.setItem('lfmt_refresh_token', 'legacy-refresh');
-    localStorage.setItem('lfmt_user', '{}');
-    setStoredSession({ idToken: 'id', accessToken: 'a' });
-
-    await authService.logout();
-
-    // clearAuthToken removes both the blob AND the legacy keys.
-    expect(localStorage.length).toBe(0);
-
-    // Sanity: clearAuthToken is the helper exercised by logout.
-    // Re-calling it directly is a no-op.
-    clearAuthToken();
-    expect(localStorage.length).toBe(0);
-  });
 });
 
 describe('AuthService - Get Current User', () => {
@@ -419,7 +404,7 @@ describe('AuthService - Get Current User', () => {
     const mockResponse: Partial<AxiosResponse> = {
       data: {
         user: {
-          id: 'user-789',
+          userId: 'user-789',
           email: 'current@example.com',
           firstName: 'Current',
           lastName: 'User',
@@ -437,7 +422,7 @@ describe('AuthService - Get Current User', () => {
 
     // Verify user data is returned
     expect(result).toEqual({
-      id: 'user-789',
+      userId: 'user-789',
       email: 'current@example.com',
       firstName: 'Current',
       lastName: 'User',

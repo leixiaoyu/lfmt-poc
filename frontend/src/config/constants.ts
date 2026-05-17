@@ -63,43 +63,8 @@ export const AUTH_CONFIG = {
    * Atomicity: every session write replaces the blob in full, so the
    * fields cannot drift out of sync (the failure mode that motivated
    * this change in OMC review of PR #193).
-   *
-   * Migration: a one-time, idempotent migration runs lazily in
-   * `getStoredSession()` to convert any pre-existing session that
-   * still uses the legacy per-field keys (`lfmt_id_token`,
-   * `lfmt_access_token`, `lfmt_refresh_token`, `lfmt_user`) into
-   * the blob and then deletes those legacy keys.
    */
   SESSION_KEY: 'lfmt_session',
-
-  /**
-   * Legacy local-storage keys preserved ONLY for the migration path
-   * in `getStoredSession()`. New code MUST NOT read or write these
-   * keys directly — go through the session helpers in `utils/api.ts`
-   * instead.
-   *
-   * `utils/api.ts` derives its `LEGACY_KEYS` array from
-   * `Object.values(AUTH_CONFIG.LEGACY)` so this object is the single
-   * source of truth — addition or rename here automatically
-   * propagates to the migration code (Round 2 item 13).
-   *
-   * Removal plan: tracked in issue #199.
-   *
-   * Safe removal window: 30 days after the 2026-05-04 deploy of PR #198
-   * — i.e., no earlier than 2026-06-04. The Cognito refresh token
-   * lifetime is 30 days; any user who has not logged in since before
-   * that deploy will have had their session silently migrated (or will
-   * receive a 401 → forced re-login that writes a fresh blob). After
-   * 2026-06-04 this object, `AUTH_CONFIG.LEGACY.*`, the migration
-   * helpers in `utils/api.ts`, and the migration tests in
-   * `utils/__tests__/api.test.ts` can all be deleted in one sweep.
-   */
-  LEGACY: {
-    ID_TOKEN_KEY: 'lfmt_id_token',
-    ACCESS_TOKEN_KEY: 'lfmt_access_token',
-    REFRESH_TOKEN_KEY: 'lfmt_refresh_token',
-    USER_DATA_KEY: 'lfmt_user',
-  },
 
   /**
    * Token refresh threshold (refresh when token has less than 5 minutes left)
