@@ -235,6 +235,61 @@ describe('TranslationDetail', () => {
   });
 
   // -------------------------------------------------------------------------
+  // Issue #266 — Status chip near the page header
+  // -------------------------------------------------------------------------
+
+  describe('Issue #266 — Status chip', () => {
+    // The chip carries the same status the user can otherwise infer only
+    // from the buttons and the progress card. Surfacing it near the title
+    // makes the page actionable at a glance. Each test asserts the
+    // status-status mapping AND the aria-label so colour is not the sole
+    // signal (a11y requirement).
+
+    it('renders an aria-labelled status chip for COMPLETED jobs', async () => {
+      vi.mocked(translationService.getJobStatus).mockResolvedValue(mockCompletedJob);
+      renderComponent();
+
+      const chip = await screen.findByTestId('status-chip');
+      expect(chip).toHaveAttribute('aria-label', 'Translation status: Completed');
+      expect(chip).toHaveTextContent('Completed');
+    });
+
+    it('renders the "Translating…" chip for IN_PROGRESS jobs', async () => {
+      vi.mocked(translationService.getJobStatus).mockResolvedValue(mockInProgressJob);
+      renderComponent();
+
+      const chip = await screen.findByTestId('status-chip');
+      expect(chip).toHaveAttribute('aria-label', 'Translation status: Translating…');
+    });
+
+    it('renders the "Ready to translate" chip for CHUNKED jobs', async () => {
+      vi.mocked(translationService.getJobStatus).mockResolvedValue(mockChunkedJob);
+      renderComponent();
+
+      const chip = await screen.findByTestId('status-chip');
+      expect(chip).toHaveAttribute('aria-label', 'Translation status: Ready to translate');
+    });
+
+    it('renders the "Failed" chip for FAILED jobs', async () => {
+      vi.mocked(translationService.getJobStatus).mockResolvedValue(mockFailedJob);
+      renderComponent();
+
+      const chip = await screen.findByTestId('status-chip');
+      expect(chip).toHaveAttribute('aria-label', 'Translation status: Failed');
+    });
+
+    it('does NOT render the chip until the first job fetch resolves', () => {
+      // Never resolves — keeps the page in the loading state.
+      vi.mocked(translationService.getJobStatus).mockImplementation(() => new Promise(() => {}));
+      renderComponent();
+
+      // No chip while status is undefined; the progress skeleton already
+      // signals that data is loading.
+      expect(screen.queryByTestId('status-chip')).not.toBeInTheDocument();
+    });
+  });
+
+  // -------------------------------------------------------------------------
   // Page Rendering
   // -------------------------------------------------------------------------
 
@@ -304,7 +359,9 @@ describe('TranslationDetail', () => {
 
       expect(screen.getByText('File Name')).toBeInTheDocument();
       expect(screen.getByText('File Size')).toBeInTheDocument();
-      expect(screen.getByText('Content Type')).toBeInTheDocument();
+      // #266: Content Type row deliberately removed — the read-path
+      // projection does not populate it, so the row was always empty.
+      expect(screen.queryByText('Content Type')).not.toBeInTheDocument();
       expect(screen.getByText('Target Language')).toBeInTheDocument();
       expect(screen.getByText('Tone')).toBeInTheDocument();
       expect(screen.getByText('Created At')).toBeInTheDocument();
@@ -741,6 +798,70 @@ describe('TranslationDetail', () => {
 
       await waitFor(() => {
         expect(screen.getByText('Failed to start')).toBeInTheDocument();
+      });
+    });
+
+    // #266: error-message precedence regression tests.
+    //
+    // The bug: starting a translation on an already-running job rendered the
+    // catch-all "An unexpected error occurred" instead of the Lambda's
+    // user-readable `message` field. Wiring the catch handler through
+    // `getApiErrorMessage` fixes it. These tests pin both the happy path
+    // (API message shows verbatim) and the forward-compat fallback
+    // (COPY_BY_CODE lookup when no API message is present).
+    it('surfaces the API envelope `message` when start translation fails (#266)', async () => {
+      const user = userEvent.setup();
+      vi.mocked(translationService.getJobStatus).mockResolvedValue(mockChunkedJob);
+
+      // Build a TranslationServiceError that mimics what
+      // translationService.handleError would produce for an axios-wrapped
+      // structured-envelope response.
+      const apiError = new TranslationServiceError(
+        'Translation already in_progress for this job',
+        'TRANSLATION_ALREADY_STARTED',
+        409
+      );
+      vi.mocked(translationService.startTranslation).mockRejectedValue(apiError);
+
+      renderComponent();
+
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /Start Translation/i })).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByRole('button', { name: /Start Translation/i }));
+
+      await waitFor(() => {
+        expect(
+          screen.getByText('Translation already in_progress for this job')
+        ).toBeInTheDocument();
+      });
+      // MUST NOT be the catch-all fallback.
+      expect(screen.queryByText(/An unexpected error occurred/i)).not.toBeInTheDocument();
+    });
+
+    it('falls back to COPY_BY_CODE when the API message is missing but errorCode is known (#266)', async () => {
+      const user = userEvent.setup();
+      vi.mocked(translationService.getJobStatus).mockResolvedValue(mockChunkedJob);
+
+      // No message body — empty string forces the API-precedence branch
+      // to skip and dispatch on errorCode instead.
+      const codeOnlyError = new TranslationServiceError('', 'TRANSLATION_ALREADY_STARTED', 409);
+      vi.mocked(translationService.startTranslation).mockRejectedValue(codeOnlyError);
+
+      renderComponent();
+
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /Start Translation/i })).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByRole('button', { name: /Start Translation/i }));
+
+      await waitFor(() => {
+        // Curated copy from translationErrorMessages.COPY_BY_CODE.
+        expect(
+          screen.getByText(/Translation is already running\. The page will refresh automatically/i)
+        ).toBeInTheDocument();
       });
     });
   });

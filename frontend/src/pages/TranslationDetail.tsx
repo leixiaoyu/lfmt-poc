@@ -29,6 +29,7 @@ import {
   Alert,
   CircularProgress,
   Skeleton,
+  Chip,
 } from '@mui/material';
 import DownloadIcon from '@mui/icons-material/Download';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
@@ -39,10 +40,12 @@ import {
   TranslationServiceError,
   type TranslationConfig,
   type OutputFormat,
+  type TranslationJobStatus,
 } from '../services/translationService';
 import { TranslationProgress } from '../components/Translation/TranslationProgress';
 import { useTranslationJob } from '../hooks/useTranslationJob';
 import { getLanguageLabel, getToneLabel } from '../utils/translationLabels';
+import { getApiErrorMessage } from '../utils/translationErrorMessages';
 import { FEATURE_FLAGS } from '../config/constants';
 
 // ---------------------------------------------------------------------------
@@ -79,6 +82,42 @@ function isSupportedLanguage(value: string): value is TranslationConfig['targetL
 
 function isSupportedTone(value: string): value is TranslationConfig['tone'] {
   return (SUPPORTED_TONES as readonly string[]).includes(value);
+}
+
+/**
+ * Status-chip descriptor — semantic color + human label for a given
+ * TranslationJobStatus (#266). Keeps the JSX site DRY and the mapping
+ * easy to extend; defaulting unknown statuses to the raw value with the
+ * neutral 'default' color means a future backend status flows through
+ * without crashing.
+ */
+type StatusChipColor = 'default' | 'info' | 'warning' | 'success' | 'error';
+interface StatusChipDescriptor {
+  label: string;
+  color: StatusChipColor;
+}
+
+function describeStatusChip(status: TranslationJobStatus | undefined): StatusChipDescriptor {
+  switch (status) {
+    case 'PENDING':
+      return { label: 'Pending', color: 'default' };
+    case 'CHUNKING':
+      return { label: 'Preparing chunks…', color: 'info' };
+    case 'CHUNKED':
+      return { label: 'Ready to translate', color: 'default' };
+    case 'IN_PROGRESS':
+      return { label: 'Translating…', color: 'info' };
+    case 'COMPLETED':
+      return { label: 'Completed', color: 'success' };
+    case 'FAILED':
+    case 'CHUNKING_FAILED':
+    case 'TRANSLATION_FAILED':
+      return { label: 'Failed', color: 'error' };
+    default:
+      // Unknown / future status — render the raw value so the user has
+      // SOMETHING to see, and our backend log will surface the mismatch.
+      return { label: status ?? 'Unknown', color: 'default' };
+  }
 }
 
 export const TranslationDetail: React.FC = () => {
@@ -160,7 +199,10 @@ export const TranslationDetail: React.FC = () => {
         }
       } catch (err) {
         if (err instanceof TranslationServiceError) {
-          setActionError(err.message);
+          // #266: route through the API-precedence extractor so the
+          // user sees `response.data.message` when present, then any
+          // curated COPY_BY_CODE phrase, then a fallback.
+          setActionError(getApiErrorMessage(err));
         } else {
           setActionError(`Failed to download translation as ${format.toUpperCase()}`);
         }
@@ -199,7 +241,15 @@ export const TranslationDetail: React.FC = () => {
       await refetch();
     } catch (err) {
       if (err instanceof TranslationServiceError) {
-        setActionError(err.message);
+        // #266: API-envelope-aware extraction.
+        //   1. `response.data.message` (the Lambda-emitted prose).
+        //   2. COPY_BY_CODE lookup keyed by `errorCode` (forward-compat)
+        //      or `requestId` (current buggy backend, #267).
+        //   3. FALLBACK_MESSAGE.
+        // This fixes the demo blocker where attempting to start a
+        // translation that is already running surfaced "An unexpected
+        // error occurred" instead of the backend's user-readable copy.
+        setActionError(getApiErrorMessage(err));
       } else {
         setActionError('Failed to start translation');
       }
@@ -304,7 +354,29 @@ export const TranslationDetail: React.FC = () => {
 
       {/* Page Title */}
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 4 }}>
-        <Typography variant="h4">Translation Details</Typography>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
+          <Typography variant="h4">Translation Details</Typography>
+          {/* #266: prominent status chip — semantic color carries the same
+              signal that the surrounding text describes, so colour-blind /
+              high-contrast users still get the explicit aria-label.
+              Mounting only once `status` is defined avoids a flash of
+              "Unknown" between the React Query skeleton and the first
+              successful fetch. The chip updates IN PLACE as the auto-
+              poll cycles status (PR #238); no remount, no focus loss. */}
+          {status !== undefined &&
+            (() => {
+              const { label, color } = describeStatusChip(status);
+              return (
+                <Chip
+                  label={label}
+                  color={color}
+                  size="small"
+                  data-testid="status-chip"
+                  aria-label={`Translation status: ${label}`}
+                />
+              );
+            })()}
+        </Box>
         <Button
           component={RouterLink}
           to="/translation/history"
@@ -384,12 +456,11 @@ export const TranslationDetail: React.FC = () => {
               <Typography variant="body2">{formatFileSize(job.fileSize)}</Typography>
             </Box>
 
-            <Box>
-              <Typography variant="caption" color="text.secondary">
-                Content Type
-              </Typography>
-              <Typography variant="body2">{job.contentType}</Typography>
-            </Box>
+            {/* #266: Content Type field was always empty on the read-path
+                projection (it lives in the upload payload, not the projection)
+                so the row rendered as "Content Type: —" noise. Removed; a
+                separate issue should add it back if/when the projection
+                includes it. */}
 
             {job.targetLanguage && (
               <Box>
