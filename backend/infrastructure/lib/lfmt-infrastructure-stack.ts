@@ -17,6 +17,8 @@ import * as cloudfront from 'aws-cdk-lib/aws-cloudfront';
 import * as origins from 'aws-cdk-lib/aws-cloudfront-origins';
 import * as route53 from 'aws-cdk-lib/aws-route53';
 import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
+import { CustomResource } from 'aws-cdk-lib';
+import { Provider } from 'aws-cdk-lib/custom-resources';
 
 // CSP builder — extracted into its own module (#216) so the directive
 // shape is testable in isolation and re-usable from non-stack constructs.
@@ -123,6 +125,14 @@ export class LfmtInfrastructureStack extends Stack {
   // endpoint receiving browser reports — kept on its own role so the
   // (minimal) IAM grant is auditable in isolation.
   private cspReportFunction?: lambda.Function;
+  // CSP style-src nonce custom resource (#254). The CFN attribute
+  // `Data.Nonce` carries the freshly-generated per-deploy nonce that
+  // both the response-headers policy CSP and the S3-uploaded
+  // `index.html` `<meta name="csp-nonce">` tag interpolate. Stored as a
+  // class field so `updateCloudFrontCSP()` (called after API Gateway is
+  // provisioned) can re-thread the same token into the updated CSP
+  // string without a second custom-resource invocation.
+  private cspNonceCustomResource?: CustomResource;
 
   // IAM role for Lambda functions
   private lambdaRole?: iam.Role;
@@ -2428,6 +2438,11 @@ export class LfmtInfrastructureStack extends Stack {
       signing: cloudfront.Signing.SIGV4_ALWAYS,
     });
 
+    // 2.5 Create the CSP style-src nonce custom resource (#254).
+    // MUST run before the ResponseHeadersPolicy below so the nonce token
+    // is available to the `style-src 'self' 'nonce-<token>'` directive.
+    this.createCspNonceCustomResource();
+
     // 3. Create CloudFront Distribution
     const environment = this.node.tryGetContext('environment');
     const isProd = environment === 'prod';
@@ -2484,6 +2499,20 @@ export class LfmtInfrastructureStack extends Stack {
                   "'self'",
                   'https://*.execute-api.us-east-1.amazonaws.com',
                   `https://${this.documentBucket.bucketRegionalDomainName}`,
+                ],
+                // #254 — style-src per-deploy nonce. The CDK custom resource
+                // generates a fresh base64url nonce on every `cdk deploy`
+                // and exposes it via `Data.Nonce`. `getAttString` returns
+                // a CDK Token that resolves to a `Fn::GetAtt` reference at
+                // synth time; CloudFormation substitutes the concrete value
+                // when the stack is deployed, so the CSP header at the edge
+                // carries `style-src 'self' 'nonce-<value>'`. The same nonce
+                // is stamped into `index.html`'s `<meta name="csp-nonce">`
+                // tag by the same custom resource (and by the CI rebuild
+                // composite action — see `.github/actions/rebuild-frontend/`).
+                'style-src': [
+                  "'self'",
+                  `'nonce-${this.cspNonceCustomResource!.getAttString('Nonce')}'`,
                 ],
               },
             }),
@@ -2623,6 +2652,15 @@ export class LfmtInfrastructureStack extends Stack {
                   `https://${apiDomain}`,
                   `https://${this.documentBucket.bucketRegionalDomainName}`,
                 ],
+                // #254 — same per-deploy nonce as the initial policy above.
+                // We reuse the SAME `cspNonceCustomResource` instance (not a
+                // second custom resource) so the two CSP headers cannot
+                // drift to different nonces — both reference the same
+                // `Fn::GetAtt` CFN token, which resolves once per deploy.
+                'style-src': [
+                  "'self'",
+                  `'nonce-${this.cspNonceCustomResource!.getAttString('Nonce')}'`,
+                ],
                 // #201: report violations to the dedicated unauthenticated
                 // /csp-report Lambda. Per CSP3, `report-uri` is exempt
                 // from `connect-src` — the browser fires the POST out-of-band
@@ -2651,6 +2689,125 @@ export class LfmtInfrastructureStack extends Stack {
       'DistributionConfig.DefaultCacheBehavior.ResponseHeadersPolicyId',
       updatedResponseHeadersPolicy.responseHeadersPolicyId
     );
+  }
+
+  /**
+   * createCspNonceCustomResource — CDK construct for the per-deploy
+   * style-src nonce (Issue #254).
+   *
+   * Provisions a tiny Lambda (`backend/functions/security/cspNonceCustomResource.ts`)
+   * fronted by the CDK Provider framework. The Provider calls the handler
+   * on every stack `Create`/`Update` event. The handler:
+   *
+   *   1. Generates a fresh base64url nonce (192 bits of entropy).
+   *   2. Best-effort reads `index.html` from the frontend bucket, replaces
+   *      every `__CSP_NONCE__` placeholder, and re-uploads.
+   *   3. Returns the nonce via `Data.Nonce`, which CloudFormation surfaces
+   *      to callers of `customResource.getAttString('Nonce')`.
+   *
+   * The `deployTimestamp` property is the always-changes input that
+   * defeats CloudFormation's "no property delta -> skip update" optimisation,
+   * so the resource re-runs on every `cdk deploy` and the nonce rotates.
+   *
+   * IAM scoping (least-privilege, per OMC review pattern):
+   *   - `s3:GetObject` and `s3:PutObject` on EXACTLY the `index.html` key
+   *     of the frontend bucket. NOT bucket-wide.
+   *   - CloudWatch Logs basic execution policy.
+   *
+   * Deploy-workflow ordering note: when a backend deploy is followed by a
+   * frontend re-upload via `rebuild-frontend` (deploy-backend.yml's frontend
+   * rebuild step, OR a deploy-frontend.yml run), the re-upload would
+   * naively overwrite the stamped `index.html` with the placeholder still
+   * present. The composite action therefore re-performs the same
+   * placeholder substitution (using the nonce read from this stack's
+   * `CspStyleSrcNonce` CFN output) before uploading. See
+   * `.github/actions/rebuild-frontend/action.yml`.
+   */
+  private createCspNonceCustomResource() {
+    if (!this.frontendBucket) {
+      throw new Error('Frontend bucket must be created before CSP nonce custom resource');
+    }
+
+    const skipBundling = this.node.tryGetContext('skipLambdaBundling') === 'true';
+
+    // Lambda handler that does the read/replace/write.
+    const nonceLambda = new NodejsFunction(this, 'CspNonceCustomResourceLambda', {
+      functionName: `lfmt-csp-nonce-${this.stackName}`,
+      entry: '../functions/security/cspNonceCustomResource.ts',
+      handler: 'handler',
+      runtime: LAMBDA_RUNTIME,
+      architecture: LAMBDA_ARCHITECTURE,
+      timeout: Duration.seconds(30),
+      memorySize: 128,
+      description:
+        'CSP style-src nonce generator + index.html placeholder rewriter (#254). Runs on every cdk deploy.',
+      bundling: {
+        externalModules: ['aws-sdk', '@aws-sdk/*'],
+        minify: true,
+        sourceMap: true,
+        forceDockerBundling: false,
+      },
+      // Test harness disables Lambda bundling for a fast `cdk synth` —
+      // mirror the same flag the createJobLambda helper consults.
+      ...(skipBundling
+        ? {
+            code: lambda.Code.fromInline(
+              'exports.handler = async () => ({ Status: "SUCCESS", Data: { Nonce: "test" } });'
+            ),
+          }
+        : {}),
+    });
+
+    // Least-privilege IAM: scoped to the single `index.html` key under the
+    // frontend bucket. NOT the whole bucket. A scope-wide grant would let
+    // a compromised Lambda overwrite the JS bundle and ship malicious code.
+    nonceLambda.addToRolePolicy(
+      new iam.PolicyStatement({
+        effect: iam.Effect.ALLOW,
+        actions: ['s3:GetObject', 's3:PutObject'],
+        resources: [`${this.frontendBucket.bucketArn}/index.html`],
+      })
+    );
+
+    // Provider construct ID intentionally prefixed with `Custom` so the
+    // generated CloudFormation logical ID is filtered out by the Lambda
+    // drift-guard tests (`isApplicationLambda` excludes `Custom*` because
+    // those are CDK-helper Lambdas whose runtime/architecture defaults
+    // we do not control via the application's `LAMBDA_*` constants). The
+    // application-side handler (`nonceLambda` above) keeps its
+    // `CspNonceCustomResourceLambda` name and IS counted, which is
+    // correct — we control its architecture and runtime explicitly.
+    const provider = new Provider(this, 'CustomCspNonceProvider', {
+      onEventHandler: nonceLambda,
+    });
+
+    // The custom resource. Note `deployTimestamp` — a synth-time value
+    // that changes on every `cdk deploy` so CloudFormation re-invokes
+    // the handler (otherwise CFN sees identical properties and skips
+    // the update, freezing the nonce).
+    this.cspNonceCustomResource = new CustomResource(this, 'CspStyleSrcNonceResource', {
+      serviceToken: provider.serviceToken,
+      properties: {
+        bucketName: this.frontendBucket.bucketName,
+        // ISO-8601 UTC at synth time. Any string that differs between two
+        // `cdk deploy` invocations works; using the timestamp keeps the
+        // CFN diff human-readable (`OldValue` / `NewValue` show actual
+        // wall-clock differences).
+        deployTimestamp: new Date().toISOString(),
+      },
+    });
+
+    // Surface the nonce on the stack outputs so the CI rebuild-frontend
+    // composite action can read it via `aws cloudformation describe-stacks`
+    // and stamp the same value into `dist/index.html` before uploading.
+    // This is what closes the deploy-ordering loop when the CI rebuild
+    // step runs AFTER the custom resource has updated S3 (and would
+    // otherwise restore the `__CSP_NONCE__` placeholder).
+    new CfnOutput(this, 'CspStyleSrcNonce', {
+      value: this.cspNonceCustomResource.getAttString('Nonce'),
+      description:
+        'Per-deploy CSP style-src nonce (#254). Consumed by .github/actions/rebuild-frontend to stamp index.html before S3 upload. Public: surfaced in every viewer response, do NOT treat as secret.',
+    });
   }
 
   private createOutputs() {

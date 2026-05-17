@@ -26,12 +26,20 @@
  * (NOT a single string) so the validation and join semantics are crystal-
  * clear at the call site.
  *
- * Hardening status (Issues #133, #194, #216):
+ * Hardening status (Issues #133, #194, #216, #254):
  *   - 'unsafe-eval' REMOVED from script-src.
  *   - 'unsafe-inline' REMOVED from script-src — Vite's built
  *     `dist/index.html` has no inline `<script>` blocks.
- *   - 'unsafe-inline' on style-src: retained by default, but callers MAY
- *     override with a `'nonce-...'` source list per #197.
+ *   - 'unsafe-inline' REMOVED from style-src default (#254). MUI/Emotion
+ *     CSS-in-JS now flows through a nonce-aware Emotion CacheProvider
+ *     wired to a `<meta name="csp-nonce">` tag stamped into `index.html`
+ *     at deploy time by the CDK custom resource defined in
+ *     `lfmt-infrastructure-stack.ts`. The same custom resource exposes
+ *     the nonce as a CloudFormation attribute that callers thread into
+ *     `buildCsp({ directives: { 'style-src': ["'self'", "'nonce-<token>'"] } })`
+ *     so the response-headers policy CSP carries the matching source.
+ *     The default emitted here is just `style-src 'self'`; callers MUST
+ *     pass a `'nonce-...'` source explicitly to make MUI styles work.
  *
  * Telemetry (#201): pass `'report-uri': ['https://...']`. The value is
  * sanitized by `assertValidCspReportUri` to prevent injection attacks via
@@ -105,17 +113,26 @@ const DEFAULT_DIRECTIVES: Required<
 > = {
   'default-src': ["'self'"],
   'script-src': ["'self'"],
-  // 'unsafe-inline' is RETAINED on style-src for now (Issue #254 — split
-  // from the original #197). MUI/Emotion injects runtime styles via
-  // `document.head.appendChild('<style>')` and removing this directive
-  // requires a Lambda@Edge per-response nonce pipeline. The CSP builder
-  // already SUPPORTS the nonce path (caller passes
-  //   'style-src': ["'self'", "'nonce-...'"]
-  // and a unit test pins the output) so #254 is a one-line change at the
-  // caller plus the Lambda@Edge function. Until that lands, the
-  // #201 violation-report endpoint catches any regression that introduces
-  // a NEW source of inline styles outside MUI/Emotion.
-  'style-src': ["'self'", "'unsafe-inline'"],
+  // 'unsafe-inline' REMOVED from style-src as of #254. MUI/Emotion no
+  // longer injects un-nonced `<style>` tags: the React tree wraps `App`
+  // in a nonce-aware Emotion `CacheProvider` that reads the nonce from
+  // the `<meta name="csp-nonce">` tag in `index.html`. The CDK custom
+  // resource defined in `lfmt-infrastructure-stack.ts` (see
+  // `createCspNonceCustomResource`) generates a fresh random nonce on
+  // every `cdk deploy`, rewrites the meta-tag placeholder in S3, and
+  // exposes the value to this builder so the response-headers policy
+  // CSP carries `style-src 'self' 'nonce-<value>'` for the matching
+  // deploy lifetime.
+  //
+  // The static-per-deploy trade-off is documented in
+  // `docs/CLOUDFRONT-SETUP.md`: an attacker who reads the served
+  // `index.html` learns the nonce until the next frontend deploy
+  // rotates it. We accept this because (a) the #201 CSP violation-
+  // report endpoint alarms on any regression that introduces a
+  // non-nonced inline style, and (b) per-response nonces would
+  // require Lambda@Edge body-rewriting which Lambda@Edge does NOT
+  // expose (the original #254 design was pivoted for this reason).
+  'style-src': ["'self'"],
   'img-src': ["'self'", 'data:', 'https:'],
   'font-src': ["'self'", 'data:'],
   'connect-src': ["'self'"],
