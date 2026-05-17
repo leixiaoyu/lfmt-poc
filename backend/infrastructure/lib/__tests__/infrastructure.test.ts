@@ -1383,11 +1383,10 @@ describe('LFMT Infrastructure Stack', () => {
       // Re-introducing 'unsafe-inline' on script-src would re-open the
       // exfiltration class and must trip CI.
       //
-      // Note: 'unsafe-inline' on style-src remains present. MUI/Emotion
-      // injects runtime styles via document.head.appendChild('<style>')
-      // and removing this directive requires a Lambda@Edge nonce
-      // pipeline. That work is tracked in a separate follow-up issue;
-      // it does not address the same exfiltration class.
+      // Note: 'unsafe-inline' on style-src has ALSO been removed as of
+      // Issue #254 (build-time static-nonce pipeline). The separate
+      // "style-src does not contain 'unsafe-inline'" guard below carries
+      // that contract.
       const flattenCsp = (csp: unknown): string => {
         if (typeof csp === 'string') return csp;
         if (csp && typeof csp === 'object' && 'Fn::Join' in (csp as object)) {
@@ -1411,8 +1410,10 @@ describe('LFMT Infrastructure Stack', () => {
             .ContentSecurityPolicy;
         const flat = flattenCsp(csp);
         // Extract just the script-src directive, then assert it does
-        // NOT contain 'unsafe-inline'. Avoids accidentally tripping on
-        // the style-src 'unsafe-inline' that is intentionally retained.
+        // NOT contain 'unsafe-inline'. style-src has its own dedicated
+        // guard below (#254) — keeping the matchers per-directive means
+        // a regression on either one is reported by the correct failing
+        // test name rather than via an overly broad string search.
         const scriptSrcMatch = flat.match(/script-src[^;]*/);
         if (!scriptSrcMatch) {
           throw new Error(`script-src directive missing from CSP: ${flat}`);
@@ -1425,6 +1426,87 @@ describe('LFMT Infrastructure Stack', () => {
         // which IS `'self'`, so the SPA still loads but the contract
         // is now implicit). Assert `'self'` is the explicit value.
         expect(scriptSrcMatch[0]).toMatch(/^script-src\s+'self'\s*$/);
+      });
+    });
+
+    test("style-src does not contain 'unsafe-inline' (Issue #254)", () => {
+      // Regression guard for Issue #254 — build-time static-nonce pipeline.
+      //
+      // 'unsafe-inline' on style-src was retained for many months because
+      // MUI/Emotion injects CSS-in-JS via `document.head.appendChild(<style>)`
+      // at runtime, and CSP nonce-source-expressions ARE the only safe
+      // alternative. PR for #254 introduced a CDK custom resource
+      // (`backend/functions/security/cspNonceCustomResource.ts`) that
+      // generates a fresh `crypto.randomBytes(24).toString('base64url')`
+      // nonce on every `cdk deploy` and stamps it into both the response
+      // CSP header AND the `<meta name="csp-nonce">` tag in `index.html`.
+      // The React tree reads that meta and threads the nonce into the
+      // Emotion CacheProvider, so MUI's runtime styles ship a `nonce`
+      // attribute and pass CSP.
+      //
+      // The BASE policy emitted by `buildCsp()` (i.e., the CDK synth-time
+      // string in the ResponseHeadersPolicy) no longer needs
+      // `'unsafe-inline'` — the caller appends the `'nonce-<token>'`
+      // source explicitly using the CFN-token attribute exposed by the
+      // custom resource. Re-introducing `'unsafe-inline'` on style-src
+      // here would re-open the inline-style injection class (an attacker
+      // who controls a snippet of HTML could smuggle in
+      // `<style>body{display:none}</style>` or worse, a CSS exfiltration
+      // via `:has`/url() side-channels), so this test must trip CI on
+      // any future regression.
+      //
+      // Mirrors the PR #194 guard for `script-src`. Both initial and
+      // updated response-headers policies are asserted. Note that we
+      // deliberately do NOT assert the exact shape of `style-src` here,
+      // because the CDK token interpolation produces an `Fn::Join` that
+      // serializes as an opaque string at template-read time — pinning
+      // the structural shape (presence of 'self', presence of a nonce
+      // marker, ABSENCE of 'unsafe-inline') is the load-bearing contract.
+      const flattenCsp = (csp: unknown): string => {
+        if (typeof csp === 'string') return csp;
+        if (csp && typeof csp === 'object' && 'Fn::Join' in (csp as object)) {
+          const join = (csp as { 'Fn::Join': [string, unknown[]] })['Fn::Join'];
+          const parts = join[1];
+          return parts.map((p) => (typeof p === 'string' ? p : JSON.stringify(p))).join('');
+        }
+        return JSON.stringify(csp);
+      };
+
+      const policies = template.findResources('AWS::CloudFront::ResponseHeadersPolicy');
+      const cspCarryingPolicies = Object.values(policies).filter((policy: any) => {
+        return !!policy?.Properties?.ResponseHeadersPolicyConfig?.SecurityHeadersConfig
+          ?.ContentSecurityPolicy?.ContentSecurityPolicy;
+      });
+      expect(cspCarryingPolicies.length).toBeGreaterThanOrEqual(2);
+
+      cspCarryingPolicies.forEach((policy: any) => {
+        const csp =
+          policy.Properties.ResponseHeadersPolicyConfig.SecurityHeadersConfig.ContentSecurityPolicy
+            .ContentSecurityPolicy;
+        const flat = flattenCsp(csp);
+        // Extract just the style-src directive so we don't falsely pass
+        // if a future regression moves `'unsafe-inline'` to some other
+        // directive. The directive ends at the next `;` boundary.
+        const styleSrcMatch = flat.match(/style-src[^;]*/);
+        if (!styleSrcMatch) {
+          throw new Error(`style-src directive missing from CSP: ${flat}`);
+        }
+        // Hard contract: 'unsafe-inline' MUST NOT appear in the style-src
+        // source list. This is the regression we are guarding against.
+        expect(styleSrcMatch[0]).not.toContain("'unsafe-inline'");
+        // Positive assertion: 'self' must be the first explicit source so
+        // a regression that accidentally drops the directive entirely
+        // (which would silently fall back to `default-src 'self'` and
+        // load the SPA) is flagged.
+        expect(styleSrcMatch[0]).toMatch(/style-src\s+'self'/);
+        // Positive assertion: the nonce source must be present. The
+        // exact value is a CFN token (`Fn::GetAtt`), which the flattener
+        // serialises to a JSON object string containing the marker
+        // string `Nonce`. A regression that forgets to pass the nonce
+        // source would drop the `nonce-` token entirely and the SPA's
+        // MUI styles would break in the wild — surface that here
+        // instead of waiting for a deploy failure.
+        expect(styleSrcMatch[0]).toMatch(/nonce-/);
       });
     });
 
@@ -1644,15 +1726,17 @@ describe('LFMT Infrastructure Stack', () => {
   //   Register, Login, RefreshToken, ResetPassword, GetCurrentUser,
   //   UploadRequest, UploadComplete, ChunkDocument, TranslateChunk,
   //   StartTranslation, GetTranslationStatus, GetJob, DeleteJob,
-  //   DownloadTranslation (added in demo-readiness PR).
+  //   DownloadTranslation (added in demo-readiness PR), ListJobs,
+  //   CspReport, CspNonceCustomResource.
   // The dev-only PreSignUp Lambda is gated behind `isDev`
   // (stackName.toLowerCase().includes('dev')) and is absent in the
   // 'test' stackName used by these tests.
   // Update this constant + the PR body whenever a Lambda is added or removed
-  // (PR #208: +2 for GetJob + DeleteJob, 11 → 13; demo-readiness: +1 for
-  // DownloadTranslation, 13 → 14; PR #239: +1 for ListJobs, 14 → 15;
-  // #201: +1 for CspReport, 15 → 16).
-  const EXPECTED_APPLICATION_LAMBDA_COUNT = 16;
+  // (PR #208: +2 for GetJob + DeleteJob, 11 -> 13; demo-readiness: +1 for
+  // DownloadTranslation, 13 -> 14; PR #239: +1 for ListJobs, 14 -> 15;
+  // #201: +1 for CspReport, 15 -> 16; #254: +1 for CspNonceCustomResource,
+  // 16 -> 17).
+  const EXPECTED_APPLICATION_LAMBDA_COUNT = 17;
 
   describe('Lambda Runtime Drift Guard (PR #203 R2)', () => {
     // Regression guard mirroring the CSP/'unsafe-eval' pattern (PR #198):
@@ -2313,7 +2397,12 @@ describe('csp.ts — buildCsp(#216 directive-map shape)', () => {
     const csp = buildCsp();
     expect(csp).toContain("default-src 'self'");
     expect(csp).toContain("script-src 'self'");
-    expect(csp).toContain("style-src 'self' 'unsafe-inline'");
+    // style-src no longer carries 'unsafe-inline' in the base policy
+    // (#254). The per-deploy `'nonce-<b64>'` is appended by callers in
+    // `lfmt-infrastructure-stack.ts` using the CFN token returned by the
+    // CDK custom resource — `buildCsp` itself does not interpolate it.
+    expect(csp).toMatch(/(?:^|; )style-src 'self'(?:;|$)/);
+    expect(csp).not.toContain("'unsafe-inline'");
     expect(csp).toContain("img-src 'self' data: https:");
     expect(csp).toContain("font-src 'self' data:");
     expect(csp).toContain("connect-src 'self'");

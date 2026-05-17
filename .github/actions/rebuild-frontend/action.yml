@@ -47,6 +47,19 @@ runs:
         BUCKET=$(echo "$OUTPUTS" | jq -r '.[] | select(.OutputKey=="FrontendBucketName") | .OutputValue')
         DIST_ID=$(echo "$OUTPUTS" | jq -r '.[] | select(.OutputKey=="CloudFrontDistributionId") | .OutputValue')
         FRONTEND_URL=$(echo "$OUTPUTS" | jq -r '.[] | select(.OutputKey=="FrontendUrl") | .OutputValue')
+        # Issue #254 — read the per-deploy CSP style-src nonce so we can stamp
+        # it into dist/index.html before uploading. The value is also written
+        # into the response-headers policy CSP header by the CDK custom
+        # resource; if it is missing here the upload would ship the literal
+        # `__CSP_NONCE__` placeholder and every MUI style would be CSP-blocked.
+        # The output is created on first CDK deploy that includes #254 —
+        # an empty value means the backend has not yet been re-deployed with
+        # the new stack, in which case we fall back to skipping the
+        # substitution and emit a CI warning rather than failing the upload
+        # (the previous-generation index.html shipped without the meta tag
+        # at all, so a missing nonce is recoverable; a stale-placeholder
+        # upload is the hard regression to prevent).
+        CSP_NONCE=$(echo "$OUTPUTS" | jq -r '.[] | select(.OutputKey=="CspStyleSrcNonce") | .OutputValue')
         # OMC R2 L-2: guard against empty outputs. jq returns empty string (not
         # an error) when a key is absent — e.g. if CDK deploy failed mid-way and
         # the stack is in a partial state. An empty VITE_API_URL would bake a
@@ -67,6 +80,17 @@ runs:
         echo "bucket_name=$BUCKET" >> $GITHUB_OUTPUT
         echo "distribution_id=$DIST_ID" >> $GITHUB_OUTPUT
         echo "frontend_url=$FRONTEND_URL" >> $GITHUB_OUTPUT
+        # Do NOT echo the literal nonce to a workflow log line: it is the
+        # value that ends up in every served HTTP response, but logging
+        # it on every CI run is needless attacker-recon-friendly noise.
+        # The presence/absence is reported instead.
+        if [ -n "$CSP_NONCE" ]; then
+          echo "csp_nonce=$CSP_NONCE" >> $GITHUB_OUTPUT
+          echo "CSP style-src nonce: <present, ${#CSP_NONCE} chars>"
+        else
+          echo "csp_nonce=" >> $GITHUB_OUTPUT
+          echo "::warning::CspStyleSrcNonce CFN output missing — index.html will ship with literal __CSP_NONCE__ placeholder. If the backend deploy has not yet rolled out the #254 stack, this is expected on the first frontend-only deploy after merge; re-trigger after the next backend deploy to converge."
+        fi
         echo "API URL: $API_URL"
         echo "Bucket: $BUCKET"
         echo "CloudFront Distribution: $DIST_ID"
@@ -94,6 +118,52 @@ runs:
       env:
         NODE_ENV: production
         VITE_API_URL: ${{ steps.cfn.outputs.api_url }}
+
+    # Issue #254 — stamp the per-deploy CSP style-src nonce into dist/index.html
+    # BEFORE the S3 upload. The CDK custom resource ALSO performs this rewrite
+    # in S3 (so a backend-only `cdk deploy` keeps the served index.html in
+    # sync with the rotated CSP header), but the rewrite below is what
+    # closes the deploy-ordering loop when a frontend re-upload follows
+    # a backend deploy: without this step the fresh `dist/index.html` from
+    # `npm run build` would land in S3 with the literal `__CSP_NONCE__`
+    # placeholder and overwrite the CDK-stamped value, breaking every MUI
+    # style at the edge until the next backend deploy.
+    #
+    # Defensive `sed` semantics: we use a `|` delimiter (not `/`) so the
+    # nonce — which may contain `-` and `_` after base64url encoding but
+    # NOT `|` — never collides with the sed pattern. `-i.bak` produces a
+    # backup file we delete on the next line; this works identically on
+    # macOS and GNU sed (an `-i ''` form does not). The `[ -n NONCE ]`
+    # guard skips the substitution entirely when the CFN output was empty,
+    # leaving the literal placeholder in place (recoverable via re-deploy
+    # — see warning above) instead of running a no-op sed that would
+    # accidentally erase the placeholder under a different bug.
+    - name: Stamp CSP nonce into dist/index.html
+      shell: bash
+      run: |
+        NONCE="${{ steps.cfn.outputs.csp_nonce }}"
+        if [ -z "$NONCE" ]; then
+          echo "::warning::Skipping nonce substitution: CspStyleSrcNonce CFN output was empty"
+          exit 0
+        fi
+        if [ ! -f frontend/dist/index.html ]; then
+          echo "::error::frontend/dist/index.html does not exist after build"
+          exit 1
+        fi
+        # Count placeholder occurrences pre-sed for verification.
+        BEFORE=$(grep -c "__CSP_NONCE__" frontend/dist/index.html || echo 0)
+        if [ "$BEFORE" -eq 0 ]; then
+          echo "::warning::No __CSP_NONCE__ placeholder found in dist/index.html — frontend/index.html may have been edited"
+          exit 0
+        fi
+        sed -i.bak "s|__CSP_NONCE__|${NONCE}|g" frontend/dist/index.html
+        rm -f frontend/dist/index.html.bak
+        AFTER=$(grep -c "__CSP_NONCE__" frontend/dist/index.html || echo 0)
+        echo "Stamped CSP nonce into dist/index.html (replacements: $BEFORE, remaining placeholders: $AFTER)"
+        if [ "$AFTER" -ne 0 ]; then
+          echo "::error::Placeholder still present after sed substitution — refusing to upload"
+          exit 1
+        fi
 
     - name: Sync frontend bundle to S3
       shell: bash
