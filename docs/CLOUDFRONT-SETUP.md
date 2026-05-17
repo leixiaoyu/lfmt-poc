@@ -215,6 +215,34 @@ const responseHeadersPolicy = new cloudfront.ResponseHeadersPolicy(this, 'Securi
 
 **⚠️ CRITICAL**: CSP **must** be configured in `securityHeadersBehavior.contentSecurityPolicy`, **NOT** in `customHeadersBehavior.customHeaders[]`. CloudFormation will reject deployment if CSP is in custom headers.
 
+### Operational note: deploy-time CSP nonce (Issue #254)
+
+The `style-src` directive carries a per-deploy random nonce (NOT `'unsafe-inline'`) so MUI/Emotion's runtime `<style>` injections pass CSP without opening the inline-style injection class. The mechanics:
+
+1. **Build time**: `frontend/index.html` ships with `<meta name="csp-nonce" content="__CSP_NONCE__">`. Vite leaves the literal placeholder untouched through `npm run build` — the value lands in `dist/index.html` verbatim.
+
+2. **Deploy time (CDK)**: a CDK custom resource (`backend/functions/security/cspNonceCustomResource.ts`, wired up in `lfmt-infrastructure-stack.ts#createCspNonceCustomResource`) generates a fresh `crypto.randomBytes(24).toString('base64url')` nonce on every `cdk deploy`. It reads `index.html` from the frontend S3 bucket, replaces `__CSP_NONCE__` with the new value, re-uploads, and exposes the nonce via the `CspStyleSrcNonce` CloudFormation output. The same nonce is interpolated into the CSP response-headers policy (`style-src 'self' 'nonce-<value>'`).
+
+3. **Deploy time (CI)**: the `.github/actions/rebuild-frontend` composite action — used by BOTH `deploy-backend.yml` AND `deploy-frontend.yml` — reads `CspStyleSrcNonce` from CFN outputs and stamps it into `dist/index.html` BEFORE uploading to S3. This is what closes the deploy-ordering loop: without the CI-side substitution, a backend deploy's `rebuild-frontend` step would land a fresh `dist/index.html` (with placeholder) on top of the CDK-stamped value, and every MUI style would break at the edge.
+
+**Trade-off**: the nonce is static for one deploy lifetime, NOT per response. An attacker who reads the served `index.html` learns the nonce until the next frontend deploy rotates it. This is a meaningful but bounded reduction in the security benefit compared to a per-response nonce. The trade-off is accepted because:
+
+- The CSP violation-report endpoint (#201, live since PR #257) alarms in CloudWatch on any regression that introduces inline styles without nonces — i.e., the _primary_ goal of this design (eliminate `'unsafe-inline'`) is achievable and observable.
+- A per-response nonce model would require Lambda@Edge body-rewriting, which Lambda@Edge response triggers do not support (AWS doc citations preserved on Issue #254's pivot comment).
+- The remaining auth-token surface is still localStorage-readable (#255 deferred); per-response nonce freshness on `style-src` is comparatively low marginal value while that exposure exists.
+
+**Deploy-workflow ordering**: the contract is that the `rebuild-frontend` composite action ALWAYS performs the placeholder substitution at upload time. This way the served `index.html` always matches the live CSP header, regardless of whether the upload follows a `cdk deploy` (deploy-backend.yml) or stands alone (deploy-frontend.yml). The CDK custom resource's in-place S3 rewrite is the belt-and-braces: it keeps the served HTML coherent with the CSP even if no subsequent CI upload runs.
+
+**Troubleshooting: MUI styles disappear after a deploy** — the symptom is a recently-deployed site with broken layout and CSP violation reports of the form `violated-directive: "style-src"`, `blocked-uri: "inline"`. Most likely causes, in order:
+
+1. **Stale nonce in `index.html`**: the served `index.html` carries one nonce while the CSP header carries another. Check by `curl -s https://<frontend>/index.html | grep csp-nonce` and `curl -sI https://<frontend>/ | grep -i content-security-policy`. The base64url tokens must match. Recovery: re-run `gh workflow run deploy-backend.yml --ref main` (rotates both the CSP header and the served HTML in one transaction).
+
+2. **Literal placeholder still in `index.html`**: `curl -s https://<frontend>/index.html | grep __CSP_NONCE__` returns a match. This means the CI substitution step skipped (no `CspStyleSrcNonce` CFN output yet, or the rebuild-frontend action was an older version). Recovery: re-deploy the backend so the custom resource fires the in-place rewrite, OR re-run the frontend deploy after confirming `aws cloudformation describe-stacks --stack-name LfmtPocDev --query 'Stacks[0].Outputs[?OutputKey==\`CspStyleSrcNonce\`]'` returns a value.
+
+3. **Stale CSP header at CloudFront edge**: a recent deploy stamped a new nonce but CloudFront caches still serve the old CSP. Recovery: invalidate `/*` via `aws cloudfront create-invalidation`. Note the rebuild-frontend action already invalidates after every upload — this case implies the invalidation step was skipped or failed.
+
+**Dev-mode (`npm run dev`)**: Vite's dev server serves `index.html` without running CDK, so the `__CSP_NONCE__` placeholder stays literal. The `getCspNonceFromMeta()` helper in `frontend/src/utils/cspNonce.ts` detects the un-substituted placeholder and returns `undefined`; Emotion then omits the `nonce=` attribute entirely. The Vite dev server does not set the production CSP header, so MUI styles continue to work in dev — no extra configuration needed.
+
 ### Stack Outputs
 
 ```typescript

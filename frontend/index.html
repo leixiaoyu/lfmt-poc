@@ -5,6 +5,26 @@
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content="LFMT - Long-Form Translation Service POC" />
+    <!--
+      CSP nonce placeholder (Issue #254).
+
+      The literal `__CSP_NONCE__` token below is replaced at deploy time by the
+      CDK custom resource defined in `backend/infrastructure/lib/lfmt-infrastructure-stack.ts`
+      (and by a CI-side `sed` substitution in `.github/actions/rebuild-frontend/action.yml`,
+      which handles the case where a frontend re-upload follows a backend deploy
+      and would otherwise restore the placeholder over the CDK-stamped nonce).
+
+      Vite leaves this string untouched at build time — it is not an env-var
+      template (`%VITE_*%`) nor a JavaScript-resolved expression — so the
+      placeholder is preserved verbatim in `dist/index.html`. The Emotion
+      `CacheProvider` wired up in `src/main.tsx` reads the resolved nonce
+      from this meta tag at runtime so MUI-injected `<style>` blocks carry
+      a CSP-valid `nonce=` attribute. In `npm run dev` the placeholder is
+      NOT replaced (no CDK deploy in the loop); Emotion falls back to
+      no-nonce, which is fine because the Vite dev server does not enforce
+      the production CSP header.
+    -->
+    <meta name="csp-nonce" content="__CSP_NONCE__" />
     <title>LFMT - Long-Form Translation Service</title>
   </head>
   <body>

@@ -300,16 +300,19 @@ jobs:
           echo "CSP Policy: $CSP"
           echo ""
 
-          # CSP hardening status (Issue #133):
-          #   - 'unsafe-eval' has been REMOVED from script-src (Part 2). The
-          #     production bundle was inspected and contains no eval()/Function()
-          #     calls; standard Vite + MUI/Emotion do not require it.
-          #   - 'unsafe-inline' is still permitted (style-src + script-src) and
-          #     will be removed when the nonce-injection pipeline lands
-          #     (Lambda@Edge + Emotion CacheProvider). Tracked in the Part 1
-          #     follow-up issue.
-          # We therefore validate the non-unsafe hardening directives plus the
-          # absence of 'unsafe-eval' as a regression guard.
+          # CSP hardening status (Issues #133, #194, #254):
+          #   - 'unsafe-eval' REMOVED from script-src (Issue #133 Part 2).
+          #     The production bundle was inspected and contains no
+          #     eval()/Function() calls; standard Vite + MUI/Emotion do
+          #     not require it.
+          #   - 'unsafe-inline' REMOVED from script-src (Issue #194).
+          #     dist/index.html contains no inline <script> blocks.
+          #   - 'unsafe-inline' REMOVED from style-src (Issue #254). MUI/
+          #     Emotion runtime styles now carry a per-deploy CSP nonce
+          #     interpolated into both the response header and the served
+          #     index.html `<meta name="csp-nonce">` tag.
+          # We therefore validate the non-unsafe hardening directives plus
+          # explicit regression guards on every removed source.
 
           # Check that CSP contains baseline directives
           required_directives=("default-src" "script-src" "style-src" "connect-src")
@@ -322,8 +325,7 @@ jobs:
             fi
           done
 
-          # Check that CSP contains additional hardening directives (retained
-          # from the Issue #63 pass even though 'unsafe-inline' remains).
+          # Check that CSP contains additional hardening directives.
           hardening_directives=(
             "object-src 'none'"
             "base-uri 'self'"
@@ -347,6 +349,27 @@ jobs:
             exit 1
           else
             echo "✅ PASS: CSP does not contain 'unsafe-eval' (Issue #133 Part 2)"
+          fi
+
+          # Regression guard (Issue #254): 'unsafe-inline' must NOT appear
+          # ANYWHERE in the deployed CSP. The style-src directive now
+          # carries a per-deploy nonce instead.
+          if echo "$CSP" | grep -iF "'unsafe-inline'" > /dev/null; then
+            echo "❌ FAIL: CSP contains 'unsafe-inline' (regression — Issue #254 style-src nonce)"
+            exit 1
+          else
+            echo "✅ PASS: CSP does not contain 'unsafe-inline' (Issue #254)"
+          fi
+
+          # Positive assertion (Issue #254): the style-src directive MUST
+          # carry a 'nonce-...' source. The absence here would mean either
+          # the CDK custom resource failed to interpolate the nonce token
+          # (CFN deploy issue) OR the buildCsp() caller was reverted.
+          if echo "$CSP" | grep -iE "style-src[^;]*'nonce-" > /dev/null; then
+            echo "✅ PASS: CSP style-src carries a 'nonce-<value>' source (Issue #254)"
+          else
+            echo "❌ FAIL: CSP style-src missing 'nonce-<value>' source (Issue #254)"
+            exit 1
           fi
 
           echo ""
