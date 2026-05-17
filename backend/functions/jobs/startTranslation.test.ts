@@ -36,6 +36,14 @@ describe('startTranslation endpoint', () => {
     });
   });
 
+  // The UUID-shape regex used by the live contract spec and by the
+  // backend unit assertions added in #267. Keep this in sync with
+  // `frontend/e2e/tests/contract/api-envelope-live.spec.ts` — if the
+  // shape ever changes (e.g. API Gateway switches to ULID), update
+  // both sites in the same PR.
+  const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  const STUB_REQUEST_ID = '11111111-2222-4333-8444-555555555555';
+
   const createEvent = (jobId: string, body: any): Partial<APIGatewayProxyEvent> => ({
     httpMethod: 'POST',
     path: `/jobs/${jobId}/translate`,
@@ -45,6 +53,10 @@ describe('startTranslation endpoint', () => {
       Authorization: 'Bearer mock-token',
     },
     requestContext: {
+      // #267 — every event MUST carry a `requestContext.requestId` UUID so
+      // the Lambda can echo it back on both success and error paths.
+      // API Gateway populates this in production; the tests stub it.
+      requestId: STUB_REQUEST_ID,
       authorizer: {
         claims: {
           sub: 'user-123',
@@ -93,6 +105,13 @@ describe('startTranslation endpoint', () => {
       expect(body.estimatedCompletion).toBeDefined();
       expect(body.estimatedCost).toBeGreaterThan(0);
       expect(body.executionArn).toBeDefined();
+      // #267 — success responses must echo the API Gateway request UUID
+      // verbatim. Pre-#267 this slot was being filled with an error-code
+      // string on the error path (broken wire contract).
+      expect(body.requestId).toBe(STUB_REQUEST_ID);
+      expect(body.requestId).toMatch(UUID_REGEX);
+      // #267 — success responses MUST NOT carry an `errorCode` field.
+      expect(body).not.toHaveProperty('errorCode');
 
       // Verify DynamoDB update was called
       const dynamoCalls = dynamoMock.commandCalls(UpdateItemCommand);
@@ -375,6 +394,164 @@ describe('startTranslation endpoint', () => {
       expect(result.statusCode).toBe(400);
       const body = JSON.parse(result.body);
       expect(body.message).toContain('no chunks');
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // #267 — error envelope wire-contract guard.
+  //
+  // Pre-#267 the Lambda emitted `{ message, requestId: '<ERROR_CODE>' }` —
+  // stuffing the machine-readable status-code string into the slot reserved
+  // for the API Gateway correlation UUID. The fix separates the two concerns:
+  //
+  //   - `requestId` MUST be the UUID echoed from `event.requestContext.requestId`.
+  //   - `errorCode` MUST be the status-code discriminator (new field).
+  //
+  // These assertions pin the contract against future drift. If a maintainer
+  // accidentally reverts to the pre-#267 shape, the relevant test below
+  // fails loudly.
+  // -------------------------------------------------------------------------
+  describe('error envelope shape (#267)', () => {
+    const assertErrorEnvelope = (
+      body: Record<string, unknown>,
+      expectedErrorCode: string,
+      expectedMessageFragment: string
+    ): void => {
+      // `requestId` must be the UUID (NOT the error code string).
+      expect(typeof body.requestId).toBe('string');
+      expect(body.requestId).toBe(STUB_REQUEST_ID);
+      expect(body.requestId as string).toMatch(UUID_REGEX);
+      // `errorCode` must carry the machine-readable status-code signal.
+      expect(body.errorCode).toBe(expectedErrorCode);
+      // Anti-regression: the error code MUST NOT leak into `requestId`.
+      expect(body.requestId).not.toBe(expectedErrorCode);
+      // `message` should remain human-readable prose, not the status-code.
+      expect(typeof body.message).toBe('string');
+      expect(body.message as string).toContain(expectedMessageFragment);
+      expect(body.message).not.toBe(expectedErrorCode);
+    };
+
+    it('emits errorCode=TRANSLATION_ALREADY_STARTED with UUID requestId on IN_PROGRESS conflict', async () => {
+      dynamoMock.on(GetItemCommand).resolves({
+        Item: {
+          jobId: { S: 'job-123' },
+          userId: { S: 'user-123' },
+          status: { S: 'CHUNKED' },
+          translationStatus: { S: 'IN_PROGRESS' },
+        },
+      } as any);
+
+      const event = createEvent('job-123', { targetLanguage: 'es' });
+      const result = await handler(event as APIGatewayProxyEvent);
+      expect(result.statusCode).toBe(400);
+      const body = JSON.parse(result.body);
+      assertErrorEnvelope(body, 'TRANSLATION_ALREADY_STARTED', 'already in_progress');
+    });
+
+    it('emits errorCode=TRANSLATION_ALREADY_STARTED on COMPLETED conflict', async () => {
+      dynamoMock.on(GetItemCommand).resolves({
+        Item: {
+          jobId: { S: 'job-123' },
+          userId: { S: 'user-123' },
+          status: { S: 'CHUNKED' },
+          translationStatus: { S: 'COMPLETED' },
+        },
+      } as any);
+
+      const event = createEvent('job-123', { targetLanguage: 'es' });
+      const result = await handler(event as APIGatewayProxyEvent);
+      expect(result.statusCode).toBe(400);
+      const body = JSON.parse(result.body);
+      assertErrorEnvelope(body, 'TRANSLATION_ALREADY_STARTED', 'already completed');
+    });
+
+    it('emits errorCode=JOB_NOT_FOUND with UUID requestId when job is missing', async () => {
+      dynamoMock.on(GetItemCommand).resolves({ Item: undefined } as any);
+
+      const event = createEvent('missing', { targetLanguage: 'es' });
+      const result = await handler(event as APIGatewayProxyEvent);
+      expect(result.statusCode).toBe(404);
+      const body = JSON.parse(result.body);
+      assertErrorEnvelope(body, 'JOB_NOT_FOUND', 'Job not found');
+    });
+
+    it('emits errorCode=FORBIDDEN when the caller does not own the job', async () => {
+      dynamoMock.on(GetItemCommand).resolves({
+        Item: {
+          jobId: { S: 'job-123' },
+          userId: { S: 'other-user' },
+          status: { S: 'CHUNKED' },
+        },
+      } as any);
+
+      const event = createEvent('job-123', { targetLanguage: 'es' });
+      const result = await handler(event as APIGatewayProxyEvent);
+      expect(result.statusCode).toBe(403);
+      const body = JSON.parse(result.body);
+      assertErrorEnvelope(body, 'FORBIDDEN', 'permission');
+    });
+
+    it('emits errorCode=INVALID_JOB_STATUS when job is not in CHUNKED status', async () => {
+      dynamoMock.on(GetItemCommand).resolves({
+        Item: {
+          jobId: { S: 'job-123' },
+          userId: { S: 'user-123' },
+          status: { S: 'PENDING_UPLOAD' },
+        },
+      } as any);
+
+      const event = createEvent('job-123', { targetLanguage: 'es' });
+      const result = await handler(event as APIGatewayProxyEvent);
+      expect(result.statusCode).toBe(400);
+      const body = JSON.parse(result.body);
+      assertErrorEnvelope(body, 'INVALID_JOB_STATUS', 'must be in CHUNKED status');
+    });
+
+    it('emits errorCode=NO_CHUNKS_AVAILABLE when job has 0 chunks', async () => {
+      dynamoMock.on(GetItemCommand).resolves({
+        Item: {
+          jobId: { S: 'job-123' },
+          userId: { S: 'user-123' },
+          status: { S: 'CHUNKED' },
+          totalChunks: { N: '0' },
+        },
+      } as any);
+
+      const event = createEvent('job-123', { targetLanguage: 'es' });
+      const result = await handler(event as APIGatewayProxyEvent);
+      expect(result.statusCode).toBe(400);
+      const body = JSON.parse(result.body);
+      assertErrorEnvelope(body, 'NO_CHUNKS_AVAILABLE', 'no chunks');
+    });
+
+    it('emits errorCode=INVALID_REQUEST for validation failures (e.g. invalid targetLanguage)', async () => {
+      const event = createEvent('job-123', { targetLanguage: 'klingon' });
+      const result = await handler(event as APIGatewayProxyEvent);
+      expect(result.statusCode).toBe(400);
+      const body = JSON.parse(result.body);
+      assertErrorEnvelope(body, 'INVALID_REQUEST', 'Invalid targetLanguage');
+    });
+
+    it('does NOT stuff the error code into requestId — anti-regression guard for the pre-#267 bug', async () => {
+      // This is the EXACT failure mode #267 describes. If anyone reverts
+      // `createErrorResponse` arg-order or re-introduces the legacy call
+      // pattern in startTranslation.ts, this test fires.
+      dynamoMock.on(GetItemCommand).resolves({
+        Item: {
+          jobId: { S: 'job-123' },
+          userId: { S: 'user-123' },
+          status: { S: 'CHUNKED' },
+          translationStatus: { S: 'IN_PROGRESS' },
+        },
+      } as any);
+
+      const event = createEvent('job-123', { targetLanguage: 'es' });
+      const result = await handler(event as APIGatewayProxyEvent);
+      const body = JSON.parse(result.body);
+      // The pre-#267 shape: requestId === 'TRANSLATION_ALREADY_STARTED'.
+      expect(body.requestId).not.toBe('TRANSLATION_ALREADY_STARTED');
+      // The pre-#267 shape also did NOT include errorCode.
+      expect(body).toHaveProperty('errorCode');
     });
   });
 });
