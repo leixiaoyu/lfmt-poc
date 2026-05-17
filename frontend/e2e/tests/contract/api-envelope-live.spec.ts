@@ -183,6 +183,37 @@ test.describe('Live-backend API envelope contract @contract-live', () => {
     return { Authorization: `Bearer ${idToken}` };
   }
 
+  /**
+   * Assert the #267 error envelope shape against a parsed 4xx/5xx body.
+   *
+   * Contract:
+   *   - `requestId` (when present) MUST be an API Gateway UUID, NOT a
+   *     status-code string. The pre-#267 bug stuffed `'JOB_NOT_FOUND'` etc.
+   *     into this slot, breaking CloudWatch log correlation.
+   *   - `errorCode` (when present) MUST be a SCREAMING_SNAKE_CASE literal.
+   *     We don't pin the exact union here because new error codes get added
+   *     over time; the shape pin is sufficient to catch wire-contract drift.
+   *
+   * `requestId` and `errorCode` are both OPTIONAL on the envelope. The shape
+   * pin only fires when they're present (forward-compat with handlers that
+   * haven't yet been migrated to the new contract).
+   */
+  const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  function assertErrorEnvelope(body: {
+    message: string;
+    requestId?: string;
+    errorCode?: string;
+  }): void {
+    if (typeof body.requestId === 'string') {
+      // #267 anti-regression: requestId MUST be a UUID, NOT a status code.
+      expect(body.requestId).toMatch(UUID_REGEX);
+      expect(body.requestId).not.toMatch(/^[A-Z][A-Z0-9_]*$/);
+    }
+    if (typeof body.errorCode === 'string') {
+      expect(body.errorCode).toMatch(/^[A-Z][A-Z0-9_]*$/);
+    }
+  }
+
   // -----------------------------------------------------------------------
   // Lifecycle — one login per file, not per test.
   // -----------------------------------------------------------------------
@@ -275,13 +306,57 @@ test.describe('Live-backend API envelope contract @contract-live', () => {
       expect(body).not.toHaveProperty('chunksTranslated');
       expect(typeof body.targetLanguage).toBe('string');
     } else {
-      // Structured error envelope — `{ message, requestId, errors? }`.
+      // Structured error envelope — `{ message, requestId, errorCode?, errors? }`.
+      // #267: `requestId` MUST be the API Gateway UUID (NOT a status-code
+      // string); `errorCode` (when present) carries the machine-readable
+      // discriminator. The legacy buggy shape that motivated #267 stuffed
+      // the status code into `requestId` (`requestId === 'TRANSLATION_ALREADY_STARTED'`).
       const body = (await res.json()) as {
         message: string;
         requestId?: string;
+        errorCode?: string;
       };
       expect(typeof body.message).toBe('string');
       expect(body.message.length).toBeGreaterThan(0);
+      assertErrorEnvelope(body);
+    }
+  });
+
+  // -----------------------------------------------------------------------
+  // 2b. POST /jobs/{jobId}/translate — explicit error-envelope check.
+  //     #267 — translating a non-existent jobId returns a 4xx whose body
+  //     MUST follow the canonical error envelope shape (UUID requestId,
+  //     errorCode discriminator). This is the regression baseline for the
+  //     bug that motivated #267: pre-fix, `requestId` carried the status
+  //     code string instead of the API Gateway UUID.
+  // -----------------------------------------------------------------------
+  test('POST /jobs/{nonexistent}/translate returns the #267 error envelope', async ({
+    request,
+  }) => {
+    const fakeJobId = `nonexistent-${Date.now()}`;
+    const res = await request.post(`${normalizedApiUrl}/jobs/${fakeJobId}/translate`, {
+      headers: authHeaders(),
+      data: { targetLanguage: 'es', tone: 'neutral' },
+      failOnStatusCode: false,
+    });
+    // We don't pin the EXACT status code (404 vs 400) — the contract is
+    // about the envelope shape, not the status code. Just ensure it's
+    // not a 2xx (which would mean the lookup didn't happen).
+    expect(res.ok(), await res.text()).toBe(false);
+    const body = (await res.json()) as {
+      message: string;
+      requestId?: string;
+      errorCode?: string;
+    };
+    expect(typeof body.message).toBe('string');
+    expect(body.message.length).toBeGreaterThan(0);
+    assertErrorEnvelope(body);
+    // For this specific call, we expect errorCode === 'JOB_NOT_FOUND'
+    // once the #267 fix is deployed. Until then the field may be absent
+    // (frontend forward-compat reads requestId fallback). Treat the
+    // presence assertion as soft — log instead of fail when missing.
+    if (typeof body.errorCode === 'string') {
+      expect(body.errorCode).toMatch(/^[A-Z][A-Z0-9_]*$/);
     }
   });
 

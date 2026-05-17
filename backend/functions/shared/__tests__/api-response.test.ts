@@ -166,6 +166,62 @@ describe('api-response — envelope helpers', () => {
       const parsed = JSON.parse(response.body);
       expect(parsed).toEqual({ message: 'Server error' });
     });
+
+    // ---------------------------------------------------------------------
+    // #267 — `errorCode` parameter is the new canonical home for the
+    // machine-readable status-code discriminator. Pre-#267 some handlers
+    // (notably startTranslation.ts) misused the `requestId` slot for this
+    // signal — these tests pin the new contract so the bug cannot reappear.
+    // ---------------------------------------------------------------------
+    it('includes errorCode when supplied alongside the UUID requestId', () => {
+      const response = createErrorResponse(
+        409,
+        'Translation already in_progress for this job',
+        '11111111-2222-4333-8444-555555555555',
+        undefined,
+        undefined,
+        'TRANSLATION_ALREADY_STARTED'
+      );
+      const parsed = JSON.parse(response.body);
+      expect(response.statusCode).toBe(409);
+      expect(parsed).toEqual({
+        message: 'Translation already in_progress for this job',
+        requestId: '11111111-2222-4333-8444-555555555555',
+        errorCode: 'TRANSLATION_ALREADY_STARTED',
+      });
+      // The error code MUST NOT be smuggled into `requestId`.
+      expect(parsed.requestId).not.toBe('TRANSLATION_ALREADY_STARTED');
+    });
+
+    it('omits errorCode when not provided (legacy callers stay unchanged)', () => {
+      const response = createErrorResponse(500, 'Server error', 'r1');
+      const parsed = JSON.parse(response.body);
+      expect(parsed).toEqual({
+        message: 'Server error',
+        requestId: 'r1',
+      });
+      expect(parsed).not.toHaveProperty('errorCode');
+    });
+
+    it('supports the full 6-arg signature (status, message, requestId, errors, origin, errorCode)', () => {
+      process.env.ALLOWED_ORIGINS = 'https://app.example.com';
+      const response = createErrorResponse(
+        400,
+        'Validation failed',
+        'r1',
+        { email: ['Invalid'] },
+        'https://app.example.com',
+        'INVALID_REQUEST'
+      );
+      expect(response.headers['Access-Control-Allow-Origin']).toBe('https://app.example.com');
+      const parsed = JSON.parse(response.body);
+      expect(parsed).toEqual({
+        message: 'Validation failed',
+        requestId: 'r1',
+        errorCode: 'INVALID_REQUEST',
+        errors: { email: ['Invalid'] },
+      });
+    });
   });
 
   describe('getCorsHeaders', () => {

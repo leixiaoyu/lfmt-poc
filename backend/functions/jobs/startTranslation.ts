@@ -70,17 +70,24 @@ interface StartTranslationRequest {
  */
 export const handler = async (event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> => {
   const requestOrigin = event.headers.origin || event.headers.Origin;
+  // #267 — the canonical correlation UUID is the API Gateway request id.
+  // Pre-#267 this slot was being filled with a status-code string on the
+  // wire (e.g. `'TRANSLATION_ALREADY_STARTED'`), which broke CloudWatch log
+  // correlation. The status-code signal now travels in the dedicated
+  // `errorCode` parameter (6th positional arg to `createErrorResponse`).
+  const requestId = event.requestContext?.requestId;
 
   logger.info('Starting translation request', {
     path: event.path,
     method: event.httpMethod,
+    requestId,
   });
 
   try {
     // Get authenticated user from Cognito claims
     const userId = event.requestContext?.authorizer?.claims?.sub;
     if (!userId) {
-      return createErrorResponse(401, 'Unauthorized', undefined, undefined, requestOrigin);
+      return createErrorResponse(401, 'Unauthorized', requestId, undefined, requestOrigin);
     }
 
     // Extract jobId from path
@@ -89,9 +96,10 @@ export const handler = async (event: APIGatewayProxyEvent): Promise<APIGatewayPr
       return createErrorResponse(
         400,
         'Missing jobId in path',
-        'MISSING_JOB_ID',
+        requestId,
         undefined,
-        requestOrigin
+        requestOrigin,
+        'MISSING_JOB_ID'
       );
     }
 
@@ -104,9 +112,10 @@ export const handler = async (event: APIGatewayProxyEvent): Promise<APIGatewayPr
       return createErrorResponse(
         400,
         validation.error!,
-        'INVALID_REQUEST',
+        requestId,
         undefined,
-        requestOrigin
+        requestOrigin,
+        'INVALID_REQUEST'
       );
     }
 
@@ -118,9 +127,10 @@ export const handler = async (event: APIGatewayProxyEvent): Promise<APIGatewayPr
       return createErrorResponse(
         404,
         `Job not found: ${jobId}`,
-        'JOB_NOT_FOUND',
+        requestId,
         undefined,
-        requestOrigin
+        requestOrigin,
+        'JOB_NOT_FOUND'
       );
     }
 
@@ -129,9 +139,10 @@ export const handler = async (event: APIGatewayProxyEvent): Promise<APIGatewayPr
       return createErrorResponse(
         403,
         'You do not have permission to translate this job',
-        'FORBIDDEN',
+        requestId,
         undefined,
-        requestOrigin
+        requestOrigin,
+        'FORBIDDEN'
       );
     }
 
@@ -140,9 +151,10 @@ export const handler = async (event: APIGatewayProxyEvent): Promise<APIGatewayPr
       return createErrorResponse(
         400,
         `Job must be in CHUNKED status to start translation. Current status: ${job.status}`,
-        'INVALID_JOB_STATUS',
+        requestId,
         undefined,
-        requestOrigin
+        requestOrigin,
+        'INVALID_JOB_STATUS'
       );
     }
 
@@ -151,9 +163,10 @@ export const handler = async (event: APIGatewayProxyEvent): Promise<APIGatewayPr
       return createErrorResponse(
         400,
         `Translation already ${job.translationStatus.toLowerCase()} for this job`,
-        'TRANSLATION_ALREADY_STARTED',
+        requestId,
         undefined,
-        requestOrigin
+        requestOrigin,
+        'TRANSLATION_ALREADY_STARTED'
       );
     }
 
@@ -162,9 +175,10 @@ export const handler = async (event: APIGatewayProxyEvent): Promise<APIGatewayPr
       return createErrorResponse(
         400,
         'Job has no chunks to translate',
-        'NO_CHUNKS_AVAILABLE',
+        requestId,
         undefined,
-        requestOrigin
+        requestOrigin,
+        'NO_CHUNKS_AVAILABLE'
       );
     }
 
@@ -219,19 +233,21 @@ export const handler = async (event: APIGatewayProxyEvent): Promise<APIGatewayPr
       executionArn, // Step Functions execution ARN for tracking
     };
 
-    return createFlatResponse(200, responseBody, undefined, requestOrigin);
+    return createFlatResponse(200, responseBody, requestId, requestOrigin);
   } catch (error) {
     logger.error('Failed to start translation', {
       error: error instanceof Error ? error.message : 'Unknown error',
       stack: error instanceof Error ? error.stack : undefined,
+      requestId,
     });
 
     return createErrorResponse(
       500,
       'Failed to start translation',
+      requestId,
       undefined,
-      undefined,
-      requestOrigin
+      requestOrigin,
+      'INTERNAL_ERROR'
     );
   }
 };
