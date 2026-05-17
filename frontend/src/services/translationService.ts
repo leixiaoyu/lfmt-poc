@@ -163,6 +163,20 @@ export type TranslationErrorCode =
   | 'S3_HTTP_ERROR' // S3 returned an HTTP error (e.g. SignatureDoesNotMatch, 403)
   | 'TRANSLATION_ALREADY_STARTED' // POST /jobs/:id/translate when a translation
   //                                  is already running for the job (#266).
+  // ---- Codes emitted by `backend/functions/jobs/startTranslation.ts` ----
+  // Issue #273: inventory + expand COPY_BY_CODE for backend error codes.
+  // The backend Lambda currently emits these via the `requestId` envelope slot
+  // (#267 will rename the field to `errorCode`); the values are stable across
+  // that rename, so the frontend reads both fields. The Lambda also emits a
+  // user-readable `message` alongside each code, which takes precedence in
+  // `getApiErrorMessage`. COPY_BY_CODE entries below are the FALLBACK when the
+  // message is empty or generic.
+  | 'MISSING_JOB_ID' // 400 — required jobId path parameter is absent
+  | 'INVALID_REQUEST' // 400 — body validation failed (targetLanguage/tone/contextChunks)
+  | 'JOB_NOT_FOUND' // 404 — job does not exist for the caller
+  | 'FORBIDDEN' // 403 — caller does not own the job
+  | 'INVALID_JOB_STATUS' // 400 — job not in CHUNKED status; cannot start translation
+  | 'NO_CHUNKS_AVAILABLE' // 400 — job has no chunks; cannot start translation
   | 'API_GENERIC'; // API / service error — fall through to status-code map
 
 /**
@@ -359,6 +373,16 @@ const KNOWN_TRANSLATION_ERROR_CODES: ReadonlySet<TranslationErrorCode> =
     'S3_UPLOAD_BLOCKED',
     'S3_HTTP_ERROR',
     'TRANSLATION_ALREADY_STARTED',
+    // Issue #273: codes from `backend/functions/jobs/startTranslation.ts`.
+    // Keep this set in lock-step with the `TranslationErrorCode` union so
+    // unrecognised codes from the API envelope can never escape the
+    // 'API_GENERIC' fallback bucket.
+    'MISSING_JOB_ID',
+    'INVALID_REQUEST',
+    'JOB_NOT_FOUND',
+    'FORBIDDEN',
+    'INVALID_JOB_STATUS',
+    'NO_CHUNKS_AVAILABLE',
   ]);
 
 function isKnownTranslationErrorCode(value: unknown): value is TranslationErrorCode {
