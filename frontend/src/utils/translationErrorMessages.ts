@@ -57,6 +57,11 @@ const COPY_BY_CODE: Record<
 > = {
   S3_UPLOAD_BLOCKED:
     'Upload was blocked. This is likely a configuration issue — please refresh and try again, or contact support if it persists.',
+  // #266: surfaced when POST /jobs/:id/translate is invoked but a translation
+  // is already running for the job. Auto-polling means progress is being
+  // tracked already, so the message tells the user to wait rather than retry.
+  TRANSLATION_ALREADY_STARTED:
+    'Translation is already running. The page will refresh automatically as it makes progress.',
 };
 
 const STATUS_MESSAGES: Record<number, string> = {
@@ -86,6 +91,102 @@ const GENERIC_MESSAGES = new Set(
     s.toLowerCase()
   )
 );
+
+/**
+ * Resolve a user-facing message with API-envelope precedence (#266).
+ *
+ * Precedence:
+ *   1. `response.data.message` from the structured API envelope — when present
+ *      AND non-generic, surface it verbatim. This is the Lambda-emitted
+ *      human-readable text and is the most context-specific message we can show.
+ *   2. Fall through to `getTranslationErrorMessage` which dispatches on
+ *      `errorCode` / `statusCode` / pass-through / fallback (PR #251 logic).
+ *
+ * Why this wrapper exists instead of inlining into `getTranslationErrorMessage`:
+ *   The PR #251 / issue #215 precedence (errorCode > statusCode > message) is
+ *   used by other call sites (e.g. the upload wizard) where curated copy is
+ *   strictly preferred for certain error categories (S3_UPLOAD_BLOCKED).
+ *   The TranslationDetail "start translation" flow (#266) instead wants the
+ *   Lambda's `message` field to win because the backend already crafts
+ *   user-facing prose for these errors. Keeping the two layered avoids
+ *   regressing the upload-wizard error-mapping tests.
+ *
+ * Red-team note: when the backend returns a 500-class error with a stack-trace-
+ * like string in `message`, we DO NOT want to leak it. The GENERIC_MESSAGES
+ * deny-list (below) already catches the most common variants ("network error",
+ * "request failed", etc.); for 500-class errors the backend's API contract
+ * dictates a human-readable phrase only, so passing through is safe. If the
+ * backend ever starts leaking unsafe internals, the answer is a server-side
+ * fix, not a frontend deny-list arms race.
+ *
+ * Forward-compat with backend issue #267: the `errorCode` discriminator is
+ * read from both `response.data.errorCode` (the eventual correct field) AND
+ * `response.data.requestId` (the current buggy field). The frontend remains
+ * correct whether the backend has been fixed yet or not.
+ */
+export function getApiErrorMessage(error: unknown): string {
+  if (!error || typeof error !== 'object') {
+    return getTranslationErrorMessage(error);
+  }
+
+  // Two shapes can reach this helper:
+  //   a. A `TranslationServiceError` thrown by `translationService.handleError`.
+  //      The Lambda's `response.data.message` has ALREADY been extracted into
+  //      `error.message` (see translationService.ts handleError), and the
+  //      typed `errorCode` discriminator is set via the same path.
+  //   b. A raw `AxiosError` — `error.response.data.message` is the envelope
+  //      field; some non-translation code paths reach the page-level catch
+  //      without going through handleError.
+  //
+  // Both shapes converge here so callers don't need a type-narrowing dance.
+  type WithResponse = {
+    response?: { data?: { message?: unknown; errorCode?: unknown; requestId?: unknown } };
+    originalError?: WithResponse;
+    message?: unknown;
+  };
+  const candidate = error as WithResponse;
+
+  // Probe the raw axios envelope first (shape b) — only used if shape a
+  // hasn't already lifted the message into `e.message`.
+  const envelope = candidate.response?.data ?? candidate.originalError?.response?.data ?? undefined;
+  const envelopeMessage = typeof envelope?.message === 'string' ? envelope.message : undefined;
+
+  const e = error as TranslationErrorLike;
+  // Pre-extracted message lives on TranslationServiceError; raw envelope
+  // message comes from a bare AxiosError. Either way, we want the
+  // Lambda-emitted prose to take precedence over curated COPY_BY_CODE
+  // copy when it's specific enough to surface (#266 acceptance criterion).
+  const candidateMessage =
+    typeof e.message === 'string' && e.message.length > 0 ? e.message : envelopeMessage;
+
+  if (
+    typeof candidateMessage === 'string' &&
+    candidateMessage.length > 0 &&
+    !GENERIC_MESSAGES.has(candidateMessage.trim().toLowerCase())
+  ) {
+    return candidateMessage;
+  }
+
+  // No usable API message — delegate to the PR #251 logic. Before doing so,
+  // enrich the shape with an errorCode pulled from the envelope's `errorCode`
+  // (forward-compat with backend #267) or `requestId` (current buggy field
+  // name) so the COPY_BY_CODE branch can dispatch correctly even when the
+  // upstream `handleError` didn't get a chance to set it.
+  const envelopeCode =
+    typeof envelope?.errorCode === 'string'
+      ? envelope.errorCode
+      : typeof envelope?.requestId === 'string'
+        ? envelope.requestId
+        : undefined;
+  if (envelopeCode && !e.errorCode) {
+    return getTranslationErrorMessage({
+      ...e,
+      errorCode: envelopeCode as TranslationErrorCode,
+    });
+  }
+
+  return getTranslationErrorMessage(error);
+}
 
 /**
  * Resolve a user-facing message for a translation-submit failure.

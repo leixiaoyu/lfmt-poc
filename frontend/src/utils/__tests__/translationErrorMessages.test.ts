@@ -16,7 +16,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { getTranslationErrorMessage } from '../translationErrorMessages';
+import { getApiErrorMessage, getTranslationErrorMessage } from '../translationErrorMessages';
 
 const NETWORK_MESSAGE = 'Connection lost — check your internet and try again.';
 const FALLBACK_MESSAGE = 'An unexpected error occurred. Please try again.';
@@ -190,5 +190,115 @@ describe('getTranslationErrorMessage — errorCode discriminator (issue #215)', 
     expect(getTranslationErrorMessage(error)).toBe(
       "You don't have permission to start this translation."
     );
+  });
+
+  it('returns the TRANSLATION_ALREADY_STARTED copy when errorCode is set (#266)', () => {
+    // Empty message forces the errorCode branch to win — the wrapper
+    // function `getApiErrorMessage` covers the API-message-wins path
+    // in its own describe block.
+    const error = {
+      errorCode: 'TRANSLATION_ALREADY_STARTED' as const,
+      statusCode: 409,
+      message: '',
+    };
+    expect(getTranslationErrorMessage(error)).toBe(
+      'Translation is already running. The page will refresh automatically as it makes progress.'
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// #266: getApiErrorMessage — API-envelope precedence wrapper
+// ---------------------------------------------------------------------------
+
+describe('getApiErrorMessage — API-envelope precedence (#266)', () => {
+  it('returns the API `message` when it is non-empty and non-generic', () => {
+    // Shape (a): TranslationServiceError where handleError already lifted
+    // the Lambda's `response.data.message` into `.message`.
+    const error = {
+      message: 'Translation already in_progress for this job',
+      errorCode: 'TRANSLATION_ALREADY_STARTED' as const,
+      statusCode: 409,
+    };
+    expect(getApiErrorMessage(error)).toBe('Translation already in_progress for this job');
+  });
+
+  it('prefers the API `message` even when a known COPY_BY_CODE errorCode is present', () => {
+    // Precedence: API message wins over curated COPY_BY_CODE copy. The
+    // backend's prose is the most context-specific signal we have.
+    const error = {
+      message: 'Custom Lambda-emitted phrase',
+      errorCode: 'TRANSLATION_ALREADY_STARTED' as const,
+      statusCode: 409,
+    };
+    expect(getApiErrorMessage(error)).toBe('Custom Lambda-emitted phrase');
+  });
+
+  it('falls back to COPY_BY_CODE when the API message is missing', () => {
+    const error = {
+      message: '',
+      errorCode: 'TRANSLATION_ALREADY_STARTED' as const,
+      statusCode: 409,
+    };
+    expect(getApiErrorMessage(error)).toBe(
+      'Translation is already running. The page will refresh automatically as it makes progress.'
+    );
+  });
+
+  it('falls back to FALLBACK_MESSAGE when neither API message nor errorCode is present', () => {
+    // Generic axios "Request failed" passes the GENERIC_MESSAGES deny-list,
+    // so the wrapper delegates to getTranslationErrorMessage, which routes
+    // through the network-error / fallback branches.
+    expect(getApiErrorMessage({})).toBe('Connection lost — check your internet and try again.');
+  });
+
+  it('reads errorCode from `response.data.errorCode` on a raw axios-shaped error', () => {
+    // Forward-compat path: backend issue #267 will rename the field from
+    // `requestId` → `errorCode` once fixed. Shape (b): raw axios error.
+    const error = {
+      response: {
+        data: { errorCode: 'TRANSLATION_ALREADY_STARTED' },
+      },
+    };
+    expect(getApiErrorMessage(error)).toBe(
+      'Translation is already running. The page will refresh automatically as it makes progress.'
+    );
+  });
+
+  it('reads errorCode from `response.data.requestId` on a raw axios-shaped error (#267 back-compat)', () => {
+    // Current buggy backend places the error category in the `requestId`
+    // slot. The frontend must remain correct until #267 lands.
+    const error = {
+      response: {
+        data: { requestId: 'TRANSLATION_ALREADY_STARTED' },
+      },
+    };
+    expect(getApiErrorMessage(error)).toBe(
+      'Translation is already running. The page will refresh automatically as it makes progress.'
+    );
+  });
+
+  it('prefers API `response.data.message` over the requestId-as-errorCode fallback', () => {
+    // Raw axios error with both message AND requestId-as-errorCode set.
+    // API message wins per #266 precedence rule.
+    const error = {
+      response: {
+        data: {
+          message: 'Translation already in_progress for this job',
+          requestId: 'TRANSLATION_ALREADY_STARTED',
+        },
+      },
+    };
+    expect(getApiErrorMessage(error)).toBe('Translation already in_progress for this job');
+  });
+
+  it('treats generic API messages like "Network Error" as non-specific and falls through', () => {
+    // Deny-list guard: an API envelope message that is itself a generic
+    // axios string should NOT be surfaced verbatim.
+    const error = {
+      message: 'Network Error',
+      statusCode: undefined,
+    };
+    expect(getApiErrorMessage(error)).toBe('Connection lost — check your internet and try again.');
   });
 });

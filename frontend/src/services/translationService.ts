@@ -161,6 +161,8 @@ export interface UploadAndAwaitChunkedOptions {
 export type TranslationErrorCode =
   | 'S3_UPLOAD_BLOCKED' // Transport-level block (CSP, network, DNS, XHR abort)
   | 'S3_HTTP_ERROR' // S3 returned an HTTP error (e.g. SignatureDoesNotMatch, 403)
+  | 'TRANSLATION_ALREADY_STARTED' // POST /jobs/:id/translate when a translation
+  //                                  is already running for the job (#266).
   | 'API_GENERIC'; // API / service error — fall through to status-code map
 
 /**
@@ -312,10 +314,58 @@ const handleError = (error: unknown): never => {
   if (axios.isAxiosError(error)) {
     const message = error.response?.data?.message || error.message;
     const statusCode = error.response?.status;
-    throw new TranslationServiceError(message, 'API_GENERIC', statusCode, error);
+    // #266: extract a typed errorCode from the API envelope so downstream
+    // copy lookups (COPY_BY_CODE) can dispatch on it.
+    //   - `response.data.errorCode` is the forward-looking field name (target
+    //     shape once backend issue #267 lands).
+    //   - `response.data.requestId` is the current buggy field name — the
+    //     backend reuses the requestId slot to carry the error-category
+    //     string (e.g. "TRANSLATION_ALREADY_STARTED"). Reading both keeps the
+    //     frontend correct across the #267 migration.
+    // Falls back to 'API_GENERIC' for unknown / absent values; only the
+    // codes enumerated in `TranslationErrorCode` actually trigger curated
+    // copy via COPY_BY_CODE.
+    const envelope = error.response?.data as
+      | { errorCode?: unknown; requestId?: unknown }
+      | undefined;
+    const rawCode =
+      typeof envelope?.errorCode === 'string'
+        ? envelope.errorCode
+        : typeof envelope?.requestId === 'string'
+          ? envelope.requestId
+          : undefined;
+    const errorCode: TranslationErrorCode = isKnownTranslationErrorCode(rawCode)
+      ? rawCode
+      : 'API_GENERIC';
+    throw new TranslationServiceError(message, errorCode, statusCode, error);
   }
   throw new TranslationServiceError('An unexpected error occurred', 'API_GENERIC');
 };
+
+/**
+ * Type-guard: is `value` a recognised `TranslationErrorCode`?
+ *
+ * Used by `handleError` to safely narrow an arbitrary string from the API
+ * envelope down to the typed discriminator union. Returns false for unknown
+ * codes; the caller falls back to 'API_GENERIC' so unrecognised codes still
+ * route through the status-code / message pass-through chain.
+ *
+ * Excludes 'API_GENERIC' from the accept-list because that value is the
+ * intentional fallback — we shouldn't promote arbitrary envelope codes into
+ * the catch-all bucket.
+ */
+const KNOWN_TRANSLATION_ERROR_CODES: ReadonlySet<TranslationErrorCode> =
+  new Set<TranslationErrorCode>([
+    'S3_UPLOAD_BLOCKED',
+    'S3_HTTP_ERROR',
+    'TRANSLATION_ALREADY_STARTED',
+  ]);
+
+function isKnownTranslationErrorCode(value: unknown): value is TranslationErrorCode {
+  return (
+    typeof value === 'string' && KNOWN_TRANSLATION_ERROR_CODES.has(value as TranslationErrorCode)
+  );
+}
 
 /**
  * Upload a document for translation
