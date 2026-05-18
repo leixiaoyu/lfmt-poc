@@ -745,5 +745,248 @@ for future hardening but do not consider it actionable in v1.
 
 ---
 
-**Last Updated**: 2026-05-17
+### Per-user rate limiting on ownership-checked endpoints — decision record (#289)
+
+**Status:** Deferred (2026-05-18). Per-user rate limiting / anti-enumeration
+on the five ownership-checked endpoints was filed as a defense-in-depth
+follow-up to PR #287 and is **deliberately not being implemented today**.
+The privacy-preserving 404 collapse from PR #287 already neutralizes the
+per-request information leak; per-user throttling would only constrain
+the cost and statistical power of large-scale enumeration in the event of
+a future regression. Given a single-owner dev environment with no
+external users, that work is overkill relative to the current threat
+surface. This section records the threat model, the options considered,
+the deferral decision, and the explicit conditions that would re-open it.
+
+#### Context
+
+- Issue #286 — the parent resource-existence leak (403 vs 404 asymmetry).
+- PR #287 — the privacy-preserving 404 fix that closed #286 and added the
+  "Privacy-Preserving 404 for Ownership-Checked Resources" section above.
+- Issue #289 — this defense-in-depth follow-up, explicitly disclosed in
+  PR #287's "Items deliberately NOT in scope" list and filed under the
+  project's "no follow-up items lost" policy.
+- OWASP API Security Top 10 references:
+  - API1:2023 — Broken Object Level Authorization (BOLA). Rate limiting
+    is recommended as a complementary mitigation to authorization checks,
+    not a substitute.
+  - API4:2023 — Unrestricted Resource Consumption. Even useless
+    enumeration consumes Lambda invocations + DDB reads + API Gateway
+    requests, so an unbounded request rate is itself a cost-abuse vector.
+
+#### Threat model
+
+After PR #287, an attacker holding a valid Cognito session can:
+
+1. Issue `GET /jobs/<random-uuid>` (or any of the other four
+   ownership-checked endpoints) repeatedly with valid auth.
+2. Every response is a byte-identical 404 + `JOB_NOT_FOUND` envelope
+   (modulo the `requestId` UUID). No per-request information leaks.
+3. **However:** there is no upper bound on the request volume a single
+   authenticated user may sustain against ownership-checked endpoints,
+   beyond the global API Gateway throttle. The attacker can therefore
+   probe the keyspace at scale.
+
+Why this still matters as defense-in-depth:
+
+- **Future regression amplification.** If a new ownership-checked handler
+  is added that doesn't follow the privacy-preserving-404 pattern, or an
+  existing one regresses despite the contract spec at
+  `frontend/e2e/tests/contract/api-envelope-live.spec.ts`, an attacker
+  who is already running an enumeration campaign gets the leak for free
+  the moment the regression ships.
+- **Timing side-channel amplification.** The residual response-timing
+  gap documented in the "Privacy-Preserving 404" section above is not
+  exploitable per-request, but is multiplied by attack volume. If issue
+  #288 (timing side-channel residual) ever becomes exploitable, the
+  absence of per-user throttling makes the statistical attack
+  meaningfully cheaper.
+- **Resource cost.** Useless enumeration still bills Lambda invocations,
+  DDB reads, and API Gateway requests. A per-user throttle caps the
+  cost of abuse independent of any data-leak property.
+- **Generalized BOLA mitigation.** OWASP API1:2023 explicitly
+  recommends rate limiting as a defense-in-depth control alongside
+  authorization checks.
+
+#### Current state
+
+A **global** API Gateway throttle exists at the stage level — see
+`backend/infrastructure/lib/lfmt-infrastructure-stack.ts:690-691`
+(the `deployOptions` block on the `RestApi` construct):
+
+| Environment   | `throttlingRateLimit` | `throttlingBurstLimit` |
+| ------------- | --------------------- | ---------------------- |
+| dev / staging | 100 req/sec           | 200                    |
+| prod          | 1000 req/sec          | 2000                   |
+
+**Gap:** the throttle is shared across all users and all endpoints. A
+single authenticated user can spend the entire 100-RPS dev budget on
+`GET /jobs/<random-uuid>` enumeration without affecting anyone else's
+experience until they max out the global throttle. There is no
+per-user, per-endpoint enforcement on the five ownership-checked
+endpoints — `GET /jobs/{jobId}`, `GET /jobs/{jobId}/translation-status`,
+`GET /jobs/{jobId}/download`, `POST /jobs/{jobId}/translate`,
+`DELETE /jobs/{jobId}` (the audit set from PR #287's table).
+
+#### Options considered
+
+##### Option 1 — API Gateway usage plan + API key per Cognito user
+
+Map each Cognito user to an API Gateway usage plan with a per-user rate
+and quota; AWS-native; no Lambda code change.
+
+Trade-offs:
+
+- Operationally heavy. Usage plans + API keys must be provisioned on
+  registration and rotated/revoked alongside Cognito lifecycle events.
+- Coarse-grained. Doesn't differentiate enumeration ("1,000
+  `GET /jobs/<random>`") from a legitimate burst ("1,000
+  `POST /jobs/upload`"). Both burn the same bucket.
+- Forces an API-key concept onto a system that today uses Cognito-only
+  auth — a new auth primitive to maintain.
+
+##### Option 2 — Lambda authorizer with per-user token bucket in DDB
+
+Wrap or replace the existing Cognito authorizer with a Lambda authorizer
+that maintains a per-user token bucket in DynamoDB. Decrement on each
+call to an ownership-checked endpoint; reject with 429 when the bucket
+is exhausted.
+
+Trade-offs:
+
+- Cleanest threat-model fit. The bucket can be tuned per endpoint
+  (e.g., 1000 GETs/min, 100 POSTs/min) and per stage.
+- DDB write on every request adds latency (~5–10 ms) and cost (~$0.25
+  per million writes) on the hot path.
+- Reuses an already-explored pattern. The `RateLimitBucketsTable` plus
+  the bucket logic in
+  [`backend/functions/translation/rateLimiter.ts`](../backend/functions/translation/rateLimiter.ts)
+  already implement a distributed token bucket today (for the Gemini
+  per-API-key throttle). Adapting it to key on Cognito `sub` + endpoint
+  is straightforward; the bucket maths is identical.
+
+##### Option 3 — Anomaly-based, log-driven (out-of-band)
+
+Don't enforce in the request path. Log every ownership-checked endpoint
+hit with `(userId, requestedResourceId)`; a CloudWatch metric filter
+alarms on per-user enumeration patterns (e.g., > 50 distinct jobIds
+queried per minute by one user); on alarm, ops manually locks or
+disables the offending Cognito user.
+
+Trade-offs:
+
+- Zero per-request latency / cost.
+- Reactive, not preventive. An attacker has the full alarm window to
+  enumerate before any action is taken.
+- Requires an ops on-call rotation — not appropriate for a project
+  without one. Reasonable as a complementary measure alongside Option
+  2, but unsafe as the sole control.
+
+| Option                            | Per-request enforcement | Operational cost                        | Hot-path latency    | Reuses existing pattern                          |
+| --------------------------------- | ----------------------- | --------------------------------------- | ------------------- | ------------------------------------------------ |
+| 1: Usage plan + API key           | Yes                     | High (key lifecycle, rotation)          | Negligible          | No (new auth primitive)                          |
+| 2: Lambda authorizer + DDB bucket | Yes                     | Medium (one new authorizer + table key) | ~5–10 ms + DDB cost | Yes (`rateLimiter.ts` / `RateLimitBucketsTable`) |
+| 3: Log-driven anomaly alarm       | No (reactive)           | Low infra / High ops                    | Zero                | Partial (CloudWatch tooling)                     |
+
+#### Decision
+
+**Option 2 is deferred** until the re-entry criteria below are met.
+**Option 1 is rejected** for operational complexity and poor
+threat-model fit (it can't distinguish enumeration from legitimate
+bursty workloads). **Option 3 is considered viable as a future
+complementary measure** alongside Option 2 — e.g., a CloudWatch alarm
+that catches enumeration patterns inside the per-user budget — but is
+**not viable as the sole control** in this project given the absence
+of a dedicated ops rotation.
+
+When the re-entry criteria fire, **Option 2 is the option to land
+first**, scoped narrowly to the five ownership-checked endpoints in the
+PR #287 audit table.
+
+#### Rationale (why deferral is correct today)
+
+- **No real users.** The system today has a single owner (the project
+  author). There is no realistic attacker population, and no external
+  auth surface beyond the developer's own Cognito session.
+- **Privacy-preserving 404 already neutralizes the per-request leak.**
+  PR #287 collapsed the 403/404 distinction across all five
+  ownership-checked handlers and added a live-contract spec
+  (`api-envelope-live.spec.ts`) that pins the property. An attacker
+  who enumerates today learns nothing from any single response — the
+  marginal value of rate-limiting is therefore bounded to "make a
+  hypothetical future regression less catastrophic", which is real
+  but not urgent.
+- **Global throttle covers the cost-abuse case at current scale.** The
+  100-RPS dev throttle (1000-RPS prod) caps total stack cost. The gap
+  Option 2 closes is per-user fairness inside that budget, which only
+  matters once there is more than one user.
+- **Engineering opportunity cost.** Implementing Option 2 means a new
+  Lambda authorizer, a new DDB access pattern, integration tests
+  against the bucket-exhausted path, a frontend mapping for 429 +
+  `STATUS_MESSAGES[429]`, and a live-contract test gated behind a
+  flag. That is multi-day work that competes with Phase 10 demo polish
+  (see `PROGRESS.md`).
+- **Reversible.** This is a docs-only decision. Re-opening the issue
+  is cheap; no architecture is being calcified.
+
+#### Re-entry criteria
+
+Re-open issue #289 and implement Option 2 when **any** of the following
+becomes true:
+
+- **First external user or non-owner traffic lands on production.** The
+  moment there is more than one Cognito principal in production, the
+  global throttle stops providing per-user fairness and Option 2
+  becomes load-bearing.
+- **Compliance requirement.** A target compliance regime — SOC 2,
+  HIPAA, ISO 27001, or an enterprise customer's security review —
+  requires demonstrable per-user rate-limit controls on
+  authorization-checked endpoints.
+- **Observed enumeration pattern in CloudWatch logs.** Any operational
+  signal that a Cognito user is issuing high-cardinality
+  `GET /jobs/<random-uuid>` requests (or any of the other four
+  ownership-checked endpoints) at a rate inconsistent with legitimate
+  UX. Option 3's log-driven detection is the cheapest way to surface
+  this signal short-term; treat such a finding as immediate
+  justification for Option 2 as the structural fix.
+- **Sibling timing-side-channel (#288) gets upgraded to exploitable.**
+  The residual response-timing gap is currently sub-millisecond and
+  dominated by Lambda cold-start jitter; if a future analysis shows
+  it's exploitable with feasible request budgets, per-user rate
+  limiting becomes a hard prerequisite for any timing-mitigation work
+  (because rate-limiting is the only way to make the statistical
+  attack uneconomic without changing the data-access pattern).
+- **CloudWatch cost telemetry shows enumeration-shaped abuse.** Even
+  absent a security signal, sustained anomalous Lambda invocation
+  volume on the five ownership-checked endpoints is a financial
+  signal that warrants Option 2.
+
+When re-entered, follow the acceptance criteria listed in issue #289
+verbatim (bucket size / window per stage via CDK context; 429 envelope
+with `retry-after`; frontend `STATUS_MESSAGES[429]` mapping; bucket-
+allow + bucket-exhausted unit tests; integration test for sustained
+burst; gated live-contract test).
+
+#### References
+
+- Issue #289 — this decision record's source issue (per-user rate
+  limiting / anti-enumeration).
+- Issue #286 — parent resource-existence leak issue, closed by PR #287.
+- PR #287 — privacy-preserving 404 fix; added the
+  "Privacy-Preserving 404 for Ownership-Checked Resources" section
+  above and called this work out as a deliberately-out-of-scope
+  sibling issue.
+- [`backend/functions/translation/rateLimiter.ts`](../backend/functions/translation/rateLimiter.ts)
+  — existing distributed token-bucket implementation (per-API-key, for
+  Gemini); the pattern Option 2 would adapt for per-Cognito-user
+  buckets keyed by `sub` + endpoint.
+- `backend/infrastructure/lib/lfmt-infrastructure-stack.ts:690-691`
+  — existing global API Gateway throttle (`throttlingRateLimit` /
+  `throttlingBurstLimit`) that Option 2 would complement, not replace.
+- OWASP API Security Top 10 — API1:2023 (Broken Object Level
+  Authorization) and API4:2023 (Unrestricted Resource Consumption).
+
+---
+
+**Last Updated**: 2026-05-18
 **Maintained By**: LFMT Engineering Team
