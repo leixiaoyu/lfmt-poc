@@ -329,8 +329,16 @@ test.describe('Live-backend API envelope contract @contract-live', () => {
   //     errorCode discriminator). This is the regression baseline for the
   //     bug that motivated #267: pre-fix, `requestId` carried the status
   //     code string instead of the API Gateway UUID.
+  //
+  //     #286 — this is also the privacy-preserving-404 baseline for
+  //     ownership-checked endpoints. POST /jobs/{nonexistent}/translate MUST
+  //     return 404, NOT 403. Pre-#286 the handler returned 403 for the
+  //     not-owned case and 404 for the not-found case — the 403-vs-404
+  //     asymmetry was a resource-existence leak (OWASP API1:2023 BOLA).
+  //     The handler now collapses both into a single 404 + `JOB_NOT_FOUND`
+  //     envelope. A non-existent jobId here EXERCISES that single 404 path.
   // -----------------------------------------------------------------------
-  test('POST /jobs/{nonexistent}/translate returns the #267 error envelope', async ({
+  test('POST /jobs/{nonexistent}/translate returns 404 + JOB_NOT_FOUND (#267 + #286)', async ({
     request,
   }) => {
     const fakeJobId = `nonexistent-${Date.now()}`;
@@ -339,10 +347,10 @@ test.describe('Live-backend API envelope contract @contract-live', () => {
       data: { targetLanguage: 'es', tone: 'neutral' },
       failOnStatusCode: false,
     });
-    // We don't pin the EXACT status code (404 vs 400) — the contract is
-    // about the envelope shape, not the status code. Just ensure it's
-    // not a 2xx (which would mean the lookup didn't happen).
-    expect(res.ok(), await res.text()).toBe(false);
+    // #286 — the status code MUST be 404. Pre-#286 a not-owned jobId returned
+    // 403; this assertion pins the privacy-preserving collapse so a future
+    // refactor cannot accidentally reintroduce the 403-vs-404 asymmetry.
+    expect(res.status(), await res.text()).toBe(404);
     const body = (await res.json()) as {
       message: string;
       requestId?: string;
@@ -351,13 +359,35 @@ test.describe('Live-backend API envelope contract @contract-live', () => {
     expect(typeof body.message).toBe('string');
     expect(body.message.length).toBeGreaterThan(0);
     assertErrorEnvelope(body);
-    // For this specific call, we expect errorCode === 'JOB_NOT_FOUND'
-    // once the #267 fix is deployed. Until then the field may be absent
-    // (frontend forward-compat reads requestId fallback). Treat the
-    // presence assertion as soft — log instead of fail when missing.
-    if (typeof body.errorCode === 'string') {
-      expect(body.errorCode).toMatch(/^[A-Z][A-Z0-9_]*$/);
-    }
+    // #286 — the errorCode MUST be JOB_NOT_FOUND. The soft fallback from
+    // pre-#267 is no longer applicable: the fix has shipped, and the
+    // ownership-mismatch path now emits the same code as the not-found path.
+    expect(body.errorCode).toBe('JOB_NOT_FOUND');
+  });
+
+  // -----------------------------------------------------------------------
+  // 2c. #286 — privacy-preserving 404 for GET /jobs/{jobId}.
+  //
+  //     A request for a jobId that the authenticated caller does NOT own
+  //     (here: any UUID-shaped random id that almost certainly belongs to
+  //     no one, since UUIDv4 collision is astronomically unlikely) MUST
+  //     return 404, NOT 403. This was already the documented behaviour for
+  //     getJob (it uses the composite-key pattern), but pinning the wire
+  //     contract here prevents a future refactor from regressing to a 403
+  //     and leaking jobId existence.
+  // -----------------------------------------------------------------------
+  test('GET /jobs/{stranger-uuid} returns 404 (privacy-preserving — #286)', async ({ request }) => {
+    // Use a fixed, well-formed UUID that is almost certainly not in the
+    // table. We rely on UUIDv4's 122-bit entropy — the probability of
+    // collision with a real production job is ~ 1 / 2^122.
+    const strangerJobId = '00000000-aaaa-4bbb-8ccc-000000000286';
+    const res = await request.get(`${normalizedApiUrl}/jobs/${strangerJobId}`, {
+      headers: authHeaders(),
+      failOnStatusCode: false,
+    });
+    // The load-bearing assertion: NOT 403. A 403 would leak existence.
+    expect(res.status(), await res.text()).not.toBe(403);
+    expect(res.status()).toBe(404);
   });
 
   // -----------------------------------------------------------------------

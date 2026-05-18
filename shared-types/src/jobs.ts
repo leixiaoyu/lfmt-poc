@@ -505,12 +505,19 @@ export interface StartTranslationApiResponse {
  * — it also covers transport-level codes (`S3_UPLOAD_BLOCKED`, etc.) that
  * never reach a Lambda. Keep this union in sync with the backend literals
  * when adding new failure modes.
+ *
+ * #286 — `FORBIDDEN` was removed from this union. POST /jobs/{jobId}/translate
+ * no longer emits a 403 when the caller does not own the job; both the
+ * not-found and not-owned cases now collapse into a single 404 with
+ * `JOB_NOT_FOUND` (OWASP API1:2023 — BOLA / resource-existence leak). The
+ * frontend's looser `TranslationErrorCode` union retains the `FORBIDDEN`
+ * literal as a deployment-window forward-compat / defense-in-depth measure
+ * and to type the auth-handler 403 path that is orthogonal to this fix.
  */
 export type StartTranslationErrorCode =
   | 'MISSING_JOB_ID'
   | 'INVALID_REQUEST'
   | 'JOB_NOT_FOUND'
-  | 'FORBIDDEN'
   | 'INVALID_JOB_STATUS'
   | 'TRANSLATION_ALREADY_STARTED'
   | 'NO_CHUNKS_AVAILABLE'

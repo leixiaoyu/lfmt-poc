@@ -119,10 +119,23 @@ export const handler = async (event: APIGatewayProxyEvent): Promise<APIGatewayPr
       );
     }
 
-    // Load job from DynamoDB
+    // Load job from DynamoDB.
+    //
+    // Privacy-preserving 404 (#286 / OWASP API1:2023 — BOLA):
+    // The DynamoDB table uses a composite primary key (jobId HASH + userId RANGE),
+    // so a GetItem with both keys naturally enforces ownership at the database
+    // level — a job owned by another user simply does not match and returns null.
+    //
+    // The defense-in-depth `job.userId !== userId` branch that previously emitted
+    // a 403 here was a resource-existence leak: the 403-vs-404 asymmetry let an
+    // attacker who enumerates jobIds learn whether any given id existed. We now
+    // collapse the not-found and not-owned cases into a SINGLE 404 with a
+    // byte-identical body, matching the pattern already used by getJob,
+    // getTranslationStatus, deleteJob, and downloadTranslation. See
+    // `docs/cdk-best-practices.md` → "Privacy-preserving 404 for ownership-checked
+    // resources".
     const job = await loadJob(jobId, userId);
 
-    // Verify job exists
     if (!job) {
       return createErrorResponse(
         404,
@@ -131,18 +144,6 @@ export const handler = async (event: APIGatewayProxyEvent): Promise<APIGatewayPr
         undefined,
         requestOrigin,
         'JOB_NOT_FOUND'
-      );
-    }
-
-    // Verify user owns the job
-    if (job.userId !== userId) {
-      return createErrorResponse(
-        403,
-        'You do not have permission to translate this job',
-        requestId,
-        undefined,
-        requestOrigin,
-        'FORBIDDEN'
       );
     }
 
