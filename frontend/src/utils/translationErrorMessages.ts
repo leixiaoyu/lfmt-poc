@@ -62,6 +62,30 @@ const COPY_BY_CODE: Record<
   // tracked already, so the message tells the user to wait rather than retry.
   TRANSLATION_ALREADY_STARTED:
     'Translation is already running. The page will refresh automatically as it makes progress.',
+  // ---- Issue #273: codes emitted by jobs/startTranslation.ts ---------------
+  //
+  // These codes ride alongside the Lambda's user-readable `message` field, so
+  // `getApiErrorMessage` will normally surface the prose directly (per the
+  // PR #266 precedence rule). The entries below are the FALLBACK copy used
+  // when the message is absent, empty, or matches the GENERIC_MESSAGES deny-
+  // list (e.g. an axios path that swallows the envelope and only leaves the
+  // typed `errorCode` discriminator).
+  //
+  // Copy rules (per PR #251 / PR #268 precedent):
+  //   - One sentence, ≤ 100 chars.
+  //   - Tells the user what to do next, not the technical reason.
+  //   - No mention of AWS / DDB / Step Functions / status codes.
+  //   - Ends with a period.
+  MISSING_JOB_ID: 'Translation request is missing a job identifier — please refresh and try again.',
+  INVALID_REQUEST:
+    'Translation settings are invalid — please check your target language and tone and try again.',
+  JOB_NOT_FOUND:
+    "We couldn't find that translation — it may have been deleted. Please try again from your history.",
+  FORBIDDEN: "You don't have permission to start this translation.",
+  INVALID_JOB_STATUS:
+    "This translation isn't ready to start yet — please wait for processing to finish and try again.",
+  NO_CHUNKS_AVAILABLE:
+    "This document couldn't be prepared for translation — please re-upload it and try again.",
 };
 
 const STATUS_MESSAGES: Record<number, string> = {

@@ -483,7 +483,60 @@ export interface StartTranslationApiResponse {
   estimatedCost?: number;
   /** Step Functions execution ARN (for tracking / debugging). */
   executionArn?: string;
+  /**
+   * API Gateway correlation UUID (echo of `event.requestContext.requestId`).
+   * Present on every response shape produced by `createFlatResponse` /
+   * `createErrorResponse`; reserved for log correlation, NEVER for a
+   * status-code signal (see #267 for the bug this caveat addresses).
+   */
+  requestId?: string;
   [key: string]: unknown;
+}
+
+/**
+ * Canonical 4xx error-code union emitted by POST /jobs/{jobId}/translate.
+ *
+ * Added in #267 alongside the API-error-envelope `errorCode` field so the
+ * frontend can dispatch on a stable machine-readable signal instead of
+ * pattern-matching the human-readable `message`. The values mirror the
+ * literal-string codes used by the Lambda (`backend/functions/jobs/
+ * startTranslation.ts`). The frontend's `TranslationErrorCode` union
+ * (`frontend/src/services/translationService.ts`) is a SUPERSET of this one
+ * — it also covers transport-level codes (`S3_UPLOAD_BLOCKED`, etc.) that
+ * never reach a Lambda. Keep this union in sync with the backend literals
+ * when adding new failure modes.
+ */
+export type StartTranslationErrorCode =
+  | 'MISSING_JOB_ID'
+  | 'INVALID_REQUEST'
+  | 'JOB_NOT_FOUND'
+  | 'FORBIDDEN'
+  | 'INVALID_JOB_STATUS'
+  | 'TRANSLATION_ALREADY_STARTED'
+  | 'NO_CHUNKS_AVAILABLE'
+  | 'INTERNAL_ERROR';
+
+/**
+ * Canonical flat error envelope shared across every Lambda that returns a
+ * 4xx/5xx body via `createErrorResponse`. The runtime helper lives in
+ * `backend/functions/shared/api-response.ts`; this interface is the type-level
+ * mirror so the frontend (and the live contract spec) can import a single
+ * authoritative shape.
+ *
+ * `errorCode` was added in #267 — pre-#267 the only machine-readable signal
+ * the frontend had was a status-code string stuffed into `requestId` (a
+ * misuse that broke CloudWatch log correlation). The `errorCode` field is
+ * the canonical home for that signal; `requestId` is reserved for the API
+ * Gateway request UUID.
+ */
+export interface ApiErrorEnvelope {
+  message: string;
+  /** API Gateway correlation UUID — `event.requestContext.requestId`. */
+  requestId?: string;
+  /** Machine-readable status-code discriminator (e.g. `JOB_NOT_FOUND`). */
+  errorCode?: string;
+  /** Per-field validation errors (only present on Zod-validated handlers). */
+  errors?: Record<string, string[]>;
 }
 
 /**

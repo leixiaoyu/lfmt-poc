@@ -32,7 +32,25 @@ export interface ApiResponse {
 
 export interface ApiErrorResponse {
   message: string;
+  /**
+   * API Gateway request UUID (e.g. `event.requestContext.requestId`).
+   * Used for log correlation in CloudWatch / support tickets.
+   *
+   * Previously some handlers (notably `startTranslation.ts` pre-#267) misused
+   * this slot to carry a machine-readable status code. The dedicated
+   * `errorCode` field below is the canonical home for that signal; this
+   * field is reserved for the correlation UUID.
+   */
   requestId?: string;
+  /**
+   * Machine-readable error-code discriminator (e.g. `TRANSLATION_ALREADY_STARTED`,
+   * `JOB_NOT_FOUND`). Added in #267 to separate the correlation UUID from
+   * the status-code signal that the frontend dispatches on (via
+   * `extractErrorCode` / `COPY_BY_CODE`). Optional so legacy handlers that
+   * don't set it remain valid; new handlers SHOULD populate this field for
+   * any expected 4xx error.
+   */
+  errorCode?: string;
   errors?: Record<string, string[]>;
 }
 
@@ -182,19 +200,54 @@ export function createSuccessResponse<T extends ApiFlatResponseBody>(
 }
 
 /**
- * Create an error API response
+ * Create an error API response.
+ *
+ * Wire body shape:
+ *   `{ message, requestId?, errorCode?, errors? }`
+ *
+ * The `errorCode` parameter (added in #267) carries the machine-readable
+ * status-code discriminator (`TRANSLATION_ALREADY_STARTED`, `JOB_NOT_FOUND`,
+ * etc.). The `requestId` parameter is reserved for the API Gateway request
+ * UUID (`event.requestContext.requestId`) — DO NOT pass a status-code string
+ * here; that's what `errorCode` is for.
+ *
+ * Pre-#267 the only signal the frontend had to discriminate on was a string
+ * stuffed into `requestId` — a misuse that broke CloudWatch log correlation
+ * (operators couldn't trace the request) and conflated two distinct concerns.
+ * The `errorCode` parameter is the canonical home for that signal. The
+ * frontend's `extractErrorCode` reads `errorCode` first (PR #268 forward-compat)
+ * and falls back to `requestId` for the deployment window; the fallback will
+ * be removed in a follow-up after this fix has been observed in production.
+ *
+ * Example:
+ *   ```ts
+ *   return createErrorResponse(
+ *     409,
+ *     'Translation already in_progress for this job',
+ *     event.requestContext.requestId,
+ *     undefined,
+ *     requestOrigin,
+ *     'TRANSLATION_ALREADY_STARTED'
+ *   );
+ *   // → body: { message: '...', requestId: '<uuid>', errorCode: 'TRANSLATION_ALREADY_STARTED' }
+ *   ```
  */
 export function createErrorResponse(
   statusCode: number,
   message: string,
   requestId?: string,
   errors?: Record<string, string[]>,
-  requestOrigin?: string
+  requestOrigin?: string,
+  errorCode?: string
 ): ApiResponse {
   const response: ApiErrorResponse = {
     message,
     requestId,
   };
+
+  if (errorCode) {
+    response.errorCode = errorCode;
+  }
 
   if (errors) {
     response.errors = errors;
