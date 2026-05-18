@@ -472,14 +472,14 @@ describe('RegisterForm - Error Handling', () => {
     });
   });
 
-  it('should fall back to a generic message when the rejection has no message field', async () => {
-    // Covers the `apiError.message || 'An error occurred during registration'`
-    // fallback in RegisterForm.tsx — exercises the right-hand side of
-    // the `||` so the auth-glob branch coverage stays at 100% (the
-    // auth threshold is 95% branches; one un-tested fallback drops it).
+  it('should fall back to NETWORK_MESSAGE when the rejection has no message and no statusCode (issue #279)', async () => {
+    // Issue #279: after the #274 sweep, the per-form drifted fallback string
+    // ("An error occurred during registration") is gone. Empty-payload
+    // rejections delegate to `getApiErrorMessage` → `getTranslationErrorMessage`
+    // → network branch (no statusCode, no usable message) → NETWORK_MESSAGE.
     const user = userEvent.setup();
     const onSubmit = vi.fn().mockRejectedValue({
-      /* no message */
+      /* no message, no statusCode */
     });
     renderWithRouter(<RegisterForm onSubmit={onSubmit} />);
 
@@ -493,7 +493,9 @@ describe('RegisterForm - Error Handling', () => {
     await user.click(screen.getByRole('button', { name: /sign up/i }));
 
     await waitFor(() => {
-      expect(screen.getByText(/an error occurred during registration/i)).toBeInTheDocument();
+      expect(
+        screen.getByText(/connection lost — check your internet and try again\./i)
+      ).toBeInTheDocument();
     });
   });
 
@@ -568,6 +570,62 @@ describe('RegisterForm - Error Handling', () => {
 
     await waitFor(() => {
       expect(screen.queryByText(/registration failed/i)).not.toBeInTheDocument();
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Issue #274 — RegisterForm must route catch payloads through
+// `getApiErrorMessage`. Same matrix as LoginForm tests above.
+// ---------------------------------------------------------------------------
+describe('RegisterForm - getApiErrorMessage routing (issue #274)', () => {
+  async function fillValidForm() {
+    const user = userEvent.setup();
+    await user.type(screen.getByLabelText(/first name/i), 'Test');
+    await user.type(screen.getByLabelText(/last name/i), 'User');
+    await user.type(screen.getByLabelText(/^email/i), 'test@example.com');
+    await user.type(screen.getByLabelText(/^password/i), 'Password123!');
+    await user.type(screen.getByLabelText(/confirm password/i), 'Password123!');
+    await user.click(screen.getByLabelText(/terms of service/i));
+    await user.click(screen.getByLabelText(/privacy policy/i));
+    await user.click(screen.getByRole('button', { name: /sign up/i }));
+  }
+
+  it('renders curated NETWORK_MESSAGE for a raw axios `Network Error` string', async () => {
+    const onSubmit = vi.fn().mockRejectedValue(new Error('Network Error'));
+    renderWithRouter(<RegisterForm onSubmit={onSubmit} />);
+
+    await fillValidForm();
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(/connection lost — check your internet and try again\./i)
+      ).toBeInTheDocument();
+    });
+    expect(screen.queryByText(/^network error$/i)).not.toBeInTheDocument();
+  });
+
+  it('surfaces a backend-emitted prose message verbatim', async () => {
+    const onSubmit = vi.fn().mockRejectedValue({ message: 'Email already exists', status: 400 });
+    renderWithRouter(<RegisterForm onSubmit={onSubmit} />);
+
+    await fillValidForm();
+
+    await waitFor(() => {
+      expect(screen.getByText('Email already exists')).toBeInTheDocument();
+    });
+  });
+
+  it('renders STATUS_MESSAGES[429] for { statusCode: 429, message: "" }', async () => {
+    const onSubmit = vi.fn().mockRejectedValue({ statusCode: 429, message: '' });
+    renderWithRouter(<RegisterForm onSubmit={onSubmit} />);
+
+    await fillValidForm();
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(/translation rate limit reached — please try again in a moment\./i)
+      ).toBeInTheDocument();
     });
   });
 });

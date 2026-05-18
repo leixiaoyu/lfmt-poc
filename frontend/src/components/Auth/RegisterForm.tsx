@@ -34,6 +34,7 @@ import {
 } from '@mui/material';
 import { Link as RouterLink } from 'react-router-dom';
 import { ROUTES } from '../../config/constants';
+import { getApiErrorMessage } from '../../utils/translationErrorMessages';
 
 /**
  * Inline link rendered inside a checkbox label.
@@ -171,9 +172,11 @@ export function RegisterForm({ onSubmit }: RegisterFormProps) {
       // Clear form on successful registration
       reset();
     } catch (error) {
-      // Display error message from API
-      const apiError = error as { message?: string };
-      setSubmitError(apiError.message || 'An error occurred during registration');
+      // Issue #274/#279: route through the shared `getApiErrorMessage`
+      // helper instead of reading `err.message` directly. Replaces raw
+      // axios strings (e.g. "Network Error") with curated copy and
+      // unifies the fallback to the canonical FALLBACK_MESSAGE.
+      setSubmitError(getApiErrorMessage(error));
     } finally {
       setIsSubmitting(false);
     }

@@ -7,8 +7,11 @@
  * Features:
  * - Automatic user session restoration from localStorage
  * - Global auth state accessible via useAuth hook
- * - Centralized error handling
  * - Token refresh support
+ *
+ * Note (issue #277): the previous `error` / `clearError` state has been
+ * removed (Option B). Forms route catch payloads through
+ * `getApiErrorMessage` themselves and render their own local `submitError`.
  *
  * Usage:
  * ```tsx
@@ -34,10 +37,18 @@ import { authService } from '../services/authService';
 import { getAuthToken } from '../utils/api';
 import type { UserProfile } from '@lfmt/shared-types';
 import type { LoginRequest, RegisterRequest, RefreshTokenResponse } from '../services/authService';
-import type { ApiError } from '../utils/api';
 
 /**
- * Authentication context state
+ * Authentication context state.
+ *
+ * Issue #277 (Option B — delete dead state): the prior `error` / `clearError`
+ * fields were set on every login/register/refresh/logout failure but no
+ * component ever read them. The three auth forms (LoginForm, RegisterForm,
+ * ForgotPasswordForm) maintain their own local `submitError` state and render
+ * that instead. Wiring through context (Option A) would create coupling for
+ * no functional benefit, so we deleted the unused fields. Each form's
+ * `onSubmit` catch block already runs the rejection through `getApiErrorMessage`
+ * (issue #274/#279) — the curated copy reaches the UI without context state.
  */
 interface AuthContextState {
   /** Current authenticated user (null if not authenticated) */
@@ -48,9 +59,6 @@ interface AuthContextState {
 
   /** Whether auth state is being loaded (initial mount) */
   isLoading: boolean;
-
-  /** Current error from auth operations */
-  error: ApiError | null;
 
   /** Login with email and password */
   login: (credentials: LoginRequest) => Promise<void>;
@@ -63,9 +71,6 @@ interface AuthContextState {
 
   /** Refresh access token */
   refreshToken: () => Promise<RefreshTokenResponse>;
-
-  /** Clear current error */
-  clearError: () => void;
 }
 
 /**
@@ -103,7 +108,6 @@ export function AuthProvider({ children }: AuthProviderProps) {
   // to validate it before declaring the user authenticated. isLoading=true
   // is the correct signal: "we have a token, we are verifying it, hold on."
   const [isLoading, setIsLoading] = useState<boolean>(() => getAuthToken() !== null);
-  const [error, setError] = useState<ApiError | null>(null);
 
   /**
    * Load user from localStorage on mount.
@@ -135,14 +139,15 @@ export function AuthProvider({ children }: AuthProviderProps) {
         const currentUser = await authService.getCurrentUser();
         if (!cancelled) {
           setUser(currentUser);
-          setError(null);
         }
-      } catch (err) {
-        // Token is invalid or expired, clear auth
+      } catch {
+        // Token is invalid or expired, clear auth. Issue #277: previously
+        // we set `error` on context; that state was never read by any UI,
+        // so we no longer carry it forward. ProtectedRoute redirects on
+        // `user === null`, which is the only signal the UI consumes.
         await authService.logout();
         if (!cancelled) {
           setUser(null);
-          setError(err as ApiError);
         }
       } finally {
         if (!cancelled) {
@@ -158,17 +163,15 @@ export function AuthProvider({ children }: AuthProviderProps) {
   }, []);
 
   /**
-   * Login user with email and password
+   * Login user with email and password.
+   *
+   * Issue #277: callers (LoginForm via RegisterPage / LoginPage) `try { ... }
+   * catch (err) { setSubmitError(getApiErrorMessage(err)) }` themselves. We
+   * rethrow to preserve that contract — context no longer stores the error.
    */
   const login = useCallback(async (credentials: LoginRequest) => {
-    try {
-      setError(null);
-      const response = await authService.login(credentials);
-      setUser(response.user);
-    } catch (err) {
-      setError(err as ApiError);
-      throw err;
-    }
+    const response = await authService.login(credentials);
+    setUser(response.user);
   }, []);
 
   /**
@@ -182,58 +185,52 @@ export function AuthProvider({ children }: AuthProviderProps) {
    * stuck as false despite a successful API round-trip.
    */
   const register = useCallback(async (data: RegisterRequest) => {
-    try {
-      setError(null);
-      await authService.register(data);
-    } catch (err) {
-      setError(err as ApiError);
-      throw err;
-    }
+    // Issue #277: errors propagate to the caller (RegisterForm) which routes
+    // them through `getApiErrorMessage` for its local submitError state.
+    await authService.register(data);
   }, []);
 
   /**
-   * Logout current user
+   * Logout current user.
+   *
+   * Issue #277: logout always clears client-side state. We swallow any
+   * service-call rejection (auth tokens are already gone locally; surfacing
+   * a server-side logout error to the UI was never wired anywhere).
    */
   const logout = useCallback(async () => {
     try {
-      setError(null);
       await authService.logout();
+    } catch {
+      // Logout should always succeed on client side — even if the server
+      // call fails, clear local state.
+    } finally {
       setUser(null);
-    } catch (err) {
-      // Logout should always succeed on client side
-      // Even if server call fails, clear local state
-      setUser(null);
-      setError(err as ApiError);
     }
   }, []);
 
   /**
-   * Refresh access token
+   * Refresh access token.
+   *
+   * Issue #277: on failure we clear tokens and rethrow. The caller (axios
+   * interceptor in `utils/api.ts`) handles surfacing SESSION_EXPIRED prose
+   * back through whatever request triggered the refresh — context never
+   * carried that error to any reading component.
    */
   const refreshToken = useCallback(async () => {
     try {
-      setError(null);
       const response = await authService.refreshToken();
       return response;
     } catch (err) {
-      // If refresh fails, user needs to login again
-      const refreshError = err as ApiError;
-
-      // Logout user (clear tokens)
-      await authService.logout();
+      // Logout user (clear tokens). We swallow logout failures because
+      // the user has already been kicked out of the session.
+      try {
+        await authService.logout();
+      } catch {
+        // Local tokens already cleared by interceptor; swallow.
+      }
       setUser(null);
-
-      // Preserve the refresh error (don't let logout clear it)
-      setError(refreshError);
       throw err;
     }
-  }, []);
-
-  /**
-   * Clear current error
-   */
-  const clearError = useCallback(() => {
-    setError(null);
   }, []);
 
   /**
@@ -244,14 +241,12 @@ export function AuthProvider({ children }: AuthProviderProps) {
       user,
       isAuthenticated: user !== null,
       isLoading,
-      error,
       login,
       register,
       logout,
       refreshToken,
-      clearError,
     }),
-    [user, isLoading, error, login, register, logout, refreshToken, clearError]
+    [user, isLoading, login, register, logout, refreshToken]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

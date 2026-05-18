@@ -145,10 +145,12 @@ describe('AuthContext - Login', () => {
     // Verify user is logged in
     expect(result.current.user).toEqual(mockAuthResponse.user);
     expect(result.current.isAuthenticated).toBe(true);
-    expect(result.current.error).toBeNull();
   });
 
-  it('should handle login errors', async () => {
+  it('should handle login errors by rethrowing without setting authenticated state (issue #277)', async () => {
+    // Issue #277 Option B: context no longer carries an `error` field.
+    // The login() call rethrows so the caller (LoginForm) can route the
+    // rejection through `getApiErrorMessage` for its local submitError state.
     const loginError = {
       message: 'Invalid email or password',
       status: 401,
@@ -160,74 +162,23 @@ describe('AuthContext - Login', () => {
       wrapper: createWrapper(),
     });
 
-    // Attempt login
+    let caught: unknown;
+
     await act(async () => {
       try {
         await result.current.login({
           email: 'wrong@example.com',
           password: 'WrongPass',
         });
-      } catch (error) {
-        // Expected to throw
+      } catch (err) {
+        caught = err;
       }
     });
 
-    // Verify user is NOT logged in
+    // Verify user is NOT logged in and the original error reached the caller.
     expect(result.current.user).toBeNull();
     expect(result.current.isAuthenticated).toBe(false);
-    expect(result.current.error).toEqual(loginError);
-  });
-
-  it('should clear previous errors on successful login', async () => {
-    const loginError = {
-      message: 'Invalid credentials',
-      status: 401,
-    };
-
-    const mockAuthResponse = {
-      user: {
-        userId: 'user-789',
-        id: 'user-789',
-        email: 'success@example.com',
-        firstName: 'Success',
-        lastName: 'User',
-      },
-      accessToken: 'token',
-      refreshToken: 'refresh',
-    };
-
-    vi.mocked(authService.login)
-      .mockRejectedValueOnce(loginError)
-      .mockResolvedValueOnce(mockAuthResponse);
-
-    const { result } = renderHook(() => useAuth(), {
-      wrapper: createWrapper(),
-    });
-
-    // First login fails
-    await act(async () => {
-      try {
-        await result.current.login({
-          email: 'test@example.com',
-          password: 'wrong',
-        });
-      } catch (error) {
-        // Expected
-      }
-    });
-
-    expect(result.current.error).toEqual(loginError);
-
-    // Second login succeeds
-    await act(async () => {
-      await result.current.login({
-        email: 'test@example.com',
-        password: 'correct',
-      });
-    });
-
-    expect(result.current.user).toEqual(mockAuthResponse.user);
-    expect(result.current.error).toBeNull();
+    expect(caught).toEqual(loginError);
   });
 });
 
@@ -267,11 +218,12 @@ describe('AuthContext - Register', () => {
     // register() does NOT set the authenticated user — that is login()'s job.
     expect(result.current.user).toBeNull();
     expect(result.current.isAuthenticated).toBe(false);
-    expect(result.current.error).toBeNull();
     expect(authService.register).toHaveBeenCalledOnce();
   });
 
-  it('should handle registration errors', async () => {
+  it('should rethrow registration errors without setting authenticated state (issue #277)', async () => {
+    // Issue #277 Option B: rejection is rethrown for the caller (RegisterForm)
+    // to surface via `getApiErrorMessage`. Context does not store the error.
     const registrationError = {
       message: 'Email already exists',
       status: 400,
@@ -283,7 +235,8 @@ describe('AuthContext - Register', () => {
       wrapper: createWrapper(),
     });
 
-    // Attempt registration
+    let caught: unknown;
+
     await act(async () => {
       try {
         await result.current.register({
@@ -295,15 +248,15 @@ describe('AuthContext - Register', () => {
           acceptedTerms: true,
           acceptedPrivacy: true,
         });
-      } catch (error) {
-        // Expected
+      } catch (err) {
+        caught = err;
       }
     });
 
-    // Verify user is NOT registered
+    // Verify user is NOT registered and the error reached the caller.
     expect(result.current.user).toBeNull();
     expect(result.current.isAuthenticated).toBe(false);
-    expect(result.current.error).toEqual(registrationError);
+    expect(caught).toEqual(registrationError);
   });
 });
 
@@ -351,7 +304,6 @@ describe('AuthContext - Logout', () => {
     // Verify user is logged out
     expect(result.current.user).toBeNull();
     expect(result.current.isAuthenticated).toBe(false);
-    expect(result.current.error).toBeNull();
   });
 
   it('should handle logout when not authenticated', async () => {
@@ -397,10 +349,9 @@ describe('AuthContext - Token Refresh', () => {
     });
 
     expect(refreshResult).toEqual(mockRefreshResponse);
-    expect(result.current.error).toBeNull();
   });
 
-  it('should handle refresh token failure and logout user', async () => {
+  it('should handle refresh token failure and logout user (issue #277: error rethrown, not stored)', async () => {
     const mockUser = {
       userId: 'user-123',
       id: 'user-123',
@@ -439,59 +390,21 @@ describe('AuthContext - Token Refresh', () => {
     expect(result.current.isAuthenticated).toBe(true);
 
     // Attempt token refresh
+    let caught: unknown;
     await act(async () => {
       try {
         await result.current.refreshToken();
-      } catch (error) {
-        // Expected to fail
+      } catch (err) {
+        caught = err;
       }
     });
 
-    // Should be logged out after failed refresh
+    // Should be logged out after failed refresh. Issue #277: context no
+    // longer stores the rejection — caller (axios interceptor) sees the
+    // rethrown error.
     expect(result.current.user).toBeNull();
     expect(result.current.isAuthenticated).toBe(false);
-    expect(result.current.error).toEqual(refreshError);
-  });
-});
-
-describe('AuthContext - Error Clearing', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    localStorage.clear();
-  });
-
-  it('should clear errors manually', async () => {
-    const loginError = {
-      message: 'Invalid credentials',
-      status: 401,
-    };
-
-    vi.mocked(authService.login).mockRejectedValueOnce(loginError);
-
-    const { result } = renderHook(() => useAuth(), {
-      wrapper: createWrapper(),
-    });
-
-    // Login fails
-    await act(async () => {
-      try {
-        await result.current.login({
-          email: 'test@example.com',
-          password: 'wrong',
-        });
-      } catch (error) {
-        // Expected
-      }
-    });
-
-    expect(result.current.error).toEqual(loginError);
-
-    // Clear error
-    act(() => {
-      result.current.clearError();
-    });
-
-    expect(result.current.error).toBeNull();
+    expect(caught).toEqual(refreshError);
   });
 });
 
@@ -684,7 +597,6 @@ describe('AuthContext - Initial User Load', () => {
     //   committed `freshUser` and overwrite it.
     expect(result.current.user).toEqual(freshUser);
     expect(result.current.isAuthenticated).toBe(true);
-    expect(result.current.error).toBeNull();
 
     // Behavioural assertion: StrictMode actually fired the effect twice
     // (proving we exercised the double-mount path, not the no-op no-token

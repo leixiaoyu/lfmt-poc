@@ -21,6 +21,7 @@ import { Box, TextField, Button, Link, Typography, Alert, CircularProgress } fro
 import { Link as RouterLink } from 'react-router-dom';
 import { CheckCircleOutline as CheckIcon } from '@mui/icons-material';
 import { ROUTES } from '../../config/constants';
+import { getApiErrorMessage } from '../../utils/translationErrorMessages';
 
 /**
  * Forgot password form validation schema
@@ -88,9 +89,11 @@ export function ForgotPasswordForm({ onSubmit }: ForgotPasswordFormProps) {
       // Show success state
       setIsSuccess(true);
     } catch (error) {
-      // Display error message from API
-      const apiError = error as { message?: string };
-      setSubmitError(apiError.message || 'An error occurred while requesting password reset');
+      // Issue #274/#279: route through the shared `getApiErrorMessage`
+      // helper instead of reading `err.message` directly. Replaces raw
+      // axios strings (e.g. "Network Error") with curated copy and
+      // unifies the fallback to the canonical FALLBACK_MESSAGE.
+      setSubmitError(getApiErrorMessage(error));
     } finally {
       setIsSubmitting(false);
     }
