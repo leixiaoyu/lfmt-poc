@@ -35,12 +35,10 @@ function renderProtectedRoute(authContext: Partial<AuthContextType>) {
     user: null,
     isAuthenticated: false,
     isLoading: false,
-    error: null,
     login: vi.fn(),
     register: vi.fn(),
     logout: vi.fn(),
     refreshToken: vi.fn(),
-    clearError: vi.fn(),
     ...authContext,
   };
 
@@ -159,12 +157,10 @@ describe('ProtectedRoute - Security Tests', () => {
         user: mockUser,
         isAuthenticated: true,
         isLoading: false,
-        error: null,
         login: vi.fn(),
         register: vi.fn(),
         logout: vi.fn(),
         refreshToken: vi.fn(),
-        clearError: vi.fn(),
       };
 
       render(
@@ -205,11 +201,13 @@ describe('ProtectedRoute - Security Tests', () => {
       expect(screen.getByRole('progressbar')).toBeInTheDocument();
     });
 
-    it('should handle authentication error gracefully', () => {
-      const error = { message: 'Unauthorized', statusCode: 401 };
-      renderProtectedRoute({ user: null, isLoading: false, error });
+    it('should redirect to login when not loading and no user (formerly: "with auth error")', () => {
+      // Issue #277 Option B: AuthContext no longer exposes an `error` field
+      // — ProtectedRoute redirects purely on `user === null && !isLoading`.
+      // This test preserves the original behavioural assertion.
+      renderProtectedRoute({ user: null, isLoading: false });
 
-      // Should redirect to login even with error
+      // Should redirect to login
       expect(screen.getByTestId('login-page')).toBeInTheDocument();
     });
 
@@ -244,12 +242,10 @@ describe('ProtectedRoute - Security Tests', () => {
         user: null,
         isAuthenticated: false,
         isLoading: false,
-        error: null,
         login: vi.fn(),
         register: vi.fn(),
         logout: vi.fn(),
         refreshToken: vi.fn(),
-        clearError: vi.fn(),
       };
 
       rerender(

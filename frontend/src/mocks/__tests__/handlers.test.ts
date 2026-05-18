@@ -382,6 +382,101 @@ describe('Translation pipeline (msw/node)', () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// Chunker-Lambda simulation (added 2026-05-17 during demo prep)
+//
+// The real backend's S3 PutObject event fires the chunker Lambda, which
+// flips DDB `status` from `PENDING` to `CHUNKED`. The upload wizard's
+// `uploadAndAwaitChunked` polling loop (translationService.ts:463) blocks
+// on `status === 'CHUNKED'` before letting the user proceed (60s timeout).
+//
+// Before this fix the mock left jobs in `'uploaded'`/`PENDING` forever
+// and the wizard hit the 60s timeout with the misleading
+// "Document processing timed out…" error. The S3 PUT handler now
+// advances `uploaded → chunked` synchronously so the next status poll
+// resolves immediately.
+// ---------------------------------------------------------------------------
+describe('Chunker-Lambda simulation (mock parity with real backend)', () => {
+  async function upload(fileName = 'doc.txt') {
+    const r = await fetch(`${API_URL}/jobs/upload`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fileName, fileSize: 50_000, contentType: 'text/plain' }),
+    }).then((res) => res.json());
+    return { jobId: r.data.fileId as string, uploadUrl: r.data.uploadUrl as string };
+  }
+
+  it('S3 PUT transitions the job from uploaded → chunked; subsequent status poll returns CHUNKED + NOT_STARTED', async () => {
+    resetState();
+    const { jobId, uploadUrl } = await upload();
+
+    // Real-backend simulation kicks in only on the S3 PUT.
+    const put = await fetch(uploadUrl, { method: 'PUT', body: 'payload' });
+    expect(put.status).toBe(200);
+
+    const status = await fetch(`${API_URL}/jobs/${jobId}/translation-status`).then((r) => r.json());
+    expect(status.status).toBe('CHUNKED');
+    expect(status.translationStatus).toBe('NOT_STARTED');
+  });
+
+  it('original-bug repro: status poll BEFORE the S3 PUT returns PENDING (transition is gated on PUT, not upload-request)', async () => {
+    resetState();
+    const { jobId } = await upload();
+
+    const status = await fetch(`${API_URL}/jobs/${jobId}/translation-status`).then((r) => r.json());
+    expect(status.status).toBe('PENDING');
+    expect(status.translationStatus).toBe('NOT_STARTED');
+  });
+
+  it('POST /translate succeeds from chunked state; status advances to IN_PROGRESS', async () => {
+    resetState();
+    const { jobId, uploadUrl } = await upload();
+    await fetch(uploadUrl, { method: 'PUT', body: 'payload' });
+
+    const kickoff = await fetch(`${API_URL}/jobs/${jobId}/translate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ targetLanguage: 'es', tone: 'neutral' }),
+    });
+    expect(kickoff.status).toBe(200);
+
+    const status = await fetch(`${API_URL}/jobs/${jobId}/translation-status`).then((r) => r.json());
+    expect(status.status).toBe('IN_PROGRESS');
+    expect(status.translationStatus).toBe('IN_PROGRESS');
+  });
+
+  it('idempotency: a second S3 PUT does not downgrade an in-flight translation back to chunked', async () => {
+    resetState();
+    const { jobId, uploadUrl } = await upload();
+
+    // First PUT → uploaded → chunked.
+    await fetch(uploadUrl, { method: 'PUT', body: 'payload' });
+
+    // Kickoff → translating.
+    await fetch(`${API_URL}/jobs/${jobId}/translate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ targetLanguage: 'es', tone: 'neutral' }),
+    });
+    const beforeRePut = await fetch(`${API_URL}/jobs/${jobId}/translation-status`).then((r) =>
+      r.json()
+    );
+    expect(beforeRePut.status).toBe('IN_PROGRESS');
+
+    // Second PUT to the same jobId — guard `if (job.status === 'uploaded')`
+    // prevents downgrade.
+    await fetch(uploadUrl, { method: 'PUT', body: 'payload' });
+    const afterRePut = await fetch(`${API_URL}/jobs/${jobId}/translation-status`).then((r) =>
+      r.json()
+    );
+    expect(afterRePut.status).not.toBe('CHUNKED');
+    // After the IN_PROGRESS poll above and one more poll here, the
+    // instant-mode simulation advances progress; the precise count
+    // doesn't matter for this test — only that we never observe a
+    // CHUNKED downgrade.
+  });
+});
+
 describe('Reserved filename error injection (Phase 5)', () => {
   it('classifyReservedFilename returns the right kind for each pattern', () => {
     expect(classifyReservedFilename(undefined)).toEqual({ kind: 'normal' });

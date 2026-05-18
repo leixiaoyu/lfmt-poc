@@ -68,7 +68,19 @@ function buildPath(path: string): string {
  */
 export type JobState = {
   jobId: string;
-  status: 'uploaded' | 'translating' | 'completed' | 'failed';
+  /**
+   * Lifecycle states mirror the deployed backend's DDB `status` column.
+   *
+   * `chunked` (added during demo prep, 2026-05-17): the live backend
+   * runs a chunker Lambda on the S3 PutObject event that flips DDB
+   * `status` from `PENDING` (uploaded) to `CHUNKED`. The
+   * `translationService.uploadAndAwaitChunked` polling loop blocks until
+   * the wire `status` is `CHUNKED` before allowing the wizard to call
+   * POST `/translate`. Without this transition, the mock left jobs in
+   * `'uploaded'` forever and the wizard hit a 60s timeout with the
+   * misleading "Document processing timed out…" error.
+   */
+  status: 'uploaded' | 'chunked' | 'translating' | 'completed' | 'failed';
   totalChunks: number;
   completedChunks: number;
   failedChunks: number;
@@ -470,6 +482,13 @@ function toWireStatus(state: JobState): string {
   switch (state.status) {
     case 'uploaded':
       return 'PENDING';
+    case 'chunked':
+      // Real backend: chunker Lambda flips DDB status to CHUNKED on S3
+      // PutObject event. The wizard's `uploadAndAwaitChunked` polling
+      // loop blocks on this transition. Mock advances synchronously
+      // inside the S3 PUT handler so the wizard resolves on the next
+      // tick instead of timing out at 60s.
+      return 'CHUNKED';
     case 'translating':
       return 'IN_PROGRESS';
     case 'completed':
@@ -717,6 +736,33 @@ const translationHandlers: HttpHandler[] = [
   // PUT (translationService.ts:137), and fetch.
   http.put(buildPath('/__mock-s3/:jobId'), async ({ params }) => {
     const jobId = String(params.jobId);
+
+    // Real-backend simulation (added 2026-05-17 during demo prep): the
+    // live pipeline fires an S3 PutObject event → invokes the chunker
+    // Lambda → updates DDB `status` to `CHUNKED`. The upload wizard at
+    // `TranslationUpload.tsx:206` polls
+    // `/jobs/:jobId/translation-status` waiting for `status === 'CHUNKED'`
+    // before it lets the user proceed (60s timeout in
+    // `uploadAndAwaitChunked`).
+    //
+    // Without this simulation, the mock left jobs forever in
+    // `'uploaded'` / wire `'PENDING'`, the wizard never saw `CHUNKED`,
+    // and every demo upload hit the 60s timeout with the misleading
+    // "Document processing timed out. Your file was uploaded
+    // successfully — please refresh and try starting the translation
+    // again." error.
+    //
+    // Advance the status synchronously here so the wizard's chunked
+    // poll resolves on the very next tick. The `=== 'uploaded'` guard
+    // makes a second S3 PUT a no-op (idempotent) — we do NOT want a
+    // subsequent PUT to downgrade an in-flight translation back to
+    // `chunked`.
+    const job = jobs.get(jobId);
+    if (job && job.status === 'uploaded') {
+      job.status = 'chunked';
+      jobs.set(jobId, job);
+    }
+
     // We deliberately do NOT read the request body — for large files
     // (50 MB cap) buffering the bytes wastes memory in the worker. S3
     // returns an empty body with an ETag header; we do the same.

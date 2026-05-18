@@ -20,7 +20,25 @@ import { z } from 'zod';
 import { Box, TextField, Button, Link, Typography, Alert, CircularProgress } from '@mui/material';
 import { Link as RouterLink } from 'react-router-dom';
 import { ROUTES } from '../../config/constants';
+import { getApiErrorMessage } from '../../utils/translationErrorMessages';
 import type { LoginRequest } from '../../services/authService';
+
+/**
+ * Canonical "wrong credentials" copy that the LoginForm gates the inline
+ * recovery link on (issue #278).
+ *
+ * The backend `login.ts` emits this prose for BOTH `NotAuthorizedException`
+ * and `UserNotFoundException` — intentionally collapsed to one message to
+ * avoid email enumeration. `getApiErrorMessage` surfaces it verbatim
+ * (non-generic, takes precedence over the curated STATUS_MESSAGES[401]
+ * which is session-expiry copy, not wrong-credentials copy).
+ *
+ * Trigger logic note: we gate the inline link on the rendered message
+ * string, NOT on the raw HTTP status. Status 401 is also returned for
+ * token-refresh failures (`SESSION_EXPIRED`) where "Forgot password?"
+ * is irrelevant — the user has valid credentials but a stale token.
+ */
+const WRONG_CREDENTIALS_MESSAGE = 'Incorrect email or password';
 
 /**
  * Login form validation schema
@@ -89,9 +107,14 @@ export function LoginForm({ onSubmit }: LoginFormProps) {
       // Clear form on successful login
       reset();
     } catch (error) {
-      // Display error message from API
-      const apiError = error as { message?: string };
-      setSubmitError(apiError.message || 'An error occurred during login');
+      // Issue #274/#279: route through the shared `getApiErrorMessage`
+      // helper instead of reading `err.message` directly. This:
+      //   - replaces raw axios strings like "Network Error" with the
+      //     curated NETWORK_MESSAGE,
+      //   - applies the GENERIC_MESSAGES deny-list,
+      //   - falls back to the canonical FALLBACK_MESSAGE — no per-form
+      //     drifted fallback strings.
+      setSubmitError(getApiErrorMessage(error));
     } finally {
       setIsSubmitting(false);
     }
@@ -115,6 +138,32 @@ export function LoginForm({ onSubmit }: LoginFormProps) {
       {submitError && (
         <Alert severity="error" sx={{ mb: 2 }}>
           {submitError}
+          {/*
+           * Issue #278: inline "Forgot password?" recovery link on the
+           * wrong-credentials path. Gate on the rendered message string
+           * matching the canonical wrong-credentials copy — NOT on raw
+           * 401 (which is also session-expiry / refresh failure where
+           * "Forgot password?" is the wrong recovery action).
+           *
+           * Accessibility: the link is a sibling of the message text
+           * inside the MUI Alert, which already has `role="alert"`. The
+           * announce order is alert text → link, which matches the
+           * visual order; screen-reader users hear "Incorrect email or
+           * password — Forgot password?".
+           */}
+          {submitError === WRONG_CREDENTIALS_MESSAGE && (
+            <Box sx={{ mt: 1 }}>
+              <Link
+                component={RouterLink}
+                to={ROUTES.FORGOT_PASSWORD}
+                variant="body2"
+                underline="hover"
+                data-testid="alert-forgot-password-link"
+              >
+                Forgot password?
+              </Link>
+            </Box>
+          )}
         </Alert>
       )}
 

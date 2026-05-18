@@ -57,12 +57,10 @@ describe('NewTranslationPage', () => {
       user,
       isAuthenticated: !!user,
       isLoading: false,
-      error: null,
       login: vi.fn(),
       register: vi.fn(),
       logout: mockLogout,
       refreshToken: vi.fn(),
-      clearError: vi.fn(),
     });
 
     return render(

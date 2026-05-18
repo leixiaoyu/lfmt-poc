@@ -25,6 +25,74 @@ export interface ApiError {
 }
 
 /**
+ * Generic message strings that are too vague to surface to the user.
+ *
+ * Mirror of the `GENERIC_MESSAGES` deny-list in
+ * `frontend/src/utils/translationErrorMessages.ts` (PR #251 / issue #266).
+ * The list is intentionally inlined rather than imported because:
+ *   - The translationErrorMessages module is auth-context-free and
+ *     pulling api.ts into its dependency graph would create a circular
+ *     dependency the wrapping `getApiErrorMessage` helper already
+ *     dispatches through.
+ *   - Keeping the deny-list in this file means the universal interceptor
+ *     fallback decision is self-contained and inspectable in one place.
+ * If a third caller appears, promote this constant to a shared util.
+ */
+const GENERIC_BACKEND_MESSAGES = new Set(
+  [
+    'network error',
+    'an unexpected error occurred',
+    'request failed',
+    'failed to fetch',
+    'forbidden',
+    'unauthorized',
+  ].map((s) => s.toLowerCase())
+);
+
+/**
+ * Extract a usable user-facing message from an axios error-response body.
+ *
+ * Returns `undefined` when the caller should fall back to a curated
+ * generic constant (`ERROR_MESSAGES.UNAUTHORIZED` etc.). Returns the
+ * backend's `message` verbatim when it is specific enough to surface.
+ *
+ * Rules (mirrors `getApiErrorMessage` precedence in translationErrorMessages.ts):
+ *   - `data` is not an object → undefined (no envelope to read)
+ *   - `data.message` is missing / non-string / empty / whitespace → undefined
+ *   - `data.message` matches the GENERIC_BACKEND_MESSAGES deny-list
+ *     (case-insensitive, trimmed) → undefined. This guards against
+ *     issue #266's "An unexpected error occurred" class of bug, where
+ *     a backend leak of a vague string would otherwise REPLACE a more
+ *     useful curated constant.
+ *   - Otherwise → the trimmed message verbatim.
+ *
+ * Introduced for issue #275: the 403 interceptor branch used to
+ * unconditionally clobber the backend message with the generic
+ * `ERROR_MESSAGES.UNAUTHORIZED` constant, destroying the email-
+ * verification guidance from `login.ts:175` for unconfirmed-user
+ * `UserNotConfirmedException`. Extracted as a helper rather than
+ * inlined so other status-code branches can adopt the same pattern
+ * if needed without re-implementing the deny-list logic.
+ */
+function extractBackendMessage(data: unknown): string | undefined {
+  if (!data || typeof data !== 'object') {
+    return undefined;
+  }
+  const candidate = (data as { message?: unknown }).message;
+  if (typeof candidate !== 'string') {
+    return undefined;
+  }
+  const trimmed = candidate.trim();
+  if (trimmed.length === 0) {
+    return undefined;
+  }
+  if (GENERIC_BACKEND_MESSAGES.has(trimmed.toLowerCase())) {
+    return undefined;
+  }
+  return trimmed;
+}
+
+/**
  * Generate a unique request ID for tracing
  */
 function generateRequestId(): string {
@@ -387,9 +455,25 @@ async function responseErrorInterceptor(error: unknown): Promise<unknown> {
   }
 
   // Handle 403 Forbidden
+  //
+  // Issue #275: prefer the backend's user-facing prose when present (e.g.,
+  // "Please verify your email address before logging in." emitted by
+  // `backend/functions/auth/login.ts:175` for `UserNotConfirmedException`).
+  // Only fall back to the generic `ERROR_MESSAGES.UNAUTHORIZED` constant
+  // when the backend message is absent OR matches the
+  // `GENERIC_BACKEND_MESSAGES` deny-list — otherwise an opaque
+  // "Forbidden" or "Request failed" string from API Gateway would
+  // re-introduce the original issue-#266 "An unexpected error occurred"
+  // class problem.
+  //
+  // Precedence mirrors `getApiErrorMessage` in
+  // `frontend/src/utils/translationErrorMessages.ts` so the two code
+  // paths agree on what counts as a usable backend message.
   if (axiosError.response?.status === 403) {
+    const backendMessage = extractBackendMessage(axiosError.response.data);
+
     const apiError: ApiError = {
-      message: ERROR_MESSAGES.UNAUTHORIZED,
+      message: backendMessage ?? ERROR_MESSAGES.UNAUTHORIZED,
       status: 403,
       data: axiosError.response.data,
     };

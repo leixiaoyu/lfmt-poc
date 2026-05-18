@@ -342,6 +342,75 @@ describe('ForgotPasswordForm - Error Handling', () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// Issue #274 — ForgotPasswordForm must route catch payloads through
+// `getApiErrorMessage`. Same matrix as LoginForm/RegisterForm tests.
+// ---------------------------------------------------------------------------
+describe('ForgotPasswordForm - getApiErrorMessage routing (issue #274)', () => {
+  it('renders curated NETWORK_MESSAGE for a raw axios `Network Error` string', async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn().mockRejectedValue(new Error('Network Error'));
+    renderWithRouter(<ForgotPasswordForm onSubmit={onSubmit} />);
+
+    await user.type(screen.getByLabelText(/email/i), 'user@example.com');
+    await user.click(screen.getByRole('button', { name: /send reset link/i }));
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(/connection lost — check your internet and try again\./i)
+      ).toBeInTheDocument();
+    });
+    expect(screen.queryByText(/^network error$/i)).not.toBeInTheDocument();
+  });
+
+  it('surfaces a backend-emitted prose message verbatim', async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn().mockRejectedValue({ message: 'Email not found', status: 404 });
+    renderWithRouter(<ForgotPasswordForm onSubmit={onSubmit} />);
+
+    await user.type(screen.getByLabelText(/email/i), 'missing@example.com');
+    await user.click(screen.getByRole('button', { name: /send reset link/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText('Email not found')).toBeInTheDocument();
+    });
+  });
+
+  it('renders STATUS_MESSAGES[429] for { statusCode: 429, message: "" }', async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn().mockRejectedValue({ statusCode: 429, message: '' });
+    renderWithRouter(<ForgotPasswordForm onSubmit={onSubmit} />);
+
+    await user.type(screen.getByLabelText(/email/i), 'user@example.com');
+    await user.click(screen.getByRole('button', { name: /send reset link/i }));
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(/translation rate limit reached — please try again in a moment\./i)
+      ).toBeInTheDocument();
+    });
+  });
+
+  it('falls back to NETWORK_MESSAGE for an entirely empty rejection (issue #279)', async () => {
+    // Issue #279: confirms the per-form fallback string
+    // ("An error occurred while requesting password reset") is gone.
+    const user = userEvent.setup();
+    const onSubmit = vi.fn().mockRejectedValue({
+      /* empty */
+    });
+    renderWithRouter(<ForgotPasswordForm onSubmit={onSubmit} />);
+
+    await user.type(screen.getByLabelText(/email/i), 'user@example.com');
+    await user.click(screen.getByRole('button', { name: /send reset link/i }));
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(/connection lost — check your internet and try again\./i)
+      ).toBeInTheDocument();
+    });
+  });
+});
+
 describe('ForgotPasswordForm - Accessibility', () => {
   it('should have proper label for email input', () => {
     renderWithRouter(<ForgotPasswordForm onSubmit={vi.fn()} />);
