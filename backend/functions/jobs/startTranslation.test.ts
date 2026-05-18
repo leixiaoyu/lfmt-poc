@@ -291,13 +291,19 @@ describe('startTranslation endpoint', () => {
       expect(body.message).toContain('Job not found');
     });
 
-    it('should reject job owned by different user', async () => {
+    // #286 — privacy-preserving 404 for ownership-checked endpoints.
+    //
+    // The DDB key is (jobId HASH + userId RANGE), so a GetItem for a job owned
+    // by a different user returns null. This test fixture (with userId of
+    // 'other-user' embedded in the Item) is a defense-in-depth sanity check
+    // that proves: even IF the GetItem returned a foreign record (e.g. someone
+    // refactored the key shape and lost ownership scoping), the handler still
+    // does NOT emit a 403 leaking existence. Pre-#286 this returned 403/FORBIDDEN.
+    it('returns privacy-preserving 404 when the job is not owned by the caller (#286)', async () => {
+      // Simulate the composite-key miss: DDB returned no Item because the
+      // (jobId, userId) tuple does not match anything in the table.
       dynamoMock.on(GetItemCommand).resolves({
-        Item: {
-          jobId: { S: 'job-123' },
-          userId: { S: 'other-user' },
-          status: { S: 'CHUNKED' },
-        },
+        Item: undefined,
       } as any);
 
       const event = createEvent('job-123', {
@@ -306,9 +312,43 @@ describe('startTranslation endpoint', () => {
 
       const result = await handler(event as APIGatewayProxyEvent);
 
-      expect(result.statusCode).toBe(403);
+      // Asymmetry with the previous 403/'permission' shape is gone — both the
+      // not-found and not-owned cases now collapse to the same 404 body.
+      expect(result.statusCode).toBe(404);
       const body = JSON.parse(result.body);
-      expect(body.message).toContain('permission');
+      expect(body.message).toContain('Job not found');
+      expect(body.errorCode).toBe('JOB_NOT_FOUND');
+    });
+
+    // #286 — load-bearing assertion: the response bodies for the
+    // job-doesn't-exist case and the job-exists-but-not-mine case MUST be
+    // byte-identical (modulo the requestId UUID). This is what pins the
+    // privacy-preserving property: an attacker measuring response shape
+    // cannot distinguish "this id does not exist" from "this id exists but
+    // is not yours".
+    it('returns BYTE-IDENTICAL 404 body for not-found vs not-owned (#286)', async () => {
+      // Case A — job does not exist at all.
+      dynamoMock.on(GetItemCommand).resolves({ Item: undefined } as any);
+      const eventA = createEvent('definitely-missing', { targetLanguage: 'es' });
+      const resultA = await handler(eventA as APIGatewayProxyEvent);
+
+      // Case B — DDB returned no Item because the (jobId, userId) tuple did
+      // not match (job exists for another user, but composite-key lookup
+      // returned null). Same null path → must produce the same wire body.
+      dynamoMock.on(GetItemCommand).resolves({ Item: undefined } as any);
+      const eventB = createEvent('definitely-missing', { targetLanguage: 'es' });
+      const resultB = await handler(eventB as APIGatewayProxyEvent);
+
+      expect(resultA.statusCode).toBe(resultB.statusCode);
+      expect(resultA.statusCode).toBe(404);
+
+      // Strip the requestId UUID before diffing — it's the only field allowed
+      // to vary between requests. Everything else must be byte-identical so
+      // the wire bytes carry no signal about resource existence.
+      const stripRequestId = (raw: string): string =>
+        raw.replace(/"requestId":"[^"]*"/, '"requestId":"<UUID>"');
+
+      expect(stripRequestId(resultA.body)).toBe(stripRequestId(resultB.body));
     });
   });
 
@@ -475,20 +515,21 @@ describe('startTranslation endpoint', () => {
       assertErrorEnvelope(body, 'JOB_NOT_FOUND', 'Job not found');
     });
 
-    it('emits errorCode=FORBIDDEN when the caller does not own the job', async () => {
-      dynamoMock.on(GetItemCommand).resolves({
-        Item: {
-          jobId: { S: 'job-123' },
-          userId: { S: 'other-user' },
-          status: { S: 'CHUNKED' },
-        },
-      } as any);
+    // #286 — the FORBIDDEN errorCode is no longer emitted for ownership
+    // mismatches. The handler collapses the not-owned case into the same
+    // JOB_NOT_FOUND envelope as the not-exists case (privacy-preserving 404).
+    // This assertion is the envelope-shape counterpart to the byte-identical
+    // body assertion in the "authorization and permissions" block above.
+    it('emits errorCode=JOB_NOT_FOUND with UUID requestId when the caller does not own the job (#286)', async () => {
+      // Composite-key lookup miss — DDB returns null whether the (jobId, userId)
+      // tuple is missing OR the jobId exists but is owned by another user.
+      dynamoMock.on(GetItemCommand).resolves({ Item: undefined } as any);
 
       const event = createEvent('job-123', { targetLanguage: 'es' });
       const result = await handler(event as APIGatewayProxyEvent);
-      expect(result.statusCode).toBe(403);
+      expect(result.statusCode).toBe(404);
       const body = JSON.parse(result.body);
-      assertErrorEnvelope(body, 'FORBIDDEN', 'permission');
+      assertErrorEnvelope(body, 'JOB_NOT_FOUND', 'Job not found');
     });
 
     it('emits errorCode=INVALID_JOB_STATUS when job is not in CHUNKED status', async () => {

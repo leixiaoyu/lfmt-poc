@@ -173,8 +173,8 @@ export type TranslationErrorCode =
   // message is empty or generic.
   | 'MISSING_JOB_ID' // 400 — required jobId path parameter is absent
   | 'INVALID_REQUEST' // 400 — body validation failed (targetLanguage/tone/contextChunks)
-  | 'JOB_NOT_FOUND' // 404 — job does not exist for the caller
-  | 'FORBIDDEN' // 403 — caller does not own the job
+  | 'JOB_NOT_FOUND' // 404 — job does not exist OR is not owned by the caller (#286)
+  | 'FORBIDDEN' // 403 — retained for deployment-window forward-compat (#286 removed the backend emitter); also covers auth-handler 403s that are orthogonal to BOLA
   | 'INVALID_JOB_STATUS' // 400 — job not in CHUNKED status; cannot start translation
   | 'NO_CHUNKS_AVAILABLE' // 400 — job has no chunks; cannot start translation
   | 'API_GENERIC'; // API / service error — fall through to status-code map

@@ -8,6 +8,7 @@ This document outlines best practices for working with AWS CDK in the LFMT proje
 - [IAM Policy Management](#iam-policy-management)
 - [Resource Naming](#resource-naming)
 - [Testing and Validation](#testing-and-validation)
+- [Privacy-Preserving 404 for Ownership-Checked Resources](#privacy-preserving-404-for-ownership-checked-resources)
 
 > **CI/CD pipeline architecture** (deploy workflow split, branch-protection
 > coordination, shared-types contract): see
@@ -595,5 +596,154 @@ When reviewing a PR that introduces or modifies any AWS resource:
 
 ---
 
-**Last Updated**: 2026-05-07
+## Privacy-Preserving 404 for Ownership-Checked Resources
+
+### The Problem: 403-vs-404 leaks resource existence (OWASP API1:2023 — BOLA)
+
+Issue #286 — a backend handler that returns **403 Forbidden** when a resource
+exists but isn't owned by the caller, and **404 Not Found** when the resource
+doesn't exist, is leaking metadata. The 403-vs-404 asymmetry lets an attacker
+who can enumerate or guess resource ids learn whether each id exists in the
+system, even though the ownership check correctly blocks data access. That's
+the same bug class as OWASP API1:2023 — Broken Object Level Authorization
+(BOLA). It is medium-high severity: not directly exploitable for data theft,
+but useful for targeted reconnaissance.
+
+### The Antipattern
+
+```ts
+// ❌ WRONG — distinguishable 403 vs 404 responses leak resource existence.
+const job = await loadJob(jobId);
+if (!job) {
+  return createErrorResponse(404, `Job not found: ${jobId}`, requestId, undefined, requestOrigin, {
+    errorCode: 'JOB_NOT_FOUND',
+  });
+}
+if (job.userId !== userId) {
+  return createErrorResponse(
+    403,
+    'You do not have permission',
+    requestId,
+    undefined,
+    requestOrigin,
+    {
+      errorCode: 'FORBIDDEN',
+    }
+  );
+}
+```
+
+Two response codes, two different bodies. An attacker probing random jobIds
+sees 403 vs 404 and learns which ids exist.
+
+### The Pattern: collapse not-found and not-owned into a single 404
+
+```ts
+// ✅ CORRECT — single 404 response, byte-identical for both branches.
+const job = await loadJob(jobId);
+if (!job || job.userId !== userId) {
+  // Privacy-preserving 404: do not distinguish "doesn't exist" from
+  // "exists but not yours". The response is identical in both cases —
+  // status code, message, errorCode all match.
+  return createErrorResponse(404, `Job not found: ${jobId}`, requestId, undefined, requestOrigin, {
+    errorCode: 'JOB_NOT_FOUND',
+  });
+}
+```
+
+Even better — push the ownership check into the data layer so the not-found
+and not-owned cases produce the SAME `null` return from the repository helper:
+
+```ts
+// ✅ BEST — composite-key lookup means a job owned by someone else returns
+// null at the DDB layer. The handler has only one error branch to reason about.
+const job = await loadJobForUser(dynamoClient, JOBS_TABLE, jobId, userId);
+if (!job) {
+  return createErrorResponse(404, `Job not found: ${jobId}`, requestId, undefined, requestOrigin, {
+    errorCode: 'JOB_NOT_FOUND',
+  });
+}
+```
+
+The LFMT Jobs table uses a composite primary key (jobId HASH + userId RANGE),
+so `GetItem` with both keys naturally rejects cross-ownership lookups by
+returning a null Item. `loadJobForUser` in
+`backend/functions/shared/jobRepository.ts` is the canonical helper; new
+handlers should use it rather than re-implementing the pattern.
+
+### When NOT to apply this pattern
+
+This pattern applies to handlers that:
+
+1. Read a resource by a path-parameter id.
+2. Enforce per-user ownership of that resource.
+
+It does **NOT** apply to:
+
+- **Auth handlers** (`backend/functions/auth/*.ts`). Their 403 responses
+  (e.g., on unverified email) do not carry resource-existence information;
+  the 403 status carries an orthogonal signal that the frontend deliberately
+  surfaces in the UI (see PR #283).
+- **Status-guard 4xx codes** that don't reveal existence. For example,
+  `downloadTranslation.ts` returns **409 Conflict** when a job exists, is
+  owned by the caller, but is not yet `COMPLETED`. That 409 is reached only
+  after the ownership check has passed, so the response code reveals state
+  about the caller's OWN job — which is fine.
+- **Internal S3-event handlers** (`uploadComplete.ts`). They run inside the
+  AWS account on validated events; the userId mismatch path is a defensive
+  log-only event, not a client-facing HTTP response.
+
+### Frontend impact
+
+The frontend's `COPY_BY_CODE.JOB_NOT_FOUND` (added in PR #281) reads:
+
+> "We couldn't find that translation — it may have been deleted. Please try
+> again from your history."
+
+This copy is appropriately ambiguous for both the not-found and not-owned
+cases. No frontend code change is required when collapsing a backend 403 into
+a 404 with `JOB_NOT_FOUND` — the user sees the same friendly message either
+way.
+
+### Reviewer / Test-Author Checklist
+
+When reviewing a PR that adds or modifies a handler that takes a path-parameter
+resource id and performs an ownership check:
+
+- [ ] Does the handler return the SAME status code (404) for both
+      "resource doesn't exist" and "resource exists but not owned by caller"?
+- [ ] Is the response body byte-identical between those two branches
+      (modulo the `requestId` UUID)?
+- [ ] Are there at least two tests proving the byte-identical-body
+      property? See `backend/functions/jobs/startTranslation.test.ts` →
+      "returns BYTE-IDENTICAL 404 body for not-found vs not-owned (#286)"
+      for the canonical pattern.
+- [ ] If the handler refers to `userId` from `event.requestContext.authorizer.claims.sub`
+      to compare against a loaded record, can the ownership scoping be
+      pushed into the DDB key shape instead (composite key)? If yes,
+      prefer `loadJobForUser` from `backend/functions/shared/jobRepository.ts`.
+
+### Residual side-channel: response timing
+
+Collapsing the two response codes defeats the per-response leak but does **not**
+defeat a patient attacker measuring response time across many requests. A
+not-found path returns null from DynamoDB after the lookup; a not-owned path
+(with the composite-key shape) ALSO returns null from DynamoDB — so the two
+paths take almost identical time. The residual gap on the LFMT-POC stack is
+in the low single-digit millisecond range and is dominated by Lambda
+cold-start jitter; it is not exploitable without thousands of requests and
+statistical analysis. Mitigating it would require either an artificial delay
+on the success path or a different data-access pattern. We document it here
+for future hardening but do not consider it actionable in v1.
+
+### When This Rule Applies
+
+- Any new API Gateway Lambda that reads a per-user resource by a path
+  parameter (`/jobs/{jobId}`, `/jobs/{jobId}/translate`, etc.).
+- Any refactor of an existing ownership-checked handler — the response code
+  is now part of the security-relevant API contract.
+
+---
+
+**Last Updated**: 2026-05-17
 **Maintained By**: LFMT Engineering Team
