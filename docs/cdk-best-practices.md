@@ -9,6 +9,7 @@ This document outlines best practices for working with AWS CDK in the LFMT proje
 - [Resource Naming](#resource-naming)
 - [Testing and Validation](#testing-and-validation)
 - [Privacy-Preserving 404 for Ownership-Checked Resources](#privacy-preserving-404-for-ownership-checked-resources)
+- [Timing side-channel — measurement methodology and results (post-#287)](#timing-side-channel--measurement-methodology-and-results-post-287)
 
 > **CI/CD pipeline architecture** (deploy workflow split, branch-protection
 > coordination, shared-types contract): see
@@ -736,6 +737,11 @@ statistical analysis. Mitigating it would require either an artificial delay
 on the success path or a different data-access pattern. We document it here
 for future hardening but do not consider it actionable in v1.
 
+The full measurement methodology — including a runnable script, statistical
+test, and the analytical conclusion that justifies the v1 "wontfix" — is
+captured below in
+[Timing side-channel — measurement methodology and results (post-#287)](#timing-side-channel--measurement-methodology-and-results-post-287).
+
 ### When This Rule Applies
 
 - Any new API Gateway Lambda that reads a per-user resource by a path
@@ -985,6 +991,273 @@ burst; gated live-contract test).
   `throttlingBurstLimit`) that Option 2 would complement, not replace.
 - OWASP API Security Top 10 — API1:2023 (Broken Object Level
   Authorization) and API4:2023 (Unrestricted Resource Consumption).
+
+---
+
+## Timing side-channel — measurement methodology and results (post-#287)
+
+### Why this section exists
+
+After [PR #287](https://github.com/leixiaoyu/lfmt-poc/pull/287) collapsed the
+not-found and not-owned response branches into a single privacy-preserving
+404, [issue #288](https://github.com/leixiaoyu/lfmt-poc/issues/288) tracked the
+remaining timing side-channel: do those two cases produce a measurably
+different wall-clock response time that an attacker could statistically
+exploit to recover the existence signal at the wire-time layer?
+
+This section answers that question. It records:
+
+1. A code-path identity audit of the five ownership-checked handlers, so the
+   "are both branches really identical?" claim is auditable rather than
+   asserted.
+2. A measurement methodology — what to measure, how to control noise, what
+   statistical test to use, and what threshold defines "exploitable" per
+   issue #288's own acceptance criteria.
+3. The result (analytical for v1; empirical follow-up gated on real users).
+4. The conclusion + re-entry criteria — what would make this worth
+   re-measuring later.
+
+### Code-path identity audit — the five ownership-checked handlers (post-#287)
+
+The five HTTP handlers that take a path-parameter `jobId` and enforce
+ownership are listed below with their post-#287 not-found vs. not-owned
+behavior. Every row reaches a **single** error branch that returns a
+byte-identical 404 (modulo the per-request `requestId` UUID) regardless of
+whether the resource doesn't exist or exists-but-not-owned. The composite
+DynamoDB primary key `(jobId HASH + userId RANGE)` is what makes the two
+cases indistinguishable at the DDB layer — `GetItem` with the caller's
+`userId` returns no item in either case.
+
+| Handler                                | File                                                   | DDB call (single round trip)                                      | Single not-found branch (single 404 site) |
+| -------------------------------------- | ------------------------------------------------------ | ----------------------------------------------------------------- | ----------------------------------------- |
+| `POST /jobs/{jobId}/translate`         | `backend/functions/jobs/startTranslation.ts`           | `GetItem({jobId, userId})` via inline `loadJob`                   | `if (!job)` → 404 + `JOB_NOT_FOUND`       |
+| `GET /jobs/{jobId}`                    | `backend/functions/jobs/getJob.ts`                     | `GetItem({jobId, userId})` via `loadJobForUser`                   | `if (!job)` → 404                         |
+| `GET /jobs/{jobId}/translation-status` | `backend/functions/jobs/getTranslationStatus.ts`       | `GetItem({jobId, userId})` with `ConsistentRead: true`            | `if (!job)` → 404                         |
+| `GET /jobs/{jobId}/download`           | `backend/functions/translation/downloadTranslation.ts` | `GetItem({jobId, userId})` via `loadJobForUser`                   | `if (!job)` → 404                         |
+| `DELETE /jobs/{jobId}`                 | `backend/functions/jobs/deleteJob.ts`                  | `DeleteItem({jobId, userId})` with compound `ConditionExpression` | `ConditionalCheckFailedException` → 404   |
+
+Implications for the timing question:
+
+- **Same number of AWS round trips** in every case: exactly one DynamoDB
+  call. No conditional second call on either branch.
+- **Same DDB API in every case**: a key-by-primary-key access. No queries,
+  scans, or transactions whose performance would diverge by branch.
+- **Same response builder** (`createErrorResponse` with status 404 + the
+  `JOB_NOT_FOUND` errorCode on the four GET/POST handlers; the DELETE handler
+  emits a 404 with the same shape from its own `ConditionalCheckFailedException`
+  catch). The serialization cost is independent of which branch fired.
+- **No branch-specific logging that would change CloudWatch write volume**
+  between the two cases (both branches log "Job not found"-style entries).
+
+The only place the two cases can diverge is in DynamoDB's **internal**
+behavior for a composite-key lookup that misses. The composite key
+`(jobId, userId)` is the table's primary key, so the storage engine
+locates the partition by `jobId` (the HASH key) regardless of whether the
+`userId` (RANGE key) matches. A "not-found" lookup partitions to an
+unused or sparsely-used hash; a "not-owned" lookup partitions to a hash
+that has at least one item (the legitimate owner's record). Whether AWS
+caches "this partition has data" differently from "this partition is
+empty" is not publicly documented, but it would be a sub-millisecond
+effect inside a fixed-budget storage tier — see the analytical signal
+estimate below.
+
+### Measurement methodology
+
+A runnable measurement script lives at
+[`backend/scripts/security/timing-sidechannel-measurement.ts`](../backend/scripts/security/timing-sidechannel-measurement.ts).
+It implements the exact methodology recorded here so a future engineer can
+re-measure without re-deriving the protocol.
+
+Steps:
+
+1. **Two sample groups**, both reaching the same 404 code path:
+   - **Group A — not-found**: request a freshly-generated random UUID. The
+     UUID cannot collide with any existing job in any user's namespace
+     (122 bits of entropy).
+   - **Group B — not-owned**: request a real `jobId` that belongs to a
+     **different** Cognito user than the caller. The composite-key
+     `GetItem` returns no item; the handler emits the same 404.
+2. **Interleave A,B,A,B,...** so any across-run drift (Lambda warm-up
+   trajectory, network conditions, neighbor-tenant noise on the same
+   Lambda container) affects both groups equally.
+3. **Default sample size**: 200 per group (400 requests total per endpoint).
+   The script enforces a minimum of 30 per group; below that, the normal
+   approximation in the t-test is unreliable.
+4. **Warm-up discard**: drop the first `MIN(10, N/10)` samples per group
+   to remove cold-start outliers. The remaining samples should be on a
+   warm Lambda container.
+5. **Statistic**: Welch's t-test (unequal variances) on the wall-clock
+   durations. The script reports the p-value plus descriptive statistics
+   (mean, median, std-dev, p99, IQR, status-code distribution, response
+   body-length distribution) for each group.
+6. **"Exploitable" threshold** (from issue #288's acceptance criteria):
+   the script flags a result as exploitable when **both**:
+   - `|median_A − median_B| ≥ 1 ms` (the issue's documented threshold), and
+   - p-value < 0.05 (the two means are statistically distinguishable).
+
+   Either condition alone is insufficient: a 0.05-ms gap that is
+   statistically significant at N=10,000 is still not exploitable in
+   practice; a 5-ms median gap with a 30-ms std-dev and N=30 cannot be
+   distinguished from jitter.
+
+7. **Auxiliary leak check**: the script also asserts the response body
+   length is uniform within each group AND identical across groups
+   (modulo the per-request `requestId` UUID). A discrepancy here would
+   be a privacy-relevant **byte-length** leak independent of timing —
+   that should be fixed before re-measuring timing.
+
+#### Limitations of the methodology
+
+- **Wall-clock observation**: the script measures the attacker-visible
+  signal (caller-perceived time), which includes network jitter, TLS
+  handshake, API Gateway routing, Lambda warm-execution, and DDB
+  GetItem. It does not isolate the DDB layer. That is intentional —
+  the operational question is "can a remote attacker distinguish the
+  two cases?", not "is there a measurable internal-microarchitecture
+  difference?".
+- **Normal-approximation t-test**: Welch's t-test with the normal
+  approximation is sufficient for N ≥ 30 per group on roughly-symmetric
+  distributions. Lambda latency distributions are right-skewed (heavy
+  tail). If the p-value is borderline (`0.01 < p < 0.10`), the operator
+  should switch to a Mann-Whitney U or Kolmogorov-Smirnov test, or
+  increase N until the conclusion is stable.
+- **Same-region operator**: running the script from a developer laptop
+  in `us-east-1` produces lower jitter than a real attacker on the
+  open internet, so the script's results are an **upper bound on the
+  attacker's signal-to-noise ratio**. A real attacker over the WAN has
+  strictly worse measurement precision than this script does.
+
+#### Auth & environment setup
+
+The script needs:
+
+- **`LFMT_AUTH_TOKEN`**: a valid Cognito ID token for the calling user.
+- **`LFMT_NOT_OWNED_JOB_ID`**: a real `jobId` whose record is owned by some
+  **other** user. Both users must exist in the same Cognito pool.
+- **`--api-url`**: optional; defaults to the dev API documented in
+  `CLAUDE.md`.
+
+The script is read-only on success: every endpoint short-circuits with
+404 before any state mutation. Re-running it is safe and idempotent. The
+`DELETE` endpoint rejects via `ConditionExpression`, so no data is
+removed on the not-owned probe.
+
+### Results
+
+#### Empirical results
+
+**Status as of issue #288 close-out**: not collected. Running the full
+empirical sample requires a valid Cognito ID token and a populated dev
+environment with two distinct user-owned jobs, neither of which was
+available to the agent that ran this analysis. The `--smoke` mode WAS
+exercised against the live dev API — it returned a 401 in ~128 ms,
+confirming the script's network plumbing reaches API Gateway and that
+unauthenticated requests are correctly rejected.
+
+The script is committed in a runnable state. A future operator with the
+required environment can run:
+
+```sh
+LFMT_AUTH_TOKEN=eyJ... \
+LFMT_NOT_OWNED_JOB_ID=<a-real-job-id-owned-by-some-other-user> \
+npx ts-node backend/scripts/security/timing-sidechannel-measurement.ts \
+  --endpoint=all --samples=200
+```
+
+…and obtain the empirical numbers. The exit code is 0 if no endpoint
+exceeds the exploitable threshold and 1 if any does.
+
+#### Analytical signal estimate
+
+Even without an empirical run, the signal-to-noise floor can be reasoned
+about from documented AWS performance characteristics:
+
+| Component                                                            | Typical contribution to a single warm-Lambda request                       |
+| -------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| API Gateway routing + auth                                           | ~3–5 ms                                                                    |
+| Lambda warm-execution overhead                                       | ~5–15 ms                                                                   |
+| DynamoDB `GetItem` (single-item, primary key, eventually consistent) | ~3–8 ms (single-digit ms is AWS's documented target for single-item reads) |
+| Network RTT (client to API Gateway, same-region)                     | ~5–20 ms                                                                   |
+| **Total warm-path expectation**                                      | **~16–48 ms with a std-dev of ~5–15 ms**                                   |
+
+The hypothetical timing difference is the _internal_ DDB behavior for
+"key in a partition with no rows" vs. "key in a partition with at least
+one row but no row matching the composite key". AWS does not publish a
+latency split for these two cases. The widely-cited internal target is
+**sub-millisecond** for both — DynamoDB's documented single-digit-ms
+GetItem latency is end-to-end, and the storage-tier difference between
+"partition empty" and "partition non-empty but key mismatch" is a
+B-tree-style index probe that's near-identical work in both cases.
+
+Putting this together:
+
+- Expected signal (median delta): **< 1 ms**, likely **< 0.3 ms**.
+- Expected noise (std-dev within each group): **~5–15 ms** on a warm
+  Lambda; much higher across cold-start boundaries.
+- Signal-to-noise ratio for a single request: **< 0.1** — far below
+  any practical detection threshold.
+- Sample-size required to extract a 0.3-ms signal from 10-ms±10-ms
+  jitter at 95% confidence (z-test, two-sided): roughly
+  `(2 * 1.96 * 10 / 0.3)² ≈ 17,000` requests **per group, per
+  endpoint, against the same warm Lambda instance**.
+
+That is a hard attack to mount in practice. Lambda execution
+environments are recycled on a rolling cadence the attacker cannot
+control; sustaining the same warm container for 17,000+ paired requests
+requires keeping the function "hot" without tripping API Gateway
+throttles, and the moment a cold start occurs the noise floor jumps an
+order of magnitude. The attacker also has no way to _verify_ their
+guess — they would simply infer "id X is more likely to be a real job
+than id Y", with no oracle to confirm.
+
+### Conclusion
+
+**Recommendation: wontfix at v1.** The analytical signal-to-noise ratio
+is below the practical detection threshold, and the documented
+`docs/cdk-best-practices.md` residual disclosure (alongside the issue
+#288 acceptance criteria) is the appropriate level of follow-up. We
+do **not** implement Option A (constant-time floor / artificial delay)
+because:
+
+1. The signal-to-noise estimate is `< 0.1` per request — orders of
+   magnitude below an exploitable threshold.
+2. Option A would impose latency on every legitimate request to amortise
+   a gap that has not been shown to be measurable, in violation of
+   issue #288's explicit "don't add latency on speculation" guidance.
+3. The defense-in-depth measures filed alongside this issue
+   ([#289](https://github.com/leixiaoyu/lfmt-poc/issues/289), per-user
+   rate limiting / anti-enumeration) are a lower-cost mitigation that
+   addresses the volume-of-requests prerequisite this attack depends on.
+
+### Re-entry criteria
+
+This conclusion should be re-evaluated when **any** of the following
+changes:
+
+- **Real users / external traffic**: the threat surface grows when
+  multi-user adoption is real. Re-run the empirical script with N = 200
+  per group per endpoint, then re-evaluate.
+- **Ownership model changes** beyond the current composite-key shape
+  (e.g., team-scoped resources, ACLs, sharing): a different key shape
+  may re-introduce variable-time code paths that the current audit no
+  longer covers.
+- **Observed enumeration patterns** in CloudWatch (the #289 follow-up
+  adds visibility): if a single user is observed iterating jobIds at
+  scale, that demonstrates the volume prerequisite has been met by
+  someone — re-measure.
+- **Compliance bar** (SOC 2, HIPAA, etc.) that explicitly requires
+  timing-side-channel analysis as part of pen testing: the wontfix
+  conclusion must be replaced with a documented Option A implementation
+  and a measured "before / after" comparison.
+- **Any new ownership-checked handler** is added that does not follow
+  the composite-key pattern: re-audit the table above and re-run the
+  script against the new endpoint.
+
+### Reference script
+
+[`backend/scripts/security/timing-sidechannel-measurement.ts`](../backend/scripts/security/timing-sidechannel-measurement.ts)
+— self-documenting (full usage in the header comment). Type-checked but
+not part of CI; intended to be run on demand by a security reviewer.
 
 ---
 

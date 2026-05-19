@@ -1,0 +1,15 @@
+{
+  "name": "@lfmt/security-scripts",
+  "version": "1.0.0",
+  "description": "Security measurement scripts for LFMT — timing side-channel etc. Run on demand, not in CI.",
+  "private": true,
+  "scripts": {
+    "timing-sidechannel": "ts-node timing-sidechannel-measurement.ts",
+    "timing-sidechannel:smoke": "ts-node timing-sidechannel-measurement.ts --smoke"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.4",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.3.3"
+  }
+}
