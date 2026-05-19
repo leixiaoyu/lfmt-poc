@@ -73,6 +73,14 @@ const GENERIC_BACKEND_MESSAGES = new Set(
  * `UserNotConfirmedException`. Extracted as a helper rather than
  * inlined so other status-code branches can adopt the same pattern
  * if needed without re-implementing the deny-list logic.
+ *
+ * Issue #284 (sibling): the 500+ branch adopted the same precedence
+ * rule, making this helper the shared implementation for both 403 and
+ * 500+ message extraction. The 401 branch is intentionally NOT a
+ * caller — the curated `SESSION_EXPIRED` copy must always win on
+ * terminal 401. Kept module-private at two callers per the
+ * GENERIC_BACKEND_MESSAGES comment ("If a third caller appears,
+ * promote this constant to a shared util").
  */
 function extractBackendMessage(data: unknown): string | undefined {
   if (!data || typeof data !== 'object') {
@@ -504,9 +512,25 @@ async function responseErrorInterceptor(error: unknown): Promise<unknown> {
   }
 
   // Handle server errors (500+)
+  //
+  // Issue #284 (sibling of #275 / PR #283): mirror the precedence rule the
+  // 403 branch established. Prefer the backend's user-facing prose when
+  // present and specific; only fall back to the curated
+  // `ERROR_MESSAGES.SERVER_ERROR` constant when the backend message is
+  // absent OR matches the `GENERIC_BACKEND_MESSAGES` deny-list. The
+  // pre-fix code unconditionally clobbered the backend message, the same
+  // bug class as #275 — discovered while scoping PR #283 and called out
+  // as out-of-scope in that PR's body, then filed as #284 for parity.
+  //
+  // The 401 branch above is intentionally DIFFERENT: the curated
+  // `SESSION_EXPIRED` copy must always win on terminal 401 (the session
+  // is dead regardless of backend prose). Do not propagate this pattern
+  // there.
   if (axiosError.response.status >= 500) {
+    const backendMessage = extractBackendMessage(axiosError.response.data);
+
     const apiError: ApiError = {
-      message: ERROR_MESSAGES.SERVER_ERROR,
+      message: backendMessage ?? ERROR_MESSAGES.SERVER_ERROR,
       status: axiosError.response.status,
       data: axiosError.response.data,
     };

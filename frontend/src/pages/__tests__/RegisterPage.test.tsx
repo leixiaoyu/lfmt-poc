@@ -406,9 +406,14 @@ describe('RegisterPage - Integration Tests', () => {
 
         const alert = await screen.findByText(/account created\./i);
         expect(alert).toBeInTheDocument();
-        // The api.ts 5xx branch overrides the backend message with
-        // ERROR_MESSAGES.SERVER_ERROR ("Server error. Please try again
-        // later.") — non-generic, passes through the extractor verbatim.
+        // Post-#284 the api.ts 5xx branch surfaces the backend message
+        // verbatim when it is specific (mirrors the 403 precedence
+        // PR #283 added). "Internal server error" is NOT in the
+        // GENERIC_BACKEND_MESSAGES deny-list so it passes through
+        // verbatim — which still satisfies the /server error/i match
+        // here. The unifying invariant for this test is: the message
+        // mentions "server error" AND does NOT promote the email-
+        // verification hint.
         expect(alert.textContent).toMatch(/server error/i);
         expect(alert.textContent).not.toMatch(/check your email/i);
       });
