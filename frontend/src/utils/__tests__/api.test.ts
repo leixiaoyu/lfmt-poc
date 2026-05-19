@@ -876,17 +876,189 @@ describe('API Client - Response Error Interceptor', () => {
     }
   });
 
-  it('should handle server errors (500+)', async () => {
+  // Issue #284: 500+ backend-message precedence (sibling of #275 / PR #283).
+  //
+  // Pre-#284 the 500+ branch clobbered every backend message with the
+  // generic `ERROR_MESSAGES.SERVER_ERROR` constant, the same bug class
+  // as #275. Post-#284 the precedence matches the 403 branch exactly:
+  // specific backend message wins; generic backend message OR absent
+  // backend message falls back to the `ERROR_MESSAGES.SERVER_ERROR`
+  // constant. The deny-list guard prevents an opaque "Request failed"
+  // / "An unexpected error occurred" from re-introducing the issue #266
+  // bug class.
+  //
+  // The 401 branch above remains intentionally different — the curated
+  // SESSION_EXPIRED copy must always win on terminal 401.
+
+  it('500+: surfaces specific backend message verbatim (issue #284 load-bearing case)', async () => {
     const { createApiClient } = await import('../api');
     const client = createApiClient();
 
-    // Mock adapter to simulate 500 error
+    // Mock adapter to simulate a 500 carrying a specific, actionable
+    // backend phrase. The pre-#284 implementation would clobber
+    // `error.message` with "Server error. Please try again later." —
+    // destroying useful operator/dev signal (e.g. a translation worker
+    // returning "Translation provider quota exhausted — retry in 5
+    // minutes.").
     client.defaults.adapter = async () => {
       const error: any = new Error('Request failed with status code 500');
       error.isAxiosError = true;
       error.response = {
         status: 500,
-        data: { message: 'Internal server error' },
+        data: {
+          message: 'Translation provider quota exhausted — retry in 5 minutes.',
+          requestId: 'req-xyz',
+        },
+        statusText: 'Internal Server Error',
+        headers: {},
+        config: {},
+      };
+      throw error;
+    };
+
+    try {
+      await client.get('/crash');
+      expect.fail('Should have thrown an error');
+    } catch (error: any) {
+      expect(error.status).toBe(500);
+      expect(error.message).toBe('Translation provider quota exhausted — retry in 5 minutes.');
+      // The raw envelope is preserved for downstream consumers.
+      expect(error.data).toEqual({
+        message: 'Translation provider quota exhausted — retry in 5 minutes.',
+        requestId: 'req-xyz',
+      });
+    }
+  });
+
+  it('500+: falls back to SERVER_ERROR constant when backend message is in the GENERIC deny-list', async () => {
+    const { createApiClient } = await import('../api');
+    const client = createApiClient();
+
+    // API Gateway integration 500 (no specific prose, just "Request
+    // failed"). Surfacing "Request failed" verbatim would re-introduce
+    // the issue #266 "An unexpected error occurred" class problem, so
+    // the deny-list routes us to the curated SERVER_ERROR copy.
+    client.defaults.adapter = async () => {
+      const error: any = new Error('Request failed with status code 500');
+      error.isAxiosError = true;
+      error.response = {
+        status: 500,
+        data: { message: 'Request failed' },
+        statusText: 'Internal Server Error',
+        headers: {},
+        config: {},
+      };
+      throw error;
+    };
+
+    try {
+      await client.get('/crash');
+      expect.fail('Should have thrown an error');
+    } catch (error: any) {
+      expect(error.status).toBe(500);
+      expect(error.message).toBe('Server error. Please try again later.');
+    }
+  });
+
+  it('500+: falls back to SERVER_ERROR constant when response body has no message field', async () => {
+    const { createApiClient } = await import('../api');
+    const client = createApiClient();
+
+    // Some 5xx responses (e.g. raw upstream timeouts, opaque API Gateway
+    // 504s) carry no message field at all. Fall back to the curated copy.
+    client.defaults.adapter = async () => {
+      const error: any = new Error('Request failed with status code 502');
+      error.isAxiosError = true;
+      error.response = {
+        status: 502,
+        data: {},
+        statusText: 'Bad Gateway',
+        headers: {},
+        config: {},
+      };
+      throw error;
+    };
+
+    try {
+      await client.get('/crash');
+      expect.fail('Should have thrown an error');
+    } catch (error: any) {
+      expect(error.status).toBe(502);
+      expect(error.message).toBe('Server error. Please try again later.');
+    }
+  });
+
+  it('500+: falls back to SERVER_ERROR constant when backend message is whitespace only', async () => {
+    const { createApiClient } = await import('../api');
+    const client = createApiClient();
+
+    client.defaults.adapter = async () => {
+      const error: any = new Error('Request failed with status code 503');
+      error.isAxiosError = true;
+      error.response = {
+        status: 503,
+        data: { message: '   \t  \n' },
+        statusText: 'Service Unavailable',
+        headers: {},
+        config: {},
+      };
+      throw error;
+    };
+
+    try {
+      await client.get('/crash');
+      expect.fail('Should have thrown an error');
+    } catch (error: any) {
+      expect(error.status).toBe(503);
+      expect(error.message).toBe('Server error. Please try again later.');
+    }
+  });
+
+  it('500+: falls back to SERVER_ERROR constant when response body is not an object', async () => {
+    const { createApiClient } = await import('../api');
+    const client = createApiClient();
+
+    // Defensive: if some upstream layer returns a string body (e.g. an
+    // HTML error page from a misconfigured proxy that axios decoded as
+    // text), the extractor must not treat that as a usable message.
+    client.defaults.adapter = async () => {
+      const error: any = new Error('Request failed with status code 500');
+      error.isAxiosError = true;
+      error.response = {
+        status: 500,
+        // axios may sometimes pass through plain-string error bodies
+        // when content-type isn't json. The extractor returns undefined
+        // for any non-object data.
+        data: 'Internal Server Error',
+        statusText: 'Internal Server Error',
+        headers: {},
+        config: {},
+      };
+      throw error;
+    };
+
+    try {
+      await client.get('/crash');
+      expect.fail('Should have thrown an error');
+    } catch (error: any) {
+      expect(error.status).toBe(500);
+      expect(error.message).toBe('Server error. Please try again later.');
+    }
+  });
+
+  it('500+: deny-list match is case-insensitive (defense against backend casing drift)', async () => {
+    const { createApiClient } = await import('../api');
+    const client = createApiClient();
+
+    // Backend or upstream may emit "REQUEST FAILED" or "An Unexpected
+    // Error Occurred" depending on layer/locale. The deny-list normalizes
+    // via .toLowerCase() so all variants fall back to the curated copy.
+    client.defaults.adapter = async () => {
+      const error: any = new Error('Request failed with status code 500');
+      error.isAxiosError = true;
+      error.response = {
+        status: 500,
+        data: { message: 'An Unexpected Error Occurred' },
         statusText: 'Internal Server Error',
         headers: {},
         config: {},
