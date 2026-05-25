@@ -1,6 +1,6 @@
 # LFMT POC - Current Progress
 
-**Last Updated**: 2026-05-14
+**Last Updated**: 2026-05-25
 **Project**: Long-Form Translation Service POC
 **Repository**: https://github.com/leixiaoyu/lfmt-poc
 **Owner**: Raymond Lei (leixiaoyu@github)
@@ -12,22 +12,37 @@
 The LFMT POC has completed **Phases 1-9** (foundation through translation UI
 deployment) and the end-to-end translation workflow (upload → chunk →
 Gemini 2.5 Flash → reassemble → download) has been deployed and operating
-in the dev environment since late 2025. The work since late April 2026 has
-been a focused **tech-debt cleanup pass** organised into Waves 1 and 2,
-landing in six large multi-issue PRs between 2026-05-12 and 2026-05-14.
-**26 individual tech-debt / hygiene issues** were resolved in that window.
+in the dev environment since late 2025. The work between 2026-05-12 and
+2026-05-14 was a focused **tech-debt cleanup pass** (Waves 1 + 2; 26 issues
+across PRs #250–#258). The work since then has been:
+
+1. **Closing date-pinned and architectural deferrals** — StoredSession
+   migration removed (#264, ahead of the 2026-06-04 pin), CSP style-src
+   static nonce via build-time generation (#265, closing #254), ePub +
+   PDF output formats (#263, closing #28), CDK nested-stacks proposal
+   scaffolded (#262).
+2. **Error-message UX hardening sweep** — every page error-render path
+   now flows through `getApiErrorMessage`, backend handlers emit
+   `errorCode` + UUID `requestId`, and `COPY_BY_CODE` was inventoried
+   and expanded (PRs #268, #270, #272, #280, #281, #282, #283, #285,
+   #291).
+3. **Targeted security follow-ups** — privacy-preserving 404 on
+   ownership-checked endpoints (#287), per-user rate-limiting decision
+   record (#290, defer until real users), timing side-channel
+   measurement methodology + analytical conclusion (#292).
 
 ### Current Status
 
 - **Completed Phases**: 1-9 (see [archive](docs/archive/PROGRESS-PHASES-1-9.md))
-- **Current Phase**: Wave 2 tech-debt cleanup (in progress / largely landed)
+- **Current focus**: Error-handling/UX surface hardening + targeted
+  security follow-ups (no formal wave label).
 - **Phase 10 (Investor Demo)**: Aspirational — core workflow functional but
-  the polish/demo-prep stream has been paused while cleanup waves shipped.
-  See [Deferred Phase 10 Items](#deferred-phase-10-items) below.
+  the polish/demo-prep stream remains paused. See
+  [Deferred Phase 10 Items](#deferred-phase-10-items) below.
 - **Overall Progress**: Core workflow operational end-to-end; hardening,
   type-safety, CI hygiene, and security work has substantially advanced.
 
-### Recent Wave Summary (2026-05-12 → 2026-05-14)
+### Wave Summary (2026-05-12 → 2026-05-14)
 
 | PR                                                     | Wave / Track   | Issues closed                                                                                      | Theme                                                          |
 | ------------------------------------------------------ | -------------- | -------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
@@ -38,22 +53,64 @@ landing in six large multi-issue PRs between 2026-05-12 and 2026-05-14.
 | [#257](https://github.com/leixiaoyu/lfmt-poc/pull/257) | Wave 2 Track D | #216, #201, #219 (3); #197 split → #254 + #255                                                     | CSP refactor + violation telemetry + live contract guard       |
 | [#258](https://github.com/leixiaoyu/lfmt-poc/pull/258) | Wave 2 Track F | #253 (1); #260 follow-up filed                                                                     | Deploy-pipeline parity sweep (bootstrap guard + observability) |
 
-**Total**: 26 issues resolved across 6 PRs; 3 new follow-ups filed (#254, #255, #260).
+**Wave total**: 26 issues resolved across 6 PRs; 3 new follow-ups filed (#254, #255, #260).
+
+### Post-Wave-2 Work (2026-05-15 → 2026-05-18)
+
+15 additional PRs landed in this window. Themes:
+
+| Theme                            | PRs                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | Issues closed                                                          |
+| -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| Deferred items closed            | [#262](https://github.com/leixiaoyu/lfmt-poc/pull/262) (nested-stacks proposal scaffold), [#263](https://github.com/leixiaoyu/lfmt-poc/pull/263) (ePub + PDF formats), [#264](https://github.com/leixiaoyu/lfmt-poc/pull/264) (StoredSession migration removal), [#265](https://github.com/leixiaoyu/lfmt-poc/pull/265) (CSP style-src static nonce)                                                                                                                                                                   | #28, #199, #254, #64 prop                                              |
+| Error-message UX hardening sweep | [#268](https://github.com/leixiaoyu/lfmt-poc/pull/268), [#270](https://github.com/leixiaoyu/lfmt-poc/pull/270), [#272](https://github.com/leixiaoyu/lfmt-poc/pull/272), [#280](https://github.com/leixiaoyu/lfmt-poc/pull/280), [#281](https://github.com/leixiaoyu/lfmt-poc/pull/281), [#282](https://github.com/leixiaoyu/lfmt-poc/pull/282), [#283](https://github.com/leixiaoyu/lfmt-poc/pull/283), [#285](https://github.com/leixiaoyu/lfmt-poc/pull/285), [#291](https://github.com/leixiaoyu/lfmt-poc/pull/291) | #266, #267, #269, #271, #273, #274, #275, #276, #277, #278, #279, #284 |
+| Targeted security follow-ups     | [#287](https://github.com/leixiaoyu/lfmt-poc/pull/287) (privacy-preserving 404 on ownership endpoints), [#290](https://github.com/leixiaoyu/lfmt-poc/pull/290) (per-user rate-limit decision: defer until real users), [#292](https://github.com/leixiaoyu/lfmt-poc/pull/292) (timing side-channel measurement + analytical conclusion)                                                                                                                                                                                | #286, #288, #289                                                       |
+
+**Post-Wave-2 total**: 15 PRs; 22 issues closed; backlog issues #28, #199, #254 closed early relative to their date-pins.
 
 ---
 
-## Recent Updates (Last 7 Days)
+## Recent Updates
 
-### 2026-05-14: ePub + PDF download formats (PR for #28) — OPEN
+### 2026-05-18: Timing side-channel measurement methodology + conclusion (PR #292) — MERGED
 
-**Concern class**: feature — casual-reader output formats (issue #28).
+**Concern class**: security analysis — quantify, then decide.
 
-- **#28** — Backend now produces ePub + PDF on demand alongside the legacy Markdown download. New `?format=` query parameter on `GET /jobs/{jobId}/download`; ePub/PDF responses return a JSON envelope with a 15-min presigned S3 URL (markdown stays inline). Three independent download buttons on the translation-detail page.
-- Library choices: `@lesjoursfr/html-to-epub@^6.1.0` (active fork; `epub-gen` dead since 2019), `pdfkit@^0.18.0` (lighter than `@react-pdf/renderer` — no React in the Lambda bundle), `markdown-it@^14.1.1`.
-- Lazy on-demand generation + cache-by-S3-key (HeadObject probe before regeneration). Lambda timeout bumped 60s → 120s and memory 512 MB → 1 GB. New IAM grant scoped to a fresh `translated-output/*` prefix; existing `translated/*` chunk store stays read-only.
-- Boy-scout: `shared-types/.eslintrc.cjs` + `backend/infrastructure/.eslintrc.cjs` added (husky pre-commit hook needs configs in those packages); `@smithy/util-stream` promoted from hoisted transitive to explicit devDep.
-- Sample sizes (18K-word source): PDF 40 KB, ePub 14 KB — both well under the API Gateway 10 MB cap and Lambda 6 MB direct-response limit.
-- Tests: 17 new backend (10 converter + 7 handler) + 8 new frontend (3 service + 5 page). All pre-existing tests still pass (619 backend, 784 frontend).
+- **#288** — Documented the measurement methodology used to assess whether Cognito's `AdminInitiateAuth` differential timing leaks user existence in a way that's distinguishable from network jitter. Conclusion: at p95, the existing/non-existing-user timing distributions overlap inside the network-jitter envelope, so the side-channel is **not exploitable in practice** without privileged network position. Issue closed; decision logged in [`docs/security/`](docs/security/) (referenced from `SECURITY.md`).
+
+### 2026-05-18: Privacy-preserving 404 + 500/403 message preservation (PRs #287, #291, #283) — MERGED
+
+- **#287** (privacy-preserving 404) — Ownership-checked endpoints now return `404 Not Found` (not `403 Forbidden`) when a job exists but is owned by a different user. Prevents information disclosure ("this jobId exists") to non-owners. Closes #286.
+- **#291** (preserve 500+ message) — Backend `message` field on `5xx` responses is now passed through to the client envelope when present, instead of being clobbered by a generic "Internal Server Error". Pairs with the existing requestId/errorCode envelope (#280) so operators can correlate user reports to CloudWatch logs. Closes #284.
+- **#283** (preserve 403 message) — Same fix as #291 but for 403 responses. Closes #275.
+
+### 2026-05-18: Per-user rate-limiting decision record (PR #290) — MERGED
+
+- **#289** — Decision: **defer per-user rate-limiting until real users exist.** The current single global Gemini-tier rate limiter (5 RPM / 250K TPM / 25 RPD enforced via the DDB-backed distributed limiter) is the correct primitive for a POC with one demo user. Adding per-user buckets now would be premature optimization. Decision rationale, alternatives considered, and trigger conditions documented in [`docs/security/`](docs/security/). Issue closed as "won't fix until trigger condition met."
+
+### 2026-05-17: Error-message UX hardening sweep (PRs #268, #270, #272, #280, #281, #282, #285) — MERGED
+
+**Concern class**: UX + observability — every error path now surfaces the actual cause.
+
+- **#266 / #268** — `TranslationDetail` page-load errors now route through `getApiErrorMessage`; the "Start" button hides when the job isn't in an actionable state; empty `contentType` row dropped from the metadata panel.
+- **#269 / #270** — `TranslationDetail` page-load error path explicitly uses `getApiErrorMessage` (the prior fix was a partial; this one closes the gap on the 404-during-poll case).
+- **#271 / #272** — Repo-wide sweep: every page error-render path now flows through `getApiErrorMessage`. No raw `error.message` rendering left in pages.
+- **#267 / #280** — `startTranslation` emits a typed `errorCode` + UUID `requestId` in its error envelope. Backend response now has a stable contract for client copy mapping.
+- **#273 / #281** — Inventory of every backend error code emitted to the client, plus expansion of `COPY_BY_CODE` to cover all of them. The lookup table is now exhaustive against `tsc`'s exhaustiveness check.
+- **#274 / #277 / #278 / #279 / #282** — Auth-form error rendering unified through `getApiErrorMessage`; inline forgot-password recovery flow added so users hitting a wrong-password error get the recovery link in-context.
+- **#276 / #285** — `RegisterPage` auto-login (post-registration) now surfaces the actual login error cause instead of swallowing it as "registration succeeded but couldn't sign you in."
+
+### 2026-05-16: Closing date-pinned + architectural deferrals (PRs #263, #264, #265) — MERGED
+
+- **#28 → #263** — ePub + PDF download formats. New `?format=` query parameter on `GET /jobs/{jobId}/download`; ePub/PDF responses return a JSON envelope with a 15-min presigned S3 URL (markdown stays inline). Three independent download buttons on the translation-detail page.
+  - Library choices: `@lesjoursfr/html-to-epub@^6.1.0` (active fork; `epub-gen` dead since 2019), `pdfkit@^0.18.0` (lighter than `@react-pdf/renderer` — no React in the Lambda bundle), `markdown-it@^14.1.1`.
+  - Lazy on-demand generation + cache-by-S3-key (HeadObject probe before regeneration). Lambda timeout 60s → 120s and memory 512 MB → 1 GB. New IAM grant scoped to a fresh `translated-output/*` prefix; existing `translated/*` chunk store stays read-only.
+  - Sample sizes (18K-word source): PDF 40 KB, ePub 14 KB — well under the API Gateway 10 MB cap and Lambda 6 MB direct-response limit.
+- **#199 → #264** — StoredSession legacy migration code removed. **Closed 19 days ahead of the 2026-06-04 date-pin** (Cognito refresh-token TTL is 30 days; PR #198 deployed 2026-05-04, so all in-flight sessions had rolled over by the time of removal). All `narrowStoredSession()` and back-compat shims gone from `frontend/src/services/api.ts`.
+- **#254 → #265** — CSP style-src static nonce via **build-time** nonce generation (not the originally-scoped Lambda@Edge runtime nonce — see PR description for design trade-off). Each frontend build generates a fresh per-build nonce, written into `index.html` and the CSP header simultaneously. `'unsafe-inline'` removed from `style-src`. Closes the deferred half of the original #197 security harden.
+
+### 2026-05-15: CDK nested-stacks refactor proposal (PR #262) — MERGED
+
+- **#64** — OpenSpec proposal for the long-deferred monolithic-stack split scaffolded at `openspec/changes/refactor-cdk-nested-stacks/`. **Proposal only — no implementation.** `openspec validate refactor-cdk-nested-stacks --strict` passes. Implementation deferred until owner approval.
 
 ### 2026-05-14: Wave 2 Track F — Deploy-pipeline parity sweep (PR #258) — MERGED
 
@@ -155,26 +212,29 @@ when stakeholder timing requires.
 
 ### Roadmap Issues (Not Currently Active)
 
-- **#64** — P3-ARCH: nested-stacks refactor of the monolithic CDK stack.
-- **#29** — FEAT-PRO: post-translation review and editing interface.
-- **#28** — FEAT-CORE: additional output formats (ePub / PDF).
+- **#64** — P3-ARCH: nested-stacks refactor of the monolithic CDK stack. **OpenSpec proposal scaffolded** at `openspec/changes/refactor-cdk-nested-stacks/` (PR #262); implementation deferred until owner approval.
+- **#29** — FEAT-PRO: post-translation review and editing interface. Backlog.
+- ~~**#28** — FEAT-CORE: additional output formats (ePub / PDF).~~ **CLOSED 2026-05-16 via PR #263.**
 
 ---
 
 ## Open Risks & Active Issues
 
-### Open Issues (8 as of 2026-05-14)
+### Open Issues (as of 2026-05-25)
 
 | #                                                        | Title                                                                 | Notes                                                                                                                                                                                                                          |
 | -------------------------------------------------------- | --------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | [#260](https://github.com/leixiaoyu/lfmt-poc/issues/260) | ci(deploy): add post-deploy smoke + integration tests to staging/prod | Filed 2026-05-13 from PR #258's deferred list. Requires per-env secret routing (`STAGING_USER_POOL_ID` / `PROD_USER_POOL_ID`), OIDC role broadening, and a test-user-isolation policy — architectural work, not a hygiene fix. |
-| [#254](https://github.com/leixiaoyu/lfmt-poc/issues/254) | security: CSP style-src nonces via Lambda@Edge                        | Split from #197 by PR #257. Different operational layer (Lambda@Edge); needs deploy-sync architecture decision.                                                                                                                |
 | [#255](https://github.com/leixiaoyu/lfmt-poc/issues/255) | security: migrate auth tokens from localStorage to httpOnly cookies   | Split from #197 by PR #257. Cross-domain blocker (cloudfront.net → execute-api); needs custom-domain ACM/Route53 + CSRF/SameSite design decisions.                                                                             |
-| [#199](https://github.com/leixiaoyu/lfmt-poc/issues/199) | tech-debt: remove StoredSession migration code                        | **Date-pinned removal: 2026-06-04** (30d after PR #198 deploy on 2026-05-04 = guaranteed Cognito refresh-token roll-over). Documentation marker landed in PR #251.                                                             |
-| [#197](https://github.com/leixiaoyu/lfmt-poc/issues/197) | security: deferred CSP/auth hardening (parent)                        | Parent of #254/#255. Considered effectively closed by PR #257's split; housekeeping-close pending.                                                                                                                             |
-| [#64](https://github.com/leixiaoyu/lfmt-poc/issues/64)   | P3-ARCH: nested stacks refactor                                       | Backlog.                                                                                                                                                                                                                       |
+| [#64](https://github.com/leixiaoyu/lfmt-poc/issues/64)   | P3-ARCH: nested stacks refactor                                       | OpenSpec proposal scaffolded by PR #262; awaiting owner approval before implementation.                                                                                                                                        |
 | [#29](https://github.com/leixiaoyu/lfmt-poc/issues/29)   | FEAT-PRO: post-translation review and editing interface               | Backlog.                                                                                                                                                                                                                       |
-| [#28](https://github.com/leixiaoyu/lfmt-poc/issues/28)   | FEAT-CORE: additional output formats (ePub / PDF)                     | Backlog.                                                                                                                                                                                                                       |
+
+**Closed since 2026-05-14:**
+
+- **#28** (ePub / PDF formats) — closed by PR #263 on 2026-05-16.
+- **#199** (StoredSession migration removal) — closed by PR #264 on 2026-05-16 (19 days ahead of the 2026-06-04 date-pin).
+- **#254** (CSP style-src nonces) — closed by PR #265 on 2026-05-16. Note: shipped as **build-time static nonce**, not the originally-scoped Lambda@Edge runtime nonce.
+- **#197** (security: deferred CSP/auth hardening parent) — closed as effectively superseded by PR #257's split (#254 + #255) and #265's nonce work.
 
 ### Active In-Flight Spec
 
@@ -205,6 +265,16 @@ when stakeholder timing requires.
 
 ### Resolved Risks (current cleanup window)
 
+Post-Wave-2 (2026-05-15 → 2026-05-18):
+
+- Information-disclosure on ownership-checked endpoints — now 404, not 403 (#287).
+- Generic error messages swallowing backend context on 403 / 500+ (#283, #291).
+- Inconsistent error-message rendering across pages — sweep landed (#268, #270, #272, #280, #281, #282, #285); every page now uses `getApiErrorMessage`.
+- CSP `style-src 'unsafe-inline'` — removed via build-time static nonce (#265).
+- Cognito timing side-channel concern — measured and analytically dismissed at p95 within network-jitter envelope (#292).
+
+Waves 1 + 2 (2026-05-12 → 2026-05-14):
+
 - Cursor pagination resilience against malformed input (#246).
 - Orphaned Step Functions executions on job DELETE (#210).
 - Login/register 500-on-malformed-JSON instead of 400 (#180).
@@ -217,17 +287,22 @@ when stakeholder timing requires.
 
 ## Project Metrics
 
-### Test Suite Totals (verified 2026-05-13)
+### Test Suite Totals (verified 2026-05-25)
 
 Counts taken from running `npm test` (and `npx vitest --run` for frontend)
-in each package on `main` at commit `939a5ca`.
+in each package on `main` at commit `b91663c`.
 
 | Package                  | Tests            | Skipped | Suites/Files |
 | ------------------------ | ---------------- | ------- | ------------ |
-| `backend/functions`      | **602 passed**   | 3       | 28 suites    |
-| `backend/infrastructure` | **90 passed**    | 0       | 1 suite      |
-| `frontend` (Vitest)      | **776 passed**   | 14      | 37 files     |
-| **Total (jsdom/node)**   | **1,468 passed** | 17      | 66           |
+| `backend/functions`      | **638 passed**   | 3       | 30 suites    |
+| `backend/infrastructure` | **91 passed**    | 0       | 1 suite      |
+| `frontend` (Vitest)      | **841 passed**   | 14      | 38 files     |
+| **Total (jsdom/node)**   | **1,570 passed** | 17      | 69           |
+
+Net change vs. 2026-05-13 snapshot: **+102 tests** added by the post-Wave-2
+work (ePub/PDF backend converters, CSP nonce build-time injection, error
+envelope contract tests, ownership-404 coverage, sweep of `COPY_BY_CODE`
+mappings).
 
 E2E (Playwright) suites exist in `frontend/e2e/` and the new live-backend
 contract suite in `frontend/e2e/tests/contract/api-envelope-live.spec.ts`
@@ -263,7 +338,7 @@ not included in the totals above.
 - **Hosting**: CloudFront + S3 (CDK-managed)
 - **Translation**: Gemini 2.5 Flash (Google AI)
 - **Orchestration**: AWS Step Functions
-- **Auth**: AWS Cognito (JWT tokens; storage migration in progress — see #199, #255)
+- **Auth**: AWS Cognito (JWT tokens stored in `localStorage` pending httpOnly-cookie migration; see open issue #255)
 
 ### DevOps
 

@@ -579,7 +579,8 @@ const allowedOrigin =
 ## Related Documentation
 
 - [README.md](README.md) - Project overview
-- [DEPLOYMENT-GUIDE.md](DEPLOYMENT-GUIDE.md) - Deployment procedures
+- [PRODUCTION-DEPLOYMENT-GUIDE.md](../PRODUCTION-DEPLOYMENT-GUIDE.md) - Deployment procedures
+- [FRONTEND-DEPLOYMENT.md](../FRONTEND-DEPLOYMENT.md) - Frontend deployment guide
 - [CLAUDE.md](CLAUDE.md) - Development guidelines
 - [backend/infrastructure/README.md](backend/infrastructure/README.md) - CDK infrastructure details
 - [API-REFERENCE.md](API-REFERENCE.md) - API endpoint documentation

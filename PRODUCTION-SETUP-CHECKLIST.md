@@ -1,5 +1,11 @@
 # Production Setup Checklist
 
+> **Last verified against**: `main` @ `b91663c` (2026-05-25). Items marked
+> ✅ below were completed against the AWS account configured at the time
+> this checklist was authored (2025-10-17). No `LfmtPocProd` stack is
+> currently deployed; the dates and IDs in the ✅ entries below should be
+> re-verified before any production deploy.
+
 This document provides a complete checklist for setting up LFMT POC for production deployment.
 
 ## Automated Steps (✅ COMPLETED)

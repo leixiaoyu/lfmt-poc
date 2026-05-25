@@ -1,5 +1,12 @@
 # Production Deployment Guide
 
+> **Last verified against**: `main` @ `b91663c` (2026-05-25). The current
+> deployed environment is `LfmtPocDev`; no `LfmtPocProd` stack is
+> deployed. For recent operational/security changes that production
+> deploys should account for (CSP build-time nonce injection, error
+> envelope, privacy-404, nightly contract suite), see
+> [PROGRESS.md](PROGRESS.md) and [SECURITY.md](SECURITY.md).
+
 Complete guide for deploying LFMT POC to production with CI/CD enabled.
 
 ## Table of Contents

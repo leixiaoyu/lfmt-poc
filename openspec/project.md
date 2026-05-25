@@ -21,8 +21,10 @@ High-level capability map (detailed status in PROGRESS.md):
 - ✅ Document Upload Service (S3 presigned URLs, file validation)
 - ✅ Document Chunking Service
 - ✅ Translation Engine (Gemini 2.5 Flash integration)
-- 🔄 Legal Attestation System (frontend UI + DynamoDB table provisioned; production write path not yet wired — tracked for follow-up)
-- 🔄 Demo Preparation & UI/UX Polish
+- ✅ Legal Attestation System (frontend UI + DynamoDB write path wired into upload flow)
+- ✅ ePub + PDF output formats (PR #263)
+- ✅ Error-message UX hardening sweep — every page error path routes through `getApiErrorMessage`; backend emits `errorCode` + UUID `requestId`
+- ⏸️ Demo Preparation & UI/UX Polish (paused; see [PROGRESS.md](../PROGRESS.md) for deferred Phase 10 items)
 
 ## Tech Stack
 
@@ -39,8 +41,8 @@ High-level capability map (detailed status in PROGRESS.md):
   - HTTPS-only with automatic HTTP redirect
 - **Form Management**: React Hook Form + Zod validation
 - **HTTP Client**: Axios with interceptors (auto token refresh)
-- **Testing**: Vitest + React Testing Library (91.66% coverage)
-- **E2E Testing**: Playwright
+- **Testing**: Vitest + React Testing Library (see [PROGRESS.md](../PROGRESS.md) for current counts)
+- **E2E Testing**: Playwright (nightly live-backend contract suite via `e2e-contract-nightly.yml`)
 
 ### Backend
 
@@ -70,8 +72,8 @@ High-level capability map (detailed status in PROGRESS.md):
 ### Shared Infrastructure
 
 - **Monorepo Tool**: npm workspaces
-- **Package Manager**: npm 8+
-- **Node Version**: 18+ (LTS)
+- **Package Manager**: npm 10+
+- **Node Version**: 22 (LTS) — matches Lambda runtime
 - **Shared Types**: `@lfmt/shared-types` package for type safety
 
 ### DevOps & CI/CD
@@ -162,9 +164,10 @@ High-level capability map (detailed status in PROGRESS.md):
 
 **Coverage Requirements**:
 
-- **Minimum**: 90% overall coverage (enforced)
+- **Minimum**: 90% overall coverage (enforced on critical paths)
 - **Critical Paths**: 100% coverage (auth, upload, chunking)
-- **Current Status**: 91.66% frontend, 100% critical components
+- **Jest Coverage Floors** (backend, raised in PR #250): branches 70 / functions 75 / lines 82 / statements 84
+- **Current Status**: See [PROGRESS.md](../PROGRESS.md) for the latest test totals
 
 **Test Types**:
 
@@ -183,12 +186,13 @@ High-level capability map (detailed status in PROGRESS.md):
    - CDK stack synthesis validation
    - Resource property verification
    - IAM policy compliance checks
-   - 20 infrastructure test cases passing
+   - See [PROGRESS.md](../PROGRESS.md) for current counts
 
-4. **E2E Tests** (Planned):
+4. **E2E Tests**:
    - Playwright for critical user flows
    - Authentication workflows
    - Document upload and translation
+   - Nightly live-backend API envelope contract suite (`e2e-contract-nightly.yml`)
 
 **Test Organization**:
 
@@ -215,10 +219,13 @@ High-level capability map (detailed status in PROGRESS.md):
 **Branch Protection Rules** (main):
 
 - ✅ Require pull request before merging
-- ✅ Require status checks to pass (Run Tests, Build Infrastructure)
+- ✅ Require status checks to pass: `Run Tests`, `Build Infrastructure`
+- ✅ Require branch up-to-date with `main` (strict)
 - ✅ Require conversation resolution
+- ✅ `enforce_admins` enabled
 - ✅ No direct pushes allowed
 - ✅ Enforce linear history
+- ✅ Review approvals: **0 required** (owner self-merges)
 
 **Commit Message Convention**:
 
@@ -336,7 +343,7 @@ High-level capability map (detailed status in PROGRESS.md):
 
 **Development Constraints**:
 
-- **Node Version**: 18+ required (LTS)
+- **Node Version**: 22 required (LTS) — matches Lambda runtime
 - **AWS Account**: Single AWS account for all environments
 - **Region**: us-east-1 only (multi-region not supported)
 - **Test Coverage**: 90% minimum enforced by CI/CD

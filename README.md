@@ -120,8 +120,10 @@ npx cdk deploy --context environment=prod
 
 For detailed deployment instructions, see:
 
-- [DEPLOYMENT-GUIDE.md](DEPLOYMENT-GUIDE.md) - Complete frontend deployment guide
+- [FRONTEND-DEPLOYMENT.md](FRONTEND-DEPLOYMENT.md) - Frontend deployment guide
+- [PRODUCTION-DEPLOYMENT-GUIDE.md](PRODUCTION-DEPLOYMENT-GUIDE.md) - Production deployment procedures
 - [PRODUCTION-SETUP-CHECKLIST.md](PRODUCTION-SETUP-CHECKLIST.md) - Production setup checklist
+- [docs/CI-CD-ARCHITECTURE.md](docs/CI-CD-ARCHITECTURE.md) - Split deploy pipelines (backend / frontend)
 
 #### Automated Deployment (GitHub Actions)
 
@@ -171,8 +173,11 @@ lfmt-poc/
 ### Branch Protection Rules
 
 - Require pull request before merging
-- Require status checks to pass (Run Tests, Build Infrastructure)
+- Require status checks to pass: `Run Tests`, `Build Infrastructure`
+- Require branch to be up-to-date with `main` (strict)
 - Require conversation resolution
+- `enforce_admins` is enabled
+- **0 review approvals required** (owner self-merges; a Gemini CLI secondary reviewer may post advisory "Changes Requested" reviews)
 - No direct pushes to main
 
 ### Commit Messages
@@ -236,21 +241,25 @@ For current totals and per-package counts, see [PROGRESS.md](PROGRESS.md).
 
 ### Core Documentation
 
-- **[PROGRESS.md](PROGRESS.md)** - Detailed implementation status and progress tracking
-- **[TESTING-GUIDE.md](TESTING-GUIDE.md)** - Comprehensive local testing guide (unit, integration, E2E)
-- **[DEVELOPMENT-ROADMAP.md](DEVELOPMENT-ROADMAP.md)** - Project roadmap and priorities
-- **[Production Setup Checklist](PRODUCTION-SETUP-CHECKLIST.md)** - Complete production deployment guide
+- **[PROGRESS.md](PROGRESS.md)** - Detailed implementation status and progress tracking (canonical)
+- **[TESTING.md](TESTING.md)** - Comprehensive local testing guide (unit, integration, E2E)
+- **[CLAUDE.md](CLAUDE.md)** - Development guide for AI coding assistants
+- **[Production Setup Checklist](PRODUCTION-SETUP-CHECKLIST.md)** - Production setup checklist
 - **[Production Deployment Guide](PRODUCTION-DEPLOYMENT-GUIDE.md)** - Detailed deployment procedures
 - **[Production Security](PRODUCTION-SECURITY.md)** - Optional security enhancements
-- **[Security Policy](SECURITY.md)** - Security practices and reporting
+- **[Security Policy](SECURITY.md)** - Security practices, posture, and reporting
 - **[API Reference](API-REFERENCE.md)** - API endpoint documentation
-- **[Testing Strategy](TESTING.md)** - Comprehensive testing guidelines
+- **[frontend/LOCAL-TESTING.md](frontend/LOCAL-TESTING.md)** - Three-layer mock strategy + local mock-API loop
 - **[frontend/e2e/README.md](frontend/e2e/README.md)** - E2E testing with Playwright guide
 
-### External References
+### Architecture & Reference Docs
 
-- **[Implementation Plan v2](../LFMT%20Implementation%20Plan%20v2.md)** - Detailed implementation roadmap
-- **[Technical Architecture v2](../Long-Form%20Translation%20Service%20-%20Technical%20Architecture%20Design%20v2.0.md)** - High-level architecture
+- **[docs/CI-CD-ARCHITECTURE.md](docs/CI-CD-ARCHITECTURE.md)** - Split deploy pipelines
+- **[docs/CLOUDFRONT-SETUP.md](docs/CLOUDFRONT-SETUP.md)** - CloudFront infra
+- **[docs/CORS-REFERENCE.md](docs/CORS-REFERENCE.md)** - CORS configuration
+- **[docs/AUTH-AUTO-CONFIRM.md](docs/AUTH-AUTO-CONFIRM.md)** - Dev auto-confirm
+- **[docs/TRANSLATION-UI-REFERENCE.md](docs/TRANSLATION-UI-REFERENCE.md)** - Translation UI
+- **[openspec/changes/](openspec/changes/)** - Active spec proposals
 
 ## Monitoring & Observability
 
@@ -350,8 +359,7 @@ For current totals and per-package counts, see [PROGRESS.md](PROGRESS.md).
 ### Getting Help
 
 - Check documentation in root directory
-- Review [PROGRESS.md](PROGRESS.md) for current implementation status
-- Review [DEVELOPMENT-ROADMAP.md](DEVELOPMENT-ROADMAP.md) for project priorities
+- Review [PROGRESS.md](PROGRESS.md) for current implementation status and active workstreams
 - Check CloudWatch logs for runtime issues
 - Verify AWS resource status in CloudFormation console
 
@@ -368,6 +376,6 @@ This is a proof-of-concept project. All rights reserved.
 
 ---
 
-**Last Updated**: 2026-04-18
+**Last Updated**: 2026-05-25
 **Repository**: https://github.com/leixiaoyu/lfmt-poc
 **Current Status**: See [PROGRESS.md](PROGRESS.md) for the canonical phase, completion %, and active workstreams

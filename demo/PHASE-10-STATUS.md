@@ -1,8 +1,12 @@
 # Phase 10 - Status Update
 
 **Created**: 2025-12-21
-**Last Updated**: 2026-04-18
-**Status**: Engineering close-out ~95% complete; demo-readiness ~60% (metrics + rehearsal pending)
+**Last Updated**: 2026-05-25
+**Status**: **PAUSED.** Engineering core is operational and substantially hardened since the April snapshot — demo-data-capture and rehearsal streams have been de-prioritized while tech-debt cleanup (Waves 1 + 2, PRs #250–#258) and post-Wave-2 work (error-UX hardening + targeted security follow-ups, PRs #263–#292) shipped. Pick up when stakeholder timing requires.
+
+> ⚠️ **This document is partially stale below.** The "Phase 10B 3-week plan" and "🚧 BLOCKED 2026-04-25" banner reflect the 2026-04-18 snapshot, not current state. The translate-chunk handler signature issue described in the banner has long since been resolved. The investor-pitch / FAQ / pitch-deck / differentiator materials still apply.
+>
+> **Authoritative current state**: [PROGRESS.md](../PROGRESS.md).
 
 ---
 

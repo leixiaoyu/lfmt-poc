@@ -639,13 +639,13 @@ Updated all Playwright configuration and documentation to port 3000:
 
 - `playwright.config.ts`
 - `e2e/README.md`
-- `TESTING-GUIDE.md`
+- `TESTING.md` (merged successor to the legacy `TESTING-GUIDE.md`)
 
 **Files Fixed**:
 
 - `frontend/playwright.config.ts:41,86`
 - `frontend/e2e/README.md`
-- `TESTING-GUIDE.md`
+- `TESTING.md`
 
 ---
 
@@ -715,16 +715,17 @@ await page.locator('h1:has-text("Log In")').waitFor();
 
 - `vite.config.ts` - Dev server port
 - `playwright.config.ts` - Base URL and webServer URL
-- `TESTING-GUIDE.md` - Documentation
+- `TESTING.md` (merged successor to legacy `TESTING-GUIDE.md`) - Documentation
 - `e2e/README.md` - E2E testing docs
 
 ---
 
 ## Related Documentation
 
-- **Testing Guide**: `TESTING-GUIDE.md` - Local testing instructions (517 lines)
-- **E2E Testing Guide**: `frontend/e2e/README.md` - Playwright guide (447 lines)
-- **Implementation Plan**: `frontend/TRANSLATION-UI-IMPLEMENTATION-PLAN.md` - Design docs
+- **Testing Guide**: `TESTING.md` - Local testing instructions
+- **E2E Testing Guide**: `frontend/e2e/README.md` - Playwright guide
+- **Mock-API Loop**: `frontend/LOCAL-TESTING.md` - Three-layer mock strategy
+- **Implementation Plan (archived)**: `docs/archive/frontend-TRANSLATION-UI-IMPLEMENTATION-PLAN-2025-11-18.md` - Historical design
 - **Component Source**: `frontend/src/components/Translation/` - Component code
 - **Page Source**: `frontend/src/pages/` - Page components
 
