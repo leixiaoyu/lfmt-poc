@@ -1,6 +1,17 @@
 # Email Verification Auto-Confirm Feature
 
-**Status**: Implemented for dev environment (since PR #72, 2025-11-12)
+**Status**: Implemented for dev environment.
+**Last Updated**: 2026-05-25
+**Mechanism**: Cognito Pre-Sign-Up Lambda trigger (since PR #178, Wave 2 — 2026-05-13)
+
+> **Architecture change**: The original implementation (PR #72, 2025-11-12)
+> had `register.ts` call `AdminConfirmSignUpCommand` after `SignUpCommand`,
+> which required a privileged `cognito-idp:AdminConfirmSignUp` IAM grant on
+> the auth role. PR #178 removed that call (the AdminConfirmSignUp races
+> against the User Pool's own confirm and silently fails as a no-op) and
+> moved auto-confirm to a **Cognito Pre-Sign-Up Lambda trigger** that runs
+> as part of `SignUpCommand` itself. This doc describes the **current**
+> mechanism.
 
 This document describes the auto-confirm email verification feature that allows users to register and immediately log in without email verification in development environments.
 
@@ -47,28 +58,28 @@ The auto-confirm feature streamlines the development and testing workflow by:
 
 ### Environment Variable
 
-**Location**: `backend/functions/auth/register.ts:30-36`
+**Location**: `backend/functions/auth/register.ts:40-44`
 
 ```typescript
 const COGNITO_CLIENT_ID = getRequiredEnv('COGNITO_CLIENT_ID');
-const COGNITO_USER_POOL_ID = getRequiredEnv('COGNITO_USER_POOL_ID');
-const ENVIRONMENT = process.env.ENVIRONMENT || 'dev';
+const ENVIRONMENT = getOptionalEnv('ENVIRONMENT', 'dev');
 
-// Auto-confirm users in dev environment (email verification disabled)
-const AUTO_CONFIRM_USERS = ENVIRONMENT.includes('Dev');
+// Determines which success message to return; auto-confirm is handled by
+// the Cognito PreSignUp trigger and pool configuration — no Lambda call needed.
+const IS_DEV = ENVIRONMENT.includes('Dev');
 ```
 
 **How It Works**:
 
-- If `ENVIRONMENT` contains "Dev" → `AUTO_CONFIRM_USERS = true`
-- Otherwise → `AUTO_CONFIRM_USERS = false`
+- `IS_DEV` controls only the **wording of the success response** ("You can now log in" vs "Please check your email").
+- Actual auto-confirm behavior is decided at infrastructure-deploy time by the CDK stack (`isDev` check on `stackName`), not at request time by the Lambda.
 
 **Examples**:
 
-- `ENVIRONMENT=Dev` → ✅ Auto-confirm enabled
-- `ENVIRONMENT=LfmtPocDev` → ✅ Auto-confirm enabled
-- `ENVIRONMENT=Staging` → ❌ Auto-confirm disabled
-- `ENVIRONMENT=Prod` → ❌ Auto-confirm disabled
+- `ENVIRONMENT=Dev` → ✅ dev success message (and the dev stack also wires the Pre-Sign-Up trigger; see below)
+- `ENVIRONMENT=LfmtPocDev` → ✅ dev success message
+- `ENVIRONMENT=Staging` → ❌ prod-style success message
+- `ENVIRONMENT=Prod` → ❌ prod-style success message
 
 ---
 
@@ -76,19 +87,19 @@ const AUTO_CONFIRM_USERS = ENVIRONMENT.includes('Dev');
 
 ### Registration Flow
 
-**Location**: `backend/functions/auth/register.ts:87-123`
+**Location**: `backend/functions/auth/register.ts:46-145`
 
 **Steps**:
 
-1. **User Registration** - Create user in Cognito with `SignUpCommand`
-2. **Auto-Confirm** (dev only) - Immediately confirm user with `AdminConfirmSignUpCommand`
-3. **Success Response** - Return environment-specific message
+1. **Parse + validate** request body via `registerRequestSchema` (Zod).
+2. **`SignUpCommand`** — register the user with Cognito.
+3. **(dev only) Pre-Sign-Up trigger fires synchronously inside Cognito** — sets `event.response.autoConfirmUser = true` and `event.response.autoVerifyEmail = true`. No additional Lambda-to-Cognito calls.
+4. **Success response** — `201` with environment-specific message.
 
-**Code**:
+**Code** (current register.ts, post-PR #178):
 
 ```typescript
-// Step 1: Register user with Cognito
-const signUpCommand = new SignUpCommand({
+const command = new SignUpCommand({
   ClientId: COGNITO_CLIENT_ID,
   Username: email,
   Password: password,
@@ -99,63 +110,61 @@ const signUpCommand = new SignUpCommand({
   ],
 });
 
-await cognitoClient.send(signUpCommand);
+await cognitoClient.send(command);
 
-// Step 2: Auto-confirm user if in dev environment
-if (AUTO_CONFIRM_USERS) {
-  logger.info('Auto-confirming user (dev environment)', {
-    requestId,
-    email: email.toLowerCase(),
-  });
+// No follow-up AdminConfirmSignUp call. The Pre-Sign-Up trigger has already
+// run synchronously inside Cognito as part of SignUpCommand processing, so
+// the user is already CONFIRMED when SignUpCommand returns (in dev).
 
-  const confirmCommand = new AdminConfirmSignUpCommand({
-    UserPoolId: COGNITO_USER_POOL_ID,
-    Username: email,
-  });
-
-  await cognitoClient.send(confirmCommand);
-}
-
-// Step 3: Return success response
-return createSuccessResponse(
+return createFlatResponse(
   201,
   {
-    message: AUTO_CONFIRM_USERS
+    message: IS_DEV
       ? 'User registered successfully. You can now log in.'
       : 'User registered successfully. Please check your email to verify your account.',
-  },
-  requestId
+  } satisfies Pick<RegisterResponse, 'message'>,
+  requestId,
+  requestOrigin
 );
 ```
 
-### Why AdminConfirmSignUpCommand?
+### Why a Pre-Sign-Up Trigger (and not AdminConfirmSignUp)?
 
-**Standard Flow** (without auto-confirm):
+**Pre-Sign-Up trigger flow** (dev environment, current):
 
-1. User registers → Cognito status: `UNCONFIRMED`
-2. User receives email with verification code
-3. User confirms email → Cognito status: `CONFIRMED`
+1. Client calls `POST /auth/register` → Lambda invokes `SignUpCommand`.
+2. **Inside Cognito**, before user creation, the Pre-Sign-Up Lambda trigger runs.
+3. The trigger sets `event.response.autoConfirmUser = true` and `event.response.autoVerifyEmail = true` in its response.
+4. Cognito completes `SignUp` with the user already `CONFIRMED` and `email_verified = true`.
+5. `SignUpCommand` returns — user can log in immediately.
 
-**Auto-Confirm Flow** (dev environment):
+**Standard flow** (staging/prod, no trigger):
 
-1. User registers → Cognito status: `UNCONFIRMED`
-2. Lambda calls `AdminConfirmSignUpCommand` → Cognito status: `CONFIRMED`
-3. User can immediately log in
+1. Client calls `POST /auth/register` → Lambda invokes `SignUpCommand`.
+2. Cognito creates user with status `UNCONFIRMED` and sends a verification email.
+3. User confirms email via the link → status flips to `CONFIRMED`.
 
-**Important**: Even with `autoVerify: {}` in Cognito config, users are created as `UNCONFIRMED` by default. The `AdminConfirmSignUpCommand` explicitly changes the status to `CONFIRMED`.
+**Why not call `AdminConfirmSignUpCommand` from the Lambda?**
+
+PR #178 removed that path. The reason: when a Pre-Sign-Up trigger has
+already auto-confirmed the user, a follow-up `AdminConfirmSignUpCommand`
+either races and fails with `"Current status is CONFIRMED"`, or
+succeeds as a no-op. Keeping the call alive required an unnecessary
+`cognito-idp:AdminConfirmSignUp` IAM grant on the shared `authRole`.
+Removing both shrinks the IAM surface and eliminates the race.
 
 ---
 
 ## IAM Permissions
 
-### Required Permission
+### Auth role (register / login / refresh / reset-password / getCurrentUser)
 
-**Location**: `backend/infrastructure/lib/lfmt-infrastructure-stack.ts:520-530`
+**Location**: `backend/infrastructure/lib/lfmt-infrastructure-stack.ts:790-806`
 
-The Register Lambda function requires the `cognito-idp:AdminConfirmSignUp` IAM permission:
+The shared auth role's Cognito grants (post-PR #178):
 
 ```typescript
-const authLambdaPolicy = new iam.PolicyStatement({
+new iam.PolicyStatement({
   effect: iam.Effect.ALLOW,
   actions: [
     'cognito-idp:SignUp',
@@ -166,27 +175,30 @@ const authLambdaPolicy = new iam.PolicyStatement({
     'cognito-idp:AdminSetUserPassword',
     'cognito-idp:AdminGetUser',
     'cognito-idp:AdminUpdateUserAttributes',
-    'cognito-idp:AdminConfirmSignUp', // ⭐ Required for auto-confirm
+    // cognito-idp:AdminConfirmSignUp REMOVED (#178): the PreSignUp Lambda
+    // trigger auto-confirms users as part of SignUp itself, so the grant
+    // is unnecessary.
   ],
-  resources: [userPool.userPoolArn],
+  resources: [this.userPool.userPoolArn],
 });
-
-registerFunction.role?.attachInlinePolicy(
-  new iam.Policy(this, 'RegisterFunctionPolicy', {
-    statements: [authLambdaPolicy],
-  })
-);
 ```
 
-**Why Admin Action?**
+**What changed**: `cognito-idp:AdminConfirmSignUp` is no longer granted.
+Do not re-add it — the Pre-Sign-Up trigger covers the same behavior with
+no race and a smaller IAM blast radius.
 
-`AdminConfirmSignUpCommand` is an **admin action** that requires:
+### Pre-Sign-Up trigger Lambda role
 
-- IAM permissions (cannot be called by frontend clients)
-- UserPoolId parameter (not just ClientId)
-- Backend-only execution (Lambda, not browser)
+**Location**: `backend/infrastructure/lib/lfmt-infrastructure-stack.ts:572-596`
 
-This ensures only authorized backend code can bypass email verification.
+The Pre-Sign-Up trigger Lambda is created with the **default Lambda
+execution role** (CloudWatch Logs write only). It does not need any
+Cognito IAM permissions — Cognito invokes it as a trigger and reads its
+return value; the trigger never calls back into Cognito.
+
+The trigger Lambda is also **gated behind `if (isDev)`** in the stack —
+staging/prod stacks do not wire a Pre-Sign-Up trigger at all, so the
+email-verification flow runs unmodified there.
 
 ---
 
@@ -194,48 +206,84 @@ This ensures only authorized backend code can bypass email verification.
 
 ### User Pool Settings
 
-**Location**: `backend/infrastructure/lib/lfmt-infrastructure-stack.ts:278-295`
+**Location**: `backend/infrastructure/lib/lfmt-infrastructure-stack.ts:517-567`
 
 ```typescript
-const userPool = new cognito.UserPool(this, 'UserPool', {
-  userPoolName: `lfmt-${this.stackName}`,
+const isDev = this.stackName.toLowerCase().includes('dev');
 
-  // Email Verification Configuration
-  autoVerify: {}, // ⭐ Empty = email verification disabled
+this.userPool = new cognito.UserPool(this, 'UserPool', {
+  userPoolName: `lfmt-users-${this.stackName}`,
+  removalPolicy,
+  signInCaseSensitive: false,
+  signInAliases: { email: true },
   selfSignUpEnabled: true,
 
-  // Sign-in Configuration
-  signInAliases: {
-    email: true,
-  },
+  // Environment-conditional email verification:
+  // - dev: empty (no auto-send) — paired with the Pre-Sign-Up trigger below
+  //        which sets autoConfirmUser + autoVerifyEmail synchronously
+  // - staging/prod: { email: true } — Cognito sends a verification email
+  autoVerify: isDev ? {} : { email: true },
 
-  // User Attributes
+  userVerification: isDev
+    ? undefined
+    : {
+        emailSubject: 'LFMT Account Verification',
+        emailBody: 'Please verify your account by clicking the link: {##Verify Email##}',
+        emailStyle: cognito.VerificationEmailStyle.LINK,
+      },
+
+  passwordPolicy: {
+    minLength: 8,
+    requireLowercase: true,
+    requireUppercase: true,
+    requireDigits: true,
+    requireSymbols: true,
+  },
+  accountRecovery: cognito.AccountRecovery.EMAIL_ONLY,
+
   standardAttributes: {
-    email: {
-      required: true,
-      mutable: false,
-    },
-    givenName: {
-      required: true,
-      mutable: true,
-    },
-    familyName: {
-      required: true,
-      mutable: true,
-    },
+    email: { required: true, mutable: true },
+    givenName: { required: true, mutable: true },
+    familyName: { required: true, mutable: true },
   },
-
-  removalPolicy: RemovalPolicy.DESTROY,
 });
 ```
 
-**Key Settings**:
+### Pre-Sign-Up trigger (dev only)
 
-- `autoVerify: {}` - No automatic email verification configured
-- `selfSignUpEnabled: true` - Users can register without admin approval
-- `signInAliases: { email: true }` - Users sign in with email address
+**Location**: `backend/infrastructure/lib/lfmt-infrastructure-stack.ts:569-599`
 
-**Important**: The empty `autoVerify` doesn't prevent user creation, it just means Cognito won't send verification emails automatically. The auto-confirm Lambda logic explicitly confirms users.
+```typescript
+if (isDev) {
+  const preSignUpFunction = new lambda.Function(this, 'PreSignUpTrigger', {
+    runtime: LAMBDA_RUNTIME,
+    architecture: LAMBDA_ARCHITECTURE,
+    handler: 'index.handler',
+    code: lambda.Code.fromInline(`
+      exports.handler = async (event) => {
+        const isDev = process.env.ENVIRONMENT === 'dev';
+        if (isDev) {
+          event.response.autoConfirmUser = true;
+          event.response.autoVerifyEmail = true;
+        }
+        return event;
+      };
+    `),
+    description: 'Auto-confirm users and verify email in dev environment',
+    environment: { ENVIRONMENT: isDev ? 'dev' : 'prod' },
+    logRetention: logs.RetentionDays.ONE_WEEK,
+  });
+
+  this.userPool.addTrigger(cognito.UserPoolOperation.PRE_SIGN_UP, preSignUpFunction);
+}
+```
+
+**Key points**:
+
+- The trigger is **only added in dev stacks** (`isDev` check on `stackName`).
+- Staging/prod User Pools have no Pre-Sign-Up trigger; standard email
+  verification flow runs unmodified.
+- The trigger is **inline code** (no separate handler file). Defense-in-depth: even though the trigger is only wired in dev, the inline handler also re-checks `process.env.ENVIRONMENT === 'dev'` before setting the auto-confirm flags.
 
 ---
 
@@ -470,47 +518,49 @@ If auto-confirm causes issues in production:
 
 **Diagnosis Steps**:
 
-1. **Check Lambda Environment Variable**:
+1. **Confirm the dev stack actually wired the Pre-Sign-Up trigger**:
+
+   ```bash
+   aws cognito-idp describe-user-pool \
+     --user-pool-id "$COGNITO_USER_POOL_ID" \
+     --query 'UserPool.LambdaConfig.PreSignUp'
+   ```
+
+   Expected: an ARN like `arn:aws:lambda:...:function:LfmtPocDev-PreSignUpTrigger...`. If `null`, the stack did not deploy as a dev stack (CDK `isDev` check inspects `stackName` for `dev`).
+
+2. **Tail the Pre-Sign-Up trigger logs during a registration**:
+
+   ```bash
+   aws logs tail /aws/lambda/<stack>-PreSignUpTrigger<...> --follow
+   ```
+
+   You should see the trigger fire once per `SignUpCommand` and complete in <100 ms. No log entry → trigger isn't wired or Cognito isn't routing to it.
+
+3. **Confirm the Lambda's `ENVIRONMENT` env var**:
 
    ```bash
    aws lambda get-function-configuration \
-     --function-name lfmt-auth-register-dev \
+     --function-name <stack>-PreSignUpTrigger<...> \
      --query 'Environment.Variables.ENVIRONMENT'
    ```
 
-   Expected: Value contains "Dev"
+   Expected: `dev`. If it's `prod`, the inner `if (isDev)` short-circuit will skip the auto-confirm flags even though Cognito routes to the trigger.
 
-2. **Check IAM Permissions**:
+4. **Confirm the register Lambda's `ENVIRONMENT` (controls the success message only)**:
 
-   ```bash
-   aws iam get-role-policy \
-     --role-name lfmt-auth-register-role-dev \
-     --policy-name RegisterFunctionPolicy
-   ```
-
-   Expected: Includes `cognito-idp:AdminConfirmSignUp`
-
-3. **Check CloudWatch Logs**:
-
-   ```bash
-   aws logs tail /aws/lambda/lfmt-auth-register-dev --follow
-   ```
-
-   Expected: Log message "Auto-confirming user (dev environment)"
-
-4. **Verify Cognito User Pool ID**:
    ```bash
    aws lambda get-function-configuration \
-     --function-name lfmt-auth-register-dev \
-     --query 'Environment.Variables.COGNITO_USER_POOL_ID'
+     --function-name lfmt-register-LfmtPocDev \
+     --query 'Environment.Variables.ENVIRONMENT'
    ```
-   Expected: Non-empty value
+
+   Expected: value contains "Dev".
 
 **Solutions**:
 
-- Redeploy Lambda with correct `ENVIRONMENT` variable
-- Update IAM role to include `AdminConfirmSignUp` permission
-- Verify `COGNITO_USER_POOL_ID` is set in Lambda environment
+- If the trigger isn't wired: redeploy the dev stack and confirm `stackName` contains `dev`.
+- If the trigger fires but doesn't auto-confirm: check that its `ENVIRONMENT` env var is `dev`.
+- Do **not** re-add `cognito-idp:AdminConfirmSignUp` to the auth role — that path was removed in PR #178 and would re-introduce the race.
 
 ---
 
@@ -591,5 +641,5 @@ curl -X POST https://api-url/auth/register \
 
 ---
 
-**Last Updated**: 2025-11-23 (extracted from CLAUDE.md)
-**Related PRs**: #72 (Auto-confirm implementation)
+**Last Updated**: 2026-05-25
+**Related PRs**: #72 (original AdminConfirmSignUp implementation; superseded), #178 (Pre-Sign-Up trigger refactor; removes the AdminConfirmSignUp call + IAM grant)

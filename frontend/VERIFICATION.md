@@ -290,16 +290,16 @@ npm run lint
 
 ## Troubleshooting
 
-### Issue: Port 5173 already in use
+### Issue: Port 3000 already in use
 
 **Solution:**
 
 ```bash
-# Kill the process using port 5173
+# Kill the process using port 3000
 lsof -ti:3000 | xargs kill -9
 
 # Or use a different port
-npm run dev -- --port 3000
+npm run dev -- --port 3001
 ```
 
 ### Issue: Module not found errors

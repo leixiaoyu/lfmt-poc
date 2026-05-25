@@ -75,7 +75,7 @@ across PRs #250–#258). The work since then has been:
 
 **Concern class**: security analysis — quantify, then decide.
 
-- **#288** — Documented the measurement methodology used to assess whether Cognito's `AdminInitiateAuth` differential timing leaks user existence in a way that's distinguishable from network jitter. Conclusion: at p95, the existing/non-existing-user timing distributions overlap inside the network-jitter envelope, so the side-channel is **not exploitable in practice** without privileged network position. Issue closed; decision logged in [`docs/security/`](docs/security/) (referenced from `SECURITY.md`).
+- **#288** — Documented the measurement methodology used to assess whether Cognito's `AdminInitiateAuth` differential timing leaks user existence in a way that's distinguishable from network jitter. Conclusion: at p95, the existing/non-existing-user timing distributions overlap inside the network-jitter envelope, so the side-channel is **not distinguishable from network jitter without privileged network position**. Issue closed; full methodology + conclusion captured inline in [PR #292](https://github.com/leixiaoyu/lfmt-poc/pull/292).
 
 ### 2026-05-18: Privacy-preserving 404 + 500/403 message preservation (PRs #287, #291, #283) — MERGED
 
@@ -85,7 +85,7 @@ across PRs #250–#258). The work since then has been:
 
 ### 2026-05-18: Per-user rate-limiting decision record (PR #290) — MERGED
 
-- **#289** — Decision: **defer per-user rate-limiting until real users exist.** The current single global Gemini-tier rate limiter (5 RPM / 250K TPM / 25 RPD enforced via the DDB-backed distributed limiter) is the correct primitive for a POC with one demo user. Adding per-user buckets now would be premature optimization. Decision rationale, alternatives considered, and trigger conditions documented in [`docs/security/`](docs/security/). Issue closed as "won't fix until trigger condition met."
+- **#289** — Decision: **defer per-user rate-limiting until real users exist.** The current single global Gemini-tier rate limiter (5 RPM / 250K TPM / 25 RPD enforced via the DDB-backed distributed limiter) is the correct primitive for a POC with one demo user. Adding per-user buckets now would be premature optimization. Decision rationale, alternatives considered, and trigger conditions captured in [PR #290](https://github.com/leixiaoyu/lfmt-poc/pull/290). Issue closed as "won't fix until trigger condition met."
 
 ### 2026-05-17: Error-message UX hardening sweep (PRs #268, #270, #272, #280, #281, #282, #285) — MERGED
 

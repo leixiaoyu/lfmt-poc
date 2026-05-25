@@ -12,21 +12,21 @@ is found, the code is authoritative and this file should be corrected.
 
 ## Endpoint Index
 
-| #   | Method | Path                                            | Auth        | Handler                                                |
-| --- | ------ | ----------------------------------------------- | ----------- | ------------------------------------------------------ |
-| 1   | POST   | `/auth/register`                                | Public      | `backend/functions/auth/register.ts`                   |
-| 2   | POST   | `/auth/login`                                   | Public      | `backend/functions/auth/login.ts`                      |
-| 3   | POST   | `/auth/refresh`                                 | Public      | `backend/functions/auth/refreshToken.ts`               |
-| 4   | POST   | `/auth/reset-password`                          | Public      | `backend/functions/auth/resetPassword.ts`              |
-| 5   | GET    | `/auth/me`                                      | Cognito JWT | `backend/functions/auth/getCurrentUser.ts`             |
-| 6   | POST   | `/jobs/upload`                                  | Cognito JWT | `backend/functions/jobs/uploadRequest.ts`              |
-| 7   | GET    | `/jobs`                                         | Cognito JWT | `backend/functions/jobs/listJobs.ts`                   |
-| 8   | GET    | `/jobs/{jobId}`                                 | Cognito JWT | `backend/functions/jobs/getJob.ts`                     |
-| 9   | DELETE | `/jobs/{jobId}`                                 | Cognito JWT | `backend/functions/jobs/deleteJob.ts`                  |
-| 10  | POST   | `/jobs/{jobId}/translate`                       | Cognito JWT | `backend/functions/jobs/startTranslation.ts`           |
-| 11  | GET    | `/jobs/{jobId}/translation-status`              | Cognito JWT | `backend/functions/jobs/getTranslationStatus.ts`       |
-| 12  | GET    | `/jobs/{jobId}/download[?format=md\|epub\|pdf]` | Cognito JWT | `backend/functions/translation/downloadTranslation.ts` |
-| 13  | POST   | `/csp-report`                                   | Public      | `backend/functions/security/cspReport.ts`              |
+| #   | Method | Path                                                  | Auth        | Handler                                                |
+| --- | ------ | ----------------------------------------------------- | ----------- | ------------------------------------------------------ |
+| 1   | POST   | `/auth/register`                                      | Public      | `backend/functions/auth/register.ts`                   |
+| 2   | POST   | `/auth/login`                                         | Public      | `backend/functions/auth/login.ts`                      |
+| 3   | POST   | `/auth/refresh`                                       | Public      | `backend/functions/auth/refreshToken.ts`               |
+| 4   | POST   | `/auth/reset-password`                                | Public      | `backend/functions/auth/resetPassword.ts`              |
+| 5   | GET    | `/auth/me`                                            | Cognito JWT | `backend/functions/auth/getCurrentUser.ts`             |
+| 6   | POST   | `/jobs/upload`                                        | Cognito JWT | `backend/functions/jobs/uploadRequest.ts`              |
+| 7   | GET    | `/jobs`                                               | Cognito JWT | `backend/functions/jobs/listJobs.ts`                   |
+| 8   | GET    | `/jobs/{jobId}`                                       | Cognito JWT | `backend/functions/jobs/getJob.ts`                     |
+| 9   | DELETE | `/jobs/{jobId}`                                       | Cognito JWT | `backend/functions/jobs/deleteJob.ts`                  |
+| 10  | POST   | `/jobs/{jobId}/translate`                             | Cognito JWT | `backend/functions/jobs/startTranslation.ts`           |
+| 11  | GET    | `/jobs/{jobId}/translation-status`                    | Cognito JWT | `backend/functions/jobs/getTranslationStatus.ts`       |
+| 12  | GET    | `/jobs/{jobId}/download[?format=markdown\|epub\|pdf]` | Cognito JWT | `backend/functions/translation/downloadTranslation.ts` |
+| 13  | POST   | `/csp-report`                                         | Public      | `backend/functions/security/cspReport.ts`              |
 
 ---
 
@@ -66,24 +66,32 @@ is found, the code is authoritative and this file should be corrected.
 
 - `requestId` is always a UUID generated server-side. Clients should
   surface it in support contexts so we can correlate against CloudWatch.
-- `errorCode` (PR #267 / #280 / #281) is a machine-readable string
-  discriminator. Clients map it to copy via `COPY_BY_CODE` in
-  `frontend/src/services/getApiErrorMessage.ts`.
+- `errorCode` (issue #267, implemented across PRs #280 / #281) is a
+  machine-readable string discriminator. Clients map it to copy via
+  `COPY_BY_CODE` in `frontend/src/services/getApiErrorMessage.ts`.
 - `errors` is field-keyed for validation failures (Zod issues).
 - Backend `message` is preserved on 4xx (PR #283) and 5xx (PR #291) — it
   is no longer clobbered to a generic "Internal Server Error".
 
 ### Known `errorCode` values
 
-| Code                          | Typical status | Where                                                  |
-| ----------------------------- | -------------- | ------------------------------------------------------ |
-| `INVALID_REQUEST`             | 400            | Zod validation failures                                |
-| `MISSING_JOB_ID`              | 400            | Malformed `{jobId}` path param                         |
-| `INVALID_JOB_STATUS`          | 409            | E.g., download before translation completes            |
-| `TRANSLATION_ALREADY_STARTED` | 409            | `POST /jobs/{jobId}/translate` when status ≠ `CHUNKED` |
-| `NO_CHUNKS_AVAILABLE`         | 404 / 409      | Download attempted with no translated chunks           |
-| `JOB_NOT_FOUND`               | 404            | Unified for "not found" + "not owned" (PR #287)        |
-| `INTERNAL_ERROR`              | 500            | Catch-all                                              |
+Status codes are taken from the handler source. Note that `POST /jobs/{jobId}/translate`
+emits four discriminators on **400** responses (not 4xx variants) — the
+status is uniform; the `errorCode` is what distinguishes them.
+
+| Code                          | Status | Source                                                                                  |
+| ----------------------------- | ------ | --------------------------------------------------------------------------------------- |
+| `INVALID_REQUEST`             | 400    | Zod validation failures across handlers                                                 |
+| `MISSING_JOB_ID`              | 400    | `startTranslation.ts:96` — malformed `{jobId}` path param                               |
+| `INVALID_JOB_STATUS`          | 400    | `startTranslation.ts:152` — job exists but not in `CHUNKED` state                       |
+| `TRANSLATION_ALREADY_STARTED` | 400    | `startTranslation.ts:164` — `translationStatus` is already `IN_PROGRESS` or `COMPLETED` |
+| `NO_CHUNKS_AVAILABLE`         | 400    | `startTranslation.ts:176` — job has zero chunks (chunking failed or never ran)          |
+| `JOB_NOT_FOUND`               | 404    | Unified for "not found" + "not owned" (PR #287)                                         |
+| `INTERNAL_ERROR`              | 500    | Catch-all                                                                               |
+
+> `GET /jobs/{jobId}/download` separately returns **409** (no `errorCode`)
+> when the job exists but `translationStatus` is not `COMPLETED` — see
+> the download endpoint below.
 
 ---
 
@@ -233,33 +241,43 @@ Request a presigned S3 PUT URL for a document upload. **The Lambda does
 not accept the file**; the client uploads directly to S3 via the
 presigned URL. S3 events then trigger asynchronous chunking.
 
-**Request body**
+**Request body** (`application/json`)
 
-| Field         | Type   | Required | Notes                                                                                                                                                    |
-| ------------- | ------ | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `filename`    | string | ✅       | 1–255 chars; no path separators; no null bytes                                                                                                           |
-| `fileSize`    | number | ✅       | 1 byte – 100 MB (104,857,600)                                                                                                                            |
-| `contentType` | string | ✅       | One of `text/plain`, `text/markdown`, `application/pdf`, `application/msword`, `application/vnd.openxmlformats-officedocument.wordprocessingml.document` |
-| `contentHash` | string | optional | SHA256 hex digest for client-side verification                                                                                                           |
+| Field              | Type   | Required | Notes                                                                                                                                                                                                                                                          |
+| ------------------ | ------ | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `fileName`         | string | ✅       | Must match `/^[a-zA-Z0-9._-]+\.txt$/` (alphanumeric, dot, underscore, hyphen; **`.txt` extension required**). No spaces, paths, or other extensions accepted.                                                                                                  |
+| `fileSize`         | number | ✅       | 1 byte – **100 MiB** (`100 * 1024 * 1024` = 104,857,600 bytes). See `shared-types/src/validation.ts:14`.                                                                                                                                                       |
+| `contentType`      | string | ✅       | Currently **`text/plain` only** (`z.literal('text/plain')` in `shared-types/src/documents.ts:167`). Other types are rejected with 400.                                                                                                                         |
+| `legalAttestation` | object | ✅       | **Required.** Three booleans (all must be `true`): `acceptedCopyrightOwnership`, `acceptedAiTranslationConsent`, `acceptedTermsOfService`. Missing/incomplete → 400 with message "Legal attestation is required: you must accept all three clauses to upload." |
 
-**Success (200)** — **wrapped envelope** (unique to this endpoint):
+**Success (200)** — **wrapped envelope** (unique to this endpoint; see `PresignedUrlApiResponse` in `shared-types`):
 
 ```json
 {
-  "message": "Upload URL created",
+  "message": "Upload URL generated successfully",
   "data": {
-    "jobId": "...",
-    "uploadUrl": "https://.../s3...X-Amz-Signature=...",
-    "uploadUrlExpiresIn": 900,
-    "bucketName": "...",
-    "objectKey": "uploads/{jobId}/{filename}",
-    "requiredHeaders": { "Content-Type": "text/plain" }
+    "uploadUrl": "https://...s3...?X-Amz-Signature=...",
+    "fileId": "<uuid>",
+    "jobId": "<uuid>",
+    "expiresIn": 900,
+    "requiredHeaders": {
+      "Content-Type": "text/plain",
+      "Content-Length": "12345"
+    }
   },
   "requestId": "..."
 }
 ```
 
-**Errors**: `400` (validation, oversized), `401`, `409` (quota), `500`.
+The client MUST send the upload PUT to `uploadUrl` with the exact
+`Content-Type` and `Content-Length` values from `requiredHeaders` —
+the presigned URL signature includes both.
+
+**Errors**:
+
+- `400` — Zod validation failure on the file fields (filename regex / size cap / content-type), or `legalAttestation` missing / incomplete, or malformed JSON body
+- `401` — unauthenticated
+- `500` — S3 / DDB error
 
 ---
 
@@ -285,7 +303,7 @@ issue #244).
       "jobId": "...",
       "userId": "...",
       "filename": "...",
-      "targetLanguage": "spanish",
+      "targetLanguage": "es",
       "status": "CHUNKED",
       "translationStatus": "PENDING",
       "totalChunks": 12,
@@ -293,10 +311,14 @@ issue #244).
       "createdAt": "..."
     }
   ],
+  "count": 1,
   "nextCursor": "<opaque base64; omitted when last page>",
   "requestId": "..."
 }
 ```
+
+`count` is the length of the `jobs` array on this page (not a total
+across pages). `nextCursor` is omitted (not `null`) on the last page.
 
 **Errors**: `400` (invalid cursor — issue #246: empty-object cursors now
 rejected), `401`, `500`.
@@ -329,7 +351,7 @@ Functions execution is also stopped (`StopExecution`, PR #210).
 
 ```json
 {
-  "message": "Job deleted successfully",
+  "message": "Job <jobId> deleted successfully",
   "jobId": "...",
   "warning": "S3 cleanup partially failed (DDB delete succeeded).",
   "requestId": "..."
@@ -349,10 +371,10 @@ and invokes the Step Functions state machine.
 
 **Request body**
 
-| Field            | Type   | Required | Notes                                                                        |
-| ---------------- | ------ | -------- | ---------------------------------------------------------------------------- |
-| `targetLanguage` | string | ✅       | Must be in `SUPPORTED_LANGUAGES` (spanish, french, italian, german, chinese) |
-| `tone`           | string | optional | One of `'formal'`, `'informal'`, `'neutral'`                                 |
+| Field            | Type   | Required | Notes                                                                                                                                                                                  |
+| ---------------- | ------ | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `targetLanguage` | string | ✅       | **ISO 639-1 two-letter code**, one of `'es'`, `'fr'`, `'it'`, `'de'`, `'zh'` (see `TargetLanguage` in `backend/functions/translation/types.ts:9`). The English names are not accepted. |
+| `tone`           | string | optional | One of `'formal'`, `'informal'`, `'neutral'`. Defaulted to `'neutral'` by `initializeTranslation()` when omitted.                                                                      |
 
 **Success (200)**
 
@@ -361,7 +383,7 @@ and invokes the Step Functions state machine.
   "message": "Translation started",
   "jobId": "...",
   "translationStatus": "IN_PROGRESS",
-  "targetLanguage": "spanish",
+  "targetLanguage": "es",
   "totalChunks": 12,
   "translatedChunks": 0,
   "estimatedCompletion": "2026-05-25T...Z",
@@ -371,14 +393,18 @@ and invokes the Step Functions state machine.
 }
 ```
 
-**Errors**:
+**Errors** — note this endpoint returns `400` (not `409`) for all
+`errorCode` discriminators below. The handler uses `errorCode` to
+distinguish; the HTTP status is uniform.
 
-- `400` — validation, unsupported language
-- `401` — unauthenticated
-- `404` (`errorCode: JOB_NOT_FOUND`) — not found or not owned (PR #287)
-- `409` (`errorCode: TRANSLATION_ALREADY_STARTED`, PR #267) — already in
-  flight or completed
-- `500`
+- `400` (`errorCode: INVALID_REQUEST`) — Zod validation failed (missing/unsupported `targetLanguage` or invalid `tone`). Error message: `Invalid targetLanguage: <value>. Must be one of: es, fr, it, de, zh`.
+- `400` (`errorCode: MISSING_JOB_ID`) — `{jobId}` path param missing/malformed.
+- `400` (`errorCode: INVALID_JOB_STATUS`) — Job exists but `status` is not `CHUNKED` (chunking still running or failed).
+- `400` (`errorCode: TRANSLATION_ALREADY_STARTED`) — `translationStatus` is already `IN_PROGRESS` or `COMPLETED` (issue #267 / PR #280).
+- `400` (`errorCode: NO_CHUNKS_AVAILABLE`) — Job has zero chunks recorded.
+- `401` — unauthenticated.
+- `404` (`errorCode: JOB_NOT_FOUND`) — not found or not owned (PR #287, closes issue #286).
+- `500` — Step Functions invoke error, unexpected error.
 
 ---
 
@@ -398,7 +424,7 @@ polling cadence (15s → 30s → 60s).
   "contentType": "text/plain",
   "status": "CHUNKED",
   "translationStatus": "IN_PROGRESS",
-  "targetLanguage": "spanish",
+  "targetLanguage": "es",
   "tone": "neutral",
   "totalChunks": 12,
   "translatedChunks": 5,
