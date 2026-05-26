@@ -22,16 +22,21 @@ Complete guide to testing the LFMT POC application locally and in CI/CD.
 
 The LFMT POC includes comprehensive testing at multiple levels:
 
-- **Frontend Unit Tests**: 499 tests with Vitest + React Testing Library (99% coverage)
+- **Frontend Unit Tests**: Vitest + React Testing Library (jsdom)
 - **Backend Unit Tests**: Jest tests for Lambda functions
 - **Integration Tests**: End-to-end API workflow testing
-- **E2E Tests**: 58 Playwright tests with Page Object Model pattern
+- **E2E Tests**: Playwright with Page Object Model pattern
+- **Nightly Live-Backend Contract Suite**: `e2e-contract-nightly.yml` runs Playwright against the deployed dev API to catch envelope-contract regressions
 - **CI/CD Tests**: Automated testing on pull requests and deployments
+
+**Current Test Totals**: See [PROGRESS.md](PROGRESS.md) for the authoritative
+per-package count. As of 2026-05-25: backend/functions 638, backend/infrastructure 91,
+frontend Vitest 841 = **1,570 passed**.
 
 **Test Coverage**:
 
-- Frontend: 99% (Translation components)
-- Backend: Comprehensive Lambda function coverage
+- Frontend: >90% on critical paths
+- Backend: Jest floors (PR #250): branches 70 / functions 75 / lines 82 / statements 84
 - E2E: Critical user journeys and workflows
 
 ---
@@ -40,16 +45,16 @@ The LFMT POC includes comprehensive testing at multiple levels:
 
 ### Required Software
 
-- **Node.js**: v20+ (check: `node --version`)
-- **npm**: v9+ (check: `npm --version`)
+- **Node.js**: v22 (LTS — matches Lambda runtime; check: `node --version`)
+- **npm**: v10+ (check: `npm --version`)
 - **Git**: Latest version
 - **Playwright** (for E2E tests): Auto-installed with `npm ci`
 
 ### Initial Setup
 
 ```bash
-# From project root
-cd "/Users/raymondl/Documents/LFMT POC/LFMT/lfmt-poc"
+# From project root (adjust to your local path)
+cd /path/to/lfmt-poc
 
 # Install dependencies for all packages
 cd shared-types && npm ci && cd ..
@@ -64,8 +69,8 @@ cd frontend && npm ci && cd ..
 
 ### 1. Unit Tests (Vitest)
 
-**Test Suite**: 24 test files, 499 tests (27 skipped)
-**Coverage**: 99% average across Translation components
+**Test Suite**: 38 test files, 841 tests (14 skipped) as of 2026-05-25
+**Coverage**: >90% on critical paths (Translation, Auth, error-rendering, upload)
 **Location**: `frontend/src/**/__tests__/*.test.tsx`
 
 #### Run All Unit Tests
@@ -108,9 +113,11 @@ npm run test:ui
 
 ### 2. E2E Tests (Playwright)
 
-**Test Suite**: 7 test suites, 58 tests
 **Framework**: Playwright with Page Object Model
 **Location**: `frontend/e2e/tests/**/*.spec.ts`
+**Nightly contract suite**: `frontend/e2e/tests/contract/api-envelope-live.spec.ts`
+runs against the deployed dev API via `.github/workflows/e2e-contract-nightly.yml`.
+See [frontend/e2e/README.md](frontend/e2e/README.md) for current counts.
 
 #### First-Time Setup: Install Browsers
 
@@ -359,9 +366,10 @@ frontend/test-results/**/*.webm
    npm run build
    ```
 
-5. **E2E Tests**: ⚠️ Temporarily disabled
-   - Reason: Require live backend API
-   - Status: Run manually before deployment
+5. **E2E Tests**:
+   - Per-PR Playwright suite gated on dev API availability
+   - Nightly live-backend envelope contract suite (`e2e-contract-nightly.yml`, added by PR #257)
+   - Weekly Cognito test-user GC (`cognito-test-user-cleanup.yml`, added by PR #257)
 
 ### Deployment Workflows (`.github/workflows/deploy-backend.yml` + `deploy-frontend.yml`)
 
@@ -745,8 +753,8 @@ test('upload file', async () => {
 
 **Current Coverage**:
 
-- **Frontend**: 99% (Translation components)
-- **Backend**: Comprehensive Lambda coverage
+- **Frontend**: >90% on critical paths (Translation, Auth, error-rendering, upload)
+- **Backend**: Jest floors (PR #250): branches 70 / functions 75 / lines 82 / statements 84
 
 **Check Coverage**:
 
@@ -888,9 +896,12 @@ npm run test:e2e
 
 ---
 
-**Last Updated**: 2025-11-23 (Merged from TESTING.md + TESTING-GUIDE.md)
+**Last Updated**: 2026-05-25
 **Related Documentation**:
 
+- `PROGRESS.md` - Authoritative test totals and per-package counts
+- `frontend/LOCAL-TESTING.md` - Three-layer mock strategy (`axios-mock-adapter` / `msw/node` / MSW SW) + local mock-API loop
 - `frontend/e2e/README.md` - Playwright E2E testing details
 - `docs/TRANSLATION-UI-REFERENCE.md` - Translation UI testing
 - `.github/workflows/ci.yml` - CI/CD pipeline configuration
+- `.github/workflows/e2e-contract-nightly.yml` - Nightly live-backend envelope contract suite

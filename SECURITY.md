@@ -6,7 +6,26 @@ This document outlines the security measures, policies, and best practices for t
 
 ## Security Audit History
 
-### 2025-10-21: Security Hardening
+### 2026-05 (rolling): CSP, Ownership Privacy, Side-Channel Analysis
+
+Tracked in PR #257, #265, #287, #290, #292. Summarized in
+[Current Security Posture](#current-security-posture) below.
+
+- ✅ **CSP architecture overhaul** (#257) — Typed `Partial<Record<CspDirective, string[]>>` builder, extracted to `backend/infrastructure/lib/csp.ts`. Adds defensive `'object-src'`, `'base-uri'`, `'form-action'`, `'frame-ancestors'`, and `upgrade-insecure-requests`.
+- ✅ **CSP violation telemetry endpoint** (#257) — `POST /csp-report` Lambda with strict input sanitization, 64 KB body cap, 2 KB per-field truncation, dedicated minimal IAM role (CloudWatch Logs write only).
+- ✅ **CSP style-src static nonce** (#265, closes #254) — Build-time generated nonce written into `index.html` and the CSP header; `'unsafe-inline'` removed from `style-src`.
+- ✅ **Privacy-preserving 404 on ownership-checked endpoints** (#287, closes #286) — Endpoints that confirm record ownership now return `404 Not Found` (not `403 Forbidden`) for jobs owned by other users. Prevents `jobId` existence-disclosure to non-owners. `errorCode` unified to `JOB_NOT_FOUND`.
+- ✅ **Per-user rate-limiting decision record** (#290, closes #289) — Documented decision to **defer per-user rate-limiting until real users exist**. Current global Gemini-tier limiter (5 RPM / 250K TPM / 25 RPD) is correct for a single-user POC. Trigger conditions for revisiting the decision are captured in [PR #290](https://github.com/leixiaoyu/lfmt-poc/pull/290).
+- ✅ **Cognito timing side-channel analytical conclusion** (#292, closes #288) — Measured `AdminInitiateAuth` differential timing for existing vs non-existing users. At p95 the distributions overlap within the network-jitter envelope; the side-channel is **not distinguishable from network jitter without privileged network position**. Methodology and conclusion are captured inline in [PR #292](https://github.com/leixiaoyu/lfmt-poc/pull/292).
+
+### 2026-05-13: Auth + Workflow Hardening (PR #256)
+
+- ✅ **Login/register 400-on-malformed-JSON** (#180) — Previously surfaced as 500.
+- ✅ **Removed redundant `AdminConfirmSignUp` and over-privileged IAM grant** (#178) — Cognito pre-sign-up trigger already auto-confirms in dev.
+- ✅ **`StopExecution` on Step Functions** when a job `DELETE` arrives while translation is in progress (#210) — Prevents orphaned executions burning Gemini quota.
+- ✅ **`decodeCursor` empty-object rejection** (#246) — Tightened guard against malformed cursors.
+
+### 2025-10-21: Initial Security Hardening
 
 **Audit Conducted**: Comprehensive repository scan for exposed secrets and sensitive information.
 
@@ -64,8 +83,7 @@ This document outlines the security measures, policies, and best practices for t
 
 **Pre-Push Validation**:
 
-- Shared-types tests (11/11 passing)
-- Infrastructure tests (20/20 passing)
+- Full unit test suites in each package (see [PROGRESS.md](PROGRESS.md) for current counts)
 - TypeScript compilation checks
 - Security scans for hardcoded secrets
 
@@ -73,6 +91,43 @@ This document outlines the security measures, policies, and best practices for t
 
 - Author email: `leixiaoyu@users.noreply.github.com` (prevents email harvesting)
 - Git hooks enforce pre-push validation
+
+### Content Security Policy
+
+CSP is constructed via the typed builder in `backend/infrastructure/lib/csp.ts`
+and applied to CloudFront responses by the `LfmtPocDev` (and staging/prod)
+stacks. Key properties:
+
+- `default-src 'self'` baseline.
+- `style-src` uses a **build-time static nonce** (PR #265). `'unsafe-inline'`
+  is removed. Each frontend build generates a fresh nonce written into both
+  `index.html` and the CSP header simultaneously.
+- `script-src 'self'` — `'unsafe-inline'` and `'unsafe-eval'` both removed.
+- `object-src 'none'`, `base-uri 'self'`, `form-action 'self'`,
+  `frame-ancestors 'none'`, `upgrade-insecure-requests`.
+- `report-uri` points to the `POST /csp-report` Lambda; `report-to` group
+  configured for the modern Reporting API. Violations are emitted as
+  structured WARN logs to CloudWatch with strict field allowlisting (no
+  PII forwarded; per-field 2 KB truncation; 64 KB request body cap).
+
+### Privacy-Preserving Authorization
+
+Ownership-checked endpoints (`GET /jobs/{jobId}`, `DELETE /jobs/{jobId}`,
+`POST /jobs/{jobId}/translate`, `GET /jobs/{jobId}/translation-status`,
+`GET /jobs/{jobId}/download`) return `404 Not Found` with `errorCode:
+JOB_NOT_FOUND` for jobs owned by other users — identical to the response
+for genuinely non-existent jobs. Prevents `jobId` enumeration / existence
+disclosure. See PR #287.
+
+### Stable Error Envelope
+
+All Lambda handlers emit a typed `errorCode` (string discriminator) plus
+UUID `requestId` on error responses (PRs #267 / #280 / #281). Client copy
+maps via the `COPY_BY_CODE` lookup table in
+`frontend/src/services/getApiErrorMessage.ts`. Backend `message` is now
+preserved on 4xx (#283) and 5xx (#291) responses for operator-friendly
+debugging, so user-reported error text can be correlated to CloudWatch
+logs by `requestId`.
 
 ## Best Practices
 
@@ -231,11 +286,20 @@ Add custom patterns for project-specific secrets:
 - [AWS Well-Architected Security Pillar](https://docs.aws.amazon.com/wellarchitected/latest/security-pillar/welcome.html)
 - [OWASP Top 10](https://owasp.org/www-project-top-ten/)
 
+## Open Security Follow-ups
+
+| #                                                        | Title                                                               | Status                                                                                                                                                                           |
+| -------------------------------------------------------- | ------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [#255](https://github.com/leixiaoyu/lfmt-poc/issues/255) | security: migrate auth tokens from localStorage to httpOnly cookies | Open. Blocked on custom-domain ACM/Route53 setup (CloudFront ↔ execute-api must share a registrable parent domain for httpOnly cookies). Needs CSRF + SameSite design decisions. |
+| [#260](https://github.com/leixiaoyu/lfmt-poc/issues/260) | ci(deploy): post-deploy smoke + integration tests on staging/prod   | Open. Architectural — needs per-env secret routing (`STAGING_USER_POOL_ID` / `PROD_USER_POOL_ID`), OIDC role broadening, and a test-user-isolation policy.                       |
+
 ## Version History
 
-| Date       | Version | Changes                                   |
-| ---------- | ------- | ----------------------------------------- |
-| 2025-10-21 | 1.0     | Initial security policy and audit results |
+| Date       | Version | Changes                                                                                                                                                                                                                                                                                   |
+| ---------- | ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 2026-05-25 | 1.2     | Added CSP architecture, build-time static nonce (#265), CSP report endpoint (#257), privacy-preserving 404 on ownership endpoints (#287), per-user rate-limit decision record (#290), timing side-channel analytical conclusion (#292), stable error envelope (#267/#280/#281/#283/#291). |
+| 2026-05-13 | 1.1     | Wave 2 Track B auth + workflow hardening: 400-on-malformed-JSON (#180), removed AdminConfirmSignUp grant (#178), StopExecution on DELETE (#210), tightened cursor decode (#246).                                                                                                          |
+| 2025-10-21 | 1.0     | Initial security policy and audit results.                                                                                                                                                                                                                                                |
 
 ## Contact
 

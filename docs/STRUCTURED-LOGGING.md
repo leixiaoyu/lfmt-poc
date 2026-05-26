@@ -1,6 +1,6 @@
 # Structured Logging Guide
 
-**Last Updated**: 2025-04-05
+**Last Updated**: 2026-05-25
 **Owner**: Backend Team
 
 ---
@@ -8,6 +8,14 @@
 ## Overview
 
 All Lambda functions in the LFMT project use structured JSON logging with correlation IDs for better observability and debugging.
+
+> **Error envelope contract** (PRs #267 / #280 / #281 / #283 / #291):
+> client-facing error responses include a typed `errorCode` (string
+> discriminator) and a UUID `requestId`. The same `requestId` is
+> emitted as a structured-log field on every log line the request
+> produces, so user-reported errors can be correlated to logs by
+> grepping `requestId`. Backend `message` is preserved on 4xx/5xx
+> responses — do not clobber it in error paths.
 
 **Benefits**:
 

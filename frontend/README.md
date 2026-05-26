@@ -37,8 +37,8 @@ frontend/
 
 ### Prerequisites
 
-- Node.js 22+ and npm 10+
-- Backend API running at https://8brwlwf68h.execute-api.us-east-1.amazonaws.com/v1/
+- Node.js 22 (LTS — matches Lambda runtime) and npm 10+
+- Backend API running at https://8brwlwf68h.execute-api.us-east-1.amazonaws.com/v1/, **or** the local mock-API loop (see [LOCAL-TESTING.md](LOCAL-TESTING.md))
 
 ### Getting Started
 
@@ -46,8 +46,11 @@ frontend/
 # Install dependencies
 npm install
 
-# Start development server (http://localhost:3000)
+# Start development server (http://localhost:3000 — port set in vite.config.ts)
 npm run dev
+
+# Start with the local mock API (no backend required)
+VITE_MOCK_API=true npm run dev
 
 # Type checking
 npm run type-check

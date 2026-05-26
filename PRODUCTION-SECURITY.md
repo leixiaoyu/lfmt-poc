@@ -1,5 +1,16 @@
 # Production Security Deployment Guide
 
+> ⚠️ **Aspirational / not currently deployed (2026-05-25).** This document
+> describes a defense-in-depth security stack (CloudTrail / Config /
+> GuardDuty / WAF) that would be enabled if the POC went to production.
+> It is **not** part of the currently-deployed `LfmtPocDev` stack.
+>
+> For the security work that **has** been implemented (CSP build-time
+> static nonce, CSP violation telemetry, privacy-preserving 404 on
+> ownership-checked endpoints, error-envelope `errorCode` + UUID
+> `requestId`, per-user rate-limiting decision record, Cognito timing
+> side-channel analysis), see [SECURITY.md](SECURITY.md).
+
 This guide explains how to deploy the production-ready security features for LFMT POC.
 
 ## Overview

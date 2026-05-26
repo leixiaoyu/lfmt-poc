@@ -8,7 +8,7 @@
 
 **Long-Form Translation Service** Proof of Concept (POC) - A React SPA with AWS serverless backend for translating large documents (65K-400K words) using Gemini 2.5 Flash API.
 
-**Current Status**: See [PROGRESS.md](PROGRESS.md) for the canonical phase, completion %, and active workstreams. Snapshot: translation workflow with Gemini 2.5 Flash deployed end-to-end; Phase 10 demo polish in progress.
+**Current Status**: See [PROGRESS.md](PROGRESS.md) for the canonical phase, completion %, and active workstreams. Snapshot (2026-05-25): translation workflow with Gemini 2.5 Flash deployed end-to-end; Phases 1-9 complete; the Phase 10 demo-polish stream is paused while tech-debt + error-UX hardening + targeted security follow-ups land.
 
 ---
 
@@ -110,20 +110,16 @@ aws logs tail /aws/lambda/lfmt-translate-chunk-LfmtPocDev --follow
 
 ---
 
-## Current Priorities (Phase 10)
+## Current Focus (as of 2026-05-25)
 
-### P0 (Critical - This Week)
+PROGRESS.md is the canonical source. Brief snapshot:
 
-1. ✅ Configure Gemini API key in Secrets Manager
-2. ✅ Validate translation flow integration tests
-3. ✅ End-to-end translation with real documents (Gemini 2.5 Flash)
-4. ⏳ Demo content preparation (sample translations)
-
-### P1 (Important - Before Demo)
-
-- UI/UX polish (loading states, error messages)
-- Performance validation (parallel translation)
-- Demo documentation (pitch deck, talking points)
+- ✅ Tech-debt cleanup Waves 1 + 2 landed (26 issues, PRs #250–#258)
+- ✅ Date-pinned + architectural deferrals closed (ePub/PDF #263, StoredSession removal #264, CSP static nonce #265, nested-stacks proposal #262)
+- ✅ Error-message UX hardening sweep complete — every page error path now flows through `getApiErrorMessage`; backend handlers emit `errorCode` + UUID `requestId`
+- ✅ Targeted security follow-ups: privacy-preserving 404 (#287), per-user rate-limit decision (#290), timing side-channel analysis (#292)
+- ⏸️ Phase 10 (investor demo polish): paused — see [deferred items in PROGRESS.md](PROGRESS.md#deferred-phase-10-items)
+- 🔲 Still open: #260 (post-deploy smoke/integration on staging+prod), #255 (httpOnly cookie migration — blocked on custom domain), #64 implementation (nested-stacks proposal awaiting approval), #29 (post-translation editor)
 
 ---
 
@@ -151,10 +147,11 @@ aws logs tail /aws/lambda/lfmt-translate-chunk-LfmtPocDev --follow
 
 ### Git Workflow
 
-- **Main Branch**: Protected, requires PR approval
-- **Feature Branches**: `feature/*`, `fix/*`, `docs/*`
-- **Never Commit Without Request**: Only commit when explicitly asked by user
-- **Pre-push Hook**: Runs all tests automatically
+- **Main Branch**: Protected. PR required. Status checks: `Run Tests` + `Build Infrastructure` must pass, branch must be up-to-date with `main`, `enforce_admins` is on, conversation resolution required. **Review approvals: 0 required** (Raymond self-merges).
+- **Feature Branches**: `feature/*`, `fix/*`, `docs/*`, `tech-debt/*`, `security/*`, `chore/*`
+- **Never Commit Without Request**: Only commit when explicitly asked by user. Never plan or execute commit/branch/merge ops without explicit user request.
+- **Secondary Reviewer**: `xlei-raymond` (Gemini CLI) may post formal "Changes Requested" reviews. `dismiss_stale_reviews` is **false** — pushes do not auto-clear these reviews.
+- **Pre-push Hook**: Runs all tests automatically.
 
 ---
 
@@ -220,12 +217,13 @@ and known footguns.
 
 ---
 
-**Last Updated**: 2026-05-14
+**Last Updated**: 2026-05-25
 
 **Previous Major Changes**:
 
+- Post-Wave-2 work (2026-05-15 → 2026-05-18): 15 PRs landed across three themes — closing date-pinned/architectural deferrals (#28 ePub+PDF, #199 StoredSession removal, #254 CSP static nonce, #64 nested-stacks proposal), error-message UX hardening sweep (every page now uses `getApiErrorMessage`; backend emits `errorCode` + UUID `requestId`), and targeted security follow-ups (ownership-404, per-user rate-limit decision record, timing side-channel analysis)
 - Wave 1 + Wave 2 tech-debt cleanup landed (26 issues across PRs #250–#258); see [PROGRESS.md](PROGRESS.md) for the per-PR breakdown
 - Integration test failures resolved (PR #99)
 - Gemini 2.5 Flash migration complete (PR #98)
 - Translation workflow fully validated end-to-end
-- CI/CD pipeline green; latest test totals tracked in PROGRESS.md
+- CI/CD pipeline green; latest test totals tracked in PROGRESS.md (1,570 passed across backend/functions, backend/infrastructure, and frontend Vitest as of 2026-05-25)

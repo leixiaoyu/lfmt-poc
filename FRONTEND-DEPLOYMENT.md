@@ -1,5 +1,14 @@
 # LFMT POC - Frontend Deployment Guide
 
+> **Last verified against**: `main` @ `b91663c` (2026-05-25). The
+> recommended deployment path is GitHub Actions (`deploy-frontend.yml`).
+> Frontend builds rely on a **build-time CSP style-src nonce** (PR #265):
+> the rebuild-frontend composite action stamps a fresh nonce into both
+> `index.html` and the CSP header at build time. Manual `aws s3 sync`
+> hotfixes are supported but bypass the CSP nonce rotation — prefer
+> the CI path. See [docs/CI-CD-ARCHITECTURE.md](docs/CI-CD-ARCHITECTURE.md)
+> and [SECURITY.md](SECURITY.md) for context.
+
 ## Overview
 
 This guide provides step-by-step instructions for deploying the LFMT Translation UI frontend to AWS CloudFront/S3 infrastructure.

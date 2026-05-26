@@ -11,7 +11,7 @@ cd frontend
 npm run dev
 ```
 
-The application will start on `http://localhost:5173` (default Vite port).
+The application will start on `http://localhost:3000` (the port is set explicitly in `vite.config.ts`; Vite's default 5173 is overridden).
 
 ### 2. Navigate Through the Application
 
@@ -21,7 +21,7 @@ The app will automatically redirect you to the login page at `/login`.
 
 ### ✅ Login Page (`/login`)
 
-**Location:** `http://localhost:5173/login`
+**Location:** `http://localhost:3000/login`
 
 **What to Test:**
 
@@ -56,7 +56,7 @@ The app will automatically redirect you to the login page at `/login`.
 
 ### ✅ Register Page (`/register`)
 
-**Location:** `http://localhost:5173/register`
+**Location:** `http://localhost:3000/register`
 
 **What to Test:**
 
@@ -109,7 +109,7 @@ The app will automatically redirect you to the login page at `/login`.
 
 ### ✅ Forgot Password Page (`/forgot-password`)
 
-**Location:** `http://localhost:5173/forgot-password`
+**Location:** `http://localhost:3000/forgot-password`
 
 **What to Test:**
 
@@ -142,7 +142,7 @@ The app will automatically redirect you to the login page at `/login`.
 
 ### ✅ Dashboard Page (`/dashboard`) - Protected
 
-**Location:** `http://localhost:5173/dashboard`
+**Location:** `http://localhost:3000/dashboard`
 
 **What to Test:**
 
@@ -170,7 +170,7 @@ The app will automatically redirect you to the login page at `/login`.
 **What to Test:**
 
 1. **Default Route:**
-   - [ ] Navigate to `http://localhost:5173/` → Redirects to `/login`
+   - [ ] Navigate to `http://localhost:3000/` → Redirects to `/login`
 
 2. **404 Handling:**
    - [ ] Navigate to `/nonexistent-page` → Redirects to `/login`
@@ -290,16 +290,16 @@ npm run lint
 
 ## Troubleshooting
 
-### Issue: Port 5173 already in use
+### Issue: Port 3000 already in use
 
 **Solution:**
 
 ```bash
-# Kill the process using port 5173
-lsof -ti:5173 | xargs kill -9
+# Kill the process using port 3000
+lsof -ti:3000 | xargs kill -9
 
 # Or use a different port
-npm run dev -- --port 3000
+npm run dev -- --port 3001
 ```
 
 ### Issue: Module not found errors
